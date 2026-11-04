@@ -15,9 +15,11 @@ claude mcp add a-identity-trust \
 Any MCP client that runs stdio servers works the same way (Cursor, Claude Desktop, your own).
 
 Your agent calls `check_before_pay` with the target and the amount before each payment. The tool
-picks the checks that amount calls for and returns ALLOW, WARN or DENY; on DENY the agent does
-not pay. The agent decides on its own and never asks you which checks to buy, and it never pays
-twice for the same check (see "Each check is paid for once").
+picks the checks that amount calls for and returns ALLOW, WARN or DENY. On DENY the agent does
+not pay. On WARN the agent holds the payment and shows you the reasons, unless you already told it
+to pay on WARN: a WARN can mean nothing is known about the target, which is not a go-ahead. The
+agent decides on its own and never asks you which checks to buy, and it never pays twice for the
+same check (see "Each check is paid for once").
 
 ## No Algorand wallet? Use a one-time one
 
@@ -92,7 +94,7 @@ This command moves your own money, so Claude Code asks before running it, and it
 blocks it on purpose. Approve it, run it yourself by typing `!` in front of it, or allow this one
 tool with a permission rule in your Claude Code settings: `Bash(npx -y @a-identity/trust-mcp@0.4.6:*)`.
 
-> I want to give my agent a budget for A-Identity checks (https://a-identity.xyz), paid with XLM, using their open-source tool @a-identity/trust-mcp 0.4.6 (source: https://github.com/getA-Identity/A-Identity/tree/main/trust-mcp). How it works: it makes a one-time Stellar wallet on this computer and prints its address, I send XLM there from my own wallet, and it exchanges the XLM through SideShift into USDC on Algorand (plus a little ALGO for fees). After that the USDC waits for checks: before a payment, the agent checks the target and pays only for checks it does not already have ($1 to $10 each, each check of a target paid for once). Read the package first if you want. 1) Run `npx -y @a-identity/trust-mcp@0.4.6 buy --new`. I want wallets of my own: --new makes new one-time wallets for me, and if this computer has wallets from someone else's earlier run it moves them aside (nothing is deleted) instead of using them. If you are not allowed to run it, show me that exact command so I can run it myself by typing ! in front of it. 2) Show me the Stellar address and the minimum XLM it prints. 3) When I say I sent it, run `npx -y @a-identity/trust-mcp@0.4.6 status` every two minutes until its first line says Idle. 4) From then on, before any payment you make for me, run `npx -y @a-identity/trust-mcp@0.4.6 check <target> <amount in USD>` and do not pay if it says DENY. Decide on your own which targets to check, do not ask me, and do not check the same target twice. 5) When I say I am done, ask for my own Stellar address and run `npx -y @a-identity/trust-mcp@0.4.6 refund --to <my address>` until it says Done. Never print or ask for secret words or keys.
+> I want to give my agent a budget for A-Identity checks (https://a-identity.xyz), paid with XLM, using their open-source tool @a-identity/trust-mcp 0.4.6 (source: https://github.com/getA-Identity/A-Identity/tree/main/trust-mcp). How it works: it makes a one-time Stellar wallet on this computer and prints its address, I send XLM there from my own wallet, and it exchanges the XLM through SideShift into USDC on Algorand (plus a little ALGO for fees). After that the USDC waits for checks: before a payment, the agent checks the target and pays only for checks it does not already have ($1 to $10 each, each check of a target paid for once). Read the package first if you want. 1) Run `npx -y @a-identity/trust-mcp@0.4.6 buy --new`. I want wallets of my own: --new makes new one-time wallets for me, and if this computer has wallets from someone else's earlier run it moves them aside (nothing is deleted) instead of using them. If you are not allowed to run it, show me that exact command so I can run it myself by typing ! in front of it. 2) Show me the Stellar address and the minimum XLM it prints. 3) When I say I sent it, run `npx -y @a-identity/trust-mcp@0.4.6 status` every two minutes until its first line says Idle. 4) From then on, before any payment you make for me, run `npx -y @a-identity/trust-mcp@0.4.6 check <target> <amount in USD>` and do not pay if it says DENY. If it says WARN, hold that payment and show me the reasons before paying. Decide on your own which targets to check, do not ask me, and do not check the same target twice. 5) When I say I am done, ask for my own Stellar address and run `npx -y @a-identity/trust-mcp@0.4.6 refund --to <my address>` until it says Done. Never print or ask for secret words or keys.
 
 ### One prompt for Claude Code (paying with ALGO and USDC)
 

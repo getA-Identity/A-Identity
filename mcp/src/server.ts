@@ -16,6 +16,7 @@ import {
 import { PRICES } from './asp/payment.js'
 import { createIdentityProvider } from './erc8004.js'
 import { computeAgentReputation } from './reputation.js'
+import { readReputationAnswer } from './agent-query.js'
 import { getArcStatus } from './arc.js'
 import { getCircleStatus } from './circle.js'
 import { merchantCheck } from './commerce.js'
@@ -108,6 +109,26 @@ export type ServerData = {
   }
 }
 
+/**
+ * get_reputation's answer for an identity we hold no platform record of. The site reads `basis`
+ * to tell this from a record (src/lib/trust-preview.ts), so found:true is not "on our platform".
+ */
+export function identityOnlyReputation(agentId: string, partial: boolean) {
+  const r = computeAgentReputation({ settledCount: 0, rejected: 0, onchainRegistered: true, createdAt: new Date() })
+  return {
+    agentId,
+    name: null,
+    onchain: 'registered',
+    score: r.score,
+    breakdown: r.breakdown,
+    settledOnchain: 0,
+    settledEffective: 0,
+    settledUsd: 0,
+    basis: partial ? 'onchain-identity (existence proven; no platform settlement history)' : 'onchain-identity (no platform settlement history)',
+    computedAt: new Date().toISOString(),
+  }
+}
+
 export function buildServer(data: ServerData = {}): McpServer {
   const server = new McpServer({ name: 'a-identity-mcp', version: '0.2.0' })
   const identity = createIdentityProvider()
@@ -143,36 +164,16 @@ export function buildServer(data: ServerData = {}): McpServer {
       inputSchema: getReputationInput,
     },
     async ({ agentId }) => {
-      const rep = data.getReputation?.(agentId)
-      if (rep && !(typeof rep === 'object' && 'error' in (rep as object))) {
-        return json({ found: true, reputation: rep })
-      }
+      // The same reading as /api/reputation and risk_check: see readReputationAnswer. An id that
+      // reached no record and no identity says lookedUp false, because "no record" would be false there.
+      const answer = await readReputationAnswer(agentId, (q) => data.getReputation?.(q) ?? null, (q) => identity.resolve(q))
+      if (answer.kind === 'record') return json({ found: true, reputation: answer.reputation })
       // No platform history: fall back to the SAME identity-only basis the paid
       // reputation_score uses, so the free surface and the paid tool never disagree
       // on the number. A live on-chain identity earns exactly the identity credit;
       // tenure is 0 because we cannot vouch for a self-reported registration date.
-      const id = await identity.resolve(agentId).catch(() => null)
-      if (id) {
-        const r = computeAgentReputation({ settledCount: 0, rejected: 0, onchainRegistered: true, createdAt: new Date() })
-        return json({
-          found: true,
-          reputation: {
-            agentId,
-            name: null,
-            onchain: 'registered',
-            score: r.score,
-            breakdown: r.breakdown,
-            settledOnchain: 0,
-            settledEffective: 0,
-            settledUsd: 0,
-            basis: id.partial
-              ? 'onchain-identity (existence proven; no platform settlement history)'
-              : 'onchain-identity (no platform settlement history)',
-            computedAt: new Date().toISOString(),
-          },
-        })
-      }
-      return json({ found: false, agentId, reason: 'Unknown agent or no activity yet' })
+      if (answer.kind === 'identity-only') return json({ found: true, reputation: identityOnlyReputation(agentId, answer.partial) })
+      return json({ found: false, agentId, reason: 'Unknown agent or no activity yet', lookedUp: answer.lookedUp && data.getReputation !== undefined })
     },
   )
 
@@ -259,7 +260,7 @@ export function buildServer(data: ServerData = {}): McpServer {
     {
       title: 'Verify a commerce merchant agent',
       description:
-        "Verify a merchant-side agent BEFORE a checkout or payment authorization - the trust step agentic-commerce protocols (ACP/UCP) leave to user approval. Discovers the merchant's /.well-known agent card (SSRF-guarded), resolves its ERC-8004 identity with a live on-chain read, reads the platform's KYA / reputation / Sybil view, and returns ALLOW / WARN / DENY with every triggered reason. Free, read-only, creates no state.",
+        "Verify a merchant-side agent BEFORE a checkout or payment authorization - the trust step agentic-commerce protocols (ACP/UCP) leave to user approval. Discovers the merchant's /.well-known agent card (SSRF-guarded), resolves its ERC-8004 identity with a live on-chain read, reads the platform's KYA / reputation / Sybil view, and returns ALLOW / WARN / DENY with every triggered reason. DENY means we hold evidence against the merchant, and the reasons say what; no identity, or a low score with nothing against it, is a WARN, which means unknown, not clean. Free, read-only, creates no state.",
       inputSchema: merchantCheckInput,
     },
     async ({ url, agentId }) => json(await merchantCheck({ url, agentId })),
@@ -441,7 +442,7 @@ export function buildServer(data: ServerData = {}): McpServer {
       {
         title: `Verify a payee, then pay it from an ${arcName} vault`,
         description:
-          `Before an agent pays from its AgentSpendPolicy vault on ${arcName} (${arc?.caip2 ?? 'Arc Mainnet'}): checks for free that the vault holds the registry's USDC, that the payee holds an ERC-8004 agent on ${arcName}, and that the vault's policy and a simulated pay() from its operator would accept the payment; then buys A-Identity's risk_check on the payee address for ${price} through Circle Gateway (call once without payment to get the x402 challenge, sign it from your Gateway balance, call again with payment). ALLOW returns the exact vault.pay(payee, amount) for the operator to send; WARN returns an ownerPay() hand-off for the owner unless payOnWarn is set, and nothing to sign when the vault's owner and operator are one key, since no human stands behind the hand-off; DENY returns nothing to sign. Always executed:false: this server signs nothing. Every paid check is recorded publicly by flowId.`,
+          `Before an agent pays from its AgentSpendPolicy vault on ${arcName} (${arc?.caip2 ?? 'Arc Mainnet'}): checks for free that the vault holds the registry's USDC, that an agent named in payeeAgentId is the payee's on ${arcName}, and that the vault's policy and a simulated pay() from its operator would accept the payment; then buys A-Identity's risk_check on the payee address for ${price} through Circle Gateway (call once without payment to get the x402 challenge, sign it from your Gateway balance, call again with payment). ALLOW returns the exact vault.pay(payee, amount) for the operator to send; WARN returns an ownerPay() hand-off for the owner unless payOnWarn is set, and nothing to sign when the vault's owner and operator are one key, since no human stands behind the hand-off; DENY returns nothing to sign. A payee with no ERC-8004 agent is not refused: unknown is not bad, so it gets WARN, and payOnWarn on such a payee is the caller's own explicit choice. Always executed:false: this server signs nothing. Every paid check is recorded publicly by flowId.`,
         inputSchema: verifyThenPayInput,
       },
       async (args) => json(await vtp.run(args)),

@@ -693,11 +693,12 @@ test('ALLOW writes the payee on chain, WARN writes nothing, DENY writes the revo
   assert.deepEqual(deny.chainAction, { method: 'set_allowed', payee, ok: false })
 })
 
-test('no decision at all is DENY, because on a binary allowlist the only safe default is off', () => {
+test('no decision at all is WARN and writes nothing: a payee nobody has allowed stays off without a revoke', () => {
   const payee = accountId()
   const none = allowlistPlan(null, payee, [])
-  assert.equal(none.decision, 'DENY')
-  assert.deepEqual(none.chainAction, { method: 'set_allowed', payee, ok: false })
+  assert.equal(none.decision, 'WARN')
+  assert.equal(none.chainAction, null)
+  assert.match(none.serverWarning ?? '', /left as it is/)
 })
 
 test('every plan publishes what the allowlist can and cannot express', () => {

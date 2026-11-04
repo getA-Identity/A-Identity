@@ -4,9 +4,14 @@ import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import {
   __resetPlatformStateForTests,
   createAgent,
+  listPlatformAgents,
+  recordAtAddress,
+  recordHoldsEvidence,
   recordWallet,
   assignWallet,
   agentGuardrailProfile,
+  agentReputation,
+  reputationForQuery,
   startCirclePolicyChallenge,
   attestCirclePolicy,
   getCirclePolicyAttestation,
@@ -16,8 +21,14 @@ import {
   policyHashOf,
   type PlatformAgent,
 } from '../platform.js'
-import { state } from './core.js'
+import { state, MAX_FORMER_PROVEN_WALLETS } from './core.js'
+import { startKyaChallenge, verifyKya } from './kya.js'
+import { recordAuditOutcome } from './guardrail.js'
+import { capAudits, MAX_AUDITS_PER_AGENT } from '../policy/index.js'
 import type { ContractSignatureCheck } from '../erc1271.js'
+import { adverseRecordFrom } from '../asp/risk.js'
+import { handlePublicRoutes } from '../http/public-routes.js'
+import type { Task } from '../marketplace.js'
 
 /**
  * The owner-attested Circle policy.
@@ -187,4 +198,256 @@ test('a wallet is marked as a Circle agent wallet by its attestation, and loses 
   assert.ok(!('error' in moved))
   assert.equal(agent.circlePolicyAttestation, undefined)
   assert.equal(circleAgentWalletFor(fresh.address), null)
+})
+
+test('a proven wallet the agent moves off stays on its record, so a later revocation still reads there', () => {
+  const fresh = privateKeyToAccount(generatePrivateKey())
+  const agent = seed(fresh.address)
+  // Named but never proven: moving off it records nothing, because nothing was proven about it.
+  recordWallet(SCA)
+  assert.ok(!('error' in assignWallet(SCA, agent.id, OWNER)))
+  assert.equal(agent.formerProvenWallets, undefined)
+
+  const next = privateKeyToAccount(generatePrivateKey()).address
+  agent.kya = 'verified'
+  agent.kyaProof = { address: SCA, at: new Date().toISOString(), method: 'wallet-signature' }
+  recordWallet(next)
+  assert.ok(!('error' in assignWallet(next, agent.id, OWNER)))
+  assert.equal(agent.kya, 'unverified', 'KYA is about the wallet it proved')
+  assert.equal(agent.kyaProof, undefined)
+  assert.deepEqual(agent.formerProvenWallets, [SCA])
+
+  agent.kya = 'revoked'
+  assert.equal(recordAtAddress(listPlatformAgents(), SCA).record?.id, agent.id)
+  assert.equal(recordAtAddress(listPlatformAgents(), SCA).currentWallet, false)
+})
+
+// ── a wallet the record never proved does not read as that record ─────────────────
+
+test('someone who proves their own wallet, revokes, then assigns a vendor\'s wallet cannot force DENY on the vendor', () => {
+  const own = privateKeyToAccount(generatePrivateKey()).address
+  const vendor = privateKeyToAccount(generatePrivateKey()).address
+  const griefer = seed(own)
+  griefer.kya = 'revoked'
+  griefer.kyaProof = { address: own, at: new Date().toISOString(), method: 'wallet-signature' }
+  recordWallet(vendor)
+  assert.ok(!('error' in assignWallet(vendor, griefer.id, OWNER)))
+  assert.equal(griefer.walletAddress, vendor)
+  assert.equal(griefer.kya, 'revoked', 'assignWallet keeps it, which is the way in')
+
+  const at = recordAtAddress(listPlatformAgents(), vendor)
+  assert.equal(at.record, null)
+  assert.equal(at.claim?.id, griefer.id, 'returned so the reasons can say so')
+  assert.ok('error' in reputationForQuery(vendor), 'the free read does not answer with that record either')
+  // The wallet it did prove stays bound, and the record itself stays revoked by its own id.
+  assert.equal(recordAtAddress(listPlatformAgents(), own).record?.id, griefer.id)
+  const atOwn = reputationForQuery(own)
+  assert.equal('error' in atOwn ? null : atOwn.kya, 'revoked')
+  const byId = reputationForQuery(griefer.id)
+  assert.equal('error' in byId ? null : byId.kya, 'revoked')
+})
+
+test('the free read answers an address with the record that proved it, and never with one that only names it', () => {
+  const wallet = privateKeyToAccount(generatePrivateKey()).address
+  const named = seed(wallet)
+  assert.ok('error' in reputationForQuery(wallet), 'named without proof')
+  assert.ok('error' in agentReputation(wallet), 'agentReputation does not read an address at all')
+  assert.ok(!('error' in reputationForQuery(named.id)), 'by its own id it is still itself')
+
+  named.kya = 'verified'
+  const proven = reputationForQuery(wallet.toLowerCase())
+  assert.equal('error' in proven ? null : proven.agentId, named.id)
+  assert.equal('error' in proven ? null : proven.kya, 'verified')
+
+  // Moved off: it can count against the old address, and it does not vouch for it.
+  named.kyaProof = { address: wallet, at: new Date().toISOString(), method: 'wallet-signature' }
+  const next = privateKeyToAccount(generatePrivateKey()).address
+  recordWallet(next)
+  assert.ok(!('error' in assignWallet(next, named.id, OWNER)))
+  named.kya = 'verified'
+  const former = reputationForQuery(wallet)
+  assert.equal('error' in former ? null : former.agentId, named.id)
+  assert.equal('error' in former ? null : former.kya, 'unverified')
+})
+
+test('an owner cannot clear what a record proved by moving off an address and back', () => {
+  const a = privateKeyToAccount(generatePrivateKey()).address
+  const b = privateKeyToAccount(generatePrivateKey()).address
+  const agent = seed(a)
+  agent.kya = 'verified'
+  agent.kyaProof = { address: a, at: new Date().toISOString(), method: 'wallet-signature' }
+  recordWallet(a)
+  recordWallet(b)
+  assert.ok(!('error' in assignWallet(b, agent.id, OWNER)))
+  assert.equal(recordAtAddress(listPlatformAgents(), a).record?.id, agent.id)
+
+  // Back to A, with two unsigned calls: the record has no current proof of it and stays eligible there.
+  assert.ok(!('error' in assignWallet(a, agent.id, OWNER)))
+  assert.equal(agent.kya, 'unverified')
+  const at = recordAtAddress(listPlatformAgents(), a)
+  assert.equal(at.record?.id, agent.id, 'it reads as that record, not as a mere claim')
+  assert.equal(at.currentWallet, false, 'and it does not vouch for the wallet until it proves it again')
+  assert.equal(at.claim, null)
+  const read = reputationForQuery(a)
+  assert.equal('error' in read ? null : read.agentId, agent.id, 'the free read does not say Unknown agent')
+  assert.equal('error' in read ? null : read.provenWallet, null, 'and offers no wallet to read an identity from')
+  // B was never proved, so it is not bound by any of this.
+  assert.equal(recordAtAddress(listPlatformAgents(), b).record, null)
+})
+
+test('a revoked record that moves and proves a new wallet does not forget the one it left', async () => {
+  const first = privateKeyToAccount(generatePrivateKey())
+  const second = privateKeyToAccount(generatePrivateKey())
+  const agent = seed(first.address)
+  agent.kya = 'revoked'
+  agent.kyaProof = { address: first.address, at: new Date().toISOString(), method: 'wallet-signature' }
+  recordWallet(second.address)
+  assert.ok(!('error' in assignWallet(second.address, agent.id, OWNER)))
+  assert.deepEqual(agent.formerProvenWallets, [first.address], 'revoked or not, what it proved stays when it leaves')
+
+  // Proving the new wallet overwrites kyaProof, even when the history was not written by the move.
+  agent.formerProvenWallets = undefined
+  const challenge = startKyaChallenge(agent.id, OWNER)
+  assert.ok(!('error' in challenge))
+  const signature = await second.signMessage({ message: challenge.message })
+  const verified = await verifyKya(agent.id, challenge.message, signature, OWNER)
+  assert.ok(!('error' in verified), JSON.stringify(verified))
+  assert.equal(agent.kyaProof?.address, second.address)
+  assert.deepEqual(agent.formerProvenWallets, [first.address])
+  assert.equal(recordAtAddress(listPlatformAgents(), first.address).record?.id, agent.id)
+})
+
+test('the history of proven wallets is bounded by refusing a move, never by dropping an address', () => {
+  const first = privateKeyToAccount(generatePrivateKey()).address
+  const agent = seed(first)
+  const move = (address: string) => {
+    recordWallet(address)
+    return assignWallet(address, agent.id, OWNER)
+  }
+  agent.formerProvenWallets = Array.from({ length: MAX_FORMER_PROVEN_WALLETS }, (_, i) => `0x${String(i).padStart(40, '0')}`)
+  const kept = agent.formerProvenWallets[0]
+  agent.kya = 'verified'
+  const refused = move(privateKeyToAccount(generatePrivateKey()).address)
+  assert.ok('error' in refused, 'a further move would forget a proven address')
+  assert.equal(agent.walletAddress, first, 'nothing changed')
+  assert.equal(agent.kya, 'verified')
+  assert.equal(recordAtAddress(listPlatformAgents(), kept).record?.id, agent.id)
+  // A wallet it never proved is not added, so moving off that is not limited.
+  agent.kya = 'unverified'
+  assert.ok(!('error' in move(privateKeyToAccount(generatePrivateKey()).address)))
+  assert.equal(agent.formerProvenWallets.length, MAX_FORMER_PROVEN_WALLETS)
+})
+
+test('a clean record cannot shadow one with evidence at an address that record proved, now or before', () => {
+  const wallet = privateKeyToAccount(generatePrivateKey()).address
+  const bad = seed(wallet)
+  bad.kya = 'verified'
+  const clean = seed(wallet)
+  clean.kya = 'verified'
+  const answer = () => { const r = reputationForQuery(wallet); return 'error' in r ? null : r.agentId }
+  // With nothing against either, the first proven one answers, as it did.
+  assert.equal(answer(), bad.id)
+  // Evidence on the later one wins too.
+  state.audits[clean.id] = [{ id: 'a', verdict: 'DENY', outcome: 'refused', overrideAttempts: 1 } as never]
+  assert.equal(answer(), clean.id)
+  assert.equal(recordAtAddress(listPlatformAgents(), wallet, recordHoldsEvidence).record?.id, clean.id)
+  assert.equal(recordAtAddress(listPlatformAgents(), wallet).record?.id, bad.id, 'told nothing, it picks by proof alone')
+  delete state.audits[clean.id]
+
+  // Moved off the address, and a clean record now sits there: the old one still answers for it.
+  const elsewhere = privateKeyToAccount(generatePrivateKey()).address
+  recordWallet(elsewhere)
+  assert.ok(!('error' in assignWallet(elsewhere, bad.id, OWNER)))
+  state.audits[bad.id] = [{ id: 'a', verdict: 'DENY', outcome: 'refused', overrideAttempts: 1 } as never]
+  assert.equal(answer(), bad.id)
+  const at = recordAtAddress(listPlatformAgents(), wallet, recordHoldsEvidence)
+  assert.equal(at.currentWallet, false)
+  delete state.audits[bad.id]
+  assert.equal(answer(), clean.id, 'with nothing against it, the wallet is the clean one\'s')
+})
+
+test('GET /api/reputation answers an address by proof, and the digits an address ends in are not a token id', async () => {
+  const get = async (id: string) => {
+    let status = 0
+    let body: unknown = null
+    const res = { writeHead: (s: number) => { status = s }, setHeader: () => {}, end: (b?: string) => { body = b ? JSON.parse(b) : null } }
+    const url = new URL(`http://localhost/api/reputation?id=${encodeURIComponent(id)}`)
+    const handled = await handlePublicRoutes({ req: { method: 'GET', headers: {} }, res, url } as never)
+    assert.equal(handled, true)
+    return { status, body: body as { found: boolean; reputation?: { agentId: string } } }
+  }
+  const named = privateKeyToAccount(generatePrivateKey()).address
+  const agent = seed(named)
+  assert.equal((await get(named)).status, 404, 'named without proof')
+  assert.equal((await get(agent.id)).body.reputation?.agentId, agent.id)
+
+  // An agent anchored at token 36, and a wallet nobody holds a record of that happens to end in 36.
+  const anchored = seed(privateKeyToAccount(generatePrivateKey()).address)
+  anchored.onchainAgentId = '36'
+  const stranger = '0x00000000000000000000000000000000000abc36'
+  assert.equal((await get(stranger)).status, 404)
+  assert.equal((await get('eip155:5042002:8004/36')).body.reputation?.agentId, anchored.id, 'a CAIP id still maps to its anchor')
+  delete anchored.onchainAgentId
+})
+
+// ── what a record really holds against an agent ───────────────────────────────────
+
+test('what counts as evidence on a platform record, from what the record really holds', () => {
+  const agent = seed(privateKeyToAccount(generatePrivateKey()).address)
+  const evidence = () => adverseRecordFrom(agentReputation(agent.id) as never)
+  const at = (ms: number) => new Date(ms).toISOString()
+  const NOW = Date.now()
+  const job = (over: Partial<Task>): Task => ({ id: `task_${Math.random()}`, client: 'stranger@test', agentId: agent.id, service: 's', priceUsd: 1, description: '', status: 'refunded', createdAt: at(NOW), updatedAt: at(NOW), deadlineAt: at(NOW + 3_600_000), ...over })
+  const without = () => {
+    state.tasks = state.tasks.filter((t) => t.agentId !== agent.id)
+    state.instructions = state.instructions.filter((i) => i.agentId !== agent.id)
+    delete state.audits[agent.id]
+  }
+  assert.equal(evidence(), false, 'a new agent with nothing on its record: nothing against it, so nothing to deny on')
+
+  // A contest is free to write while the platform funds the escrow, so no shape of it is evidence: not
+  // a same-minute refund, not one after a delivery, not one after a deadline. The scorer still sees it.
+  for (const shape of [{}, { deliverable: 'the work' }, { status: 'disputed' as const, deliverable: '' }, { deadlineAt: at(NOW - 1000) }]) {
+    state.tasks.push(job(shape))
+    assert.equal(evidence(), false, JSON.stringify(shape))
+    const rep = agentReputation(agent.id)
+    assert.equal('error' in rep ? null : rep.behavioral.contestedJobs, 1, 'the scorer still sees it')
+    without()
+  }
+
+  // A settlement a human rejected counts, and the velocity breaker's refusal does not.
+  const ix = { id: 'ix', agentId: agent.id, type: 'payment', amountUsd: 1, count: 1, payee: 'p', memo: '', status: 'rejected', policyNote: '', createdAt: at(NOW) } as (typeof state.instructions)[number]
+  state.instructions.push({ ...ix, denyCode: 'velocity_exceeded' })
+  assert.equal(evidence(), false)
+  state.instructions.push(ix)
+  assert.equal(evidence(), true)
+  without()
+
+  // A guardrail override attempt counts, and a DENY the policy gave by itself does not.
+  state.audits[agent.id] = [{ id: 'a', verdict: 'DENY', outcome: 'refused' } as never]
+  assert.equal(evidence(), false)
+  state.audits[agent.id] = [{ id: 'a', verdict: 'DENY', outcome: 'refused', overrideAttempts: 1 } as never]
+  assert.equal(evidence(), true)
+  without()
+
+  // The evidence survives the audit cap, because it is read from the monotonic meter.
+  const auditId = 'aud_kept'
+  state.audits[agent.id] = [{ id: auditId, verdict: 'DENY', outcome: 'refused' } as never]
+  assert.ok('error' in recordAuditOutcome(agent.id, auditId, 'executed', OWNER))
+  assert.equal(evidence(), true)
+  const scored = agentReputation(agent.id)
+  assert.equal('error' in scored ? null : scored.discipline.overrideAttempts, 1)
+  state.audits[agent.id] = capAudits(Array.from({ length: MAX_AUDITS_PER_AGENT + 1 }, (_, i) => ({ id: `row${i}`, verdict: 'ALLOW', outcome: 'executed' }) as never))
+  assert.equal(state.audits[agent.id].length, MAX_AUDITS_PER_AGENT)
+  assert.equal(evidence(), true, '500 free checks do not erase it')
+  const after = agentReputation(agent.id)
+  assert.equal('error' in after ? null : after.discipline.overrideAttempts, 1)
+  assert.equal('error' in after ? null : after.breakdown.discipline, 'error' in scored ? null : scored.breakdown.discipline, 'the score penalty does not go with the rows')
+  without()
+  delete state.meters[agent.id]
+
+  // A low star rating alone does not count.
+  state.tasks.push(job({ status: 'released', settlement: 'simulated', review: { by: 'stranger@test', rating: 1, text: '', at: at(NOW) } }), job({ status: 'released', settlement: 'simulated', review: { by: 'other@test', rating: 1, text: '', at: at(NOW) } }))
+  assert.equal(evidence(), false)
+  without()
 })

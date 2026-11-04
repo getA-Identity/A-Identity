@@ -4,6 +4,7 @@ import { Loader2, Check, X, AlertTriangle, Fingerprint, BadgeCheck, Gauge, Scale
 import { CHAIN_BY_ID, type ChainId } from '../../lib/chains'
 import { Badge, VerdictBadge } from '../ui/badge'
 import type { AgentIdentity, Reputation } from '../../lib/mcp-client'
+import { adverseRecordOf, NO_VERDICT_NOTE, previewVerdict, UNKNOWN_PAYEE_NOTE, type RecordRead } from '../../lib/trust-preview'
 
 /**
  * VerifyStepper, the step-by-step "verify an agent" walkthrough.
@@ -22,26 +23,28 @@ import type { AgentIdentity, Reputation } from '../../lib/mcp-client'
  */
 
 type StepState = 'idle' | 'running' | 'done'
-type Verdict = 'ALLOW' | 'WARN' | 'DENY'
-
 const STEP_MS = 850
 
-function verdictOf(score: number, kya?: string, verified = true, sybil?: string): Verdict {
-  if (kya === 'revoked' || !verified || sybil === 'high') return 'DENY'
-  if (score < 200) return 'DENY'
-  if (score < 500 || sybil === 'medium') return 'WARN'
-  return 'ALLOW'
-}
-
-function verdictReasons(score: number, kya: string | undefined, verified: boolean, sybil: string | undefined): string[] {
+function verdictReasons(score: number, kya: string | undefined, verified: boolean, sybil: string | undefined, onPlatform: boolean, adverseRecord: boolean | null, contested: number): string[] {
   const r: string[] = []
   if (kya === 'revoked') r.push('KYA attestation revoked (flagged as an incident)')
-  if (!verified) r.push('no verifiable on-chain ERC-8004 identity')
+  if (!onPlatform) r.push('we hold no platform record of this agent, so we do not know how it has behaved; that does not mean it is bad, and it does not mean it is clean')
+  if (!verified) r.push('no on-chain ERC-8004 identity found')
   if (sybil === 'high') r.push('Sybil signals: reputation mostly self-dealt')
   if (sybil === 'medium') r.push('Sybil signals: partial same-operator activity')
-  if (score < 200) r.push(`reputation ${score} is below 200`)
-  else if (score < 500) r.push(`reputation ${score} is in the caution band (200-500)`)
+  // Revoked and Sybil high are held against it, so "holds nothing against it" would be false there.
+  const heldAgainstIt = kya === 'revoked' || sybil === 'high'
+  // With no record, a score only says we have no history for it, so it is no reason.
+  if (onPlatform && score < 200) {
+    if (adverseRecord === true) r.push(`reputation ${score} is below 200, and our record of it holds evidence against it`)
+    else if (adverseRecord === false && !heldAgainstIt) r.push(`our record of it ${contested > 0 ? 'holds no evidence against it' : 'holds nothing against it'}, and not enough to vouch for it: reputation ${score} is below 200`)
+  }
+  else if (onPlatform && score < 500) {
+    r.push(`reputation ${score} is in the caution band (200-500)`)
+    if (adverseRecord === true) r.push(`our record of it holds evidence against it: rejected settlements or guardrail override attempts${score < 400 ? ', so a payment over $100 to it would be refused' : ''}`)
+  }
   if (kya === 'unverified' && verified) r.push('KYA (wallet control) not attested yet')
+  if (onPlatform && contested > 0) r.push(`our record holds ${contested} job${contested === 1 ? '' : 's'} a client refunded or disputed; a contest costs the client nothing while we fund the escrow, so it lowers the score and is not counted as evidence`)
   if (r.length === 0) r.push('verified identity, attested KYA, strong reputation')
   return r
 }
@@ -99,9 +102,11 @@ function StepRow({ state, outcome, Icon, title, standard, children }: {
   )
 }
 
-export default function VerifyStepper({ identity, reputation, query, onComplete }: {
+export default function VerifyStepper({ identity, reputation, recordRead, query, onComplete }: {
   identity: AgentIdentity | null
   reputation: Reputation | null
+  /** What the reputation read found; see lib/trust-preview.ts. */
+  recordRead: RecordRead
   query: string
   onComplete?: () => void
 }) {
@@ -125,8 +130,11 @@ export default function VerifyStepper({ identity, reputation, query, onComplete 
   const kya = reputation?.kya
   const score = reputation?.score ?? 0
   const sybil = reputation?.sybil?.level
-  const verdict = verdictOf(score, kya, verified, sybil)
-  const reasons = verdictReasons(score, kya, verified, sybil)
+  const onPlatform = recordRead === 'record'
+  const unreadable = recordRead === 'unreadable'
+  const adverseRecord = adverseRecordOf(reputation)
+  const verdict = previewVerdict({ score, kya, verified, sybil, read: recordRead, adverseRecord })
+  const reasons = verdictReasons(score, kya, verified, sybil, onPlatform, adverseRecord, reputation?.behavioral?.contestedJobs ?? 0)
   const bd = reputation?.breakdown
   // Name the chain the read actually happened on. The old copy named X Layer or Circle Arc
   // and nothing else, so an identity resolved on Celo or Robinhood was reported as Arc.
@@ -152,7 +160,7 @@ export default function VerifyStepper({ identity, reputation, query, onComplete 
         <span className="truncate font-mono text-xs text-foreground/60">{query}</span>
       </div>
       <div className="divide-y divide-border/60">
-        <StepRow state={state(1)} outcome={verified ? 'pass' : 'fail'} Icon={Fingerprint} title="Resolve identity" standard="ERC-8004">
+        <StepRow state={state(1)} outcome={verified ? 'pass' : 'caution'} Icon={Fingerprint} title="Resolve identity" standard="ERC-8004">
           {verified && identity?.partial ? (
             <>Live read from the ERC-8004 IdentityRegistry on {chainName}: this wallet <b className="text-foreground">holds an ERC-8004 identity token</b>. The public RPC cannot enumerate the token id; search by agent id for the full record.</>
           ) : verified && identity ? (
@@ -160,30 +168,42 @@ export default function VerifyStepper({ identity, reputation, query, onComplete 
           ) : verified ? (
             <>Registered on the platform with a verified on-chain anchor.</>
           ) : (
-            <>No ERC-8004 identity found for this query. An unidentifiable counterparty cannot be trusted.</>
+            <>No ERC-8004 identity found for this query, so we do not know who this is. That alone does not mean it is bad.</>
           )}
         </StepRow>
 
-        <StepRow state={state(2)} outcome={kya === 'verified' ? 'pass' : 'fail'} Icon={BadgeCheck} title="Know Your Agent" standard="KYA">
+        <StepRow state={state(2)} outcome={kya === 'verified' ? 'pass' : onPlatform ? 'fail' : 'caution'} Icon={BadgeCheck} title="Know Your Agent" standard="KYA">
           {kya === 'verified' && <>Wallet control attested in the ValidationRegistry. The operator proved they hold the agent&apos;s keys.</>}
           {kya === 'revoked' && <>KYA attestation was <b className="text-danger">revoked</b>. This agent is flagged as an incident.</>}
-          {(kya === 'unverified' || !kya) && <>No KYA attestation yet. Identity exists, but wallet control is not proven.</>}
+          {unreadable && <>Could not be read just now, so we do not know its KYA status.</>}
+          {!unreadable && (kya === 'unverified' || !kya) && (verified ? <>No KYA attestation yet. Identity exists, but wallet control is not proven.</> : <>No KYA attestation, and no identity to attach one to.</>)}
         </StepRow>
 
-        <StepRow state={state(3)} outcome={score >= 200 ? 'pass' : 'fail'} Icon={Gauge} title="Score reputation" standard="deterministic 0-1000">
-          <>
+        <StepRow state={state(3)} outcome={!onPlatform ? 'caution' : score >= 200 ? 'pass' : adverseRecord === true ? 'fail' : 'caution'} Icon={Gauge} title="Score reputation" standard="deterministic 0-1000">
+          {unreadable ? (
+            <>The reputation read failed just now, so we do not know whether we hold a record of this agent.</>
+          ) : !onPlatform ? (
+            <>We hold no platform record of this agent, so there is no history to score. That says nothing bad about it.</>
+          ) : <>
             <b className="font-mono text-foreground">{score}</b> / 1000 from real on-chain settlements
             {bd && <> (settlement {bd.settlement}, validation {bd.validation}, tenure {bd.tenure}{typeof bd.behavior === 'number' ? `, behavior ${bd.behavior >= 0 ? '+' : ''}${bd.behavior}` : ''})</>}
             {sybil && sybil !== 'none' && <>. Sybil signals: <b className="text-foreground">{sybil}</b></>}
             . Recent activity outweighs ancient history.
-          </>
+          </>}
         </StepRow>
 
-        <StepRow state={state(4)} outcome={verdict === 'ALLOW' ? 'pass' : verdict === 'WARN' ? 'caution' : 'fail'} Icon={Scale} title="Decide" standard="risk engine">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <VerdictBadge verdict={verdict} size="md" />
-            <span className="text-sm font-medium leading-relaxed text-foreground/70">{reasons.join(' · ')}</span>
-          </div>
+        <StepRow state={state(4)} outcome={!verdict ? 'caution' : verdict === 'ALLOW' ? 'pass' : verdict === 'WARN' ? 'caution' : 'fail'} Icon={Scale} title="Decide" standard="risk engine">
+          {unreadable ? (
+            <span className="text-sm font-medium leading-relaxed text-foreground/70">No verdict: a preview cannot judge what it could not read. Try again in a few seconds, and do not pay on this.</span>
+          ) : !verdict ? (
+            <span className="text-sm font-medium leading-relaxed text-foreground/70">{NO_VERDICT_NOTE}</span>
+          ) : (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <VerdictBadge verdict={verdict} size="md" />
+              <span className="text-sm font-medium leading-relaxed text-foreground/70">{reasons.join(' · ')}</span>
+              {recordRead === 'no-record' && !identity && <span className="w-full text-sm font-medium leading-relaxed text-foreground/70">{UNKNOWN_PAYEE_NOTE}</span>}
+            </div>
+          )}
         </StepRow>
       </div>
     </div>

@@ -4,11 +4,15 @@
  * A tiny, dependency-free guard an AI agent calls BEFORE it pays or hires another agent.
  * One line, `await guard(counterpartyId)`, verifies the counterparty against the live
  * A-Identity Trust Oracle (ERC-8004 identity + KYA + a deterministic 0-1000 reputation +
- * a Sybil check) and THROWS if the verdict is DENY, so a bad counterparty never gets paid.
+ * a Sybil check) and THROWS unless the verdict is ALLOW. DENY means we hold evidence against the
+ * counterparty, and it is refused at that address. A counterparty we know nothing about gets WARN,
+ * which means unknown, not clean, and it stops by default too, because the next line pays:
  *
  *   import { guard } from '@a-identity/trust-guard'
  *   await guard(counterpartyAgentId, { txContext: { amountUsd: 500, kind: 'payment' } })
- *   // ...only runs if the counterparty is not DENY. Otherwise it throws TrustDenyError.
+ *   // ...only runs on ALLOW. Otherwise it throws TrustDenyError.
+ *
+ * To pay on WARN, say so in code with denyOn: ['DENY'] and read the reasons it returns.
  *
  * The tools are sold per call over x402 on three rails, and this SDK never hides that:
  *
@@ -24,9 +28,9 @@
  * If a call returns HTTP 402, the guard either invokes your `onPaymentRequired` payer and
  * retries once, or throws `PaymentRequiredError` with the challenge so you can pay.
  *
- * On rail 'arc', guard() returns only a verdict it can show is the one it paid for; see
- * TrustGuard.guard. The other two rails keep their behaviour since 0.1: their listings are
- * registered against it, so tightening them is a decision of its own.
+ * On every rail guard() returns only on a recognized ALLOW or WARN, so a page that is not a verdict
+ * cannot read as a go-ahead. On rail 'arc' it also returns only a verdict it can show is the one it
+ * paid for; see TrustGuard.guard. The other two rails do not carry a settlement record to compare.
  */
 
 export type Decision = 'ALLOW' | 'WARN' | 'DENY'
@@ -98,12 +102,21 @@ export interface TrustDenyContext {
   recordUrl?: string
 }
 
-/** Thrown by `guard()` when the counterparty must not be transacted with. */
+/**
+ * Thrown by `guard()` when the verdict is one it stops on, and by `verifyThenPay` on a DENY.
+ * `verdict.decision` says which, and `verdict.reasons` says why: most WARNs mean we do not know the
+ * counterparty, and a WARN can also name something our record holds against it.
+ */
 export class TrustDenyError extends Error {
   readonly verdict: RiskVerdict
   readonly context?: TrustDenyContext
   constructor(verdict: RiskVerdict, context?: TrustDenyContext) {
-    super(`Trust guard blocked agent ${verdict.agentId}: ${verdict.decision} (${verdict.reasons?.join('; ') || 'no reasons'})`)
+    const reasons = verdict.reasons?.join('; ') || 'no reasons'
+    super(
+      verdict.decision === 'WARN'
+        ? `Trust guard stopped before paying agent ${verdict.agentId}: the verdict is WARN (${reasons}). WARN does not pay by itself: read the reasons above for what we know and what we do not. To pay on WARN, pass denyOn: ['DENY'] and read the reasons it returns.`
+        : `Trust guard blocked agent ${verdict.agentId}: ${verdict.decision} (${reasons})`,
+    )
     this.name = 'TrustDenyError'
     this.verdict = verdict
     if (context) this.context = context
@@ -233,12 +246,15 @@ function readSignedCheck(headers: Record<string, string>): SignedCheck | null {
   }
 }
 
+/** What guard() stops on when the caller does not say: WARN does not pay by itself. */
+const DEFAULT_DENY_ON: readonly Decision[] = ['DENY', 'WARN']
+
 /**
  * Whether a risk_check answer on the arc rail can be acted on. The caller's next line signs a
  * payment, so everything but a shown ALLOW or WARN throws. A DENY needs nothing further to be
  * believed: it stops here whatever else the answer says, and whatever denyOn says.
  */
-function judgeArcVerdict(verdict: RiskVerdict, agentId: string, signed: SignedCheck | null, denyOn: Decision[]): RiskVerdict {
+function judgeArcVerdict(verdict: RiskVerdict, agentId: string, signed: SignedCheck | null, denyOn: readonly Decision[]): RiskVerdict {
   const unusable = (code: UnusableVerdictCode, why: string) => new UnusableVerdictError(code, `the answer cannot be acted on: ${why}`, { verdict, ...(signed ? { flowId: signed.nonce } : {}) })
   const decision: unknown = verdict.decision
   if (decision !== 'ALLOW' && decision !== 'WARN' && decision !== 'DENY') {
@@ -326,27 +342,35 @@ export class TrustGuard {
   }
 
   /**
-   * The safety gate. Runs risk_check and THROWS `TrustDenyError` when the verdict is in
-   * `denyOn` (default just `['DENY']`; pass `['DENY','WARN']` to also block warnings).
-   * Returns the verdict otherwise, so you can log/branch on ALLOW vs WARN.
+   * The safety gate. Runs risk_check and THROWS `TrustDenyError` when the verdict is DENY, or is
+   * in `denyOn` (default `['DENY', 'WARN']`, on every rail). DENY always throws, whatever `denyOn`
+   * says. Returns the verdict otherwise, so by default the next line only runs on ALLOW.
    *
    *   await guard.guard(counterpartyId, { txContext: { amountUsd: 500 } })
    *
-   * On rail 'arc' this fails closed, because the caller's next line signs a payment. DENY always
-   * throws, and so does anything that is not ALLOW or WARN. A returned verdict is also about
-   * this agent, carries a finite reputation (at least 500 on an ALLOW), and carries a settlement
-   * record for the nonce signed for this call. Anything else throws `UnusableVerdictError`. WARN
-   * still returns unless `denyOn` names it; on this rail pass ['DENY', 'WARN'], or use
-   * `verifyThenPay` from `@a-identity/trust-guard/arc`, where WARN never pays by itself.
+   * A payee we know nothing about gets WARN, and WARN does not pay by itself. A caller who wants
+   * to pay on WARN says it in code with `denyOn: ['DENY']`, and then gets the WARN and its reasons
+   * back to branch on.
+   *
+   * On every rail this fails closed, because the caller's next line pays: an answer that is not a
+   * recognized ALLOW or WARN, such as an HTML page, an empty body or an unknown decision, throws
+   * `UnusableVerdictError`. On rail 'arc' a returned verdict is also about this agent, carries a
+   * finite reputation (at least 500 on an ALLOW), and carries a settlement record for the nonce
+   * signed for this call. For a verdict and a payment from a vault, use `verifyThenPay` from
+   * `@a-identity/trust-guard/arc`, where WARN hands the payment to the owner.
    */
   async guard(agentId: string, opts: { txContext?: TxContext; denyOn?: Decision[] } = {}): Promise<RiskVerdict> {
-    const denyOn = opts.denyOn ?? ['DENY']
+    const denyOn = opts.denyOn ?? DEFAULT_DENY_ON
     if (this.rail === 'arc') {
       const { data, signed } = await this.exchange('risk_check', { agentId, txContext: opts.txContext ?? null })
       return judgeArcVerdict(data as unknown as RiskVerdict, agentId, signed, denyOn)
     }
     const verdict = await this.riskCheck(agentId, opts.txContext)
-    if (denyOn.includes(verdict.decision)) throw new TrustDenyError(verdict)
+    const decision: unknown = verdict.decision
+    if (decision === 'DENY' || denyOn.includes(decision as Decision)) throw new TrustDenyError(verdict)
+    if (decision !== 'ALLOW' && decision !== 'WARN') {
+      throw new UnusableVerdictError('DECISION_UNKNOWN', `the answer cannot be acted on: the decision is ${JSON.stringify(decision ?? null)}, not ALLOW, WARN or DENY`, { verdict })
+    }
     return verdict
   }
 
@@ -421,7 +445,7 @@ function decodeBase64(b64: string): string {
   return new TextDecoder().decode(bytes)
 }
 
-/** One-shot convenience: construct a default guard and run the gate. Throws on DENY. */
+/** One-shot convenience: construct a default guard and run the gate. Throws on DENY and on WARN unless `denyOn` says otherwise. */
 export async function guard(
   agentId: string,
   opts: {

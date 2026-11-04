@@ -8,14 +8,21 @@
  */
 import {
   state, save, id, ownsAgent, ownsUser, normalizeSubject, pushActivity, short, inFlightAgentOps,
+  canRememberProvenAddress, rememberProvenAddress, MAX_FORMER_PROVEN_WALLETS,
   type PlatformAgent, type PlatformUser, type LinkedWallet, type Wallet, type Permissions, type Service,
 } from './core.js'
 import { sanitizeVelocity } from './permissions.js'
+import { agentReputation } from './reputation.js'
+import { adverseRecordFrom } from '../asp/risk.js'
+import { addressInQuery, recordNamedBy } from '../agent-query.js'
 import { ARC_TESTNET } from '../arc.js'
 import { registerAgentOnchain } from '../arc-contracts.js'
 import { normalizePriceUsd } from '../marketplace.js'
 
 // ── wallets ───────────────────────────────────────────────────────────────────
+
+/** asp/risk.ts's high-value line: under this, evidence on a record denies a payment over 100 USD. */
+const EVIDENCE_DENIES_BELOW = 400
 
 // There is deliberately no server-side `createWallet` here. It used to generate a keypair
 // and return the private key over HTTP; `POST /api/wallets` stopped calling it, but an
@@ -65,9 +72,16 @@ export function assignWallet(address: string, agentId: string, caller?: string):
   // wallets is routine, so it drops back to `unverified`: re-sign the challenge with the
   // new key and it verifies again. The old proof goes with it, because a proof about an
   // address this agent no longer uses is worse than no proof.
-  const hadProof = agent.kya === 'verified' && agent.walletAddress?.toLowerCase() !== wallet.address.toLowerCase()
+  const moving = agent.walletAddress?.toLowerCase() !== wallet.address.toLowerCase()
+  const hadProof = agent.kya === 'verified' && moving
+  // Whatever this record ever proved stays proven when it leaves, revoked or not: see formerProvenWallets.
+  const leaving = moving && agent.walletAddress && (hadProof || everProved(agent, agent.walletAddress)) ? agent.walletAddress : null
+  if (leaving && !canRememberProvenAddress(agent, leaving)) {
+    return { error: `This record has already moved across ${MAX_FORMER_PROVEN_WALLETS} proven wallets, and a proven address is never forgotten, so it cannot move again` }
+  }
   wallet.agentId = agentId
   agent.walletAddress = wallet.address
+  if (leaving) rememberProvenAddress(agent, leaving)
   if (hadProof) {
     agent.kya = 'unverified'
     delete agent.kyaProof
@@ -243,6 +257,109 @@ export function createAgent(input: {
 
 export function listPlatformAgents(): PlatformAgent[] {
   return state.agents
+}
+
+type AddressFacts = Pick<PlatformAgent, 'walletAddress' | 'kya' | 'kyaProof' | 'claimProof' | 'formerProvenWallets'>
+
+const sameAddress = (a: string | null | undefined, b: string) => typeof a === 'string' && a.toLowerCase() === b.toLowerCase()
+
+/** Did this record ever prove control of this address? A proof names its address, so it covers that one and no other. */
+function everProved(a: AddressFacts, address: string): boolean {
+  return sameAddress(a.kyaProof?.address, address) || sameAddress(a.claimProof?.address, address) || (a.formerProvenWallets ?? []).some((w) => sameAddress(w, address))
+}
+
+/**
+ * Has this record proved control of the wallet it names? A walletAddress is a free text claim at
+ * registration, so anyone can name anyone's wallet. `verified` always means the current wallet:
+ * assignWallet resets it when the wallet changes, and a claim writes the wallet it proved.
+ *
+ * `revoked` counts only at an address the record proved, because assignWallet keeps a revoked
+ * record's status and its old proof when the wallet changes. Counting any proof at all would let
+ * someone prove their own wallet, revoke the record, assign a vendor's wallet and force DENY on
+ * the vendor. This gives up nothing: a revoked operator who wants to dodge DENY can use any fresh
+ * address anyway, so DENY on an address it merely named adds no safety. The limit, stated rather
+ * than implied: a revoked record binds the addresses it proved, every one of them, and no other.
+ */
+export function walletControlProven(a: AddressFacts): boolean {
+  if (!a.walletAddress) return false
+  return a.kya === 'verified' || (a.kya === 'revoked' && everProved(a, a.walletAddress))
+}
+
+/** Is this address the wallet this record has control of proven for right now? */
+const provenNow = (a: AddressFacts, address: string): boolean => sameAddress(a.walletAddress, address) && walletControlProven(a)
+
+/**
+ * An address this record proved control of and has no current proof for. Usually one it moved off,
+ * and also one it moved back to and has not proved again: assigning wallet B and then wallet A takes
+ * two unsigned calls, and if A stopped being proved by coming back, those two calls would clear a
+ * DENY at A. Being its wallet again does not undo what it proved there.
+ */
+export function formerlyProvenAddress(a: AddressFacts, address: string): boolean {
+  return !provenNow(a, address) && everProved(a, address)
+}
+
+/** Has this record proved control of this address, now or before? */
+export function recordProvesAddress(a: AddressFacts, address: string): boolean {
+  return provenNow(a, address) || everProved(a, address)
+}
+
+/**
+ * Which platform record speaks for a payee ADDRESS, the one reading a trust verdict gives it.
+ *
+ *   - record: the record that proved control of this address. A revoked one comes first and one
+ *     holding evidence next, so a clean twin registered later cannot shadow it: an agent with
+ *     evidence gets its DENY at every address it proved, whichever record there is the newest.
+ *     currentWallet says whether it is still its wallet.
+ *   - claim: a record that names this address without proof. It is not this payee's record,
+ *     because a free registration can name a real vendor's wallet, and counting it would let a
+ *     stranger turn that vendor's WARN into a DENY. It is returned so the reasons can say so.
+ *
+ * Deliberately not read: state.wallets[].agentId and importedFrom.owner (anyone can write them,
+ * by recording a wallet or importing a token), and an account's linked wallets (proven, but an
+ * account holds many agents, so a record against one is not evidence about that wallet).
+ */
+export function recordAtAddress<T extends AddressFacts>(agents: T[], address: string, holdsEvidence: (a: T) => boolean = () => false): { record: T | null; currentWallet: boolean; claim: T | null } {
+  const atWallet = agents.filter((a) => sameAddress(a.walletAddress, address))
+  const proven = atWallet.filter(walletControlProven)
+  const former = agents.filter((a) => formerlyProvenAddress(a, address))
+  const eligible = [...proven, ...former]
+  const record = eligible.find((a) => a.kya === 'revoked') ?? eligible.find(holdsEvidence) ?? proven[0] ?? former[0] ?? null
+  return { record, currentWallet: record !== null && proven.includes(record), claim: record ? null : (atWallet[0] ?? null) }
+}
+
+/**
+ * Whether this record's own reputation answer can force a DENY at some amount: Sybil high, or
+ * evidence on the record with a score under the 400 line. This is what recordAtAddress is told, so
+ * that picking between two records at one address picks the one risk_check has to answer for.
+ */
+export function recordHoldsEvidence(a: Pick<PlatformAgent, 'id'>): boolean {
+  const r = agentReputation(a.id)
+  if ('error' in r) return false
+  return r.sybil.level === 'high' || (adverseRecordFrom(r) === true && r.score < EVIDENCE_DENIES_BELOW)
+}
+
+/**
+ * The reputation a free read answers for a query, the same reading risk_check gives it. An address,
+ * in any of its forms, speaks for the record that proved it and no other, so a registration that names
+ * a vendor's wallet is no answer about that wallet, revoked or not. A record that has moved off the
+ * address can count against it, and does not vouch for it: KYA attests the wallet it uses now. A token
+ * speaks for the record anchored at it, on the chain it names (see agent-query.ts).
+ *
+ * provenWallet is the wallet the record has control of proven for right now, or null. It is how a
+ * reader finds the on-chain identity of a record with no token anchored: a wallet a record merely
+ * names is not offered, because a free registration could name anyone's and borrow their identity.
+ */
+export function reputationForQuery(query: string) {
+  const q = query.trim()
+  const address = addressInQuery(q)
+  const at = address ? recordAtAddress(state.agents, address, recordHoldsEvidence) : null
+  const record = address ? at?.record : recordNamedBy(state.agents, q)
+  if (!record) return { error: 'Unknown agent' as const }
+  const view = agentReputation(record.id)
+  if ('error' in view) return { error: 'Unknown agent' as const }
+  const provenWallet = record.walletAddress && provenNow(record, record.walletAddress) ? record.walletAddress : null
+  const kya = at && !at.currentWallet && view.kya === 'verified' ? ('unverified' as const) : view.kya
+  return { ...view, kya, provenWallet }
 }
 
 /**

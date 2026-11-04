@@ -139,7 +139,7 @@ export default function TrustOraclePanel() {
             </ul>
           </div>
           <p className="text-[11px] leading-relaxed text-foreground/60">
-            The agent paid for the check and can now act on the verdict, {result.riskCheck.decision === 'DENY' ? 'it will not pay this counterparty.' : result.riskCheck.decision === 'WARN' ? 'proceed with caution.' : 'safe to proceed.'}
+            The agent paid for the check and can now act on the verdict, {result.riskCheck.decision === 'DENY' ? 'it will not pay this counterparty.' : result.riskCheck.decision === 'WARN' ? 'it holds the payment for a person.' : 'safe to proceed.'}
           </p>
         </div>
       )}

@@ -37,7 +37,9 @@
  *
  * Flags:
  *   --allow <n>          flows paying the showcase agent, expected ALLOW then a Paid tx
- *   --deny <n>           flows naming our operating wallet, expected DENY, nothing sent
+ *   --deny <n>           flows naming our operating wallet, expected DENY, nothing sent. Since
+ *                        the rule changed on 2026-11-04 it forecasts WARN, so the plan refuses
+ *                        these: Milestone 1's 100 flows are finished and are not to be run again
  *   --amount-units <n>   USDC base units of the first flow (default 1000); each later flow pays
  *                        one unit more, so no two flows share an amount
  *   --base-url <url>     the hosted API (default https://a-identity.xyz)
@@ -92,7 +94,8 @@ const PAYEES = {
     label: 'operating-wallet (internal)',
     address: '0xd305607510e0db2c95807173c7a05bea53c1ed36',
     agentId: '#0',
-    note: 'It is off-platform, which scores at most 60: if that changed, pick another DENY payee.',
+    // The wallet Milestone 1's DENY flows named on 2026-11-01 and 2026-11-02 UTC, when an off-platform payee got DENY.
+    note: "It is off-platform, and since 2026-11-04 an off-platform payee gets WARN, so it is no longer a DENY payee. Milestone 1's 100 flows finished on 2026-11-02 and are not to be run again, so no other payee replaces it.",
   },
 }
 
@@ -177,7 +180,7 @@ try {
   usage(`--base-url: ${e.message}`)
 }
 const { ARC_VAULT_ABI } = generated
-const { buildPlan, forecastVerdict, formatUnits, readRunLog, RunLogError, runFlows } = rules
+const { buildPlan, forecastVerdict, formatUnits, readRunLog, RunLogError, runFlows, adverseRecordFrom } = rules
 
 // ── the registry, and a trust-guard build that agrees with it ─────────────────────
 
@@ -343,7 +346,7 @@ async function readReputation(payee) {
     if (r.status === 404) return { found: false }
     const rep = r.body?.reputation
     if (r.status !== 200 || typeof rep?.score !== 'number') return null
-    return { found: true, score: rep.score, tenurePoints: typeof rep.breakdown?.tenure === 'number' ? rep.breakdown.tenure : null, sybil: rep.sybil?.level ?? null }
+    return { found: true, score: rep.score, tenurePoints: typeof rep.breakdown?.tenure === 'number' ? rep.breakdown.tenure : null, sybil: rep.sybil?.level ?? null, adverseRecord: adverseRecordFrom(rep) }
   } catch {
     return null
   }
@@ -486,7 +489,7 @@ function printPlan({ input, plan, operator, vault, backendCommit }, operatorSour
     print(`  ${p.spec.label} ${p.spec.address}`)
     print(`    flows: ${left} left of ${wanted}; expected ${rules.expectedFor(p.spec.role)}; forecast today ${p.forecast.verdict}`)
     print(`    trust_preview: ${p.preview ? `verified ${p.preview.verified}, kya ${p.preview.kyaStatus}, band ${p.preview.scoreBand}, revoked ${p.preview.revoked}, sybil suspected ${p.preview.sybilSuspected}` : 'UNREADABLE'}`)
-    print(`    /api/reputation: ${p.reputation === null ? 'UNREADABLE' : p.reputation.found ? `score ${p.reputation.score}, tenure points ${p.reputation.tenurePoints}, sybil ${p.reputation.sybil}` : 'not on the platform'}`)
+    print(`    /api/reputation: ${p.reputation === null ? 'UNREADABLE' : p.reputation.found ? `score ${p.reputation.score}, tenure points ${p.reputation.tenurePoints}, sybil ${p.reputation.sybil}, adverse record ${p.reputation.adverseRecord ?? 'not shown'}` : 'not on the platform'}`)
     print(`    registry: balanceOf ${p.agentsHeld ?? 'UNREADABLE'}; agent ${p.spec.agentId} owner ${p.agentOwner ?? 'UNREADABLE'}`)
     print(`    pay() gas: estimate ${p.gasEstimate ?? 'none'}, limit ${p.gasLimit ?? 'none'}`)
     if (p.forecast.missing.length) print(`    between it and ALLOW: ${p.forecast.missing.join('; ')}`)

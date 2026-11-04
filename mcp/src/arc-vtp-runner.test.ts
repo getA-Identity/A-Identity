@@ -88,6 +88,25 @@ test('the fake keeps the runner off the network: a URL nobody planned for is an 
   rmSync(b.dir, { recursive: true })
 })
 
+test('the real deny payee reads as no record today, so it forecasts WARN and the plan refuses, with nothing signed or sent', async () => {
+  const b = box()
+  const r = await runner(b, ['--deny', '1'], { scenario: { denyPayeeRecord: 'no-record' } })
+  assert.equal(r.code, 1, r.stderr + r.stdout)
+  assert.match(r.stdout + r.stderr, /expected to answer WARN/)
+  assert.match(r.stdout + r.stderr, /not to be run again/)
+  assertSpentNothing(r)
+  rmSync(b.dir, { recursive: true })
+})
+
+test('a deny payee on the platform with nothing against it forecasts WARN and the plan refuses, with nothing signed or sent', async () => {
+  const b = box()
+  const r = await runner(b, ['--deny', '1'], { scenario: { denyPayeeRecord: 'no-evidence' } })
+  assert.equal(r.code, 1, r.stderr + r.stdout)
+  assert.match(r.stdout + r.stderr, /expected to answer WARN/)
+  assertSpentNothing(r)
+  rmSync(b.dir, { recursive: true })
+})
+
 test('prepared by default: it plans, signs nothing, sends nothing, needs no key and writes no log', async () => {
   const b = box()
   const r = await runner(b, ['--allow', '1', '--deny', '1', '--log', b.log, '--ack-fresh-log'])

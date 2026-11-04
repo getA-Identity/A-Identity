@@ -22,6 +22,13 @@ export type FakeScenario = {
   priceLater?: { fromCall: number; price: string }
   /** What the paid check answers for the deny payee. Default DENY. */
   denyAnswer?: 'DENY' | 'ALLOW'
+  /**
+   * What the platform says of the deny payee. Default 'low-reputation': a record scoring 60 with
+   * evidence against it, the one case that still forecasts DENY, so the rest of the run can be
+   * exercised. 'no-evidence' is the same score with nothing against it, and the plan refuses it.
+   * 'no-record' is what the real wallet reads today, and the plan refuses it too.
+   */
+  denyPayeeRecord?: 'low-reputation' | 'no-evidence' | 'no-record'
   /** What the receipt route answers. Default verified and executed. */
   receipt?: Record<string, unknown>
   proofRows?: Record<string, unknown>[]
@@ -218,8 +225,11 @@ function api(url: URL, method: string, headers: Headers, body: unknown): Respons
     return json(200, { verified: true, kya_status: denied ? 'unknown' : 'verified', scoreBand: denied ? 'very-low' : 'medium', flags: { revoked: false, sybilSuspected: false } })
   }
   if (path === '/api/reputation') {
-    if (url.searchParams.get('id') === OPERATING) return json(404, { error: 'not found' })
-    return json(200, { reputation: { score: 545, breakdown: { tenure: 50 }, sybil: { level: 'none' } } })
+    if (url.searchParams.get('id') === OPERATING) {
+      if (scenario.denyPayeeRecord === 'no-record') return json(404, { error: 'not found' })
+      return json(200, { reputation: { score: 60, breakdown: { tenure: 0 }, sybil: { level: 'none' }, discipline: { rejectedSettlements: 0, overrideAttempts: scenario.denyPayeeRecord === 'no-evidence' ? 0 : 1 } } })
+    }
+    return json(200, { reputation: { score: 545, breakdown: { tenure: 50 }, sybil: { level: 'none' }, discipline: { rejectedSettlements: 0, overrideAttempts: 0 } } })
   }
   if (path === '/health' && scenario.commit) return json(200, { status: 'ok', commit: scenario.commit })
   if (path === '/api/x402/gateway/proof') return json(scenario.proofStatus ?? 200, { recent: scenario.proofRows ?? [] })

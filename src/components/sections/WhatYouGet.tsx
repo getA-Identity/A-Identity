@@ -63,7 +63,7 @@ const CARDS: {
       { label: 'Reputation', value: '539 / 1000' },
       { label: 'Sybil check', value: 'Clear' },
     ],
-    note: 'Before any transfer, a live check on the counterparty returns allow, warn, or deny. Unknown or flagged agents get denied, not funded.',
+    note: 'Before any transfer, a live check on the counterparty returns allow, warn, or deny. Flagged agents get denied, not funded. Unknown ones get a warning, and a person decides.',
   },
 ]
 

@@ -42,8 +42,8 @@ const MAINNET_AGENT = `${NETWORK}:8004/0`
 /**
  * The page is about Arc Mainnet, so the check that runs on load is our Arc Mainnet agent:
  * a live read of the mainnet registry. It is also the honest demo of a brand-new identity:
- * it resolves on-chain and still gets DENY, because an agent with no KYA and no settlement
- * history has not earned trust yet. Meridian walks the full pipeline to a better verdict,
+ * it resolves on-chain and gets WARN, because with no KYA and no settlement history we do not
+ * know how it behaves, and that is not the same as knowing it is bad. Meridian walks the full pipeline to a better verdict,
  * but it lives on Arc testnet, and its label says so.
  */
 const ARC_EXAMPLES = [

@@ -4,6 +4,7 @@
  * enableJsonResponse is true on the server so responses are plain JSON, not SSE.
  */
 
+import { readRecord, type RecordRead } from './trust-preview'
 import { MCP_BASE as BASE } from './mcpBase'
 import { wakeBackend } from './api'
 
@@ -119,11 +120,17 @@ export type Reputation = {
   breakdown: { settlement: number; validation: number; tenure: number; behavior?: number }
   behavioral?: Behavioral | null
   sybil?: Sybil | null
+  /** The guardrail record, of which the preview reads what can count against the agent. */
+  discipline?: { overrideAttempts?: number; rejectedSettlements?: number } | null
   settledOnchain?: number
   settledUsd?: number
   name?: string | null
   onchain?: string
   kya?: 'verified' | 'unverified' | 'revoked'
+  /** Present on an identity-only answer with no platform record behind it; see readRecord. */
+  basis?: string
+  /** The wallet the record has control of proven for right now, where a record with no token has its identity. */
+  provenWallet?: string | null
   /** A1: the latest ERC-8004 on-chain attestation of this score, if one has been published. */
   onchainAttestation?: {
     tokenId: string
@@ -164,8 +171,24 @@ export async function resolveAgent(
 
 export async function getReputation(
   agentId: string,
-): Promise<{ ok: true; data: { found: boolean; reputation?: Reputation } } | { ok: false; error: string }> {
+): Promise<{ ok: true; data: { found: boolean; reputation?: Reputation; lookedUp?: boolean } } | { ok: false; error: string }> {
   return callTool('get_reputation', { agentId })
+}
+
+/**
+ * The two free reads a preview makes about a payee. The identity is read through the wallet the record
+ * proved when the query reached a record and no identity, so a row looked up by platform id does not
+ * say "we do not know who this is" about an agent whose address gets ALLOW.
+ */
+export async function readPayee(query: string): Promise<{ identity: AgentIdentity | null; reputation: Reputation | null; read: RecordRead; unreachable: boolean }> {
+  const [idRes, repRes] = await Promise.all([resolveAgent(query), getReputation(query)])
+  const { read, reputation } = readRecord(repRes)
+  let identity = idRes.ok && idRes.data.found ? (idRes.data.agent ?? null) : null
+  if (!identity && reputation?.provenWallet) {
+    const viaWallet = await resolveAgent(reputation.provenWallet)
+    identity = viaWallet.ok && viaWallet.data.found ? (viaWallet.data.agent ?? null) : null
+  }
+  return { identity, reputation, read, unreachable: !idRes.ok && !repRes.ok }
 }
 
 export async function getChainStatus(): Promise<

@@ -196,7 +196,7 @@ export const verifyThenPayInput = {
     .describe(`The AgentSpendPolicy vault on ${VTP_ARC.name} that will pay (0x address). Its usdc() must be ${VTP_ARC.contracts.usdc}.`),
   payee: z
     .string()
-    .describe(`The 0x address to pay. It must hold an ERC-8004 agent in ${VTP_ARC.name}'s IdentityRegistry, and it is the address risk_check is asked about.`),
+    .describe(`The 0x address to pay, and the address risk_check is asked about. One that holds no ERC-8004 agent in ${VTP_ARC.name}'s IdentityRegistry is not refused: unless it is an agent on our platform it gets WARN.`),
   amount: z
     .string()
     .describe(`USDC base units (${VTP_ARC.usdcDecimals} decimals), digits only: "250000" is 0.25 USDC.`),

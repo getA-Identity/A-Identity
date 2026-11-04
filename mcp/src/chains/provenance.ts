@@ -1047,7 +1047,7 @@ export const PROVENANCE: ChainProvenance[] = [
         blockNumber: 4764142,
         date: '2026-09-19',
         deliverable: 'rehearsal',
-        note: 'risk_check answered DENY for this payee, correctly: the agent id it was given did not resolve to an on-chain identity, so there was no reputation or tenure to score. The owner allowed it anyway, which the /stellar page offers as its own button; in this run the "owner" pressing it was our own script with a software key. Worth stating plainly because it cuts against the pitch: the guardrail is a bound on the AGENT, not on the owner, and an owner who overrides it leaves an owner-signed transaction behind rather than a silent exception.',
+        note: 'risk_check answered DENY for this payee, correctly: the agent id it was given did not resolve to an on-chain identity, so there was no reputation or tenure to score. That was the rule of that day: since 2026-11-04 such a payee gets WARN, and this record stands as it was answered. The owner allowed it anyway, which the /stellar page offers as its own button; in this run the "owner" pressing it was our own script with a software key. Worth stating plainly because it cuts against the pitch: the guardrail is a bound on the AGENT, not on the owner, and an owner who overrides it leaves an owner-signed transaction behind rather than a silent exception.',
       },
       {
         kind: 'settlement',

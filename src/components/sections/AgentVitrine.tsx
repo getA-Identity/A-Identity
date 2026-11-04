@@ -6,6 +6,7 @@ import { EASE_OUT_EXPO } from '../../lib/brand'
 import { getLeaderboard, type FeedAgent } from '../../lib/mcp-client'
 import { MCP_BASE } from '../../lib/mcpBase'
 import { CHAIN_BY_ID } from '../../lib/chains'
+import { rosterVerdict } from '../../lib/trust-preview'
 import AgentAvatar from '../AgentAvatar'
 import ChainLogo from '../app/ChainLogo'
 import { type OwlVerdict } from '../OwlMark'
@@ -455,9 +456,12 @@ type RankedAgent = {
   rank: number
 }
 
-/** Same thresholds the spotlight and explorer use, expressed as the owl's verdict. */
-const verdictOf = (score: number, kya?: string): OwlVerdict =>
-  kya === 'revoked' || score < 200 ? 'deny' : score < 500 ? 'warn' : 'allow'
+/** The roster line the spotlight and explorer use, expressed as the owl's verdict. This list does
+ *  not carry what a record holds against an agent, so under 200 the owl stays neutral. */
+const verdictOf = (score: number, kya?: string): OwlVerdict => {
+  const v = rosterVerdict(score, kya)
+  return v ? (v.toLowerCase() as OwlVerdict) : 'neutral'
+}
 
 export default function AgentVitrine() {
   const [ranked, setRanked] = useState<RankedAgent[]>([])

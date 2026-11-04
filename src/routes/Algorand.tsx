@@ -50,7 +50,7 @@ const SDK_SNIPPET = `import { TrustGuard } from '@a-identity/trust-guard'
 import { algorandPayer } from '@a-identity/trust-guard/algorand'
 
 const oracle = new TrustGuard({ rail: 'algorand', onPaymentRequired: algorandPayer({ mnemonic, maxUsdPerCall: 10 }) })
-await oracle.guard(agentId) // throws if you should not pay`
+await oracle.guard(agentId) // throws unless it is ALLOW`
 
 /** Each tool, named by the question it answers. */
 const QUESTIONS: { key: keyof Omit<Prices, 'agent_batch_audit'> | 'agent_batch_audit'; ask: string; tool: string }[] = [

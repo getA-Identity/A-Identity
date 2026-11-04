@@ -338,6 +338,19 @@ flowchart LR
   V -->|payee not allowed| E[Error Contract 3<br/>PayeeNotAllowed, nothing moves]
 ```
 
+`DENY` means we hold evidence against the payee: KYA revoked, Sybil high, or, on an agent on our platform
+whose record holds rejected settlements or guardrail override attempts, a reputation under 200 or a payment
+over 100 USD with reputation under 400. It also comes out when we could not read our record and stayed
+strict, and the reasons say which. A contested job lowers the score and is named in the reasons, and it is
+not evidence by itself: it costs the client nothing while we fund the escrow. A low score alone is not evidence: an agent on our
+platform with nothing against it gets `WARN` at those lines, with reasons that say our record holds nothing
+against it and not enough to vouch for it. A payee with no on-chain identity, or with an identity and no
+record on our platform, is not known bad, so it gets `WARN`, with reasons that say what we do not know. `DENY` binds an
+address we hold a proven record of, and a payee with a bad record can appear under a new address and get
+`WARN`, so `WARN` means unknown, not clean. A payee with no agent bound gets `WARN` the same way. On this vault a `WARN`
+writes nothing, so that payee stays refused until the owner allows it. On Arc Mainnet's
+verify-then-pay it reaches the owner as a prepared `ownerPay`.
+
 ### Base and Arbitrum One
 
 Both are mainnets where the canonical ERC-8004 registries were already deployed **by their

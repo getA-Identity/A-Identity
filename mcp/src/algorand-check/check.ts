@@ -4,8 +4,8 @@
  * The question an agent (or a person) has before an x402 payment on Algorand, answered from
  * public data only: the Algorand ledger, read through the indexer the registry already knows,
  * and the x402 facilitator's public records. The trust tools on this rail answer "who is this
- * ERC-8004 agent"; an Algorand seller has no such registration, so it gets DENY from them for
- * a reason that says nothing about the seller. This answers the question an Algorand payer
+ * ERC-8004 agent"; an Algorand seller has no such registration, so all they can tell it is WARN,
+ * for a reason that says nothing about the seller. This answers the question an Algorand payer
  * actually has: does this address look like a real seller that real wallets pay?
  *
  * Deterministic rules, stated in RULES below and on the /check page in the same words. Every

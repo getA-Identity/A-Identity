@@ -12,7 +12,8 @@ import { createIdentityProvider } from '../erc8004.js'
 import { getArcStatus } from '../arc.js'
 import { getCircleStatus } from '../circle.js'
 import { oauthEnabled, protectedResourceMetadata } from '../oauth.js'
-import { agentReputation, listPlatformAgents } from '../platform.js'
+import { reputationForQuery } from '../platform.js'
+import { addressInQuery, readReputationAnswer } from '../agent-query.js'
 import { merchantCheck } from '../commerce.js'
 import {
   x402PayTo, paymentRequirements, verifyPayment, premiumResource,
@@ -22,6 +23,11 @@ import { nanoPaymentRequirements, settleNano, nanoResource } from '../nanopay.js
 import { readBody, sendJson, type RouteCtx } from './shared.js'
 import { handleFeedback, visitorMarker } from '../feedback.js'
 import { clientIpFromXff } from '../client-ip.js'
+
+/** A free read does not wait on a slow RPC: past this, it is a read that did not finish, not a finding. */
+function withinSeconds<T>(p: Promise<T | null>, seconds: number): Promise<T | null> {
+  return Promise.race([p.catch(() => null), new Promise<null>((resolve) => setTimeout(() => resolve(null), seconds * 1000).unref?.())])
+}
 
 export async function handlePublicRoutes(ctx: RouteCtx): Promise<boolean> {
   const { req, res, url } = ctx
@@ -79,15 +85,17 @@ export async function handlePublicRoutes(ctx: RouteCtx): Promise<boolean> {
   if (req.method === 'GET' && url.pathname === '/api/reputation') {
     const id = url.searchParams.get('id') ?? ''
     if (!id) { sendJson(res, 400, { error: 'Missing ?id= parameter' }); return true }
-    let rep = agentReputation(id)
-    // Accept an on-chain id too (e.g. "eip155:5042002:8004/849980" or a bare token id):
-    // map it to the platform agent anchored at that ERC-8004 token, then score it for real.
-    if ('error' in rep) {
-      const tokenId = id.match(/(\d+)\s*$/)?.[1]
-      const anchored = tokenId ? listPlatformAgents().find((a) => a.onchainAgentId === tokenId) : undefined
-      if (anchored) rep = agentReputation(anchored.id)
+    // The same reading as get_reputation and risk_check: an address, a token on the chain it names,
+    // or the record that proved the token's owner. See readReputationAnswer. Only an address is looked
+    // up in full, so lookedUp false says this 404 is not a finding that we hold no record.
+    // An address needs no chain read here: its owner is itself, so a read could add nothing.
+    const resolveToken = (q: string) => (addressInQuery(q) ? Promise.resolve(null) : withinSeconds(createIdentityProvider().resolve(q), 6))
+    const answer = await readReputationAnswer<ReturnType<typeof reputationForQuery>>(id, reputationForQuery, resolveToken)
+    if (answer.kind !== 'record') {
+      sendJson(res, 404, { found: false, agentId: id, reason: 'Unknown agent or no activity yet', lookedUp: answer.kind === 'identity-only' || answer.lookedUp })
+      return true
     }
-    if ('error' in rep) { sendJson(res, 404, { found: false, agentId: id, reason: 'Unknown agent or no activity yet' }); return true }
+    const rep = answer.reputation
     sendJson(res, 200, { found: true, reputation: rep })
     return true
   }

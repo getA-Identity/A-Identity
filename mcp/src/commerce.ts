@@ -11,15 +11,17 @@
  *
  * Free and read-only by construction: no keys, no state writes, no metering. The
  * verdict ladder mirrors the published risk methodology (asp/proof.ts /methodology:
- * DENY on revoked KYA / wash reputation / no on-chain identity / reputation < 200;
- * WARN on reputation < 500 / unattested KYA) but deliberately does NOT import the
- * paid ASP tool code paths, so this free surface can never drift the paid product.
+ * DENY on revoked KYA / wash reputation / reputation < 200 on an agent whose record holds evidence
+ * against it; WARN on no on-chain identity / no platform history / reputation < 500 / unattested
+ * KYA, because a low score alone is not evidence that a merchant is bad) but deliberately does NOT import
+ * the paid ASP tool code paths, so this free surface can never drift the paid product.
  * The thresholds are pinned by commerce.test.ts instead.
  */
 import type { AgentIdentity } from './data.js'
 import { signedFetch } from './bot-auth.js'
 import { createIdentityProvider, isSafePublicHttpUrl } from './erc8004.js'
 import type { KyaStatus } from './marketplace.js'
+import { adverseRecordFrom } from './asp/risk.js'
 
 // ── verdict ladder ────────────────────────────────────────────────────────────
 
@@ -29,6 +31,9 @@ export type MerchantReason = { code: string; severity: 'deny' | 'warn' | 'info';
 /** Thresholds mirroring the published /methodology (see docstring above; pinned by tests). */
 const REP_DENY_BELOW = 200
 const REP_WARN_BELOW = 500
+/** risk_check's high-value line, which this check names and does not apply: it has no amount. */
+const REP_HIGHVALUE_MIN = 400
+const HIGH_VALUE_USD = 100
 
 /** The 0-1000 score mapped onto the methodology's bands: <200 low, <500 moderate, else strong. */
 export function reputationBand(score: number): 'low' | 'moderate' | 'strong' {
@@ -47,6 +52,13 @@ export type MerchantSignals = {
   reputationScore: number | null
   /** The platform's Sybil / wash-reputation flag; null when the platform has no view. */
   sybil: 'none' | 'low' | 'medium' | 'high' | null
+  /**
+   * Does the platform record hold evidence against the agent? See adverseRecordFrom. false: a low
+   * score is a WARN. true, null or absent: a low score is a DENY, so what was not read stays strict.
+   */
+  adverseRecord?: boolean | null
+  /** Jobs a client refunded or disputed. Named in the reasons and never a DENY: see adverseRecordFrom. */
+  contestedJobs?: number
   /** Manifest discovery outcome: requested = a url was given at all. */
   manifest: { requested: boolean; found: boolean; unreachable: boolean }
 }
@@ -60,6 +72,9 @@ export type MerchantSignals = {
 export function computeMerchantVerdict(s: MerchantSignals): { verdict: MerchantVerdict; reasons: MerchantReason[] } {
   const deny: MerchantReason[] = []
   const warn: MerchantReason[] = []
+  // Revoked and Sybil high are held against it, so "holds nothing against it" would be false there.
+  const heldAgainstIt = s.kya === 'revoked' || s.sybil === 'high'
+  const contested = s.contestedJobs ?? 0
 
   if (s.kya === 'revoked') {
     deny.push({ code: 'kya_revoked', severity: 'deny', detail: 'KYA has been REVOKED - this agent is flagged as an incident (compromised key or repeated disputes)' })
@@ -67,15 +82,18 @@ export function computeMerchantVerdict(s: MerchantSignals): { verdict: MerchantV
   if (s.sybil === 'high') {
     deny.push({ code: 'sybil_high', severity: 'deny', detail: 'Reputation appears Sybil / wash-traded - most of its jobs were hired by its own operator, not independent buyers' })
   }
-  if (!s.identityFound) {
-    deny.push({ code: 'no_onchain_identity', severity: 'deny', detail: 'No verifiable on-chain identity (ERC-8004) found for this merchant agent - there is no accountable party to pay' })
-  }
-  if (s.reputationScore !== null && s.reputationScore < REP_DENY_BELOW) {
-    deny.push({ code: 'low_reputation', severity: 'deny', detail: `Reputation ${s.reputationScore} is below the safe threshold (${REP_DENY_BELOW})` })
+  if (s.reputationScore !== null && s.reputationScore < REP_DENY_BELOW && s.adverseRecord !== false) {
+    deny.push({ code: 'low_reputation', severity: 'deny', detail: `Reputation ${s.reputationScore} is below the safe threshold (${REP_DENY_BELOW})${s.adverseRecord === true ? ', and our record of it holds evidence against it' : ''}` })
   }
 
+  if (!s.identityFound) {
+    warn.push({ code: 'no_onchain_identity', severity: 'warn', detail: 'No on-chain identity (ERC-8004) was found for this merchant agent, so we do not know who is behind it. This does not mean it is bad, and it does not mean it is clean: we have no evidence at this address, and a merchant with a bad record can appear under a new one' })
+  }
+  if (s.reputationScore !== null && s.reputationScore < REP_DENY_BELOW && s.adverseRecord === false && !heldAgainstIt) {
+    warn.push({ code: 'low_reputation', severity: 'warn', detail: `Our record of this merchant agent ${contested > 0 ? 'holds no evidence against it' : 'holds nothing against it'}, and not enough to vouch for it: its reputation is ${s.reputationScore}, under ${REP_DENY_BELOW}` })
+  }
   if (s.reputationScore !== null && s.reputationScore >= REP_DENY_BELOW && s.reputationScore < REP_WARN_BELOW) {
-    warn.push({ code: 'moderate_reputation', severity: 'warn', detail: `Moderate reputation (${s.reputationScore}); proceed with caution` })
+    warn.push({ code: 'moderate_reputation', severity: 'warn', detail: `Moderate reputation (${s.reputationScore}): not enough for us to vouch for it` })
   }
   if (s.kya === 'unclaimed') {
     warn.push({ code: 'kya_unclaimed', severity: 'warn', detail: 'This record was created from an on-chain agent by someone who does not control it - the owning party has never claimed it here, so nothing about it has been attested to us' })
@@ -96,11 +114,23 @@ export function computeMerchantVerdict(s: MerchantSignals): { verdict: MerchantV
     warn.push({ code: 'manifest_not_found', severity: 'warn', detail: 'No agent card at /.well-known/agent.json or agent-card.json - the merchant declares no agent interface' })
   }
 
-  if (deny.length > 0) return { verdict: 'DENY', reasons: [...deny, ...warn] }
-  if (warn.length > 0) return { verdict: 'WARN', reasons: warn }
+  // Listed and never decisive: evidence at a score above the lines does not reach DENY, and a contest
+  // costs the client nothing while we fund the escrow. A reader who checks the record must not find it
+  // contradicts what we told them.
+  const info: MerchantReason[] = []
+  if (s.adverseRecord === true && s.reputationScore !== null && deny.length === 0) {
+    const belowAmountLine = s.reputationScore < REP_HIGHVALUE_MIN ? ` A payment over $${HIGH_VALUE_USD} to it would be refused.` : ''
+    info.push({ code: 'adverse_record', severity: 'info', detail: `Our record of this merchant agent holds evidence against it: rejected settlements or guardrail override attempts.${belowAmountLine}` })
+  }
+  if (contested > 0) {
+    info.push({ code: 'contested_jobs', severity: 'info', detail: `Our record holds ${contested} job${contested === 1 ? '' : 's'} a client refunded or disputed. A contest costs the client nothing while we fund the escrow, so it lowers the score and is not counted as evidence.` })
+  }
+
+  if (deny.length > 0) return { verdict: 'DENY', reasons: [...deny, ...warn, ...info] }
+  if (warn.length > 0) return { verdict: 'WARN', reasons: [...warn, ...info] }
   return {
     verdict: 'ALLOW',
-    reasons: [{ code: 'verified_merchant', severity: 'info', detail: 'Verified on-chain identity, attested KYA, and strong reputation' }],
+    reasons: [{ code: 'verified_merchant', severity: 'info', detail: 'Verified on-chain identity, attested KYA, and strong reputation' }, ...info],
   }
 }
 
@@ -261,25 +291,27 @@ export type PlatformReputationView = {
   score: number
   settledOnchain: number
   sybil?: { level: 'none' | 'low' | 'medium' | 'high' }
+  behavioral?: { contestedJobs?: number }
+  discipline?: { rejectedSettlements?: number; overrideAttempts?: number }
+  /** 'registered': the record is anchored on chain, so the id reached an identity even if it was not read here. */
+  onchain?: string
+  /** The wallet the record has proved right now, which is where the on-chain identity of a record with no token is read. */
+  provenWallet?: string | null
 }
 
 /**
- * Default platform lookup: try every identity query against agentReputation (which
- * already resolves platform ids, bare token ids and wallet addresses), then map CAIP
- * ids by their trailing token id onto anchored agents - the same mapping the public
- * /api/reputation route applies. Imported lazily through the barrel so the stdio MCP
- * entry stays free of platform state until the tool is actually called.
+ * Default platform lookup: try every identity query against the same read /api/reputation and
+ * risk_check use (see reputationForQuery): a platform id, a token on the chain it names, or an address
+ * the record proved. Nothing is read out of the digits a string happens to end in: an address ending in
+ * chosen digits, or a partial identity's owned-by id, must not answer with another agent's record.
+ * Imported lazily through the barrel so the stdio MCP entry stays free of platform state until the tool
+ * is actually called.
  */
 async function defaultPlatformView(queries: string[]): Promise<PlatformReputationView | null> {
-  const { agentReputation, listPlatformAgents } = await import('./platform.js')
+  const { reputationForQuery } = await import('./platform.js')
   for (const q of queries) {
-    let rep = agentReputation(q)
-    if ('error' in rep) {
-      const tokenId = q.match(/(\d+)\s*$/)?.[1]
-      const anchored = tokenId ? listPlatformAgents().find((a) => a.onchainAgentId === tokenId) : undefined
-      if (anchored) rep = agentReputation(anchored.id)
-    }
-    if (!('error' in rep)) return rep as unknown as PlatformReputationView
+    const view = reputationForQuery(q)
+    if (!('error' in view)) return view as unknown as PlatformReputationView
   }
   return null
 }
@@ -374,19 +406,26 @@ export async function merchantCheck(
   }
 
   // ── 3. the platform's view (KYA, reputation band, Sybil flag) ──
+  // Not the bare token id: without its chain, that number can be an unrelated agent on another chain.
   const viewQueries = [...new Set([
     ...identityQueries,
-    ...(identity ? [identity.agentId, String(identity.tokenId), identity.owner] : []),
+    ...(identity ? [identity.agentId, identity.owner] : []),
   ])].filter(Boolean)
   const platformView = deps.platformView ?? defaultPlatformView
   const view = viewQueries.length ? await platformView(viewQueries) : null
 
+  // A record with no token that proved its wallet has its identity there, so the same merchant does
+  // not read as "no on-chain identity" by platform id and as identified by address.
+  if (!identity && view?.provenWallet) identity = await resolveIdentity(view.provenWallet)
+
   // ── 4. verdict ──
   const { verdict, reasons } = computeMerchantVerdict({
-    identityFound: identity !== null,
+    identityFound: identity !== null || view?.onchain === 'registered',
     kya: view?.kya ?? null,
     reputationScore: view ? view.score : null,
     sybil: view?.sybil?.level ?? null,
+    adverseRecord: adverseRecordFrom(view),
+    contestedJobs: view?.behavioral?.contestedJobs ?? 0,
     manifest: {
       requested: discovery !== null,
       found: discovery?.found ?? false,

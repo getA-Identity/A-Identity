@@ -35,13 +35,16 @@
  */
 
 export type PayeeRole = 'allow' | 'deny'
+export { adverseRecordFrom } from './asp/risk.js'
+
 export type ExpectedVerdict = 'ALLOW' | 'DENY'
 
 export type PayeeSpec = {
   role: PayeeRole
   label: string
   address: string
-  /** Sent as payeeAgentId, so the registry has to say this agent is the payee's. */
+  /** Sent as payeeAgentId, so the registry has to say this agent is the payee's. Holding no agent
+   *  is not refused on its own any more; naming one the payee does not hold is. */
   agentId: string
   /** What to do when the plan says this payee will not reach its expected verdict. */
   note: string
@@ -357,7 +360,16 @@ export async function reconcileReceipts(d: {
 export type PreviewRead = { verified: boolean; kyaStatus: string; scoreBand: string; revoked: boolean; sybilSuspected: boolean }
 
 /** GET /api/reputation, free. found:false: the platform does not know this address. */
-export type ReputationRead = { found: true; score: number; tenurePoints: number | null; sybil: string | null } | { found: false }
+export type ReputationRead =
+  | {
+      found: true
+      score: number
+      tenurePoints: number | null
+      sybil: string | null
+      /** What the read shows the record holds against it. Null when it does not show it: see adverseRecordFrom in asp/risk.ts. */
+      adverseRecord: boolean | null
+    }
+  | { found: false }
 
 export type VerdictForecast = {
   verdict: 'ALLOW' | 'WARN' | 'DENY' | 'UNKNOWN'
@@ -375,16 +387,30 @@ const TENURE_POINTS_AT_7_DAYS = 4
 /**
  * What the paid risk_check is expected to answer, from the free reads, by asp/risk.ts's rules
  * at a small amount. A forecast only: the paid verdict is what the flow acts on.
+ *
+ * found:false says the platform holds no record, and such a payee gets WARN whatever its band,
+ * because its score only says we have no history for it. A reputation that could not be read
+ * (null) says nothing about that, so it stays on the strict side, as the scorer does when it is
+ * not told. Our operating wallet is off-platform, so it forecasts WARN, and the plan refuses it
+ * as a DENY payee: the rule changed on 2026-11-04, after Milestone 1's DENY flows were recorded.
+ *
+ * On a record, a low score is a DENY only with evidence against it. A read that does not show the
+ * evidence stays strict too, and says so, because that is what the scorer does when it is not told.
  */
 export function forecastVerdict(preview: PreviewRead | null, rep: ReputationRead | null): VerdictForecast {
   if (!preview) return { verdict: 'UNKNOWN', missing: ['the free trust_preview could not be read'], caveat: null }
   const deny: string[] = []
   const warn: string[] = []
   const score = rep?.found ? rep.score : null
+  const noRecord = rep?.found === false
   if (preview.revoked) deny.push('its KYA is revoked')
-  if (!preview.verified) deny.push('it has no verifiable on-chain identity')
-  if (score !== null ? score < DENY_REPUTATION : preview.scoreBand === 'very-low') {
-    deny.push(score !== null ? `reputation ${score} is below ${DENY_REPUTATION}, where risk_check denies` : `its score band is very-low (under ${DENY_REPUTATION}, where risk_check denies)`)
+  if (!preview.verified) (rep === null ? deny : warn).push('it has no verifiable on-chain identity')
+  if (noRecord) warn.push('the platform holds no record of it, and ALLOW needs one')
+  else if (rep?.found && score !== null && score < DENY_REPUTATION && rep.adverseRecord === false) {
+    warn.push(`reputation ${score} is below ${DENY_REPUTATION}, with nothing on its record against it: risk_check warns, and ALLOW needs >= ${ALLOW_REPUTATION}`)
+  } else if (score !== null ? score < DENY_REPUTATION : preview.scoreBand === 'very-low') {
+    const seen = rep?.found && rep.adverseRecord === true ? ', with evidence on its record against it' : ', and the free read does not show its record is clean'
+    deny.push(score !== null ? `reputation ${score} is below ${DENY_REPUTATION}${seen}, where risk_check denies` : `its score band is very-low (under ${DENY_REPUTATION}, where risk_check denies without a read showing nothing against it)`)
   }
   if (rep?.found && rep.sybil === 'high') deny.push('its reputation reads as wash-traded (sybil high)')
   if (preview.kyaStatus !== 'verified') warn.push(`its KYA is ${preview.kyaStatus}, and ALLOW needs it attested`)
@@ -557,7 +583,7 @@ export function buildPlan(p: PlanInput): Plan {
       blockers.push(`${r.spec.label} is planned for ${wanted} ${expected} flow(s) and is expected to answer ${r.forecast.verdict} today.${missing} ${r.spec.note}`.trim())
     }
     if (r.agentsHeld === null) blockers.push(`the identity registry's balanceOf(${r.spec.label}) could not be read`)
-    else if (r.agentsHeld <= 0n) blockers.push(`${r.spec.label} holds no agent on the identity registry, so the vault flow refuses it`)
+    else if (r.agentsHeld <= 0n) blockers.push(`${r.spec.label} holds no agent on the identity registry and this run names ${r.spec.agentId} for it, so the vault flow refuses it as PAYEE_AGENT_MISMATCH`)
     if (r.preflightError) blockers.push(`the free preflight refuses ${r.spec.label}: ${r.preflightError}`)
     if (r.routeError) blockers.push(`the hosted route refuses ${r.spec.label}: ${r.routeError}`)
   }

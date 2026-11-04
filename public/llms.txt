@@ -7,7 +7,11 @@
 A-Identity is an identity and payment layer for AI agents. An agent registers an
 ERC-8004 passport, proves it controls its wallet (KYA), receives spend limits from its
 owner, and can then buy and sell from other agents in USDC. Every payment is checked
-against those limits before any value moves, and the verdict is ALLOW, WARN or DENY.
+against those limits before any value moves, and the verdict is ALLOW, WARN or DENY. On the
+trust check (risk_check), DENY means we hold evidence against the payee, or that we could not read
+our record and stayed strict, and the reasons say which. A payee we know nothing about gets WARN,
+which means unknown, not clean. An owner's own spend policy
+can still DENY on its limits.
 
 ## What it does
 

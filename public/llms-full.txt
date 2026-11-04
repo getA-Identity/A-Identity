@@ -142,6 +142,23 @@ Always pass `txContext.amountUsd`. Risk is a function of exposure: a
 counterparty that is fine for one dollar may not be fine for ten thousand, and
 without the amount the verdict is an abstraction.
 
+`DENY` means we hold evidence against the payee: KYA revoked, Sybil high, or, on an agent on
+our platform whose record holds rejected settlements or guardrail override attempts, a
+reputation under 200 or a payment over 100 USD with reputation under 400. It also comes out when
+we could not read our record and stayed strict, and the reasons say which. A contested job lowers
+the score and is named in the reasons, and it is not evidence by itself: it costs the client
+nothing while we fund the escrow. A low score alone is not evidence: an agent on our platform with nothing against it gets `WARN` at
+those lines, with reasons that say our record holds nothing against it and not enough to vouch
+for it, and the amount named when it is over 100 USD. A payee with no on-chain
+identity, or with an identity and no record on our platform, is not known bad, so it gets
+`WARN`, with reasons that say what we do not know. A high-value or large payment to such a
+payee stays `WARN`, with the amount named. `ALLOW` needs a platform agent with reputation of
+at least 500, attested KYA and at least 7 days of tenure.
+
+`DENY` binds an address we hold a proven record of. A record counts at an address only once it
+proved control of it, so a registration that merely names a wallet does not count. A payee with a
+bad record can appear under a new address and get `WARN`, so `WARN` means unknown, not clean.
+
 ### Two-sided
 
 ```http
@@ -435,7 +452,8 @@ those on Arc Mainnet; a full id such as `eip155:5042:8004/0` names its own chain
 
 **Verify then pay (Arc Mainnet)**: `verify_then_pay`, `verify_then_pay_receipt`. Buys
 risk_check through Circle Gateway (0.005 USDC), never signs, and returns the exact vault
-pay() call on ALLOW. Over HTTP: `POST /api/x402/gateway/verify-then-pay`,
+pay() call on ALLOW, a prepared ownerPay for the owner on WARN, and nothing on DENY. A payee
+with no ERC-8004 agent is not refused: unknown is not bad, so it gets WARN. Over HTTP: `POST /api/x402/gateway/verify-then-pay`,
 `GET /api/x402/gateway/flows/<flowId>` (public) and
 `POST /api/x402/gateway/flows/<flowId>/receipt`.
 

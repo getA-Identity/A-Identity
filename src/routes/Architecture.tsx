@@ -206,7 +206,8 @@ function System() {
 }
 
 /**
- * A real request/response, revealed line by line like a terminal. Replayable.
+ * The shape of a request and a response, revealed line by line like a terminal. Replayable.
+ * Illustrative, and labeled so where it is shown: it names no address and no real agent.
  *
  * Painted from the shared terminal tokens (index.css), so it follows the page theme
  * rather than staying a dark slab on a light architecture page. The macOS traffic
@@ -215,13 +216,13 @@ function System() {
  */
 type TLine = { kind: 'cmd' | 'in' | 'out'; text: string; tone?: 'deny' | 'ok' }
 const CALL: TLine[] = [
-  { kind: 'cmd', text: 'POST /tools/risk_check  { "agentId": "0xc60e…1b69" }' },
+  { kind: 'cmd', text: 'POST /tools/risk_check  { "agentId": "0x…" }' },
   { kind: 'out', text: '402  PAYMENT-REQUIRED   eip155:196 · USD₮0 · $0.005' },
   { kind: 'cmd', text: 'sign + retry            X-PAYMENT: <settled on X Layer>' },
   { kind: 'in', text: 'resolve identity        ERC-8004 · owner verified' },
-  { kind: 'in', text: 'know your agent         no KYA attestation' },
-  { kind: 'in', text: 'score                   0 / 1000 · no history' },
-  { kind: 'out', text: '200  DENY               reputation 0 is below 200', tone: 'deny' },
+  { kind: 'in', text: 'know your agent         KYA revoked · incident' },
+  { kind: 'in', text: 'score                   90 / 1000 · on our platform' },
+  { kind: 'out', text: '200  DENY               KYA revoked, reputation 90 is below 200', tone: 'deny' },
 ]
 
 function Terminal() {
@@ -356,12 +357,15 @@ export default function Architecture() {
             <div>
               <Index n="02" label="what a real call looks like" />
               <h2 className="mt-4 text-2xl font-bold tracking-tight sm:text-3xl" style={{ fontFamily: 'var(--font-heading)' }}>
-                An agent verifies, then pays. No mocks.
+                An agent verifies, then pays.
               </h2>
               <p className="mt-3 max-w-md text-[15px] leading-relaxed text-foreground/55">
                 A buyer calls a paid tool, hits a real 402 on X Layer mainnet, settles in
-                USD₮0, and gets a deterministic verdict with its reasons. An unknown
-                counterparty is denied before any money moves.
+                USD₮0, and gets a deterministic verdict with its reasons. A counterparty we
+                hold evidence against is denied before any money moves, and so is one where we
+                could not read our record, with reasons that say which. One we know
+                nothing about gets WARN, which holds the payment for a person. The call on
+                the right is an illustration of the shape, not a recorded run.
               </p>
               <Link to="/explorer" className="mt-6 inline-flex items-center gap-2 font-mono text-[13px] font-semibold text-accent hover:underline">
                 run it yourself in the explorer <ArrowRight size={14} />

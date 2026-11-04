@@ -11,7 +11,7 @@
  *     rail: 'algorand',
  *     onPaymentRequired: algorandPayer({ mnemonic: process.env.AGENT_MNEMONIC!, maxUsdPerCall: 10 }),
  *   })
- *   await oracle.guard(counterpartyId)   // pays 5 USDC for the risk_check, throws on DENY
+ *   await oracle.guard(counterpartyId)   // pays 5 USDC for the risk_check, throws unless it is ALLOW
  *
  * What it signs, and nothing more: one USDC transfer of exactly the challenge's amount to the
  * challenge's payTo, with fee ZERO, grouped with an unsigned fee-payer transaction that the

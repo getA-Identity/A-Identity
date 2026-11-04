@@ -95,7 +95,12 @@ them won a prize.
 
 **One rule: verify first, then pay.** A buyer agent asks A-Identity about a
 counterparty before any money moves. A clean counterparty gets paid at machine
-speed; a revoked, Sybil, or unknown one gets a hard `DENY`.
+speed; one we hold evidence against (revoked KYA, a Sybil flag, or a low reputation with
+rejected settlements or guardrail override attempts on its record) gets a hard
+`DENY`, as does one where we could not read our record, because we stay strict and the reasons
+say which; and one we know nothing about gets `WARN`,
+with reasons that say what we do not know, because unknown is not the same as bad. It is
+not the same as clean either: a payee with a bad record can appear under a new address.
 
 ```mermaid
 sequenceDiagram
@@ -604,7 +609,7 @@ over x402** - a gasless Arc-testnet nanopayment via Circle Gateway - and acts on
 - **Frontend:** the Settlements → "Trust Oracle" panel: enter a counterparty, pay $0.005, get the verdict.
 
 Try it: `cd mcp && node --env-file=.env scripts/test-dogfood.mjs` - a buyer agent pays $0.005 over
-x402 on real Arc testnet and gets a DENY on a low-reputation counterparty before it can transact.
+x402 on real Arc testnet and gets the verdict on the counterparty before it can transact.
 
 ### Know Your Agent (KYA) - a real check, not a stamp
 

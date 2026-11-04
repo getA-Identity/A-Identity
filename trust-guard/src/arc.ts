@@ -13,17 +13,19 @@
  *   })
  *
  * The order, and what each step can cost you:
- *   A  Free, nothing signed: the asset is the registry's USDC and the vault's, the payee holds
- *      an ERC-8004 agent on Arc Mainnet, and the vault's policy and a simulated pay() accept
- *      the payment. A refusal here costs nothing: no check is bought for a payment the vault
- *      would refuse anyway.
+ *   A  Free, nothing signed: the asset is the registry's USDC and the vault's, an agent you
+ *      named with payeeAgentId is the payee's, and the vault's policy and a simulated pay()
+ *      accept the payment. A refusal here costs nothing: no check is bought for a payment the
+ *      vault would refuse anyway. A payee that holds no agent is not refused: it is unknown,
+ *      not bad, so it goes on to the check and gets WARN.
  *   B  The verdict: risk_check at the price in the offer (0.005 USDC), through Circle Gateway,
  *      signed once by the payer from its Gateway balance. The payer spends no gas.
  *   C  The decision. DENY throws TrustDenyError and never calls the operator. WARN returns
  *      `awaiting_human` with a prepared ownerPay for the owner, unless payOnWarn is set. A
  *      Gateway error, a settlement echo that does not match what was signed, an unknown
  *      decision, a reputation that is not a finite number, an ALLOW below the reputation ALLOW
- *      needs and a verdict about another agent or amount are never ALLOW: each throws.
+ *      needs, a WARN carrying signals that force DENY and a verdict about another agent or
+ *      amount are never ALLOW: each throws.
  *   D  The payment: exactly one sendTransaction of pay(payee, amountUnits), encoded from YOUR
  *      inputs and compared byte for byte with what the server prepared. Server calldata is
  *      never executed. The transaction is read back, and its receipt is looked for on every
@@ -155,7 +157,11 @@ export class ArcAssetError extends Error {
   }
 }
 
-/** The payee is not an agent on Arc Mainnet, or the registry could not say. */
+/**
+ * An agent named with payeeAgentId is not the payee's, or the registry could not say. Holding no
+ * agent at all is not this error: that payee goes on to the check and gets WARN. PAYEE_UNREGISTERED
+ * is only what a server from before that rule still answers.
+ */
 export class PayeeNotRegisteredError extends Error {
   readonly code: 'PAYEE_UNREGISTERED' | 'PAYEE_AGENT_MISMATCH' | 'REGISTRY_UNREADABLE'
   readonly payee: Address
@@ -286,7 +292,8 @@ export interface VerifyThenPayOptions {
   /** Pays the check. Default: `signer`, when it can also sign typed data. It holds the
    *  Gateway balance, and must not be the offer's payTo (Gateway rejects a self-transfer). */
   payer?: GatewayPayerSigner
-  /** On WARN, pay anyway. Default false: WARN hands the payment to the owner. */
+  /** On WARN, pay anyway. Default false: WARN hands the payment to the owner. A payee we know
+   *  nothing about gets WARN, so with this set the agent pays it: that is your explicit choice. */
   payOnWarn?: boolean
   /** The most to pay for the check. Default 5000n (0.005 USDC). */
   maxCheckUnits?: bigint
@@ -337,6 +344,7 @@ export interface VaultPreflight {
   spentToday: bigint
   /** The vault's USDC, 6 decimals. */
   balance: bigint
+  /** ERC-8004 agents the payee holds on Arc Mainnet. 0 is not a refusal. null when payeeAgentId was named instead. */
   agentsHeld: number | null
   blockNumber: bigint
   blockTimestamp: bigint
@@ -740,15 +748,16 @@ async function runPreflight(ctx: Ctx, p: PreflightInput): Promise<VaultPreflight
   }
 }
 
-/** Is the payee an agent on Arc Mainnet's own registry? A contract that said no and a chain
- *  that did not answer are different errors. */
+/** What Arc Mainnet's own registry says about the payee. Holding no agent is an answer and not a
+ *  refusal; a named agent the payee does not own is a refusal, and a chain that did not answer
+ *  is a different error from both. */
 async function readPayee(ctx: Ctx, payee: Address, tokenId: bigint | null): Promise<number | null> {
   const registry = ARC_MAINNET.identityRegistry as Address
   const unreadable = (e: string) => new PayeeNotRegisteredError('REGISTRY_UNREADABLE', `Arc Mainnet's IdentityRegistry could not be read: ${e}`, payee)
   if (tokenId !== null) {
     const own = await view<string>(ctx, registry, REGISTRY_ABI, 'ownerOf', [tokenId])
     if (!own.ok) {
-      if (own.reverted) throw new PayeeNotRegisteredError('PAYEE_UNREGISTERED', `Arc Mainnet's IdentityRegistry has no agent #${tokenId} (ownerOf reverted)`, payee)
+      if (own.reverted) throw new PayeeNotRegisteredError('PAYEE_AGENT_MISMATCH', `Arc Mainnet's IdentityRegistry has no agent #${tokenId} (ownerOf reverted), so the payee does not own it`, payee)
       throw unreadable(own.error)
     }
     if (lc(own.value) !== payee) throw new PayeeNotRegisteredError('PAYEE_AGENT_MISMATCH', `agent #${tokenId} on Arc Mainnet is owned by ${own.value}, not by the payee`, payee)
@@ -756,7 +765,6 @@ async function readPayee(ctx: Ctx, payee: Address, tokenId: bigint | null): Prom
   }
   const bal = await view<bigint>(ctx, registry, REGISTRY_ABI, 'balanceOf', [payee])
   if (!bal.ok) throw unreadable(bal.error)
-  if (bal.value <= 0n) throw new PayeeNotRegisteredError('PAYEE_UNREGISTERED', "the payee holds no ERC-8004 agent on Arc Mainnet's IdentityRegistry", payee)
   return Number(bal.value)
 }
 
@@ -907,8 +915,9 @@ async function signOffer(offer: Offer, payer: GatewayPayerSigner, makeScheme?: G
 /**
  * `onPaymentRequired` for `new TrustGuard({ rail: 'arc' })`: a verdict paid through Circle
  * Gateway on Arc Mainnet, with no vault involved. For risk_check, send the payee's ADDRESS as
- * the agent id: the scorer matches platform agents by address, so a CAIP id always comes out
- * off-platform and DENY.
+ * the agent id: the scorer matches platform agents by address, so a CAIP id never reaches the
+ * agent's platform record. If its token is anchored on a platform agent, or owned by an address a
+ * record proved, it comes out DENY under that id; any other token reads as no record, which is WARN.
  */
 export function arcGatewayPayer(payer: GatewayPayerSigner, opts: ArcGatewayPayerOptions = {}): NonNullable<TrustGuardOptions['onPaymentRequired']> {
   if (!payer || typeof payer.signTypedData !== 'function') throw new TypeError('arcGatewayPayer needs a signer with an address and signTypedData')
@@ -985,6 +994,34 @@ function readCheck(body: Record<string, unknown>, nonce: Hex, payer: Address, of
   }
 }
 
+/** The lines under which risk_check returns DENY on an agent whose record counts against it. */
+const DENY_BELOW_REPUTATION = 200
+const HIGH_VALUE_USD = 100
+const HIGH_VALUE_MIN_REPUTATION = 400
+
+/**
+ * What a WARN carries that should have made it a DENY, the same check as the server's
+ * verify-then-pay/verdict.ts. Revoked and Sybil high force DENY on anyone. A low reputation is
+ * believable on a WARN only when the answer says there is no evidence: onPlatform false, or
+ * onPlatform true with adverseRecord false. An answer that does not carry those stays on the
+ * strict side, which is what a server from before the signals enforced by itself. Such a server
+ * sends no signals at all, so the identity line is read only when signals are there.
+ */
+function warnForcedDeny(signals: unknown, rep: number, amountUsd: number): string[] {
+  const s = isObject(signals) ? signals : null
+  const onPlatform = s?.onPlatform
+  const out: string[] = []
+  if (s?.revoked === true) out.push('revoked')
+  if (s?.sybil === 'high') out.push('sybil high')
+  if (s && onPlatform !== true && onPlatform !== false && s.onchainVerified !== true) out.push('no on-chain identity')
+  const nothingAgainstIt = onPlatform === false || (onPlatform === true && s?.adverseRecord === false)
+  if (!nothingAgainstIt) {
+    if (rep < DENY_BELOW_REPUTATION) out.push(`reputation ${rep} under ${DENY_BELOW_REPUTATION}`)
+    if (amountUsd > HIGH_VALUE_USD && rep < HIGH_VALUE_MIN_REPUTATION) out.push(`${amountUsd} USD with reputation ${rep} under ${HIGH_VALUE_MIN_REPUTATION}`)
+  }
+  return out
+}
+
 const UNUSABLE_CODES: readonly string[] = ['DECISION_UNKNOWN', 'REPUTATION_NOT_FINITE', 'TENURE_NOT_FINITE', 'SIGNALS_MISSING', 'SIGNALS_INCONSISTENT', 'SETTLEMENT_MISMATCH', 'TOOL_MISMATCH', 'CONTEXT_MISMATCH']
 
 type Answer = { kind: 'prepared'; prepared: Record<string, unknown> } | { kind: 'awaiting_human'; handoff: Record<string, unknown> }
@@ -1046,7 +1083,7 @@ function readPaidAnswer(res: { status: number; body: unknown }, o: { vault: Addr
     decision: decision as Decision,
     risk: typeof v.risk === 'string' ? v.risk : 'unknown',
     reasons,
-    signals: { reputationScore: v.reputationScore ?? null },
+    signals: { ...(isObject(v.signals) ? v.signals : {}), reputationScore: v.reputationScore ?? null },
     ...(check.checkedAt ? { checkedAt: check.checkedAt } : {}),
   }
   // A DENY stops here, whatever else the answer says. It needs nothing further to be believed.
@@ -1059,11 +1096,18 @@ function readPaidAnswer(res: { status: number; body: unknown }, o: { vault: Addr
   if (decision === 'ALLOW' && rep < ALLOW_MIN_REPUTATION) {
     throw new UnusableVerdictError('SIGNALS_INCONSISTENT', `ALLOW needs a reputation of at least ${ALLOW_MIN_REPUTATION}, and this one is ${rep}`, unusable)
   }
+  if (decision === 'ALLOW' && isObject(v.signals) && v.signals.onPlatform === false) {
+    throw new UnusableVerdictError('SIGNALS_INCONSISTENT', 'ALLOW needs a platform record, and this payee has none', unusable)
+  }
   // The same arithmetic the server uses for what it sends the scorer.
   const amountUsd = Number(o.amountUnits) / 10 ** ARC_MAINNET.usdcDecimals
   const context = isObject(v.txContext) ? v.txContext : null
   if (lc(v.agentId) !== o.payee || lc(context?.payee) !== o.payee || context?.amountUsd !== amountUsd) {
     throw new UnusableVerdictError('CONTEXT_MISMATCH', `the verdict is about agent ${String(v.agentId)} and context ${JSON.stringify(v.txContext ?? null)}, not this payee and ${amountUsd} USD`, unusable)
+  }
+  if (decision === 'WARN') {
+    const forced = warnForcedDeny(v.signals, rep, amountUsd)
+    if (forced.length) throw new UnusableVerdictError('SIGNALS_INCONSISTENT', `WARN carries signals that force DENY: ${forced.join(', ')}`, unusable)
   }
   // The decision, the stage and the caller's own payOnWarn have to agree.
   const wanted = decision === 'WARN' && !o.payOnWarn ? 'awaiting_human' : 'prepared'

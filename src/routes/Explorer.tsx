@@ -16,9 +16,9 @@ import { usePageMeta } from '../lib/head'
 import { short } from '../lib/format'
 import { gradeOf } from '../lib/reputation-bands'
 import {
-  resolveAgent, getReputation, getLeaderboard,
-  type AgentIdentity, type Reputation, type FeedAgent,
+  readPayee, getLeaderboard, type AgentIdentity, type Reputation, type FeedAgent,
 } from '../lib/mcp-client'
+import { adverseRecordOf, emptyReadMessage, NO_VERDICT_NOTE, previewVerdict, rosterVerdict, type RecordRead } from '../lib/trust-preview'
 import { type OwlVerdict } from '../components/OwlMark'
 import AgentAvatar from '../components/AgentAvatar'
 import { track } from '../lib/analytics'
@@ -34,12 +34,6 @@ const VERDICT_TEXT: Record<Verdict, string> = {
   ALLOW: 'text-ok',
   WARN: 'text-warn',
   DENY: 'text-danger',
-}
-function riskOf(score: number, kya?: string, verified = true, sybil?: string): Verdict {
-  if (kya === 'revoked' || !verified || sybil === 'high') return 'DENY'
-  if (score < 200) return 'DENY'
-  if (score < 500 || sybil === 'medium') return 'WARN'
-  return 'ALLOW'
 }
 
 function useCountUp(target: number, duration = 900) {
@@ -83,8 +77,8 @@ function SectionHead({ icon: Icon, title, note }: { icon: typeof ShieldCheck; ti
 }
 
 /** FICO-style spectrum: a danger->warn->ok gradient bar with a precise pointer at the score.
- *  The stops are the semantic tokens, so the band a score falls in is the same colour as the
- *  verdict that band produces, in either theme. */
+ *  The stops are the semantic tokens, in either theme. A low score sits in the danger stop whatever
+ *  the verdict: a low score alone is not a DENY, and the badge beside it is what says the verdict. */
 function Spectrum({ score }: { score: number }) {
   const pct = Math.max(0, Math.min(100, score / 10))
   return (
@@ -142,14 +136,15 @@ function StatRow({ label, value, cap, tone }: { label: string; value: number | s
   )
 }
 
-function TrustProfile({ identity, reputation, query }: { identity: AgentIdentity | null; reputation: Reputation | null; query: string }) {
+function TrustProfile({ identity, reputation, recordRead, query }: { identity: AgentIdentity | null; reputation: Reputation | null; recordRead: RecordRead; query: string }) {
   // A resolved on-chain identity (ownerOf succeeded) IS the registration proof. Do NOT
   // read `identity.valid` here: the backend deliberately pins it to false (a tokenURI
-  // self-claim is never trusted), so using it would wrongly DENY every resolved agent.
+  // self-claim is never trusted), so using it would wrongly read every resolved agent as unidentified.
   const verified = Boolean(identity) || reputation?.onchain === 'registered'
   const score = reputation?.score ?? 0
   const shownScore = useCountUp(score)
-  const verdict = riskOf(score, reputation?.kya, verified, reputation?.sybil?.level)
+  const verdict = previewVerdict({ score, kya: reputation?.kya, verified, sybil: reputation?.sybil?.level, read: recordRead, adverseRecord: adverseRecordOf(reputation) })
+  const unreadable = recordRead === 'unreadable'
   const bd = reputation?.breakdown
   const beh = reputation?.behavioral
   const owner = identity?.owner
@@ -175,7 +170,7 @@ function TrustProfile({ identity, reputation, query }: { identity: AgentIdentity
     <div className="overflow-hidden rounded-xl border border-border bg-card">
       {/* entity header */}
       <div className="flex flex-wrap items-center gap-4 border-b border-border p-5">
-        <AgentAvatar seed={seed} size={56} verdict={verdict.toLowerCase() as OwlVerdict} />
+        <AgentAvatar seed={seed} size={56} verdict={verdict ? (verdict.toLowerCase() as OwlVerdict) : 'neutral'} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="truncate text-lg font-bold tracking-tight text-foreground">{name}</h2>
@@ -215,14 +210,25 @@ function TrustProfile({ identity, reputation, query }: { identity: AgentIdentity
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/70">Reputation</div>
             <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-              <span className="text-[clamp(2.2rem,7vw,2.8rem)] font-semibold leading-none tracking-[-0.035em] tabular-nums text-foreground">{shownScore}</span>
-              <span className="text-sm font-medium text-foreground/50">/ 1000</span>
-              <span className={`ml-1 text-sm font-bold ${VERDICT_TEXT[verdict]}`}>{g.label}<span className="font-medium text-foreground/50"> · {g.tier}</span></span>
+              {reputation ? (
+                <>
+                  <span className="text-[clamp(2.2rem,7vw,2.8rem)] font-semibold leading-none tracking-[-0.035em] tabular-nums text-foreground">{shownScore}</span>
+                  <span className="text-sm font-medium text-foreground/50">/ 1000</span>
+                  <span className={`ml-1 text-sm font-bold ${verdict ? VERDICT_TEXT[verdict] : 'text-foreground/70'}`}>{g.label}<span className="font-medium text-foreground/50"> · {g.tier}</span></span>
+                </>
+              ) : (
+                <span className="text-sm font-medium text-foreground/70">
+                  {unreadable
+                    ? 'The reputation could not be read just now, so this page gives no verdict. Try again in a few seconds, and do not pay on this.'
+                    : 'No platform record, so we do not know how it has behaved. That does not mean it is bad, and it does not mean it is clean.'}
+                </span>
+              )}
             </div>
           </div>
-          <VerdictBadge verdict={verdict} size="md" />
+          {verdict && <VerdictBadge verdict={verdict} size="md" />}
         </div>
-        <div className="mt-4"><Spectrum score={score} /></div>
+        {reputation && !verdict && <p className="mt-3 text-[13px] font-medium leading-relaxed text-foreground/70">{NO_VERDICT_NOTE}</p>}
+        {reputation && <div className="mt-4"><Spectrum score={score} /></div>}
         {reputation?.onchainAttestation && (
           <div className="mt-3.5 text-[11px]">
             <a href={reputation.onchainAttestation.txUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-accent hover:underline">
@@ -328,6 +334,7 @@ export default function Explorer() {
   const [error, setError] = useState<string | null>(null)
   const [identity, setIdentity] = useState<AgentIdentity | null>(null)
   const [reputation, setReputation] = useState<Reputation | null>(null)
+  const [recordRead, setRecordRead] = useState<RecordRead>('no-record')
   const [shown, setShown] = useState('')
   const [board, setBoard] = useState<FeedAgent[]>([])
   const [boardLoading, setBoardLoading] = useState(true)
@@ -339,11 +346,9 @@ export default function Explorer() {
     const q = raw.trim()
     if (!q) return
     setLoading(true); setError(null); setPipelineDone(false)
-    const [idRes, repRes] = await Promise.all([resolveAgent(q), getReputation(q)])
-    const id = idRes.ok && idRes.data.found ? (idRes.data.agent ?? null) : null
-    const rep = repRes.ok && repRes.data.found ? (repRes.data.reputation ?? null) : null
-    setIdentity(id); setReputation(rep); setShown(q)
-    if (!id && !rep) setError(`No agent found for "${q}". Try a token id (849980) or an owner address.`)
+    const { identity: id, reputation: rep, read } = await readPayee(q)
+    setIdentity(id); setReputation(rep); setRecordRead(read); setShown(q)
+    setError(emptyReadMessage(read, !id && !rep))
     setLoading(false)
     if (scroll) topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
@@ -407,13 +412,13 @@ export default function Explorer() {
           <div className="mt-6">
             {error && <div className="rounded-lg border border-border bg-card p-5 text-sm text-foreground/60">{error}</div>}
             {!error && loading && !identity && !reputation && <ProfileSkeleton />}
-            {!error && (identity || reputation) && (
+            {!error && !loading && shown && (
               <motion.div key={`pipe-${shown}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}>
-                <VerifyStepper identity={identity} reputation={reputation} query={shown} onComplete={() => setPipelineDone(true)} />
+                <VerifyStepper identity={identity} reputation={reputation} recordRead={recordRead} query={shown} onComplete={() => setPipelineDone(true)} />
               </motion.div>
             )}
             <AnimatePresence mode="wait">
-              {!error && (identity || reputation) && pipelineDone && (
+              {!error && shown && pipelineDone && (
                 <motion.div key={shown} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }} className="mt-4">
                   {/* A bare token id that exists on more than one chain does not identify
                       one agent, so say that instead of letting the first chain's result read
@@ -447,7 +452,7 @@ export default function Explorer() {
                       </div>
                     </div>
                   )}
-                  <TrustProfile identity={identity} reputation={reputation} query={shown} />
+                  <TrustProfile identity={identity} reputation={reputation} recordRead={recordRead} query={shown} />
                 </motion.div>
               )}
             </AnimatePresence>
@@ -479,7 +484,7 @@ export default function Explorer() {
                   <tbody>
                     {board.map((a, i) => {
                       const s = a.reputation?.score ?? 0
-                      const v = riskOf(s, a.kya)
+                      const v = rosterVerdict(s, a.kya)
                       const active = activeKey != null && (a.onchainAgentId === activeKey || a.id === activeKey)
                       return (
                         <tr key={a.id} onClick={() => { const q = a.onchainAgentId || a.id; setQuery(q); void lookup(q, true) }}
@@ -487,7 +492,7 @@ export default function Explorer() {
                           <td className="py-3 pl-4 text-sm font-semibold tabular-nums text-foreground/45">{i + 1}</td>
                           <td className="py-3 pr-3">
                             <div className="flex items-center gap-2.5">
-                              <AgentAvatar seed={a.onchainAgentId || a.id} size={32} verdict={v.toLowerCase() as OwlVerdict} />
+                              <AgentAvatar seed={a.onchainAgentId || a.id} size={32} verdict={v ? (v.toLowerCase() as OwlVerdict) : 'neutral'} />
                               <div className="min-w-0">
                                 <div className="truncate font-semibold text-foreground">{a.name}</div>
                                 <div className="truncate font-mono text-[11px] text-foreground/55">{a.category}{a.onchainAgentId ? ` · #${a.onchainAgentId}` : ''}</div>
@@ -515,7 +520,9 @@ export default function Explorer() {
                             )}
                           </td>
                           <td className="py-3 pr-4 text-right">
-                            <VerdictBadge verdict={v} />
+                            {/* This list does not carry what a record holds against an agent, so
+                                under 200 it says nothing: opening the row runs the full read. */}
+                            {v ? <VerdictBadge verdict={v} /> : <span className="text-[11px] font-medium text-foreground/55">open to check</span>}
                           </td>
                         </tr>
                       )

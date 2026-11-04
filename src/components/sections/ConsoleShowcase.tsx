@@ -155,8 +155,8 @@ export default function ConsoleShowcase() {
                   />
                   <MockRow
                     leading={<OwlMark verdict="deny" size={30} />}
-                    label="Unknown counterparty"
-                    sub="no on-chain identity"
+                    label="Flagged counterparty"
+                    sub="KYA revoked"
                     value={
                       <span className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-xs font-bold" style={{ color: 'var(--danger)', background: 'color-mix(in srgb, var(--danger) 8%, transparent)' }}>
                         DENY

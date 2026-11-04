@@ -7,6 +7,7 @@
  * no writes.
  */
 import type { AgentIdentity } from './data.js'
+import { addressInQuery } from './agent-query.js'
 import { getChainById, identityChains, resolveRpcUrls, type ChainDescriptor } from './chains/index.js'
 import {
   parseStellar8004Id,
@@ -185,7 +186,8 @@ export class RpcIdentityProvider implements IdentityProvider {
   }
 
   async resolve(query: string): Promise<ResolvedIdentity | null> {
-    const q = query.trim()
+    // A CAIP-10 account and an upper-case 0X name the same address as the bare form.
+    const q = addressInQuery(query) ?? query.trim()
 
     // A Stellar 8004 id is answered FIRST and by a different registry, because it is not an
     // ERC-8004 id and nothing below could read it: the shapes are disjoint (they carry a

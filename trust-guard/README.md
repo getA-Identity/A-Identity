@@ -5,7 +5,12 @@ One line of code that stops your AI agent from paying a counterparty it should n
 Agents are starting to hire and pay other agents at machine speed. `trust-guard` puts a
 verification gate in front of that payment: it calls the live **A-Identity Trust Oracle**
 (ERC-8004 on-chain identity + KYA + a deterministic 0-1000 reputation + a Sybil check) and
-**throws if the verdict is DENY**, so a revoked, Sybil, or unverified counterparty never gets paid.
+**throws unless the verdict is ALLOW**. DENY means we hold evidence against the counterparty (revoked KYA, a Sybil
+flag, or a low reputation with rejected settlements or guardrail override attempts on its record), or that we could
+not read our record and stayed strict, and the reasons say which. It is refused at that address. A counterparty we
+know nothing about, or one we hold a record of that holds nothing against it and not enough to vouch for it, gets
+WARN. WARN means unknown, not clean, and it does not pay by itself: `guard()` throws on it too. If you want to pay
+on WARN, say so in code with `denyOn: ['DENY']`.
 
 ```bash
 npm install @a-identity/trust-guard
@@ -15,13 +20,13 @@ npm install @a-identity/trust-guard
 import { guard, TrustDenyError } from '@a-identity/trust-guard'
 
 try {
-  // Verify before you pay. Throws if the counterparty is DENY.
+  // Verify before you pay. It throws on DENY and on WARN, because the next line pays.
   await guard(counterpartyAgentId, { txContext: { amountUsd: 500, kind: 'payment' } })
-  await payAgent(counterpartyAgentId, 500) // only runs if the guard passed
+  await payAgent(counterpartyAgentId, 500) // only runs on ALLOW
 } catch (e) {
   if (e instanceof TrustDenyError) {
     console.warn('Blocked:', e.verdict.decision, e.verdict.reasons)
-    return // do not pay
+    return // do not pay. On WARN, show the reasons to a person
   }
   throw e
 }
@@ -29,12 +34,38 @@ try {
 
 ## Verdicts
 
-`guard()` runs `risk_check` and returns an `ALLOW` / `WARN` verdict, or throws `TrustDenyError`
-on `DENY`. Block warnings too by widening `denyOn`:
+`guard()` runs `risk_check`. It returns an `ALLOW` verdict and throws `TrustDenyError` on `DENY` and on
+`WARN`, on every rail. `DENY` always throws, whatever `denyOn` says. A counterparty we know nothing about
+gets `WARN`, and `WARN` does not pay by itself, so a caller who wants to pay on it says so in code and
+gets the verdict back to branch on:
 
 ```ts
-await guard(id, { denyOn: ['DENY', 'WARN'] }) // stricter: throw on WARN as well
+await guard(id) // the default: only returns on ALLOW
+
+const verdict = await guard(id, { denyOn: ['DENY'] }) // returns on WARN as well
+if (verdict.decision === 'WARN') return askAPerson(verdict.reasons)
 ```
+
+The error's `verdict.decision` says which one it was, and `verdict.reasons` says why. The message on a `WARN`
+says to read the reasons, because most mean we do not know the counterparty and one can name something our
+record holds against it, and it names `denyOn: ['DENY']`.
+
+An answer that is not a verdict at all, such as an HTML page, an empty body or an unknown decision, throws
+`UnusableVerdictError` on every rail, whatever `denyOn` says, because the next line pays.
+
+**Behavior change in 0.4.0.** `guard()` used to default to `denyOn: ['DENY']`, so a `WARN` returned and
+the next line paid. It now defaults to `['DENY', 'WARN']` on every rail. A caller who relied on `WARN`
+returning adds `denyOn: ['DENY']`. `verifyThenPay` is not affected: it never paid on `WARN` by itself.
+
+On the `xlayer` and `algorand` rails `guard()` used to return on any answer with no recognized decision.
+That is the second behavior change in 0.4.0: it throws `UnusableVerdictError` now, as the `arc` rail already did.
+
+**If you installed 0.3.0 or earlier, read this.** The verdict's rule lives on the server, so it
+reaches every installed version with no change on your side, and the default above does not. Until
+2026-11-04 a counterparty with no on-chain identity or no record on our platform got `DENY`, and
+`guard()` threw. Now it gets `WARN`, and your installed `guard()` returns on `WARN`, so a payee that
+used to throw now returns, and code that pays on its next line pays it. If that is not what you want,
+add `denyOn: ['DENY', 'WARN']`, or upgrade to 0.4.0 when it is published.
 
 ## The full client
 
@@ -48,7 +79,7 @@ await oracle.reputation(id)    // 0-1000 score (+ its on-chain attestation, if p
 await oracle.riskCheck(id, tx) // ALLOW / WARN / DENY
 await oracle.passport(id)      // identity + reputation + KYA + risk in one call
 await oracle.payCheck(address) // Algorand rail: is it safe to pay this Algorand address? (5 USDC)
-await oracle.guard(id, opts)   // the gate: throws on DENY
+await oracle.guard(id, opts)   // the gate: throws on DENY and on WARN
 ```
 
 ## Three rails
@@ -81,7 +112,7 @@ const oracle = new TrustGuard({
   }),
 })
 
-await oracle.guard(counterpartyId) // pays 5 USDC for the verdict, throws on DENY
+await oracle.guard(counterpartyId) // pays 5 USDC for the verdict, throws unless it is ALLOW
 ```
 
 What the payer signs, and nothing more: one USDC transfer of exactly the quoted amount to the
@@ -142,12 +173,12 @@ const wallet = createWalletClient({
 try {
   const out = await verifyThenPay({
     vault,                          // the vault whose operator this key is
-    payee,                          // the 0x address to pay, holding an ERC-8004 agent on Arc Mainnet
+    payee,                          // the 0x address to pay; one holding no ERC-8004 agent is not refused, it gets WARN
     amountUnits: usdcUnits('0.25'), // USDC base units; no floats
     signer: fromViemWallet(wallet), // the operator, and by default the payer of the check too
   })
   if (out.outcome === 'executed') console.log(out.payment.explorerUrl, out.record.recorded)
-  if (out.outcome === 'awaiting_human') await askTheOwner(out.ownerPay) // WARN: see below
+  if (out.outcome === 'awaiting_human' && out.ownerPay.simulation.ok) await askTheOwner(out.ownerPay) // WARN: see below
 } catch (e) {
   if (e instanceof TrustDenyError) console.warn('Blocked:', e.verdict.reasons, e.context?.recordUrl)
   else throw e
@@ -156,14 +187,18 @@ try {
 
 The order, and what each step can cost:
 
-1. **Free checks, nothing signed.** The asset is the registry's USDC and the vault's; the payee holds
-   an ERC-8004 agent on Arc Mainnet; the vault's policy and a simulated `pay()` accept the payment; the
-   operator can pay the gas. A refusal here costs nothing: the check is not bought.
+1. **Free checks, nothing signed.** The asset is the registry's USDC and the vault's; an agent named in
+   `payeeAgentId` is the payee's; the vault's policy and a simulated `pay()` accept the payment; the
+   operator can pay the gas. A refusal here costs nothing: the check is not bought, and no verdict comes back.
+   That includes a payment above the vault's ceiling or to a payee off its allowlist, which only the owner
+   can pay as it stands; raise the ceiling or allow the payee to get a verdict and a hand-off. A payee that
+   holds no agent is not refused: it goes on to the check.
 2. **The verdict, 0.005 USDC.** The payer signs one Gateway authorization from its Gateway balance. It
    spends no gas. The payer needs a Gateway balance on Arc Mainnet, and may be a separate key (`payer`).
 3. **The decision.** DENY throws `TrustDenyError` and never calls the operator. WARN returns
    `awaiting_human` with a prepared `ownerPay` for the vault's owner and pays nothing, unless you set
-   `payOnWarn: true`. ALLOW goes on.
+   `payOnWarn: true`. A payee we know nothing about gets WARN, so `payOnWarn` on such a payee is your own
+   explicit choice to pay it. ALLOW goes on.
 4. **The payment.** Exactly one `sendTransaction` of `pay(payee, amountUnits)`, encoded from your own
    inputs and compared byte for byte with what the server prepared. The server's calldata is never
    executed, so a compromised server cannot redirect a payment. `maxFeePerGas` is at least 20 gwei,
@@ -172,11 +207,15 @@ The order, and what each step can cost:
 5. **The record.** The hash is posted to the flow, the server reads the receipt from the chain itself,
    and `record.recorded` says whether it did. Flow records are public by flow id, at
    `/api/x402/gateway/flows/<flowId>`, DENYs included. After a WARN, send `ownerPay` from the owner's key
-   and close the flow with `recordFlowReceipt({ flowId, txHash })`.
+   and close the flow with `recordFlowReceipt({ flowId, txHash })`, unless `ownerPay.simulation.ok` is
+   false: the vault would refuse it right now, so sending it would revert and cost gas. The vault page does
+   not send `ownerPay` for you today; the integration guide has a sample that sends it from a browser
+   wallet, starting from the public flow record.
 
 Anything that is not a usable verdict is never treated as ALLOW: a Gateway error, a settlement that does
 not echo what was signed, an unknown decision, a reputation that is not a finite number, an ALLOW below
-reputation 500, or a verdict about another agent or amount each throw, and the operator is not called.
+reputation 500, a WARN carrying signals that force DENY, or a verdict about another agent or amount each
+throw, and the operator is not called.
 
 What this does not remove: the verdict is not signed, so you still trust the A-Identity server and the TLS
 connection to it (`baseUrl` must be https, or http on localhost). These comparisons catch a server bug and a
@@ -188,35 +227,43 @@ independently either: it comes from the same server, so it binds the answer to y
 | Error | Meaning |
 | --- | --- |
 | `ArcAssetError` | Not the registry's USDC. Nothing bought. |
-| `PayeeNotRegisteredError` | The payee holds no agent on Arc Mainnet, or the registry did not answer. Nothing bought. |
+| `PayeeNotRegisteredError` | An agent named in `payeeAgentId` is not the payee's, or the registry did not answer. Holding no agent is not this error. Nothing bought. |
 | `VaultPolicyError` | The vault would refuse (its own error name), or could not be read. `stage` says whether the check was already paid. |
 | `GatewayCheckError` | No usable verdict came back. `paid` is true, false, or null when the answer does not say. `code` `NO_HUMAN_GATE` is a WARN on a vault whose owner and operator are one key: the check was paid, the flow is public at `recordUrl`, nothing was prepared, and the fix is an owner key the agent does not hold. |
 | `UnusableVerdictError` | The check was paid and its answer cannot be acted on. |
 | `TrustDenyError` | DENY. `context` holds the flow id, the check and the record's URL. |
 | `VaultPaymentError` | The payment step failed. With a `txHash`, look that hash up: never send again with a new nonce, because a transaction reported as missing can still land. |
 
-Who can get ALLOW: `risk_check` scores the payee's address, and any address that is not an A-Identity
-platform agent scores at most 60 and gets DENY. ALLOW needs a platform agent with reputation at least 500,
-attested KYA and at least 7 days of tenure. The vault cannot settle an x402 offer: its agent payment path
+Who gets what: `risk_check` scores the payee's address. DENY means we hold evidence against the payee: KYA revoked,
+Sybil high, or, on an agent on our platform whose record holds rejected settlements or guardrail override attempts,
+a reputation under 200 or a payment over 100 USD with reputation under 400. It also comes out when we could not read
+our record and stayed strict, and the reasons say which. A low score alone is
+not evidence. An agent on our platform with nothing against it gets WARN at those lines, with reasons that say our
+record holds nothing against it and not enough to vouch for it, and the amount named when it is over 100 USD. A
+payee with no on-chain identity, or with an identity and no record on our platform, is not known bad, so it gets
+WARN too, with reasons that say what we do not know; such an address scores at most 60, which only says we have no
+history for it. DENY binds an address we hold a proven record of: a record counts at an address only once it proved
+control of it, and a payee with a bad record can appear under a new address and get WARN, so WARN means unknown, not
+clean. ALLOW needs a platform agent with reputation at least 500, attested KYA and at least 7 days of tenure. The vault cannot settle an x402 offer: its agent payment path
 is `pay(to, amount)`, a direct USDC transfer to the payee you checked.
 
 For a verdict alone, with no vault, use the rail with its payer. Send the payee's address as the agent id,
-never a CAIP id. If your next line pays, pass `denyOn: ['DENY', 'WARN']`, because WARN returns by default
-here and it does not mean pay; `verifyThenPay` is the path that holds WARN for the owner by itself:
+never a CAIP id. `guard()` throws on DENY and on WARN by default, so your next line only runs on ALLOW;
+`verifyThenPay` is the path that hands a WARN to the owner:
 
 ```ts
 import { TrustGuard } from '@a-identity/trust-guard'
 import { arcGatewayPayer, fromViemWallet } from '@a-identity/trust-guard/arc'
 
 const oracle = new TrustGuard({ rail: 'arc', onPaymentRequired: arcGatewayPayer(fromViemWallet(wallet)) })
-await oracle.guard(payeeAddress, { txContext: { amountUsd: 0.25 }, denyOn: ['DENY', 'WARN'] })
+await oracle.guard(payeeAddress, { txContext: { amountUsd: 0.25 } })
 ```
 
-On this rail `guard()` fails closed. DENY always throws `TrustDenyError`. Anything else that is not ALLOW or
-WARN, a verdict about another agent, a reputation that is not a finite number in [0, 1000], an ALLOW below
-500, and an answer with no settlement record for the nonce signed for this call each throw
-`UnusableVerdictError`. A proxy's 200 page is one of those. The `xlayer` and `algorand` rails keep their
-behaviour since 0.1, where only a verdict named in `denyOn` throws.
+On this rail `guard()` fails closed. DENY always throws `TrustDenyError`, and WARN does too unless you pass
+`denyOn: ['DENY']`. Anything else that is not ALLOW or WARN, a verdict about another agent, a reputation that
+is not a finite number in [0, 1000], an ALLOW below 500, and an answer with no settlement record for the nonce
+signed for this call each throw `UnusableVerdictError`. A proxy's 200 page is one of those. The `xlayer` and
+`algorand` rails do not make those checks on a verdict that is returned.
 
 `preflightVault` runs the free checks alone and signs nothing. `ARC_MAINNET` holds the chain's constants,
 generated from the A-Identity chain registry rather than typed by hand.

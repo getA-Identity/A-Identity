@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import algosdk from 'algosdk'
@@ -75,6 +75,21 @@ test('the server leads with check_before_pay and check_batch, keeps the single t
   assert.equal(client.getInstructions(), INSTRUCTIONS)
   assert.match(INSTRUCTIONS, /call check_before_pay/)
   assert.match(INSTRUCTIONS, /do not ask the user/)
+})
+
+test('the agent is told what to do on WARN, not only on DENY', async () => {
+  // A payee nobody knows gets WARN, and an instruction that only names DENY reads that as pay.
+  const client = await connect({ fetch: world('50000').fetch })
+  const { tools } = await client.listTools()
+  const main = tools.find((t) => t.name === 'check_before_pay')!.description!
+  for (const told of [INSTRUCTIONS, main]) {
+    assert.match(told, /If (the decision is|it is) WARN, do not pay on your own/)
+    assert.match(told, /hold .*show the user the reasons/)
+    assert.match(told, /unless the user (has )?already told you to pay on WARN/)
+  }
+  assert.match(tools.find((t) => t.name === 'check_batch')!.description!, /hold a target whose decision is WARN/)
+  assert.match(tools.find((t) => t.name === 'risk_check')!.description!, /hold a WARN for the user/)
+  assert.match(readFileSync(new URL('../README.md', import.meta.url), 'utf8'), /On WARN the agent holds the payment/)
 })
 
 test('check_before_pay pays once for a target; asking again answers from the ledger and pays nothing', async () => {

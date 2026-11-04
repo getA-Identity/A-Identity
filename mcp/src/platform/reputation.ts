@@ -4,6 +4,7 @@
  * Layering: L2 domain module; imports ./core.js and flat ../ modules only.
  */
 import { state, type PlatformAgent } from './core.js'
+import type { Task } from '../marketplace.js'
 import { computeAgentReputation } from '../reputation.js'
 import { resolveActionPolicy } from '../policy/index.js'
 import { classifySybil, type SybilSignals } from '../asp/risk.js'
@@ -44,6 +45,33 @@ function behavioralSignals(agent: PlatformAgent) {
 }
 
 /**
+ * Whether a thing written on this record at this time is its real owner's conduct. A stranger can
+ * import someone's token and own the row until the real owner claims it, and an owner can reject
+ * settlements and attempt overrides on its own row. On an unclaimed record the owner is the importer,
+ * so none of it counts. After a claim, only what came after it does. Without this, a free sign-in
+ * could write rows that a vendor inherits by following the claim flow, and that is enough to DENY the
+ * wallet the vendor just proved.
+ */
+function ownerConductCounts(agent: PlatformAgent, at: string): boolean {
+  if (agent.kya === 'unclaimed') return false
+  return !agent.claimProof || at >= agent.claimProof.at
+}
+
+/**
+ * Refused attempts to record a blocked action as executed. From the monotonic meter, because the audit
+ * rows are capped at 500: reading the rows would let an owner erase this evidence with 500 free checks.
+ * The rows still count where they say more, because they can predate the meter. A claim recorded before
+ * the baseline existed has no number to subtract, so only its rows after the claim count.
+ */
+function overrideAttemptsOf(agent: PlatformAgent): number {
+  if (agent.kya === 'unclaimed') return 0
+  const baseline = agent.claimProof ? agent.claimProof.overrideAttemptsAtClaim ?? Infinity : 0
+  const metered = (state.meters[agent.id]?.overrideAttempts ?? 0) - baseline
+  const rows = (state.audits[agent.id] ?? []).filter((e) => ownerConductCounts(agent, e.ts)).reduce((a, e) => a + (e.overrideAttempts ?? 0), 0)
+  return Math.max(metered, rows)
+}
+
+/**
  * Real Sybil / wash-reputation signals from platform state: how many agents share this agent's
  * operator (owner), and how much of its hired work came from its OWN operator (self-dealing) vs
  * independent clients. Same-operator hiring inflates reputation without real demand. Honest by
@@ -77,7 +105,7 @@ function disciplineSignals(agent: PlatformAgent) {
   const warns = entries.filter((e) => e.verdict === 'WARN')
   return {
     policyDecisions: entries.length,
-    overrideAttempts: entries.reduce((a, e) => a + (e.overrideAttempts ?? 0), 0),
+    overrideAttempts: overrideAttemptsOf(agent),
     unverifiableDecisions: entries.filter((e) => e.unverifiable).length,
     warnDecisions: warns.length,
     danglingApprovals: warns.filter((e) => e.outcome === 'awaiting_human' || e.outcome === 'abandoned').length,
@@ -88,7 +116,7 @@ function disciplineSignals(agent: PlatformAgent) {
 export function repOf(agent: PlatformAgent) {
   const ixs = state.instructions.filter((i) => i.agentId === agent.id)
   const settled = ixs.filter((i) => i.status === 'executed_onchain')
-  const rejected = ixs.filter((i) => i.status === 'rejected').length
+  const rejected = ixs.filter((i) => i.status === 'rejected' && ownerConductCounts(agent, i.createdAt)).length
   const settledUsd = settled.reduce((s, i) => s + i.amountUsd * i.count, 0)
   return computeAgentReputation({
     settledCount: settled.length,
@@ -106,12 +134,12 @@ export function repOf(agent: PlatformAgent) {
 
 export function agentReputation(agentId: string) {
   const q = agentId.trim()
-  // Resolve by platform id, on-chain token id ("#849980" / "849980"), or owner address, so the
-  // public get_reputation tool answers the same queries the trust explorer resolves identity with.
+  // Resolve by platform id or on-chain token id ("#849980" / "849980"). An address is not read
+  // here, because a wallet named on a record is not proof the record is that wallet's:
+  // reputationForQuery (agents.ts) answers an address, for every surface that takes one.
   const agent =
     state.agents.find((a) => a.id === q) ??
-    state.agents.find((a) => a.onchainAgentId && (a.onchainAgentId === q || `#${a.onchainAgentId}` === q)) ??
-    (/^0x[0-9a-fA-F]{40}$/.test(q) ? state.agents.find((a) => a.walletAddress?.toLowerCase() === q.toLowerCase()) : undefined)
+    state.agents.find((a) => a.onchainAgentId && (a.onchainAgentId === q || `#${a.onchainAgentId}` === q))
   if (!agent) return { error: 'Unknown agent' }
   // A transparent echo of the behavioral inputs so a caller (or an OKX reviewer) sees WHY the
   // behavior band moved the score, not just the number. Every field is real, from state.tasks.
@@ -149,6 +177,9 @@ export function agentReputation(agentId: string) {
     decisions: dsc.policyDecisions,
     policyConfigured: dsc.policyConfigured,
     overrideAttempts: dsc.overrideAttempts,
+    // A human refused this agent's own instruction. The velocity breaker's refusals are not in
+    // here: see adverseRecordFrom in asp/risk.ts.
+    rejectedSettlements: state.instructions.filter((i) => i.agentId === agent.id && i.status === 'rejected' && i.denyCode !== 'velocity_exceeded' && ownerConductCounts(agent, i.createdAt)).length,
     unverifiableDecisions: dsc.unverifiableDecisions,
     approvalsAwaited: dsc.warnDecisions,
     approvalsUnclosed: dsc.danglingApprovals,

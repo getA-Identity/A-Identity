@@ -3,8 +3,8 @@
  *
  * Pure. The Gateway rail returns the tool's body with its settlement record attached; before
  * anything is prepared from it, the answer has to be shown to belong to THIS request and to
- * be a verdict at all. Each rule below exists because the scorer, which this layer may not
- * change (the OKX.AI listings are registered against it), would otherwise let it through:
+ * be a verdict at all. Each rule below exists because the scorer on its own would otherwise
+ * let it through:
  *
  *   - The settlement must echo the check we sent: Arc Mainnet, the nonce the payer signed,
  *     the payer, an outcome Gateway credited, and risk_check as the tool. Anything else is a
@@ -18,12 +18,22 @@
  *     JSON) on an otherwise clean agent comes out ALLOW. The same holds for tenure.
  *   - An ALLOW has to agree with the signals it was computed from (on-chain identity,
  *     attested KYA, not revoked, no Sybil flag, reputation at least 500, tenure at least 7
- *     days), the exact conditions under which assessRisk returns ALLOW. An ALLOW that
- *     contradicts them is a scorer fault and is not paid on.
+ *     days, and not a payee we hold no record of), the exact conditions under which assessRisk
+ *     returns ALLOW. An ALLOW that contradicts them is a scorer fault and is not paid on.
  *   - A WARN has to agree with its signals too: none of the conditions under which assessRisk
- *     returns DENY (revoked, Sybil high, no on-chain identity, reputation under 200, over 100
- *     USD with reputation under 400) may hold. A WARN can lead to pay() with payOnWarn, or to
- *     the owner being asked to pay, so a WARN that should have been a DENY is not acted on.
+ *     returns DENY may hold. A WARN can lead to pay() with payOnWarn, or to the owner being asked
+ *     to pay, so a WARN that should have been a DENY is not acted on. Where that line sits
+ *     depends on signals.onPlatform and signals.adverseRecord, the same inputs the scorer reads
+ *     (asp/risk.ts says why):
+ *       - revoked or Sybil high: DENY, always.
+ *       - onPlatform true and adverseRecord false: our record holds nothing against it, so a low
+ *         score is a WARN. A missing identity alone is a WARN too.
+ *       - onPlatform true and adverseRecord anything else: reputation under 200, or over 100 USD
+ *         with reputation under 400: DENY. A missing identity alone is a WARN.
+ *       - onPlatform false: we hold no record, so neither a missing identity nor a low score is
+ *         evidence, and a WARN is what such a payee gets.
+ *       - anything else, an answer that does not carry the signal: all of the above and no
+ *         on-chain identity count as DENY. What cannot be seen stays on the strict side.
  *
  * An unusable answer is treated as DENY, with the failing check named, and is recorded as
  * such: the check was paid for, so the record says what was bought and why it was not used.
@@ -65,11 +75,24 @@ export type SettlementEcho = {
   resource: string
 }
 
+/** The signals the client needs to check a WARN for itself, as the scorer echoed them. */
+export type VerdictSignals = {
+  /** Absent when the scorer did not say: the client then stays on the strict side too. */
+  onPlatform?: boolean
+  /** Absent when the scorer did not say, with the same reading. */
+  adverseRecord?: boolean
+  onchainVerified: boolean | null
+  revoked: boolean | null
+  sybil: string | null
+}
+
 type Common = {
   risk: string | null
   reasons: string[]
   reputationScore: number | null
   agentId: string | null
+  /** Null when the answer carried no signals at all. */
+  signals: VerdictSignals | null
   /** signals.txContext as the scorer echoed it. Null when it echoed none. */
   txContext: { payee: string | null; amountUsd: number | null } | null
   checkedAt: string | null
@@ -86,7 +109,8 @@ const SETTLED = new Set(['credited', 'completed'])
  *  that an ALLOW agrees with its own signals. */
 const ALLOW_MIN_REPUTATION = 500
 const ALLOW_MIN_TENURE_DAYS = 7
-/** The thresholds under which it returns DENY, restated to check that a WARN agrees too. */
+/** The thresholds under which it returns DENY on an agent whose record counts against it, restated
+ *  to check that a WARN agrees too. */
 const DENY_BELOW_REPUTATION = 200
 const HIGH_VALUE_USD = 100
 const HIGH_VALUE_MIN_REPUTATION = 400
@@ -131,6 +155,15 @@ export function evaluateVerdict(body: unknown, expected: ExpectedCheck): Verdict
     reasons,
     reputationScore,
     agentId: typeof b.agentId === 'string' ? b.agentId : null,
+    signals: signals
+      ? {
+          ...(typeof signals.onPlatform === 'boolean' ? { onPlatform: signals.onPlatform } : {}),
+          ...(typeof signals.adverseRecord === 'boolean' ? { adverseRecord: signals.adverseRecord } : {}),
+          onchainVerified: typeof signals.onchainVerified === 'boolean' ? signals.onchainVerified : null,
+          revoked: typeof signals.revoked === 'boolean' ? signals.revoked : null,
+          sybil: typeof signals.sybil === 'string' ? signals.sybil : null,
+        }
+      : null,
     txContext: echoed ? { payee: typeof echoed.payee === 'string' ? echoed.payee : null, amountUsd: typeof echoed.amountUsd === 'number' ? echoed.amountUsd : null } : null,
     checkedAt: typeof b.checkedAt === 'string' ? b.checkedAt : null,
   }
@@ -158,6 +191,7 @@ export function evaluateVerdict(body: unknown, expected: ExpectedCheck): Verdict
   if (decision === 'ALLOW') {
     const contradictions: string[] = []
     if (signals.onchainVerified !== true) contradictions.push('no on-chain identity')
+    if (signals.onPlatform === false) contradictions.push('no platform record')
     if (signals.kyaVerified !== true) contradictions.push('KYA not attested')
     if (signals.revoked === true) contradictions.push('revoked')
     if (signals.sybil === 'high' || signals.sybil === 'medium') contradictions.push(`sybil ${String(signals.sybil)}`)
@@ -169,10 +203,17 @@ export function evaluateVerdict(body: unknown, expected: ExpectedCheck): Verdict
     const denyLevel: string[] = []
     if (signals.revoked) denyLevel.push('revoked')
     if (signals.sybil === 'high') denyLevel.push('sybil high')
-    if (signals.onchainVerified !== true) denyLevel.push('no on-chain identity')
-    if (reputationScore < DENY_BELOW_REPUTATION) denyLevel.push(`reputation ${reputationScore} under ${DENY_BELOW_REPUTATION}`)
-    if (expected.amountUsd > HIGH_VALUE_USD && reputationScore < HIGH_VALUE_MIN_REPUTATION) {
-      denyLevel.push(`${expected.amountUsd} USD with reputation ${reputationScore} under ${HIGH_VALUE_MIN_REPUTATION}`)
+    // Only an explicit false says there is no record, and only an explicit answer makes a
+    // missing identity a gap rather than evidence. Anything else stays on the strict side.
+    if (signals.onPlatform !== true && signals.onPlatform !== false && signals.onchainVerified !== true) denyLevel.push('no on-chain identity')
+    // A low score is believable on a WARN only when the answer says there is no evidence: no
+    // record, or a record that holds nothing against it. Missing stays strict.
+    const nothingAgainstIt = signals.onPlatform === false || (signals.onPlatform === true && signals.adverseRecord === false)
+    if (!nothingAgainstIt) {
+      if (reputationScore < DENY_BELOW_REPUTATION) denyLevel.push(`reputation ${reputationScore} under ${DENY_BELOW_REPUTATION}`)
+      if (expected.amountUsd > HIGH_VALUE_USD && reputationScore < HIGH_VALUE_MIN_REPUTATION) {
+        denyLevel.push(`${expected.amountUsd} USD with reputation ${reputationScore} under ${HIGH_VALUE_MIN_REPUTATION}`)
+      }
     }
     if (denyLevel.length) return unusable('SIGNALS_INCONSISTENT', `WARN carries signals that force DENY: ${denyLevel.join(', ')}`)
   }

@@ -386,7 +386,13 @@ rather than implied:
 
 Nothing here should be read as three states living on the ledger. The ledger holds a
 boolean per payee, and a WARN that nobody acted on looks exactly like a payee nobody has
-ever mentioned.
+ever mentioned. DENY means we hold evidence against the payee, or that we could not read our
+record and stayed strict, and the reasons say which. An agent we know nothing
+about gets WARN, so nothing is written, and the vault keeps refusing it until the owner allows it.
+A payee with no agent bound at all gets the same answer, without asking the scorer: nothing is
+known against it, no revoke is planned, and one the owner already allowed stays allowed. WARN
+means unknown, not clean. Evidence recorded before 2026-11-04 was answered under the older rule,
+in which such a payee got DENY and a revoke plan, and it stays as recorded.
 
 <Warning>
   **The 2026-09-19 rehearsal ran on testnet, and its passkey was software.** The P-256 key

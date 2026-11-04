@@ -2,7 +2,8 @@ import { useEffect, useReducer, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { Search, X, ArrowUpRight, ArrowRight, ShieldCheck, Wallet, QrCode, Check, Loader2 } from 'lucide-react'
-import { resolveAgent, getReputation, getLeaderboard, type AgentIdentity, type Reputation, type FeedAgent } from '../../lib/mcp-client'
+import { readPayee, getLeaderboard, type AgentIdentity, type Reputation, type FeedAgent } from '../../lib/mcp-client'
+import { adverseRecordOf, NO_VERDICT_NOTE, NOT_REACHED_NOTE, previewVerdict, rosterVerdict, UNKNOWN_PAYEE_NOTE, type RecordRead } from '../../lib/trust-preview'
 import { useAuth } from '../../store/auth'
 import { EASE_OUT_EXPO } from '../../lib/brand'
 import AgentAvatar from '../AgentAvatar'
@@ -22,10 +23,8 @@ import { connectWalletConnect, getInjectedWallets, refreshInjectedWallets, walle
 
 const ACCENT = '#7342E2'
 const RISK = { ALLOW: '#059669', WARN: '#d97706', DENY: '#dc2626' } as const
-type Verdict = keyof typeof RISK
-const riskOf = (s: number, kya?: string, verified = true): Verdict => (kya === 'revoked' || !verified || s < 200 ? 'DENY' : s < 500 ? 'WARN' : 'ALLOW')
 const gradeOf = (s: number) =>
-  s >= 800 ? 'Excellent' : s >= 650 ? 'Strong' : s >= 500 ? 'Good' : s >= 350 ? 'Fair' : s >= 200 ? 'Weak' : 'High risk'
+  s >= 800 ? 'Excellent' : s >= 650 ? 'Strong' : s >= 500 ? 'Good' : s >= 350 ? 'Fair' : s >= 200 ? 'Weak' : 'Low'
 const shorten = (a?: string | null) => (a && a.length > 14 ? `${a.slice(0, 8)}…${a.slice(-6)}` : a ?? '')
 const isAddr = (s?: string | null) => !!s && /^0x[0-9a-fA-F]{40}$/.test(s.trim())
 
@@ -46,21 +45,22 @@ function useCountUp(target: number, duration = 800) {
 
 const isMac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent || '')
 
-type Result = { identity: AgentIdentity | null; reputation: Reputation | null } | null
+type Result = { identity: AgentIdentity | null; reputation: Reputation | null; recordRead: RecordRead } | null
 
 function ResultCard({ result, q, onOpen, onClaim }: { result: NonNullable<Result>; q: string; onOpen: () => void; onClaim: () => void }) {
-  const { identity, reputation } = result
+  const { identity, reputation, recordRead } = result
+  const unreadable = recordRead === 'unreadable'
   const verified = Boolean(identity) || reputation?.onchain === 'registered'
   const score = reputation?.score ?? 0
   const shown = useCountUp(score)
-  const v = riskOf(score, reputation?.kya, verified)
+  const v = previewVerdict({ score, kya: reputation?.kya, verified, sybil: reputation?.sybil?.level, read: recordRead, adverseRecord: adverseRecordOf(reputation) })
   const name = reputation?.name || (identity && !identity.partial ? `Agent #${identity.tokenId}` : identity?.partial ? 'On-chain agent' : q)
   const seed = identity?.owner || identity?.tokenId?.toString() || q
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="flex flex-col gap-4 rounded-xl border border-border bg-background/40 p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <AgentAvatar seed={seed} size={54} verdict={v.toLowerCase() as OwlVerdict} />
+          <AgentAvatar seed={seed} size={54} verdict={v ? (v.toLowerCase() as OwlVerdict) : 'neutral'} />
           <div className="min-w-0">
             <div className="truncate text-sm font-bold text-foreground">{name}</div>
             <div className="truncate font-mono text-[11px] text-foreground/65">
@@ -68,16 +68,24 @@ function ResultCard({ result, q, onOpen, onClaim }: { result: NonNullable<Result
             </div>
           </div>
         </div>
-        <span className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-bold" style={{ color: RISK[v], background: `${RISK[v]}14`, boxShadow: `inset 0 0 0 1px ${RISK[v]}33` }}>
-          <span className="h-1.5 w-1.5 rounded-full" style={{ background: RISK[v] }} /> {v}
-        </span>
+        {!v ? (
+          <span className="text-xs font-semibold text-foreground/60">No verdict</span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-bold" style={{ color: RISK[v], background: `${RISK[v]}14`, boxShadow: `inset 0 0 0 1px ${RISK[v]}33` }}>
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: RISK[v] }} /> {v}
+          </span>
+        )}
       </div>
+      {unreadable && <p className="text-xs leading-relaxed text-foreground/60">The reputation could not be read just now, so this gives no verdict. Try again in a few seconds, and do not pay on this.</p>}
+      {recordRead === 'not-reached' && <p className="text-xs leading-relaxed text-foreground/60">{NOT_REACHED_NOTE}</p>}
+      {recordRead === 'no-record' && !identity && <p className="text-xs leading-relaxed text-foreground/60">{UNKNOWN_PAYEE_NOTE}</p>}
+      {!unreadable && recordRead !== 'not-reached' && !v && <p className="text-xs leading-relaxed text-foreground/60">{NO_VERDICT_NOTE}</p>}
       {reputation && (
         <div>
           <div className="flex items-baseline gap-2">
             <span className="font-mono text-3xl font-bold tabular-nums tracking-tight text-foreground">{shown}</span>
             <span className="font-mono text-xs text-foreground/60">/ 1000</span>
-            <span className="ml-auto text-xs font-semibold" style={{ color: RISK[v] }}>{gradeOf(score)}</span>
+            <span className="ml-auto text-xs font-semibold" style={v ? { color: RISK[v] } : undefined}>{gradeOf(score)}</span>
           </div>
           <div className="mt-2.5 h-2 w-full rounded-full" style={{ background: 'linear-gradient(90deg,#dc2626,#d97706 45%,#059669)' }}>
             <div className="relative h-full">
@@ -275,10 +283,8 @@ export default function TrustSpotlight() {
     if (!term) { setResult(null); setLoading(false); return }
     setLoading(true)
     const t = setTimeout(async () => {
-      const [idRes, repRes] = await Promise.all([resolveAgent(term), getReputation(term)])
-      const identity = idRes.ok && idRes.data.found ? (idRes.data.agent ?? null) : null
-      const reputation = repRes.ok && repRes.data.found ? (repRes.data.reputation ?? null) : null
-      setResult(identity || reputation ? { identity, reputation } : null)
+      const { identity, reputation, read } = await readPayee(term)
+      setResult({ identity, reputation, recordRead: read })
       setLoading(false)
     }, 350)
     return () => clearTimeout(t)
@@ -388,36 +394,22 @@ export default function TrustSpotlight() {
                   <div className="max-h-[52vh] overflow-y-auto p-4">
                     {loading && <div className="flex items-center gap-2 px-1 py-6 text-sm text-foreground/60"><span className="h-3 w-3 animate-spin rounded-full border-2 border-foreground/20 border-t-accent" /> Reading the chain…</div>}
                     {!loading && result && <ResultCard result={result} q={q.trim()} onOpen={() => goExplorer(q.trim())} onClaim={() => startClaim(result.identity?.owner || q.trim())} />}
-                    {!loading && !result && q.trim() && (
-                      <div className="flex flex-col gap-3 px-1 py-4">
-                        <p className="text-sm text-foreground/70">
-                          No verified agent found for <span className="font-mono text-foreground/70">{shorten(q.trim())}</span>. It may not be registered on A-Identity yet.
-                        </p>
-                        <button onClick={() => startClaim(q.trim())}
-                          className="inline-flex items-center gap-2 self-start rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90">
-                          <ShieldCheck size={15} /> Are you the owner? Claim this agent
-                        </button>
-                        <p className="text-xs text-foreground/60">
-                          Or try a demo token id like <button onClick={() => setQ('849980')} className="font-mono text-accent hover:underline">849980</button>.
-                        </p>
-                      </div>
-                    )}
                     {!loading && !q.trim() && (
                       <div>
                         <div className="px-1 pb-2 text-xs font-semibold uppercase tracking-wide text-foreground/65">Featured agents</div>
                         <div className="flex flex-col">
                           {(featured.length ? featured : []).map((a) => {
-                            const s = a.reputation?.score ?? 0, v = riskOf(s, a.kya)
+                            const s = a.reputation?.score ?? 0, v = rosterVerdict(s, a.kya)
                             return (
                               <button key={a.id} onClick={() => setQ(a.onchainAgentId || a.id)}
                                 className="flex items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors hover:bg-foreground/[0.04]">
-                                <AgentAvatar seed={a.onchainAgentId || a.id} size={34} verdict={v.toLowerCase() as OwlVerdict} />
+                                <AgentAvatar seed={a.onchainAgentId || a.id} size={34} verdict={v ? (v.toLowerCase() as OwlVerdict) : 'neutral'} />
                                 <div className="min-w-0 flex-1">
                                   <div className="truncate text-sm font-medium text-foreground">{a.name}</div>
                                   <div className="truncate font-mono text-[11px] text-foreground/65">{a.category}{a.onchainAgentId ? ` · #${a.onchainAgentId}` : ''}</div>
                                 </div>
                                 <span className="font-mono text-xs font-semibold tabular-nums text-foreground/70">{s}</span>
-                                <span className="h-1.5 w-1.5 rounded-full" style={{ background: RISK[v] }} />
+                                <span className="h-1.5 w-1.5 rounded-full bg-foreground/30" style={v ? { background: RISK[v] } : undefined} />
                               </button>
                             )
                           })}
