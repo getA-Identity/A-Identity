@@ -56,9 +56,9 @@ returns a band and flags, no verdict and no reasons, and is rate limited.
       USDC is burned on the source chain and minted natively on Arc, CCTP domain `26`.
     - [Arc's Get USDC section](https://docs.arc.io/arc-chain#get-usdc) lists the USDC Bridge
       app at `bridge.usdc.com`, Bridge Kit for doing it from code, and
-      [USDC providers](https://www.usdc.com/providers) for buying USDC. We have not run a
-      transfer through that app or bought from a provider, so we cannot tell you their fees or
-      timing.
+      [USDC providers](https://www.usdc.com/providers) for buying USDC. Our proof log holds no
+      transfer through that app and no purchase from a provider, so we cannot tell you their
+      fees or timing.
     - What we have done ourselves is a CCTP V2 burn on Base that Circle's Forwarding Service
       minted on Arc Mainnet; the receipts are on [/proof/arc](https://a-identity.xyz/proof/arc).
       A plain CCTP transfer ends with a `receiveMessage` call on Arc, and a wallet with no USDC
