@@ -27,6 +27,12 @@
  *     only ever concluded from a block whose list is whole, and is checked against every host.
  *   - eth_call on an address with no code answers 0x with no error, so a host behind the deploy looks
  *     like a contract with no getters. Only a full 32-byte word rules anything out.
+ *   - eth_getLogs also limits results: Blockdaemon said "query exceeds max results 20000", and the
+ *     Circle primary and QuickNode took 19912 logs and refused a little more. So a range can be refused
+ *     for what it holds, at any width, and someone can pay to fill a block with this topic.
+ *   - eth_getBlockReceipts answered on all four hosts on 2026-11-04 (QuickNode only between its rate
+ *     limits), and Blockdaemon gave an old block with 6 transactions as an empty list. So a list of
+ *     receipts only counts if it matches a block whose transaction list is whole.
  *
  * Where it starts after a restart. Render restarts on every deploy and the cursor lives only in this
  * process, on purpose: writing it down would be a second thing to keep true, and a cursor saved past
@@ -37,20 +43,44 @@
  * no read at all. What a restart does cost is its memory of refusals, so a refused contract is asked
  * about once more per process.
  *
+ * A block no host will read. A range every host refuses is cut down to one block. If that block is
+ * still refused while the last block a host did answer for still reads, the hosts are up and the block
+ * is the trouble: it is read through its receipts, and if those fail too it becomes a hole. A hole is
+ * still unread and is treated as that: it is kept, read again later with a growing wait, and the public
+ * block says logs-not-read for as long as one is open. The cursor goes past it so that one paid-for
+ * block cannot stop every vault after it from being found. If the block before does not read either,
+ * nothing is known about the block in question, so the cursor stays. A restart reads every block again,
+ * holes included.
+ *
  * What bounds the work, since anyone can deploy contracts that emit this topic:
  *   - Reads per tick are capped, and so are admissions per tick (each admission reads about 30 times,
  *     through its own hosts, and takes one of the route's slots, so the route still has the rest).
- *   - Whoever has waited longest is next, whether it was never asked or is being asked again, so a
- *     flood delays a real owner and cannot lock one out, and it costs the flooder gas per contract.
- *   - A bisect keeps its bounds between ticks, and a deploy hash once found is never looked for again.
+ *   - The queue is taken in turns: the newest contract nobody has asked about, the one that has waited
+ *     longest, then one at random. Each process rebuilds the queue in log order and with no memory of
+ *     what it closed, so oldest-first alone would put an old flood ahead of a real owner again after
+ *     every deploy, for good if deploys come faster than the flood drains. With the turns, an owner
+ *     newer than the flood is reached within a few ticks of the scan reaching their log, and new
+ *     contracts cannot starve an old one. An owner with a flood on both sides waits on the random
+ *     turn, which is about two contracts a tick at about 35 reads each: with 1000 on each side and a
+ *     deploy every 8 hours, about 3 days, and a restart does not put them back. So a flood costs the
+ *     flooder gas per contract and delays an owner, by far less when it is on one side only, and an owner
+ *     holding their hash can still post at any time. A contract that passes every check is counted,
+ *     and then costs no read.
+ *   - A flood of blocks costs more for what it gets: about 0.34 USDC for each block too full to read at
+ *     the measured gas price. Crossing one takes up to about 50 of the 100 log reads a tick when all four
+ *     hosts refuse, so about two such blocks a tick, or about 70 USDC to fill an 8-hour gap between
+ *     deploys. A vault after them waits for that crossing, and an owner holding their hash can still post.
+ *   - A bisect keeps its bounds between ticks and is finished before anything new is started, and a
+ *     deploy hash once found is never looked for again.
  *   - Refused for good is remembered for the life of the process. A retryable refusal waits longer
  *     each time, up to an hour, and is never given up on: what it is waiting for, a host catching up
  *     or an end date being renewed, may take longer than any count of tries.
  * The queue itself is not capped, since dropping an entry could drop a real vault. It grows only as
  * fast as someone pays to deploy contracts, at a few hundred bytes each.
  *
- * Read-only and holds no key. RPC, clock and admission are injected, so every path is unit-tested
- * with plain answers, and scripts/rehearse-arc-vault-fork.mjs runs it against a real EVM.
+ * It holds no key and sends nothing. The one thing it writes is through admission: a vault that passes
+ * every check becomes a row, as it does for a post. RPC, clock and admission are injected, so every path
+ * is unit-tested with plain answers, and scripts/rehearse-arc-vault-fork.mjs runs it against a real EVM.
  */
 import { encodeEventTopics, encodeFunctionData, getAddress, getCreateAddress, toHex, type Abi, type Hex } from 'viem'
 import { ADMISSION_CHAIN, collectOurAddresses, liveOurAddressSources } from './arc-owner-vault.js'
@@ -66,10 +96,11 @@ import {
   withDeadline,
   type RpcHost,
   type VaultAdmissionAnswer,
+  type VaultAdmissionDeps,
 } from './arc-owner-vault-live.js'
 import { ARC_VAULT_SWEEP_START_BLOCK } from './arc-season.js'
 import { AgentSpendPolicyAbi } from './contracts/AgentSpendPolicy.js'
-import { loadAdmittedArcVaults } from './storage.js'
+import { loadAdmittedArcVaults, type ArcVaultStoreIo } from './storage.js'
 
 const abi = AgentSpendPolicyAbi as unknown as Abi
 const EXPIRY_TOPIC = encodeEventTopics({ abi, eventName: 'SessionKeyExpirySet' })[0] as Hex
@@ -93,8 +124,13 @@ export type SweepProblem =
   | 'hosts-disagree'
   | 'admission-unavailable'
   | 'round-failed'
+  /** A round has run past everything that should bound it, and the ticks after it are not starting. */
+  | 'round-stalled'
 
-/** The sweep block of GET /api/arc/vaults. lastBlockRead is decimal, as deployBlock is on a row. */
+/**
+ * The sweep block of GET /api/arc/vaults. lastBlockRead is decimal, as deployBlock is on a row, and is
+ * how far the scan has gone: logs-not-read says a block behind it is still open.
+ */
 export type SweepStatus = { on: boolean; lastBlockRead: string | null; lastRun: string | null; lastProblem: SweepProblem | null }
 
 export type SweepLimits = {
@@ -106,14 +142,18 @@ export type SweepLimits = {
   asksPerTick: number
   /** The range one eth_getLogs starts at each tick: only Blockdaemon's history takes this much. */
   startSpan: number
-  /** The smallest range tried, the one the host that takes the least took. Past this a host failing is not about the range. */
-  minSpan: number
+  /** Blocks every host refused, read again per tick. Each is read again later each time, so none waits behind the others for good. */
+  holeRetriesPerTick: number
   /** Blocks left unread behind the head, so a host a little behind can still answer the last chunk. */
   headMargin: number
   /** A pause before each read: two of the four hosts rate limit quickly, and our own reads share them. */
   pauseMs: number
-  /** All the reads of one tick. A stalled round stops here, and the next tick goes on. */
+  /** All the reads of one tick. A round whose reads stall stops here, and the next tick goes on. */
   tickDeadlineMs: number
+  /** How long the store gets to give the list. Past it the round ends: nothing else bounds a store call. */
+  listDeadlineMs: number
+  /** How long one admission gets, its store calls included. Past it the round ends. Its chain reads have a shorter deadline of their own. */
+  askDeadlineMs: number
   /** A host whose read failed only after this long is not asked again this tick. */
   stalledAfterMs: number
   /** First wait before a retryable refusal is asked about again. It doubles. */
@@ -127,10 +167,12 @@ export const DEFAULT_SWEEP_LIMITS: SweepLimits = {
   logReadsPerTick: 100,
   asksPerTick: 5,
   startSpan: 50_000,
-  minSpan: 100,
+  holeRetriesPerTick: 3,
   headMargin: 20,
   pauseMs: 100,
   tickDeadlineMs: 120_000,
+  listDeadlineMs: 30_000,
+  askDeadlineMs: 60_000,
   stalledAfterMs: 7_500,
   retryAfterMs: 5 * 60_000,
   maxRetryAfterMs: 60 * 60_000,
@@ -149,6 +191,8 @@ export type VaultSweepDeps = {
   registryUsdc: string
   startBlock: number
   now?: () => number
+  /** An index below n, for the turn that does not go by a contract's place in the queue. */
+  pick?: (n: number) => number
   pause?: (ms: number) => Promise<void>
   log?: (line: string) => void
   limits?: Partial<SweepLimits>
@@ -156,8 +200,16 @@ export type VaultSweepDeps = {
 
 type Candidate = {
   vault: string
-  /** Since when it has waited: found, or last asked about. The longest wait goes first. */
+  /** Since when it has waited: found, or last asked about. The longest wait goes first on its turn. */
   waitingSince: number
+  /** Its newest log, so an owner who sets a new end date is new again. */
+  logBlock: number
+  /** Admission has been asked about it at least once. */
+  asked: boolean
+  /** Times its deploy could not be read. One that never reads must not hold the newest place. */
+  unreadTimes: number
+  /** The read cap stopped its bisect partway, so it finishes before anything new is started. */
+  midway: boolean
   /** Not asked about again before this. */
   notBefore: number
   shapeRead: boolean
@@ -170,6 +222,31 @@ type Candidate = {
 
 type Asked<T> = { ok: true; value: T } | { ok: false; problems: string[] }
 type Budget = { hosts: RpcHost[]; used: () => number; empty: () => boolean }
+type LogEntry = { vault: string; block: number }
+/** A block every host refused, kept until one of them reads it. */
+type Hole = { block: number; notBefore: number; tries: number }
+
+class TimedOut extends Error {}
+
+/** Whatever run does, an answer in ms: a pooled store connection can hang with no timeout of its own. Its timer holds nothing open. */
+function timed<T>(run: () => Promise<T>, ms: number, what: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new TimedOut(`${what} did not answer in ${ms} ms`)), ms)
+    timer.unref?.()
+    void Promise.resolve()
+      .then(run)
+      .then(
+        (value) => {
+          clearTimeout(timer)
+          resolve(value)
+        },
+        (e) => {
+          clearTimeout(timer)
+          reject(e)
+        },
+      )
+  })
+}
 
 function readBudget(hosts: readonly RpcHost[], max: number, pauseMs: number, pause: (ms: number) => Promise<void>): Budget {
   let used = 0
@@ -192,14 +269,34 @@ const hasCode = (code: unknown): boolean => typeof code === 'string' && code.len
 
 /** A log list only if every entry in it is what was asked for. Anything else is no answer from that host. */
 function readLogs(from: number, to: number) {
-  return (raw: unknown): { vault: string; block: number }[] | undefined => {
+  return (raw: unknown): LogEntry[] | undefined => {
     if (!Array.isArray(raw)) return undefined
-    const out: { vault: string; block: number }[] = []
+    const out: LogEntry[] = []
     for (const l of raw as { address?: unknown; blockNumber?: unknown; topics?: unknown[]; removed?: unknown }[]) {
       if (!l || typeof l.address !== 'string' || !ADDRESS.test(l.address) || typeof l.blockNumber !== 'string' || l.topics?.[0] !== EXPIRY_TOPIC) return undefined
       const block = Number(l.blockNumber)
       if (!Number.isSafeInteger(block) || block < from || block > to) return undefined
       if (l.removed !== true) out.push({ vault: l.address.toLowerCase(), block })
+    }
+    return out
+  }
+}
+
+/**
+ * The logs of one block from its receipts, only if there is one receipt for each of its transactions.
+ * A receipt holds every log of its transaction, so here another topic is simply not looked at.
+ */
+function readReceipts(block: number, txHashes: ReadonlySet<string>) {
+  return (raw: unknown): LogEntry[] | undefined => {
+    if (!Array.isArray(raw) || raw.length !== txHashes.size) return undefined
+    const out: LogEntry[] = []
+    for (const r of raw as { transactionHash?: unknown; blockNumber?: unknown; logs?: unknown }[]) {
+      if (!r || !txHashes.has(String(r.transactionHash).toLowerCase()) || Number(r.blockNumber) !== block || !Array.isArray(r.logs)) return undefined
+      for (const l of r.logs as { address?: unknown; topics?: unknown[]; removed?: unknown }[]) {
+        if (!l || l.topics?.[0] !== EXPIRY_TOPIC || l.removed === true) continue
+        if (typeof l.address !== 'string' || !ADDRESS.test(l.address)) return undefined
+        out.push({ vault: l.address.toLowerCase(), block })
+      }
     }
     return out
   }
@@ -236,18 +333,26 @@ export type VaultSweep = { tick: () => Promise<void>; status: () => SweepStatus 
 export function createVaultSweep(deps: VaultSweepDeps): VaultSweep {
   const limits = { ...DEFAULT_SWEEP_LIMITS, ...deps.limits }
   const now = deps.now ?? Date.now
+  const pick = deps.pick ?? ((n: number) => Math.floor(Math.random() * n))
   const pause = deps.pause ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
   const log = deps.log ?? ((line: string) => console.error(`[arc-vault-sweep] ${line}`))
   const usdc = deps.registryUsdc.toLowerCase()
 
-  /** The last block read in full. Only ever moved by an answer that covers it. */
+  /** How far the scan has gone. Moved by an answer that covers the blocks, or past one block that is kept in holes. */
   let cursor: number | null = null
+  /** The newest block a host answered logs for. Every host refusing the block after it says something only while this one still reads. */
+  let lastAnswered: number | null = null
+  const holes = new Map<number, Hole>()
   const candidates = new Map<string, Candidate>()
   /** Refused for good, or ruled out, in this process. */
   const closed = new Set<string>()
   /** Which host last answered each method, asked first: a pruned host costs one read and not one per step. */
   const answeredLast = new Map<string, string>()
+  let firstTurn = 0
   let running = false
+  let roundStartedAt = 0
+  /** Past everything that bounds a round: the list, the reads and the last admission started before their deadline. */
+  const stalledAfter = limits.listDeadlineMs + limits.tickDeadlineMs + limits.askDeadlineMs
   let lastRun: string | null = null
   let lastProblem: SweepProblem | null = null
   let problem: SweepProblem | null = null
@@ -277,7 +382,45 @@ export function createVaultSweep(deps: VaultSweepDeps): VaultSweep {
     return { ok: false, problems }
   }
 
-  /** New blocks, oldest first. The cursor moves only over a chunk a host whose head had reached it answered. */
+  const noteFound = (logs: readonly LogEntry[]) => {
+    for (const { vault, block } of logs) {
+      const known = candidates.get(vault)
+      if (known) known.logBlock = Math.max(known.logBlock, block)
+      else if (!closed.has(vault)) {
+        candidates.set(vault, { vault, waitingSince: now(), logBlock: block, asked: false, unreadTimes: 0, midway: false, notBefore: 0, shapeRead: false, lo: 0, hi: block, deployTx: null, refusals: 0 })
+      }
+    }
+  }
+
+  /** One block through its receipts, for a block whose logs no host will list. Null is no answer. */
+  async function logsByReceipts(hosts: readonly RpcHost[], block: number): Promise<LogEntry[] | null> {
+    const answers = await everyHost<unknown>(hosts, 'eth_getBlockByNumber', [toHex(block), true])
+    const txs = answers.map((a) => wholeTransactions(a.value)).find((t) => t !== null)
+    if (!txs) return null
+    const asked = await firstAnswer(hosts, 'eth_getBlockReceipts', [toHex(block)], readReceipts(block, new Set(txs.map((t) => String(t.hash).toLowerCase()))))
+    return asked.ok ? asked.value : null
+  }
+
+  /** Blocks no host would read last time, whichever has waited longest first. */
+  async function retryHoles(budget: Budget, heads: ReadonlyMap<string, number>): Promise<void> {
+    const due = [...holes.values()].filter((h) => h.notBefore <= now()).sort((a, b) => a.notBefore - b.notBefore)
+    for (const hole of due.slice(0, limits.holeRetriesPerTick)) {
+      if (budget.empty()) return
+      const covering = budget.hosts.filter((h) => (heads.get(h.label) ?? -1) >= hole.block)
+      const asked = await firstAnswer(covering, 'eth_getLogs', [{ fromBlock: toHex(hole.block), toBlock: toHex(hole.block), topics: [EXPIRY_TOPIC] }], readLogs(hole.block, hole.block))
+      const logs = asked.ok ? asked.value : await logsByReceipts(covering, hole.block)
+      if (logs) {
+        noteFound(logs)
+        holes.delete(hole.block)
+      } else if (!budget.empty()) {
+        hole.tries++
+        hole.notBefore = now() + Math.min(limits.maxRetryAfterMs, limits.retryAfterMs * 2 ** hole.tries)
+        log(`logs-not-read: block ${hole.block} is still open after ${hole.tries} more tries`)
+      }
+    }
+  }
+
+  /** New blocks, oldest first. See the file's comment for when the cursor may pass a block. */
   async function readNewBlocks(budget: Budget): Promise<boolean> {
     const hosts = budget.hosts
     const heads = new Map<string, number>()
@@ -288,12 +431,17 @@ export function createVaultSweep(deps: VaultSweepDeps): VaultSweep {
       note('no-host-answered')
       return false
     }
+    const startedAt = budget.used()
+    await retryHoles(budget, heads)
     // The second highest, not the highest: one host far ahead of the rest is not enough to go on.
     const sorted = [...heads.values()].sort((a, b) => b - a)
     const to = sorted[Math.min(1, sorted.length - 1)] - limits.headMargin
     let from = cursor === null ? deps.startBlock : cursor + 1
     let span = limits.startSpan
-    const startedAt = budget.used()
+    /** The widest range a host took this tick: a range cut down for what it held goes back up to this and no further. */
+    let widest = 0
+    /** The end of the last range refused. The trouble is somewhere before it, so the width stays down until the scan is past it. */
+    let refusedEnd = -1
     while (from <= to) {
       if (budget.empty() || budget.used() - startedAt >= limits.logReadsPerTick) {
         note('read-cap-reached')
@@ -303,12 +451,11 @@ export function createVaultSweep(deps: VaultSweepDeps): VaultSweep {
       const covering = hosts.filter((h) => (heads.get(h.label) ?? -1) >= end)
       const asked = await firstAnswer(covering, 'eth_getLogs', [{ fromBlock: toHex(from), toBlock: toHex(end), topics: [EXPIRY_TOPIC] }], readLogs(from, end))
       if (asked.ok) {
-        for (const { vault, block } of asked.value) {
-          if (!candidates.has(vault) && !closed.has(vault)) {
-            candidates.set(vault, { vault, waitingSince: now(), notBefore: 0, shapeRead: false, lo: 0, hi: block, deployTx: null, refusals: 0 })
-          }
-        }
+        noteFound(asked.value)
+        widest = Math.max(widest, end - from + 1)
+        if (end >= refusedEnd) span = Math.max(span, Math.min(widest, span * 5))
         cursor = end
+        lastAnswered = end
         from = end + 1
         continue
       }
@@ -316,11 +463,31 @@ export function createVaultSweep(deps: VaultSweepDeps): VaultSweep {
         note('read-cap-reached')
         break
       }
-      if (span <= limits.minSpan) {
-        note('logs-not-read', `blocks ${from}..${end}: ${asked.problems.join('; ')}`)
+      refusedEnd = end
+      if (end > from) {
+        span = Math.max(1, Math.floor(Math.min(span, end - from + 1) / 5))
+        continue
+      }
+      // One block, and every host refused it. Only if a block that has read still reads is that about this block.
+      const raw = `block ${from}: ${asked.problems.join('; ')}`
+      const known = lastAnswered ?? Math.max(0, deps.startBlock - 1)
+      const stillReads = await firstAnswer(hosts, 'eth_getLogs', [{ fromBlock: toHex(known), toBlock: toHex(known), topics: [EXPIRY_TOPIC] }], readLogs(known, known))
+      if (!stillReads.ok) {
+        note(budget.empty() ? 'read-cap-reached' : 'logs-not-read', raw)
         break
       }
-      span = Math.max(limits.minSpan, Math.floor(Math.min(span, end - from + 1) / 5))
+      const logs = await logsByReceipts(covering, from)
+      if (logs) noteFound(logs)
+      else if (budget.empty()) {
+        note('read-cap-reached')
+        break
+      } else {
+        holes.set(from, { block: from, notBefore: now() + limits.retryAfterMs, tries: 0 })
+        note('logs-not-read', raw)
+      }
+      cursor = from
+      from += 1
+      span = widest || limits.startSpan
     }
     return true
   }
@@ -387,14 +554,15 @@ export function createVaultSweep(deps: VaultSweepDeps): VaultSweep {
     return 'none'
   }
 
-  async function ask(c: Candidate): Promise<void> {
+  /** False when admission took too long to answer at all, which ends the round: the next would wait as long. */
+  async function ask(c: Candidate): Promise<boolean> {
     let answer: VaultAdmissionAnswer
     try {
-      answer = await deps.admit(c.deployTx as string)
+      answer = await timed(() => deps.admit(c.deployTx as string), limits.askDeadlineMs, 'admission')
     } catch (e) {
       note('admission-unavailable', e instanceof Error ? e.message : String(e))
       c.notBefore = now() + limits.retryAfterMs
-      return
+      return !(e instanceof TimedOut)
     }
     if (answer.status === 'admitted') {
       log(`counted ${c.vault} from deploy ${c.deployTx}`)
@@ -415,14 +583,40 @@ export function createVaultSweep(deps: VaultSweepDeps): VaultSweep {
       candidates.delete(c.vault)
       closed.add(c.vault)
     }
+    return true
+  }
+
+  /**
+   * The due candidates, in the order this tick takes them: any bisect the cap stopped, then in turns
+   * the newest nobody has asked about, the one that has waited longest, and one at random, where a new
+   * process starts with the newest. See the file's comment for why no single order will do.
+   */
+  function* turns(due: readonly Candidate[]): Generator<Candidate> {
+    // Each tick starts on the next turn, so a cap reached early does not always cut off the same one.
+    const taken = new Set<Candidate>()
+    // Stable, so of those found in one tick the oldest log goes first.
+    const oldest = [...due].sort((a, b) => a.waitingSince - b.waitingSince)
+    const newest = due.filter((c) => !c.asked).sort((a, b) => a.unreadTimes - b.unreadTimes || b.logBlock - a.logBlock)
+    const firstOf = (list: readonly Candidate[]) => list.find((c) => !taken.has(c))
+    const left = () => oldest.filter((c) => !taken.has(c))
+    for (const c of due.filter((c) => c.midway)) {
+      taken.add(c)
+      yield c
+    }
+    for (let turn = firstTurn++; taken.size < due.length; turn++) {
+      const rest = turn % 3 === 2 ? left() : []
+      const next = turn % 3 === 0 ? (firstOf(newest) ?? firstOf(oldest)) : turn % 3 === 1 ? firstOf(oldest) : rest[Math.min(rest.length - 1, Math.max(0, pick(rest.length)))]
+      if (!next) return
+      taken.add(next)
+      yield next
+    }
   }
 
   async function askAboutCandidates(budget: Budget, counted: ReadonlySet<string>, deadline: number): Promise<void> {
     for (const vault of candidates.keys()) if (counted.has(vault)) candidates.delete(vault)
-    // Stable, so of those found in one tick the oldest log goes first.
-    const due = [...candidates.values()].filter((c) => c.notBefore <= now()).sort((a, b) => a.waitingSince - b.waitingSince)
+    const due = [...candidates.values()].filter((c) => c.notBefore <= now())
     let asks = 0
-    for (const c of due) {
+    for (const c of turns(due)) {
       if (asks >= limits.asksPerTick) break
       if (now() >= deadline) {
         note('ran-out-of-time')
@@ -437,15 +631,20 @@ export function createVaultSweep(deps: VaultSweepDeps): VaultSweep {
       }
       if (found === 'found') {
         asks++
+        c.asked = true
+        c.midway = false
         c.waitingSince = now()
-        await ask(c)
-        continue
+        if (await ask(c)) continue
+        break
       }
-      // The cap stopped it partway: it keeps its place and its bounds, and goes first next tick.
+      // The cap stopped it partway: it keeps its bounds, and goes first next tick.
       if (budget.empty()) {
+        c.midway = true
         note('read-cap-reached')
         break
       }
+      c.midway = false
+      c.unreadTimes++
       c.waitingSince = now()
     }
   }
@@ -455,7 +654,14 @@ export function createVaultSweep(deps: VaultSweepDeps): VaultSweep {
       note('admission-not-ready')
       return
     }
-    const counted = await deps.counted()
+    let counted: Awaited<ReturnType<VaultSweepDeps['counted']>>
+    try {
+      counted = await timed(deps.counted, limits.listDeadlineMs, 'the list')
+    } catch (e) {
+      if (!(e instanceof TimedOut)) throw e
+      note('list-unreadable', e.message)
+      return
+    }
     if (!counted.ok) {
       note('list-unreadable', counted.reason)
       return
@@ -468,10 +674,17 @@ export function createVaultSweep(deps: VaultSweepDeps): VaultSweep {
   }
 
   return {
-    /** Never rejects. Two at once is one: a tick still out when the next is due just carries on. */
+    /** Never rejects. Two at once is one: a tick still out when the next is due just carries on, and one out for too long is said to be stuck. */
     async tick() {
-      if (running) return
+      if (running) {
+        if (now() - roundStartedAt >= stalledAfter) {
+          lastProblem = 'round-stalled'
+          log(`round-stalled: the round started at ${new Date(roundStartedAt).toISOString()} has not ended`)
+        }
+        return
+      }
       running = true
+      roundStartedAt = now()
       problem = null
       try {
         await round()
@@ -479,7 +692,9 @@ export function createVaultSweep(deps: VaultSweepDeps): VaultSweep {
         problem ??= 'round-failed'
         log(`round-failed: ${e instanceof Error ? e.message : String(e)}`)
       } finally {
-        lastProblem = problem
+        // Asked about last, so it cannot be hidden by a tick's other trouble that passes by itself.
+        const word = problem as SweepProblem | null
+        lastProblem = holes.size > 0 && (word === null || word === 'read-cap-reached') ? 'logs-not-read' : word
         lastRun = new Date(now()).toISOString()
         running = false
       }
@@ -493,8 +708,10 @@ export function createVaultSweep(deps: VaultSweepDeps): VaultSweep {
 type Timer = { unref?: () => void }
 
 /**
- * Runs tick now and then, one after the other, on a timer that does not hold the process open. A tick
- * that throws, or a timer that does, is logged and ends nothing but that tick. Returns how to stop it.
+ * Runs tick now and then, on a timer that does not hold the process open. A tick that throws, or a
+ * timer that does, is logged and ends nothing but that tick. The next one is set as this one starts,
+ * never when it ends: the tick keeps two from running at once, and only a tick that does run can say
+ * that the one before it never came back. Returns how to stop it.
  */
 export function runOnTimer(
   tick: () => Promise<void>,
@@ -507,10 +724,11 @@ export function runOnTimer(
     if (stopped) return
     try {
       setTimer(() => {
+        if (stopped) return
+        schedule(opts.everyMs)
         void Promise.resolve()
           .then(tick)
           .catch((e) => log(`a tick threw: ${e instanceof Error ? e.message : String(e)}`))
-          .finally(() => schedule(opts.everyMs))
       }, ms).unref?.()
     } catch (e) {
       log(`the timer did not start: ${e instanceof Error ? e.message : String(e)}`)
@@ -552,8 +770,13 @@ export function sweepConfig(env: Readonly<Record<string, string | undefined>>): 
   }
 }
 
-/** The real hosts, store and admission. The row says it was the sweep that found it, and nothing else about it differs. */
-export function liveVaultSweepDeps(env: NodeJS.ProcessEnv = process.env): VaultSweepDeps | { error: string } {
+/** The route's own store and chain reads. The row says it was the sweep that found it, and nothing else about it differs. */
+export function sweepAdmissionDeps(env: NodeJS.ProcessEnv = process.env): VaultAdmissionDeps {
+  return { ...liveVaultAdmissionDeps(env), foundBy: 'sweep' }
+}
+
+/** The real hosts, store and admission. */
+export function liveVaultSweepDeps(env: NodeJS.ProcessEnv = process.env, io: ArcVaultStoreIo = {}): VaultSweepDeps | { error: string } {
   const made = admissionContext(ADMISSION_CHAIN)
   if (!made.ok) return { error: made.reason }
   const { chain, registryUsdc } = made.context
@@ -561,11 +784,11 @@ export function liveVaultSweepDeps(env: NodeJS.ProcessEnv = process.env): VaultS
     hosts: () => liveRpcHosts(chain, env, { timeoutMs: READ_TIMEOUT_MS, retryCount: 0 }),
     ready: () => admissionReadiness(collectOurAddresses(liveOurAddressSources(env))).ready,
     counted: async () => {
-      const read = await loadAdmittedArcVaults()
+      const read = await loadAdmittedArcVaults(io)
       if (!read.ok) return read
       return { ok: true, vaults: new Set(read.rows.map((r) => String(r?.address).toLowerCase())) }
     },
-    admit: async (deployTx) => (await admitVaultDeploy({ deployTx }, { ...liveVaultAdmissionDeps(env), foundBy: 'sweep' })).answer,
+    admit: async (deployTx) => (await admitVaultDeploy({ deployTx }, sweepAdmissionDeps(env))).answer,
     registryUsdc,
     startBlock: sweepConfig(env).startBlock,
   }
@@ -580,7 +803,7 @@ export function vaultSweepStatus(): SweepStatus {
 }
 
 /** Called once from http.ts. Never throws, and a server that cannot sweep still serves. */
-export function startVaultSweep(env: NodeJS.ProcessEnv = process.env): void {
+export function startVaultSweep(env: NodeJS.ProcessEnv = process.env, setTimer?: (run: () => void, ms: number) => Timer): void {
   try {
     const config = sweepConfig(env)
     if (!config.on) {
@@ -593,7 +816,7 @@ export function startVaultSweep(env: NodeJS.ProcessEnv = process.env): void {
       return
     }
     liveSweep = createVaultSweep(deps)
-    runOnTimer(liveSweep.tick, { everyMs: config.everyMs, firstAfterMs: Math.min(FIRST_AFTER_MS, config.everyMs) })
+    runOnTimer(liveSweep.tick, { everyMs: config.everyMs, firstAfterMs: Math.min(FIRST_AFTER_MS, config.everyMs), setTimer })
     console.error(`[arc-vault-sweep] on: every ${config.everyMs / 1000}s from block ${config.startBlock}`)
   } catch (e) {
     console.error(`[arc-vault-sweep] off: ${e instanceof Error ? e.message : String(e)}`)

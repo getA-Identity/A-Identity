@@ -1,13 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { encodeEventTopics, encodeFunctionData, encodeFunctionResult, getCreateAddress, type Abi, type Hex } from 'viem'
 import { encodeCreationInput, type OurAddresses } from './arc-owner-vault.js'
 import { admissionContext, admitVaultDeploy, runAdmission, type AdmissionContext, type RpcHost, type VaultAdmissionAnswer } from './arc-owner-vault-live.js'
 import { ARC_VAULT_SWEEP_START_BLOCK } from './arc-season.js'
-import { createVaultSweep, runOnTimer, sweepConfig, vaultSweepStatus, type VaultSweepDeps } from './arc-vault-sweep.js'
+import { createVaultSweep, liveVaultSweepDeps, runOnTimer, startVaultSweep, sweepAdmissionDeps, sweepConfig, vaultSweepStatus, type VaultSweepDeps } from './arc-vault-sweep.js'
 import { handleArcSeasonRoutes } from './http/arc-season-routes.js'
 import { AgentSpendPolicyAbi, AgentSpendPolicyBytecode } from './contracts/AgentSpendPolicy.js'
 import { findAdmittedArcVaultByTx, loadAdmittedArcVaults, persistAdmittedArcVault, type ArcVaultStoreIo } from './storage.js'
@@ -75,6 +75,15 @@ class Chain {
     const other = { hash: hashOf(999), from: OPERATOR, to: OWNER, nonce: '0x1' }
     return { number: `0x${n.toString(16)}`, transactions: [other, ...transactions], transactionsRoot: `0x${'ab'.repeat(32)}` }
   }
+  /** One receipt per transaction: the logs hang off the call, with another topic beside them. */
+  receipts(n: number) {
+    const blockNumber = `0x${n.toString(16)}`
+    return this.block(n).transactions.map((t, i) => ({
+      transactionHash: t.hash,
+      blockNumber,
+      logs: i === 0 ? [{ address: OPERATOR, topics: [`0x${'cd'.repeat(32)}`] }, ...this.logs(n, n)] : [],
+    }))
+  }
 }
 
 /** What a real host does, changed by over for a host that does not. */
@@ -100,6 +109,8 @@ function host(chain: Chain, label: string, over: { maxSpan?: number; head?: numb
           return chain.code(params[0] as string, num(params[1]))
         case 'eth_getBlockByNumber':
           return chain.block(num(params[0]))
+        case 'eth_getBlockReceipts':
+          return chain.receipts(num(params[0]))
         case 'eth_call': {
           const { to, data } = params[0] as { to: string; data: string }
           const c = chain.contracts.find((x) => x.address === to)
@@ -486,26 +497,147 @@ test('an answer that is no answer about the vault, or an admission that throws, 
   assert.equal(sweep.status().lastProblem, 'admission-unavailable')
 })
 
-test('under a flood the caps hold on every tick and the real owner is still reached', async () => {
-  const chain = new Chain()
+/** A flood of contracts that answer usdc() and owner() as a vault does, so each costs a whole bisect, and only then a refusal. */
+function floodOf(chain: Chain, count: number, firstNonce: number, firstBlock: number) {
   const flooder = '0x9999999999999999999999999999999999999999' as Hex
-  for (let i = 0; i < 40; i++) chain.add(vaultAt(100 + i, 200_000 + i * 10, 200_005 + i * 10, flooder))
+  for (let i = 0; i < count; i++) chain.add(vaultAt(firstNonce + i, firstBlock + i * 10, firstBlock + i * 10 + 5, flooder))
+}
+
+test('under a flood the caps hold on every tick and a real owner newer than it is reached at once', async () => {
+  const chain = new Chain()
+  floodOf(chain, 40, 100, 200_000)
   const real = vaultAt(5, 490_000, 490_010)
   chain.add(real)
   const h = harness(chain, { answer: (tx) => (tx === real.deployTx ? admitted(real.address, tx) : refused(true, 'session-key-expiry')) })
   const sweep = createVaultSweep({ ...h.deps, limits: { readsPerTick: 100, logReadsPerTick: 40, asksPerTick: 2, startSpan: 5000, retryAfterMs: 5 * 60_000, maxRetryAfterMs: 60 * 60_000 } })
-  let ticks = 0
-  while (!h.asked.includes(real.deployTx as string) && ticks < 100) {
+  for (let ticks = 0; ticks < 5; ticks++) {
     const reads = chain.reads.length
     const asks = h.asked.length
     await sweep.tick()
-    ticks++
     assert.ok(chain.reads.length - reads <= 100, `reads per tick are capped: ${chain.reads.length - reads}`)
     assert.ok(h.asked.length - asks <= 2, 'admissions per tick are capped')
     h.clock.t += 5 * 60_000
   }
-  assert.ok(h.asked.includes(real.deployTx as string), 'a flood delays a real owner and does not lock one out')
-  assert.ok(ticks > 2, `it did delay: ${ticks} ticks`)
+  assert.equal(h.asked.filter((t) => t === real.deployTx).length, 1, 'it was reached ahead of the 40, and once')
+})
+
+test('a restart sooner than an old flood drains does not lock out a real owner newer than it', async () => {
+  // Far more than a process gets through between restarts, and every one of them answers usdc() and owner().
+  const chain = new Chain()
+  floodOf(chain, 500, 100, 200_000)
+  const real = vaultAt(5, 490_000, 490_010)
+  chain.add(real)
+  const h = harness(chain, { answer: (tx) => (tx === real.deployTx ? admitted(real.address, tx) : refused(false, 'creation-input')) })
+  for (let process = 0; process < 3; process++) {
+    const sweep = createVaultSweep({ ...h.deps, limits: { readsPerTick: 100, logReadsPerTick: 40, asksPerTick: 3 } })
+    for (let tick = 0; tick < 2; tick++) {
+      await sweep.tick()
+      h.clock.t += 5 * 60_000
+    }
+    assert.ok(h.asked.includes(real.deployTx as string), `reached in the first process's first ticks, as it is in every other (process ${process})`)
+    assert.ok(new Set(h.asked).size < 500, 'and the flood had not drained')
+  }
+})
+
+test('a real owner with a flood on both sides is reached anyway, however often the process restarts', async () => {
+  const chain = new Chain()
+  floodOf(chain, 60, 100, 200_000)
+  const real = vaultAt(5, 300_000, 300_010)
+  chain.add(real)
+  floodOf(chain, 60, 1000, 400_000)
+  const h = harness(chain, { answer: (tx) => (tx === real.deployTx ? admitted(real.address, tx) : refused(false, 'creation-input')) })
+  // A seeded pick, so the run is the same each time.
+  let seed = 7
+  const pick = (n: number) => {
+    seed = (seed * 48271) % 2147483647
+    return seed % n
+  }
+  let processes = 0
+  while (!h.asked.includes(real.deployTx as string) && processes < 200) {
+    processes++
+    const sweep = createVaultSweep({ ...h.deps, pick, limits: { readsPerTick: 100, logReadsPerTick: 40, asksPerTick: 3 } })
+    for (let tick = 0; tick < 2 && !h.asked.includes(real.deployTx as string); tick++) {
+      await sweep.tick()
+      h.clock.t += 5 * 60_000
+    }
+  }
+  assert.ok(h.asked.includes(real.deployTx as string), `reached, after ${processes} processes`)
+  assert.ok(processes > 1, 'it does take longer than a flood on one side')
+})
+
+test('new contracts arriving all the time do not starve an old one nobody has asked about yet', async () => {
+  const chain = new Chain()
+  const old = vaultAt(1, 200_000, 200_010)
+  chain.add(old)
+  floodOf(chain, 3, 100, 300_000)
+  const h = harness(chain, { answer: () => refused(false, 'creation-input') })
+  // The random turn is held to the same place, so only the longest-wait turn can reach it.
+  const sweep = createVaultSweep({ ...h.deps, pick: () => 0, limits: { asksPerTick: 2 } })
+  let nonce = 2000
+  for (let i = 0; i < 3 && !h.asked.includes(old.deployTx as string); i++) {
+    for (let k = 0; k < 4; k++) chain.add(vaultAt(nonce++, chain.head, chain.head + 1, '0x9999999999999999999999999999999999999999'))
+    chain.head += 100
+    await sweep.tick()
+    h.clock.t += 5 * 60_000
+  }
+  assert.ok(h.asked.includes(old.deployTx as string))
+})
+
+test('the turns go newest, longest wait, at random, and a contract already asked about is not the newest', async () => {
+  const chain = new Chain()
+  const all = [1, 2, 3, 4, 5].map((i) => vaultAt(i, 200_000 + i * 1000, 200_000 + i * 1000 + 10))
+  chain.add(...all)
+  const h = harness(chain, { answer: () => refused(true, 'session-key-expiry') })
+  const sweep = createVaultSweep({ ...h.deps, pick: () => 0, limits: { asksPerTick: 1, retryAfterMs: 1000, maxRetryAfterMs: 1000 } })
+  for (let i = 0; i < 4; i++) {
+    await sweep.tick()
+    h.clock.t += 60_000
+  }
+  assert.deepEqual(
+    h.asked,
+    [all[4], all[0], all[1], all[3]].map((c) => c.deployTx),
+    'one ask a tick: the newest; the longest wait; the random turn; then the newest nobody has asked about yet',
+  )
+})
+
+test('a contract that never reads does not keep the newest place from a real owner', async () => {
+  const chain = new Chain()
+  const flooder = '0x9999999999999999999999999999999999999999' as Hex
+  floodOf(chain, 30, 100, 100_000)
+  const real = vaultAt(1, 300_000, 300_010)
+  const never = vaultAt(50, 400_000, 400_010, flooder)
+  chain.add(real, never)
+  const only = host(chain, 'only', {
+    maxSpan: 100_000_000,
+    on: (method, params) => {
+      const to = method === 'eth_call' ? (params[0] as { to: string }).to : method === 'eth_getCode' ? (params[0] as string) : null
+      return to === never.address ? new Error('502') : undefined
+    },
+  })
+  const h = harness(chain, { hostList: [only], answer: () => refused(false, 'creation-input') })
+  const sweep = createVaultSweep({ ...h.deps, pick: () => 0, limits: { readsPerTick: 30, logReadsPerTick: 1, startSpan: 10_000_000, asksPerTick: 1 } })
+  for (let i = 0; i < 9 && !h.asked.includes(real.deployTx as string); i++) {
+    await sweep.tick()
+    h.clock.t += 5 * 60_000
+  }
+  assert.ok(h.asked.includes(real.deployTx as string), 'it does not wait for the 30 older ones to drain')
+  assert.ok(h.asked.length < 8, `${h.asked.length} were asked about first`)
+})
+
+test('a bisect the read cap stopped goes first next tick, ahead of anything newer', async () => {
+  const chain = new Chain()
+  const first = vaultAt(1, 300_000, 300_010)
+  chain.add(first)
+  const h = harness(chain, { hostList: [host(chain, 'one')] })
+  // Enough for the head, the logs and part of a bisect.
+  const sweep = createVaultSweep({ ...h.deps, limits: { readsPerTick: 8 } })
+  await sweep.tick()
+  assert.equal(h.asked.length, 0)
+  assert.equal(sweep.status().lastProblem, 'read-cap-reached')
+  chain.head += 1000
+  chain.add(vaultAt(2, chain.head - 200, chain.head - 100))
+  for (let i = 0; i < 6 && !h.asked.includes(first.deployTx as string); i++) await sweep.tick()
+  assert.deepEqual(h.asked.slice(0, 1), [first.deployTx], 'it was finished before the newer one was started')
 })
 
 test('the read cap holds whatever else is going on, and a bisect it stopped goes on from its bounds', async () => {
@@ -659,7 +791,7 @@ test('nothing can make a tick reject, and two at once are one', async () => {
   assert.equal(rounds, 1)
 })
 
-test('a stalled host costs its timeout once per tick, and a whole round has a deadline', async () => {
+test('a stalled host costs its timeout once per tick', async () => {
   const v = vaultAt(1, 300_000, 300_040)
   const chain = new Chain().add(v)
   const h = harness(chain)
@@ -676,6 +808,588 @@ test('a stalled host costs its timeout once per tick, and a whole round has a de
   await sweep.tick()
   assert.equal(stalledReads, 1, 'benched for the rest of the tick')
   assert.deepEqual(h.asked, [v.deployTx])
+})
+
+test('a round has a deadline: past it the asks stop, and no read goes out', async () => {
+  const chain = new Chain()
+  const a = vaultAt(1, 300_000, 300_010)
+  const b = vaultAt(2, 310_000, 310_010)
+  chain.add(a, b)
+  const clock = { t: Date.parse('2026-11-04T12:00:00Z') }
+  const h = harness(chain, {
+    now: () => clock.t,
+    answer: (tx) => {
+      clock.t += 121_000
+      return refused(true, tx)
+    },
+  })
+  const sweep = createVaultSweep(h.deps)
+  await sweep.tick()
+  assert.equal(h.asked.length, 1, 'the one after it was not started')
+  assert.equal(sweep.status().lastProblem, 'ran-out-of-time')
+
+  // And a read that takes the clock past it, in the middle of a bisect: the next one does not reach a host.
+  const chain2 = new Chain().add(vaultAt(1, 300_000, 300_010))
+  const clockJump = harness(chain2)
+  const slow = host(chain2, 'slow', {
+    on: (method) => {
+      if (method === 'eth_getCode') clockJump.clock.t += 121_000
+      return undefined
+    },
+  })
+  const late = createVaultSweep({ ...clockJump.deps, hosts: () => [slow] })
+  await late.tick()
+  assert.equal(chain2.reads.filter((r) => r.includes('eth_getCode')).length, 1, 'no read went out past the deadline')
+  assert.deepEqual(clockJump.asked, [])
+})
+
+test('a store call that never returns ends the round with a fixed word, and the next tick runs', async () => {
+  const chain = new Chain().add(vaultAt(1, 300_000, 300_010))
+  let hung = true
+  const h = harness(chain, {
+    counted: () => (hung ? new Promise(() => {}) : Promise.resolve({ ok: true as const, vaults: new Set<string>() })),
+  })
+  // The timers here do not hold the process open, so this does until they have fired.
+  const keep = setTimeout(() => {}, 2000)
+  const sweep = createVaultSweep({ ...h.deps, limits: { listDeadlineMs: 5 } })
+  await sweep.tick()
+  assert.equal(sweep.status().lastProblem, 'list-unreadable')
+  assert.equal(chain.reads.length, 0, 'nothing is read without the list')
+  assert.ok(h.lines.some((l) => l.includes('did not answer')), 'and the log says what happened')
+  hung = false
+  await sweep.tick()
+  assert.equal(sweep.status().lastProblem, null)
+  assert.equal(h.asked.length, 1)
+  clearTimeout(keep)
+})
+
+test('an admission that never returns ends the round with a fixed word, waits its turn, and closes nothing', async () => {
+  const a = vaultAt(1, 300_000, 300_010)
+  const b = vaultAt(2, 310_000, 310_010)
+  const chain = new Chain().add(a, b)
+  let hung = true
+  const asked: string[] = []
+  const h = harness(chain)
+  const keep = setTimeout(() => {}, 2000)
+  const sweep = createVaultSweep({
+    ...h.deps,
+    admit: (tx) => {
+      asked.push(tx)
+      return hung ? new Promise(() => {}) : Promise.resolve(admitted(a.address, tx))
+    },
+    limits: { askDeadlineMs: 5 },
+  })
+  await sweep.tick()
+  assert.equal(asked.length, 1, 'the next would only wait as long')
+  assert.equal(sweep.status().lastProblem, 'admission-unavailable')
+  const stuck = asked[0]
+  hung = false
+  await sweep.tick()
+  assert.equal(asked.filter((t) => t === stuck).length, 1, 'too soon for that one')
+  assert.equal(asked.length, 2, 'the other one goes on')
+  h.clock.t += 5 * 60_000
+  await sweep.tick()
+  assert.equal(asked.filter((t) => t === stuck).length, 2, 'and it is asked again')
+  clearTimeout(keep)
+})
+
+test('a round that never ends is said to be stuck by the next tick, and two still do not run at once', async () => {
+  const chain = new Chain()
+  let reads = 0
+  const never: RpcHost = {
+    label: 'never',
+    request: () => {
+      reads++
+      return new Promise(() => {})
+    },
+  }
+  const h = harness(chain, { hostList: [never] })
+  const sweep = createVaultSweep(h.deps)
+  void sweep.tick()
+  await new Promise((r) => setImmediate(r))
+  assert.equal(reads, 1)
+  // Not yet: a slow round is not a stuck one.
+  h.clock.t += 60_000
+  await sweep.tick()
+  assert.equal(sweep.status().lastProblem, null)
+  assert.equal(h.lines.length, 0)
+  h.clock.t += 10 * 60_000
+  await sweep.tick()
+  assert.equal(sweep.status().lastProblem, 'round-stalled')
+  assert.ok(h.lines.some((l) => l.startsWith('round-stalled')), 'and the log says so')
+  assert.equal(reads, 1, 'it started no second round')
+})
+
+test('the timer goes on while a tick has not come back, so the tick after it can say so', async () => {
+  const timers: { run: () => void; ms: number }[] = []
+  let ticks = 0
+  const stop = runOnTimer(
+    () => {
+      ticks++
+      return new Promise<void>(() => {})
+    },
+    {
+      everyMs: 1000,
+      firstAfterMs: 50,
+      setTimer: (run, ms) => {
+        timers.push({ run, ms })
+        return {}
+      },
+    },
+  )
+  timers[0].run()
+  await new Promise((r) => setImmediate(r))
+  assert.equal(timers.length, 2, 'set as it started, not when it ended')
+  timers[1].run()
+  await new Promise((r) => setImmediate(r))
+  assert.equal(ticks, 2)
+  stop()
+})
+
+// -- answers that must not be taken at their word ------------------------------------------
+
+test('a log list with one wrong entry is no answer from that host: the next host is asked', async () => {
+  const v = vaultAt(1, 300_000, 300_010)
+  const chain = new Chain().add(v)
+  const goodLog = { address: v.address, blockNumber: `0x${v.logBlock.toString(16)}`, topics: [TOPIC] }
+  const hex = (n: number) => `0x${n.toString(16)}`
+  const bad: ((from: number, to: number) => Record<string, unknown>)[] = [
+    // Below the range: taken as read, it would set the bisect's top too low and close a real vault as no creation.
+    (from) => ({ ...goodLog, blockNumber: hex(from - 1) }),
+    (_from, to) => ({ ...goodLog, blockNumber: hex(to + 1) }),
+    () => ({ ...goodLog, blockNumber: 'soon' }),
+    // Someone else's address: taken as read, this list would hide the real vault's log.
+    () => ({ ...goodLog, address: OPERATOR, topics: [`0x${'cd'.repeat(32)}`] }),
+    () => ({ ...goodLog, address: OPERATOR, topics: [] }),
+    () => ({ ...goodLog, address: '0x1234' }),
+  ]
+  for (const entry of bad) {
+    const liar = host(chain, 'liar', {
+      on: (method, params) => {
+        if (method !== 'eth_getLogs') return undefined
+        const { fromBlock, toBlock } = (params as readonly { fromBlock: string; toBlock: string }[])[0]
+        return num(fromBlock) <= v.logBlock && v.logBlock <= num(toBlock) ? [entry(num(fromBlock), num(toBlock))] : undefined
+      },
+    })
+    const h = harness(chain, { hostList: [liar, host(chain, 'honest')] })
+    const sweep = createVaultSweep(h.deps)
+    await sweep.tick()
+    assert.deepEqual(h.asked, [v.deployTx], `the honest host's answer stands against ${JSON.stringify(entry(1000, 2000))}`)
+    assert.equal(sweep.status().lastProblem, null)
+    assert.ok(!h.lines.some((l) => l.includes('no direct creation')), 'and the vault was not closed')
+  }
+})
+
+test('a log the chain has removed finds nothing', async () => {
+  const v = vaultAt(1, 300_000, 300_010)
+  const chain = new Chain().add(v)
+  const h = harness(chain, {
+    hostList: [
+      host(chain, 'one', {
+        on: (method, params) => {
+          if (method !== 'eth_getLogs') return undefined
+          const { fromBlock, toBlock } = (params as readonly { fromBlock: string; toBlock: string }[])[0]
+          return num(fromBlock) <= v.logBlock && v.logBlock <= num(toBlock) ? [{ address: v.address, blockNumber: `0x${v.logBlock.toString(16)}`, topics: [TOPIC], removed: true }] : undefined
+        },
+      }),
+    ],
+  })
+  await createVaultSweep(h.deps).tick()
+  assert.deepEqual(h.asked, [])
+  assert.equal(chain.reads.filter((r) => /eth_call|getCode/.test(r)).length, 0)
+})
+
+test('an admission that throws or says unavailable is not asked again too soon', async () => {
+  for (const answer of [
+    () => {
+      throw new Error('database is down')
+    },
+    () => ({ status: 'unavailable', retryable: true, reason: 'our server could not finish' }) as VaultAdmissionAnswer,
+  ]) {
+    const v = vaultAt(1, 300_000, 300_010)
+    const h = harness(new Chain().add(v), { answer })
+    const sweep = createVaultSweep(h.deps)
+    await sweep.tick()
+    assert.equal(h.asked.length, 1)
+    h.clock.t += 4 * 60_000
+    await sweep.tick()
+    assert.equal(h.asked.length, 1, 'too soon')
+    h.clock.t += 60_000
+    await sweep.tick()
+    assert.equal(h.asked.length, 2)
+  }
+})
+
+test('a contract that never reads does not keep first place on the longest-wait turn', async () => {
+  const chain = new Chain()
+  const flooder = '0x9999999999999999999999999999999999999999' as Hex
+  const neverRead = Array.from({ length: 8 }, (_, i) => vaultAt(100 + i, 200_000 + i, 200_010 + i, flooder))
+  const real = vaultAt(1, 300_000, 300_010)
+  chain.add(...neverRead, real)
+  const unreadable = new Set(neverRead.map((c) => c.address))
+  const only = host(chain, 'only', {
+    maxSpan: 100_000_000,
+    on: (method, params) => {
+      const to = method === 'eth_call' ? (params[0] as { to: string }).to : method === 'eth_getCode' ? (params[0] as string) : null
+      return to && unreadable.has(to) ? new Error('502') : undefined
+    },
+  })
+  let times = 0
+  const h = harness(chain, {
+    hostList: [only],
+    answer: () => {
+      times++
+      return refused(true, 'session-key-expiry')
+    },
+  })
+  // It has been asked already, so only the longest-wait turn reaches it: the random turn is held to the same place.
+  // The few reads a tick all go on the contracts ahead of it, if those keep their place.
+  const sweep = createVaultSweep({ ...h.deps, pick: () => 0, limits: { readsPerTick: 8, logReadsPerTick: 1, startSpan: 10_000_000 } })
+  for (let i = 0; i < 12 && times === 0; i++) await sweep.tick()
+  assert.equal(times, 1, 'asked once, as the newest')
+  const asksBefore = times
+  for (let i = 0; i < 12; i++) {
+    h.clock.t += 2 * 3600_000
+    await sweep.tick()
+  }
+  assert.ok(times > asksBefore + 1, `asked again and again past the ones that never read: ${times - asksBefore}`)
+})
+
+test('a host that answered is asked first next time, so a pruned one costs one read and not one per step', async () => {
+  const v = vaultAt(1, 300_000, 300_010)
+  const chain = new Chain().add(v)
+  const pruned = host(chain, 'pruned', { on: (method) => (method === 'eth_getCode' ? new Error('state at block is pruned') : undefined) })
+  const h = harness(chain, { hostList: [pruned, host(chain, 'good')] })
+  await createVaultSweep(h.deps).tick()
+  assert.deepEqual(h.asked, [v.deployTx])
+  // The check of the block before asks every host once: so the pruned host is read for that, and for the first step.
+  assert.ok(chain.reads.filter((r) => r === 'pruned eth_getCode').length <= 2, `${chain.reads.filter((r) => r === 'pruned eth_getCode').length} reads of the pruned host`)
+})
+
+test('an owner word that is no address rules a contract out with no bisect', async () => {
+  const v = vaultAt(1, 300_000, 300_010)
+  const chain = new Chain().add(v)
+  const dirty = host(chain, 'one', { on: (method, params) => (method === 'eth_call' && (params[0] as { data: string }).data === OWNER_CALL ? `0x${'ff'.repeat(12)}${OWNER.slice(2)}` : undefined) })
+  const h = harness(chain, { hostList: [dirty] })
+  await createVaultSweep(h.deps).tick()
+  assert.deepEqual(h.asked, [])
+  assert.equal(chain.reads.filter((r) => /getCode/.test(r)).length, 0)
+})
+
+test('a transaction with a to is no creation, even with the sender and nonce that would make that address', async () => {
+  const v = vaultAt(1, 300_000, 300_010)
+  const chain = new Chain().add(v)
+  const called = host(chain, 'one', {
+    on: (method, params) => {
+      if (method !== 'eth_getBlockByNumber') return undefined
+      return { number: params[0], transactions: [{ hash: v.deployTx, from: v.from, to: OPERATOR, nonce: `0x${v.nonce.toString(16)}` }], transactionsRoot: `0x${'ab'.repeat(32)}` }
+    },
+  })
+  const h = harness(chain, { hostList: [called] })
+  await createVaultSweep(h.deps).tick()
+  assert.deepEqual(h.asked, [])
+  assert.ok(h.lines.some((l) => l.includes('no direct creation')))
+})
+
+test('code at block 0 with no creation there is closed, with no read of a block before it', async () => {
+  const v = vaultAt(1, 0, 300_010, OWNER, { deployTx: null })
+  const chain = new Chain().add(v)
+  const h = harness(chain)
+  const sweep = createVaultSweep(h.deps)
+  await sweep.tick()
+  assert.equal(sweep.status().lastProblem, null, 'nothing threw')
+  assert.ok(h.lines.some((l) => l.includes('no direct creation')))
+})
+
+// -- a block no host will read -------------------------------------------------------------
+
+const refusing = (chain: Chain, label: string, block: () => number | null, over: { receipts?: boolean } = {}) =>
+  host(chain, label, {
+    on: (method, params) => {
+      const at = block()
+      if (at === null) return undefined
+      if (method === 'eth_getLogs') {
+        const { fromBlock, toBlock } = (params as readonly { fromBlock: string; toBlock: string }[])[0]
+        return num(fromBlock) <= at && at <= num(toBlock) ? new Error('query exceeds max results 20000') : undefined
+      }
+      if (method === 'eth_getBlockReceipts' && over.receipts && num(params[0]) === at) return new Error('response too large')
+      return undefined
+    },
+  })
+
+test('a block every host refuses for good: the vaults after it are still found, and the public block keeps saying so', async () => {
+  const FULL = 250_000
+  const inside = vaultAt(1, 240_000, FULL)
+  const after = vaultAt(2, 300_000, 350_000)
+  const chain = new Chain().add(inside, after)
+  let block: number | null = FULL
+  const hosts = [refusing(chain, 'one', () => block, { receipts: true }), refusing(chain, 'two', () => block, { receipts: true })]
+  const h = harness(chain, { hostList: hosts, limits: { logReadsPerTick: 1000, readsPerTick: 2000 } })
+  const sweep = createVaultSweep(h.deps)
+  await sweep.tick()
+  assert.ok(h.asked.includes(after.deployTx as string), 'the vault after it was found')
+  assert.ok(!h.asked.includes(inside.deployTx as string))
+  assert.equal(sweep.status().lastBlockRead, String(chain.head - 20), 'the scan went on past it')
+  assert.equal(sweep.status().lastProblem, 'logs-not-read')
+  assert.ok(h.lines.some((l) => l.includes('250000') && l.includes('max results')), 'the raw text is in the log')
+
+  // Not read again too soon, and still open.
+  h.clock.t += 60_000
+  await sweep.tick()
+  assert.equal(sweep.status().lastProblem, 'logs-not-read', 'it stays open')
+
+  // Once a host will read it, the vault inside it is found, and the word clears.
+  block = null
+  h.clock.t += 3600_000
+  await sweep.tick()
+  assert.ok(h.asked.includes(inside.deployTx as string), 'the hole was read, and the vault in it is found')
+  h.clock.t += 5 * 60_000
+  await sweep.tick()
+  assert.equal(sweep.status().lastProblem, null)
+})
+
+test('a restart goes through the same block too: no vault after it is lost', async () => {
+  const FULL = 250_000
+  const after = vaultAt(2, 300_000, 350_000)
+  const chain = new Chain().add(after)
+  const hosts = [refusing(chain, 'one', () => FULL, { receipts: true })]
+  const h = harness(chain, { hostList: hosts, answer: () => refused(true, 'vault-state'), limits: { logReadsPerTick: 1000, readsPerTick: 2000 } })
+  await createVaultSweep(h.deps).tick()
+  assert.equal(h.asked.length, 1)
+  const again = createVaultSweep(h.deps)
+  await again.tick()
+  assert.equal(h.asked.length, 2, 'found again after the restart')
+  assert.equal(again.status().lastProblem, 'logs-not-read')
+})
+
+test('a block too full to list is read from its receipts, so a vault in it is found and no hole is left', async () => {
+  const FULL = 250_000
+  const inside = vaultAt(1, 240_000, FULL)
+  const chain = new Chain().add(inside)
+  const h = harness(chain, { hostList: [refusing(chain, 'one', () => FULL)], limits: { logReadsPerTick: 1000, readsPerTick: 2000 } })
+  const sweep = createVaultSweep(h.deps)
+  await sweep.tick()
+  assert.deepEqual(h.asked, [inside.deployTx])
+  assert.equal(sweep.status().lastProblem, null)
+  assert.ok(!h.lines.some((l) => l.includes('logs-not-read')))
+})
+
+test('from receipts it takes this topic alone, and no log the chain removed', async () => {
+  const FULL = 250_000
+  const inside = vaultAt(1, 240_000, FULL)
+  const chain = new Chain().add(inside)
+  const refuser = refusing(chain, 'one', () => FULL)
+  const removedOne = { address: '0x7777777777777777777777777777777777777777', topics: [TOPIC], removed: true }
+  const withRemoved: RpcHost = {
+    label: 'one',
+    request: async (method, params) => {
+      const answer = await refuser.request(method, params)
+      if (method !== 'eth_getBlockReceipts') return answer
+      return (answer as { logs: unknown[] }[]).map((r, i) => (i === 0 ? { ...r, logs: [...r.logs, removedOne] } : r))
+    },
+  }
+  const h = harness(chain, { hostList: [withRemoved], limits: { logReadsPerTick: 1000, readsPerTick: 2000 } })
+  await createVaultSweep(h.deps).tick()
+  assert.deepEqual(h.asked, [inside.deployTx])
+  assert.ok(!h.lines.some((l) => l.includes('no direct creation')), 'nothing else became a candidate: not the other topic, and not the removed log')
+})
+
+test('after a full block or a crowded range the scan goes back to the width that worked, and is done in one tick', async () => {
+  const chain = new Chain()
+  const FULL = 150_000
+  const CROWDED = 300_000
+  const only = host(chain, 'only', {
+    maxSpan: 20_000,
+    on: (method, params) => {
+      if (method === 'eth_getBlockReceipts') return new Error('response too large')
+      if (method !== 'eth_getLogs') return undefined
+      const { fromBlock, toBlock } = (params as readonly { fromBlock: string; toBlock: string }[])[0]
+      const holds = (b: number) => num(fromBlock) <= b && b <= num(toBlock)
+      if (holds(FULL)) return new Error('query exceeds max results 20000')
+      return holds(CROWDED) && num(toBlock) - num(fromBlock) > 150 ? new Error('query exceeds max results 20000') : undefined
+    },
+  })
+  const h = harness(chain, { hostList: [only], limits: { readsPerTick: 200, logReadsPerTick: 100 } })
+  const sweep = createVaultSweep(h.deps)
+  await sweep.tick()
+  assert.equal(sweep.status().lastBlockRead, String(chain.head - 20), `done within the cap of 100: ${chain.reads.filter((r) => r.includes('getLogs')).length} reads`)
+})
+
+test('a full block with nothing read before it this tick does not leave the scan at one block a read', async () => {
+  const chain = new Chain()
+  const only = host(chain, 'only', {
+    maxSpan: 100_000_000,
+    on: (method, params) => {
+      if (method === 'eth_getBlockReceipts') return new Error('response too large')
+      if (method !== 'eth_getLogs') return undefined
+      const { fromBlock, toBlock } = (params as readonly { fromBlock: string; toBlock: string }[])[0]
+      return num(fromBlock) <= START && START <= num(toBlock) ? new Error('query exceeds max results 20000') : undefined
+    },
+  })
+  const h = harness(chain, { hostList: [only] })
+  const sweep = createVaultSweep(h.deps)
+  await sweep.tick()
+  assert.equal(sweep.status().lastBlockRead, String(chain.head - 20))
+})
+
+test('receipts only count against a whole block: a short list or an empty body leaves a hole', async () => {
+  const FULL = 250_000
+  const inside = vaultAt(1, 240_000, FULL)
+  const after = vaultAt(2, 300_000, 350_000)
+  for (const answer of [
+    // As Blockdaemon does at an old block: no transactions under a root that says otherwise, and no receipts.
+    { block: { transactions: [], transactionsRoot: `0x${'ab'.repeat(32)}` }, receipts: [] },
+    // One receipt short.
+    { block: null, receipts: [] },
+    // The wrong transactions.
+    { block: null, receipts: [{ transactionHash: hashOf(4242), blockNumber: `0x${FULL.toString(16)}`, logs: [] }] },
+    // The right transaction, from another block.
+    { block: null, receipts: [{ transactionHash: hashOf(999), blockNumber: `0x${(FULL - 1).toString(16)}`, logs: [] }] },
+  ]) {
+    const chain = new Chain().add(inside, after)
+    const refuser = refusing(chain, 'one', () => FULL)
+    const odd: RpcHost = {
+      label: 'odd',
+      request: async (method, params) => {
+        if (method === 'eth_getBlockByNumber' && answer.block && num(params[0]) === FULL) return { number: params[0], ...answer.block }
+        if (method === 'eth_getBlockReceipts' && num(params[0]) === FULL) return answer.receipts
+        return refuser.request(method, params)
+      },
+    }
+    const h = harness(chain, { hostList: [odd], limits: { logReadsPerTick: 1000, readsPerTick: 2000 } })
+    const sweep = createVaultSweep(h.deps)
+    await sweep.tick()
+    assert.deepEqual(h.asked, [after.deployTx], 'nothing was concluded about the block')
+    assert.equal(sweep.status().lastProblem, 'logs-not-read', JSON.stringify(answer))
+  }
+})
+
+test('a block refused while the one before it does not read either is an outage: no hole, and the cursor stays', async () => {
+  const chain = new Chain().add(vaultAt(1, 240_000, 250_000))
+  let down = true
+  // The hosts answer up to here, and then stop answering logs altogether.
+  const stopsAt = 201_000
+  const stopsAnswering = host(chain, 'one', {
+    on: (method, params) => {
+      if (method !== 'eth_getLogs' || !down) return undefined
+      const { fromBlock, toBlock } = (params as readonly { fromBlock: string; toBlock: string }[])[0]
+      return num(toBlock) >= stopsAt || answeredOnce(num(fromBlock)) ? new Error('502') : undefined
+    },
+  })
+  let answered = false
+  const answeredOnce = (from: number) => {
+    const was = answered && from < stopsAt
+    if (from >= stopsAt - 5000) answered = true
+    return was
+  }
+  const h = harness(chain, { hostList: [stopsAnswering], limits: { startSpan: 5000, logReadsPerTick: 1000, readsPerTick: 2000 } })
+  const sweep = createVaultSweep(h.deps)
+  await sweep.tick()
+  const stopped = Number(sweep.status().lastBlockRead)
+  assert.ok(stopped < stopsAt, `the cursor stayed behind the blocks it could not read: ${stopped}`)
+  assert.equal(sweep.status().lastProblem, 'logs-not-read')
+  down = false
+  h.clock.t += 60_000
+  await sweep.tick()
+  assert.equal(sweep.status().lastProblem, null, 'and with no hole left behind, the word clears as soon as it reads')
+  assert.equal(h.asked.length, 1)
+})
+
+test('holes are read again a few a tick and later each time, so they cannot take the whole read budget', async () => {
+  const chain = new Chain()
+  const FULL = new Set(Array.from({ length: 12 }, (_, i) => 200_000 + i * 1000))
+  const refuser = host(chain, 'one', {
+    on: (method, params) => {
+      if (method === 'eth_getBlockReceipts') return new Error('response too large')
+      if (method !== 'eth_getLogs') return undefined
+      const { fromBlock, toBlock } = (params as readonly { fromBlock: string; toBlock: string }[])[0]
+      return [...FULL].some((b) => num(fromBlock) <= b && b <= num(toBlock)) ? new Error('too many results') : undefined
+    },
+  })
+  const h = harness(chain, { hostList: [refuser], limits: { logReadsPerTick: 1000, readsPerTick: 2000, holeRetriesPerTick: 3 } })
+  const sweep = createVaultSweep(h.deps)
+  await sweep.tick()
+  assert.equal(sweep.status().lastBlockRead, String(chain.head - 20))
+  const logReads = () => chain.reads.filter((r) => r === 'one eth_getLogs').length
+  let before = logReads()
+  await sweep.tick()
+  assert.equal(logReads() - before, 0, 'too soon')
+  let total = 0
+  for (let i = 0; i < 12; i++) {
+    h.clock.t += 5 * 60_000
+    before = logReads()
+    await sweep.tick()
+    assert.ok(logReads() - before <= 3, `three a tick at most: ${logReads() - before}`)
+    total += logReads() - before
+    assert.equal(sweep.status().lastProblem, 'logs-not-read', 'and each stays open')
+  }
+  assert.ok(total >= 12, `every one of them gets its turn: ${total}`)
+})
+
+test('a hole waits longer each time, up to the most a retry waits', async () => {
+  const FULL = 250_000
+  const chain = new Chain()
+  const h = harness(chain, { hostList: [refusing(chain, 'one', () => FULL, { receipts: true })], limits: { logReadsPerTick: 1000, readsPerTick: 2000 } })
+  const sweep = createVaultSweep(h.deps)
+  await sweep.tick()
+  const readsOf = () => chain.reads.filter((r) => r === 'one eth_getBlockReceipts').length
+  assert.equal(readsOf(), 1)
+  const at: number[] = []
+  for (let minute = 1; minute <= 300; minute++) {
+    h.clock.t += 60_000
+    const before = readsOf()
+    await sweep.tick()
+    if (readsOf() > before) at.push(minute)
+  }
+  assert.deepEqual(at.slice(0, 4), [5, 15, 35, 75], 'waits of 5, 10, 20 and 40 minutes')
+  assert.deepEqual(at.slice(4, 6), [135, 195], 'and then an hour, and never given up on')
+})
+
+// -- the live wiring -----------------------------------------------------------------------
+
+const KEY = `0x${'ab'.repeat(32)}`
+
+test('the real deps: a process with no key env is not ready, and makes no chain read on that account', () => {
+  const none = liveVaultSweepDeps({})
+  assert.ok(!('error' in none))
+  assert.equal(none.ready(), false, 'a local or CI backend with no key env makes no chain reads')
+  const held = liveVaultSweepDeps({ CELO_BUYER_KEY: KEY })
+  assert.ok(!('error' in held))
+  assert.equal(held.ready(), true)
+  const unreadable = liveVaultSweepDeps({ CELO_BUYER_KEY: 'not a key' })
+  assert.ok(!('error' in unreadable))
+  assert.equal(unreadable.ready(), false, 'a key it cannot read is not a key it compared')
+  assert.equal(held.registryUsdc, USDC)
+  assert.equal(held.startBlock, ARC_VAULT_SWEEP_START_BLOCK)
+  const elsewhere = liveVaultSweepDeps({ ARC_VAULT_SWEEP_START_BLOCK: '42' })
+  assert.ok(!('error' in elsewhere))
+  assert.equal(elsewhere.startBlock, 42)
+  assert.ok(held.hosts().length >= 2, 'the hosts come from the registry')
+})
+
+test('the real deps: the list is lowercased, because rows are checksummed and candidates are not', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'arc-sweep-'))
+  const file = join(dir, 'vaults.json')
+  const CHECKSUMMED = getCreateAddress({ from: OWNER, nonce: 1n })
+  assert.notEqual(CHECKSUMMED, CHECKSUMMED.toLowerCase(), 'this address has capitals to lose')
+  writeFileSync(file, JSON.stringify([{ address: CHECKSUMMED, deployTx: hashOf(1) }]))
+  const deps = liveVaultSweepDeps({ CELO_BUYER_KEY: KEY }, { getPool: async () => null, file })
+  assert.ok(!('error' in deps))
+  const read = await deps.counted()
+  assert.ok(read.ok)
+  assert.deepEqual([...read.vaults], [CHECKSUMMED.toLowerCase()])
+
+  const down = liveVaultSweepDeps({ CELO_BUYER_KEY: KEY }, { getPool: async () => ({ query: async () => { throw new Error('pg is down') } }) })
+  assert.ok(!('error' in down))
+  assert.equal((await down.counted()).ok, false, 'an unreadable list stays unreadable')
+})
+
+test('the real deps say who found the row, and are otherwise the same as the route', () => {
+  const deps = sweepAdmissionDeps({ CELO_BUYER_KEY: KEY })
+  assert.equal(deps.foundBy, 'sweep')
+  assert.deepEqual(Object.keys(deps).sort(), ['admit', 'findByTx', 'foundBy', 'persist'])
+  const source = readFileSync(new URL('../src/arc-vault-sweep.ts', import.meta.url), 'utf8')
+  assert.match(source, /admitVaultDeploy\(\{ deployTx \}, sweepAdmissionDeps\(env\)\)/, 'and the sweep goes through them')
 })
 
 test('the timer does not hold the process open, and a tick that throws does not end it', async () => {
@@ -769,4 +1483,31 @@ test('a block that truly holds no transactions is whole, so a contract with code
   await createVaultSweep(h.deps).tick()
   assert.deepEqual(h.asked, [])
   assert.ok(h.lines.some((l) => l.includes('no direct creation')))
+})
+
+test('the off switch reaches the live start: told to be off it stays off and starts nothing', () => {
+  const timers: number[] = []
+  for (const v of ['off', 'OFF', '0']) {
+    startVaultSweep({ ARC_VAULT_SWEEP: v, CELO_BUYER_KEY: KEY }, (_run, ms) => {
+      timers.push(ms)
+      return {}
+    })
+    assert.deepEqual(vaultSweepStatus(), { on: false, lastBlockRead: null, lastRun: null, lastProblem: null }, v)
+  }
+  assert.deepEqual(timers, [])
+})
+
+// Last in this file: it turns the live sweep on for the rest of the process. Its timer is unref'd and its first tick is 30 seconds off.
+test('with no off switch the live start turns it on, and sets its timer', () => {
+  const timers: number[] = []
+  let unrefd = 0
+  startVaultSweep({ CELO_BUYER_KEY: KEY, ARC_VAULT_SWEEP_EVERY_SECONDS: '600' }, (_run, ms) => {
+    timers.push(ms)
+    return { unref: () => unrefd++ }
+  })
+  const status = vaultSweepStatus()
+  assert.equal(status.on, true)
+  assert.equal(status.lastRun, null)
+  assert.deepEqual(timers, [30_000], 'the first tick waits for the health check')
+  assert.equal(unrefd, 1, 'and holds nothing open')
 })
