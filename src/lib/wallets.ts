@@ -17,7 +17,7 @@ import type { Eip1193 } from './evm-chain'
 
 // The chain switch and the rejection test live in evm-chain.ts, which has no runtime imports so
 // the Arc vault's send path can be tested under Node; every caller still imports them from here.
-export { ensureEvmChain, evmChainHex, isWalletRejection, type Eip1193 } from './evm-chain'
+export { askForAnotherAccount, ensureEvmChain, evmChainHex, isWalletRejection, walletChainName, type Eip1193 } from './evm-chain'
 
 export type WalletOption = {
   id: string

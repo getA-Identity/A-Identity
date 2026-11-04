@@ -6,6 +6,7 @@
  * says plainly that nothing was sent and no fee was spent, because a simulation costs nothing.
  */
 import { AlertTriangle } from 'lucide-react'
+import { USE_ANOTHER_ACCOUNT } from '../../../lib/arc/deploy-copy'
 import type { TxFailure } from '../../../lib/arc/vault-write'
 
 /** The contract's custom errors, one sentence each. */
@@ -23,7 +24,7 @@ const CONTRACT_ERROR_TEXT: Record<string, string> = {
 }
 
 const CONTRACT_ERROR_NEXT: Record<string, string> = {
-  NotOwner: 'Pick the owner account in your wallet, then try again.',
+  NotOwner: `Pick the owner account in your wallet, then try again. If your wallet will not switch here, press ${USE_ANOTHER_ACCOUNT} at the top of this page.`,
   ZeroAddress: 'Check every address in the form.',
   InvalidPayee: 'Send it to an account, not to the vault or the token contract.',
   TransferFailed: 'Read the vault again and use an amount it holds.',
@@ -55,7 +56,7 @@ function explain(f: TxFailure): { title: string; body?: string; next: string; to
       return {
         title: 'Not enough USDC for the network fee.',
         body: f.message,
-        next: 'Send a little USDC to this account on the same network (on Arc the fee is paid in USDC), then try again.',
+        next: `Check that this is the account holding your USDC. If it is not, press ${USE_ANOTHER_ACCOUNT} at the top of this page. If it is, send a little USDC to it on this network (on Arc the fee is paid in USDC), then try again.`,
         tone: 'danger',
       }
     case 'rpc_unreachable':
@@ -72,7 +73,7 @@ function explain(f: TxFailure): { title: string; body?: string; next: string; to
         tone: 'danger',
       }
     case 'account_mismatch':
-      return { title: 'Your wallet changed account.', body: f.message, next: 'Pick the right account in your wallet, then try again.', tone: 'danger' }
+      return { title: 'Your wallet changed account.', body: f.message, next: `Pick the right account in your wallet, then try again. If your wallet will not switch here, press ${USE_ANOTHER_ACCOUNT} at the top of this page.`, tone: 'danger' }
     case 'wallet_pending':
       return { title: 'Your wallet already has a request open.', body: f.message, next: 'Open the wallet, finish or dismiss that request, then try again.', tone: 'warn' }
     case 'fee_too_low':
