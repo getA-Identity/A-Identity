@@ -18,7 +18,8 @@ import { short } from '../../lib/format'
 import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
 import { Skeleton } from '../ui/skeleton'
 
-type Metric = { count: number; target: number; note?: string }
+// incomplete: a log this number reads could not be read, so the count is a lower limit.
+type Metric = { count: number; target: number; note?: string; incomplete?: boolean }
 type RailTotals = { checks: number; usd: number }
 type UsageSide = {
   checks: number
@@ -71,8 +72,21 @@ type FlowItem = {
   at: string
   explorerUrl: string | null
   payeeInternal?: string
+  // A backend from before these sends none of them, and the row then shows what it has.
+  recordUrl?: string
+  vaultKind?: 'launch-day' | 'owner-held' | 'other' | 'not-recorded'
+  checkSettlement?: { outcome: string; readFrom: 'gateway-log' | 'flow-record'; batchTx?: string; batchExplorerUrl?: string }
 }
-type LogRead = { readable: boolean; rows: number; reason?: string }
+type LogRead = { readable: boolean; rows: number; reason?: string; skipped?: { flowId: string | null; reason: string }[] }
+type WeekRow = {
+  weekStart: string
+  weekEnd: string
+  inProgress: boolean
+  checks: number
+  activeWallets: string[]
+  activeDays: string[]
+  returningWallets: string[]
+}
 
 type SeasonReport = {
   asOf: string
@@ -87,7 +101,8 @@ type SeasonReport = {
     vaults: Metric & { items: VaultItem[]; ownerActions?: { freezes: number; withdrawals: number; vaultsNotFullyRead: number } }
     // linked and unlinked arrive with the flow count; a backend from before it sends neither,
     // and its count is every Gateway check, so the row is labeled by which one answered.
-    checks: Metric & { internal: number; external: number; linked?: { paid: number; refused: number }; unlinked?: number; internalPayee?: number; refusedPayees?: number; items?: FlowItem[] }
+    // unlinked is null when a log it needs could not be read, because then nobody can say.
+    checks: Metric & { internal: number; external: number; linked?: { paid: number; refused: number }; unlinked?: number | null; internalPayee?: number; refusedPayees?: number; items?: FlowItem[] }
     // byKind arrives with the count by kind. From a backend before it, count is the list's length.
     refusals: Metric & { items: RefusalItem[]; byKind?: Record<string, number> }
     evidence: string
@@ -100,8 +115,15 @@ type SeasonReport = {
     teamActiveOnSeveralDays: Metric
     publicReference: Metric
     unattributed: { wallets: number; checks: number; note: string }
+    // A backend from before it sends no such field, and the card lists none.
+    externalFlows?: { count: number; items: FlowItem[]; note: string }
   }
-  afterProgram: { activeExternalWallets: Metric & { windowDays: number }; note: string }
+  afterProgram: {
+    activeExternalWallets: Metric & { windowDays: number }
+    // A backend from before it sends no such field, and the table does not appear.
+    weekly?: { incomplete?: boolean; weeks: WeekRow[]; repeatWallets: string[]; repeatTeams: string[]; note: string }
+    note: string
+  }
   note: string
 }
 
@@ -114,7 +136,10 @@ const REFRESH_MS = 60_000
 const usd = (n: number) => `$${n}`
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
-/** One metric: label, count over target, a thin bar, and the reason while the count is 0 (with keepNote, always). */
+/** What a count reads as when a log behind it could not be read: never a plain 0. */
+const countLabel = (m: Metric) => (m.incomplete ? (m.count === 0 ? 'not readable' : `at least ${m.count}`) : String(m.count))
+
+/** One metric: label, count over target, a thin bar, and the reason while the count is 0 or cannot be trusted (with keepNote, always). */
 function MetricRow({ label, metric, detail, keepNote }: { label: string; metric: Metric; detail?: string; keepNote?: boolean }) {
   const pct = metric.target > 0 ? Math.min(100, Math.round((metric.count / metric.target) * 100)) : 0
   const met = metric.count >= metric.target
@@ -123,7 +148,7 @@ function MetricRow({ label, metric, detail, keepNote }: { label: string; metric:
       <div className="flex items-baseline justify-between gap-x-4">
         <span className="text-xs text-foreground/75">{label}</span>
         <span className={`shrink-0 font-mono text-xs tabular-nums ${met ? 'text-ok' : 'text-foreground/85'}`}>
-          {metric.count} / {metric.target}
+          {countLabel(metric)} / {metric.target}
         </span>
       </div>
       <div
@@ -137,7 +162,7 @@ function MetricRow({ label, metric, detail, keepNote }: { label: string; metric:
         <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
       </div>
       {detail && <p className="mt-1.5 font-mono text-[11px] text-foreground/50">{detail}</p>}
-      {(metric.count === 0 || keepNote) && metric.note && (
+      {(metric.count === 0 || metric.incomplete || keepNote) && metric.note && (
         <p className="mt-1.5 text-[11px] leading-relaxed text-foreground/50">{metric.note}</p>
       )}
     </div>
@@ -208,26 +233,80 @@ function OutLink({ href, children }: { href: string; children: React.ReactNode }
   )
 }
 
+const FLOW_VAULT_LABEL: Record<NonNullable<FlowItem['vaultKind']>, string> = {
+  'launch-day': 'launch-day vault (ours)',
+  'owner-held': 'owner-held vault',
+  other: 'another vault',
+  'not-recorded': 'no vault on record',
+}
+
+/** One flow, traceable both ways: the record of the check and verdict, the check's batch, the payment. */
+function FlowLine({ f }: { f: FlowItem }) {
+  const record = f.recordUrl ?? f.evidenceUrl
+  const check = f.checkSettlement
+  return (
+    <li className="text-[11px] text-foreground/65">
+      <span className="font-mono text-foreground/50">{f.at.slice(0, 16).replace('T', ' ')} UTC</span>{' '}
+      <span className={`font-semibold ${f.outcome === 'paid' ? 'text-ok' : 'text-foreground/80'}`}>{f.outcome}</span> payee {short(f.payee)}
+      {f.payeeInternal && <span className="font-semibold text-foreground/80"> (payee is ours)</span>}
+      {f.vaultKind && <span>, {FLOW_VAULT_LABEL[f.vaultKind]}</span>}{' '}
+      {record && <OutLink href={record}>flow record</OutLink>}{' '}
+      {check?.batchExplorerUrl ? (
+        <OutLink href={check.batchExplorerUrl}>Gateway batch</OutLink>
+      ) : (
+        check && <span className="text-foreground/50">check {check.outcome}{check.outcome === 'credited' ? ', no batch hash read yet' : ''}</span>
+      )}{' '}
+      {f.explorerUrl && <OutLink href={f.explorerUrl}>transaction</OutLink>}
+    </li>
+  )
+}
+
 /** Every flow the count stands on, closed by default: a reviewer can open any one of the hundred. */
-function FlowList({ items }: { items: FlowItem[] }) {
+function FlowList({ items, title = 'Every flow, newest first' }: { items: FlowItem[]; title?: string }) {
   const newestFirst = [...items].sort((a, b) => b.at.localeCompare(a.at))
   return (
     <details className="mt-3">
-      <summary className="cursor-pointer text-[11px] font-semibold text-foreground/70">Every flow, newest first ({items.length})</summary>
+      <summary className="cursor-pointer text-[11px] font-semibold text-foreground/70">{title} ({items.length})</summary>
       <ul className="mt-2 flex max-h-72 flex-col gap-1 overflow-y-auto pr-1">
-        {newestFirst.map((f) => {
-          const href = f.explorerUrl ?? f.evidenceUrl
-          return (
-            <li key={f.checkNonce} className="text-[11px] text-foreground/65">
-              <span className="font-mono text-foreground/50">{f.at.slice(0, 16).replace('T', ' ')} UTC</span>{' '}
-              <span className={`font-semibold ${f.outcome === 'paid' ? 'text-ok' : 'text-foreground/80'}`}>{f.outcome}</span> payee {short(f.payee)}
-              {f.payeeInternal && <span className="font-semibold text-foreground/80"> (payee is ours)</span>}{' '}
-              {href && <OutLink href={href}>{f.explorerUrl ? 'transaction' : 'flow record'}</OutLink>}
-            </li>
-          )
-        })}
+        {newestFirst.map((f) => (
+          <FlowLine key={f.checkNonce} f={f} />
+        ))}
       </ul>
     </details>
+  )
+}
+
+/** External use per UTC week: small, and it says which wallets came back. */
+function WeeklyTable({ weeks }: { weeks: WeekRow[] }) {
+  return (
+    <div className="mt-2 overflow-x-auto">
+      <table className="w-full min-w-[32rem] text-left text-[11px] text-foreground/70">
+        <caption className="sr-only">External use per UTC week</caption>
+        <thead>
+          <tr className="border-b border-border text-foreground/45">
+            <th scope="col" className="py-1.5 pr-3 font-medium">Week (UTC)</th>
+            <th scope="col" className="py-1.5 pr-3 font-medium">External checks</th>
+            <th scope="col" className="py-1.5 pr-3 font-medium">Active wallets</th>
+            <th scope="col" className="py-1.5 pr-3 font-medium">Active days</th>
+            <th scope="col" className="py-1.5 font-medium">Came back from an earlier week</th>
+          </tr>
+        </thead>
+        <tbody className="font-mono tabular-nums">
+          {weeks.map((w) => (
+            <tr key={w.weekStart} className="border-b border-border/60 last:border-0">
+              <td className="py-1.5 pr-3">
+                {w.weekStart} to {w.weekEnd}
+                {w.inProgress && <span className="font-sans text-foreground/50"> (so far)</span>}
+              </td>
+              <td className="py-1.5 pr-3">{w.checks}</td>
+              <td className="py-1.5 pr-3">{w.activeWallets.length}</td>
+              <td className="py-1.5 pr-3">{w.activeDays.length}</td>
+              <td className="py-1.5">{w.returningWallets.length > 0 ? w.returningWallets.map((a) => short(a)).join(', ') : 'none'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -254,6 +333,23 @@ function UsageCell({ title, caption, side }: { title: string; caption: string; s
   )
 }
 
+/** A timestamp to the minute, so two dates a few hours apart read as what they are. */
+const utcMinute = (ts: string) => {
+  const t = Date.parse(ts)
+  return Number.isFinite(t) ? new Date(t).toISOString().slice(0, 16).replace('T', ' ') : ts
+}
+
+/** The flow row's small print, leaving out whatever a log that could not be read would make false. */
+function flowDetail(c: SeasonReport['milestone1']['checks']): string | undefined {
+  if (c.incomplete && c.count === 0) return undefined
+  const linked = c.linked as { paid: number; refused: number }
+  const payees = c.internalPayee
+    ? ` (${c.internalPayee} pay or name a payee that is ours: our own wallet, our own agent or the vault's own key; refused flows name ${plural(c.refusedPayees ?? 0, 'distinct payee', 'distinct payees')})`
+    : ''
+  const rest = c.incomplete ? '' : `; ${c.unlinked ?? 0} internal checks with nothing linked; ${c.external} external checks count under M2`
+  return `${linked.paid} paid, ${linked.refused} refused${payees}${rest}`
+}
+
 function WalletLine({ w }: { w: WalletRow }) {
   return (
     <li className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 border-b border-border/60 py-2 last:border-0">
@@ -263,6 +359,7 @@ function WalletLine({ w }: { w: WalletRow }) {
       </span>
       <span className="font-mono text-[11px] tabular-nums text-foreground/55">
         {plural(w.checks, 'check', 'checks')}, {usd(w.usd)}, {plural(w.activeDays.length, 'day', 'days')}
+        {w.activeDays.length > 1 && `: ${utcMinute(w.firstTs)} to ${utcMinute(w.lastTs)} UTC`}
       </span>
     </li>
   )
@@ -299,6 +396,9 @@ export default function ArcSeasonProgress() {
   const m2 = report?.milestone2
   const external = report?.usage.external
   const after = report?.afterProgram.activeExternalWallets
+  const weekly = report?.afterProgram.weekly
+  const skippedFlows = report?.logs.flows?.skipped ?? []
+  const settlementsUnreadable = report ? !report.logs.gateway.readable || !report.logs.facilitator.readable : false
   const unreadable = report
     ? [
         ...(['gateway', 'facilitator'] as const).filter((l) => !report.logs[l].readable),
@@ -362,7 +462,7 @@ export default function ArcSeasonProgress() {
       {report && m1 && m2 && external && after && (
         <>
           <p className="mt-4 text-xs leading-relaxed text-foreground/50">
-            As of {report.asOf}. Deliverable 2 is due {report.program.deliverable2Due}. {report.note}
+            As of {report.asOf}. Deliverable 2 was due {report.program.deliverable2Due}. {report.note}
           </p>
 
           {unreadable.length > 0 && (
@@ -372,16 +472,20 @@ export default function ArcSeasonProgress() {
             </p>
           )}
 
+          {skippedFlows.length > 0 && (
+            <p className="mt-3 rounded-xl bg-warn/10 px-4 py-2.5 text-xs leading-relaxed text-warn">
+              {`${plural(skippedFlows.length, 'flow record', 'flow records')} could not be read and ${skippedFlows.length === 1 ? 'is' : 'are'} not counted below: `}
+              {skippedFlows.map((row) => (row.flowId ? short(row.flowId) : 'a row with no id')).join(', ')}.
+            </p>
+          )}
+
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             <MilestoneCard id={1} title={m1.title} due={m1.due}>
               {/* The note names the launch-day vault and why it is not counted, which stays true at any count. */}
               <MetricRow label="Owner-held vaults deployed by the owner's own wallet" metric={m1.vaults} keepNote detail={ownerActionsLine(m1.vaults.ownerActions)} />
               {m1.checks.linked ? (
-                <MetricRow
-                  label="Verify-then-pay flows through Circle Gateway"
-                  metric={m1.checks}
-                  detail={`${m1.checks.linked.paid} paid, ${m1.checks.linked.refused} refused${m1.checks.internalPayee ? ` (${m1.checks.internalPayee} pay or name a payee that is ours: our own wallet, our own agent or the vault's own key; refused flows name ${plural(m1.checks.refusedPayees ?? 0, 'distinct payee', 'distinct payees')})` : ''}; ${m1.checks.unlinked ?? 0} internal checks with nothing linked; ${m1.checks.external} external checks count under M2`}
-                />
+                // The note says these are our own runs and through which vault, which stays true at any count.
+                <MetricRow label="Verify-then-pay flows through Circle Gateway" metric={m1.checks} keepNote detail={flowDetail(m1.checks)} />
               ) : (
                 <MetricRow
                   label="Verify-then-pay checks through Circle Gateway"
@@ -392,7 +496,7 @@ export default function ArcSeasonProgress() {
               <MetricRow
                 label="Refusals anyone can inspect, one of each kind"
                 metric={m1.refusals}
-                detail={m1.refusals.byKind ? `${m1.refusals.byKind['vault-policy-on-chain'] ?? 0} reverted on chain, ${m1.refusals.byKind['deny-before-signing'] ?? 0} DENY stopped before signing` : undefined}
+                detail={m1.refusals.byKind && !m1.refusals.incomplete ? `${m1.refusals.byKind['vault-policy-on-chain'] ?? 0} reverted on chain, ${m1.refusals.byKind['deny-before-signing'] ?? 0} DENY stopped before signing` : undefined}
               />
               {m1.vaults.items.length > 0 && (
                 <ul className="mt-3 flex flex-col gap-1.5">
@@ -402,6 +506,7 @@ export default function ArcSeasonProgress() {
                       {(v.ownerKind === 'team' || v.ownerKind === 'external') && <span className="font-semibold text-foreground/80"> ({v.ownerKind})</span>}
                       {v.ownerKind === 'unstated' && <span className="font-semibold text-foreground/80"> (owner not identified)</span>}, deployed{' '}
                       <OutLink href={v.deployExplorerUrl}>{v.deployedAt}</OutLink>
+                      {v.note && <div className="mt-0.5 pl-3 text-foreground/50">{v.note}</div>}
                       <VaultOwnerActions vault={v} />
                     </li>
                   ))}
@@ -428,9 +533,17 @@ export default function ArcSeasonProgress() {
 
             <MilestoneCard id={2} title={m2.title} due={m2.due}>
               <MetricRow label="External teams live on Arc Mainnet" metric={m2.externalTeamsLive} />
-              <MetricRow label="Paid checks from wallets we do not control" metric={m2.externalChecks} />
-              <MetricRow label="External team active on several days" metric={m2.teamActiveOnSeveralDays} />
+              {/* The note says when a paying wallet also owns an unidentified vault, so it stays past 0. */}
+              <MetricRow label="Paid checks from wallets we do not control" metric={m2.externalChecks} keepNote />
+              {/* The note states the dates, because two UTC dates can be hours apart. */}
+              <MetricRow label="External team active on several days" metric={m2.teamActiveOnSeveralDays} keepNote />
               <MetricRow label="External integration referenced in public" metric={m2.publicReference} />
+              {m2.externalFlows && (
+                <div className="mt-3">
+                  <p className="text-[11px] leading-relaxed text-foreground/50">{m2.externalFlows.note}</p>
+                  {m2.externalFlows.items.length > 0 && <FlowList items={m2.externalFlows.items} title="External flows, newest first" />}
+                </div>
+              )}
             </MilestoneCard>
           </div>
 
@@ -445,7 +558,9 @@ export default function ArcSeasonProgress() {
             <div className="text-[11px] uppercase tracking-wide text-foreground/45">External wallets</div>
             {external.byWallet.length === 0 ? (
               <p className="mt-1.5 text-xs leading-relaxed text-foreground/55">
-                No external payment yet: every check settled on Arc Mainnet so far came from our own wallets.
+                {settlementsUnreadable
+                  ? 'None found in the logs that could be read on this request, which says nothing about the one that could not.'
+                  : 'No external payment yet: every check settled on Arc Mainnet so far came from our own wallets.'}
               </p>
             ) : (
               <ul className="mt-1.5">
@@ -460,8 +575,15 @@ export default function ArcSeasonProgress() {
           </div>
 
           <p className="mt-4 text-xs leading-relaxed text-foreground/55">
-            After the program: {after.count} / {after.target} external wallets active in the last {after.windowDays} days.
+            After the program: {countLabel(after)} / {after.target} external wallets active in the last {after.windowDays} days.
           </p>
+          {weekly && (
+            <div className="mt-3">
+              <div className="text-[11px] uppercase tracking-wide text-foreground/45">Weekly usage</div>
+              <p className="mt-1 max-w-[80ch] text-[11px] leading-relaxed text-foreground/50">{weekly.note}</p>
+              {weekly.weeks.length > 0 && <WeeklyTable weeks={weekly.weeks} />}
+            </div>
+          )}
         </>
       )}
     </section>
