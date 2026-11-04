@@ -296,7 +296,7 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: '0x1338762a8203452d75dfeea76a33fa296c299c6e9fc297bec9112bbe801e0413',
         onChain: 'arc-mainnet',
         blockNumber: 22547671,
-        note: 'Credited by Gateway at 2026-09-24T16:42Z and 16:43Z (transfers c44c0e6f and e06f2175) and applied together in this batch, which Circle sent. Internal, like every payment on this chain so far.',
+        note: 'Credited by Gateway at 2026-09-24T16:42Z and 16:43Z (transfers c44c0e6f and e06f2175) and applied together in this batch, which Circle sent. Internal, like every payment on this chain up to that day.',
       },
       {
         kind: 'session-key',
@@ -389,7 +389,7 @@ export const PROVENANCE: ChainProvenance[] = [
     ],
     caveats: [
       'Not audited. AgentSpendPolicy has had internal reviews, the latest an Arc Studio AI review on 2026-10-30 with 33 findings and none Critical or High (OLYMPIX_SUBMISSION.md in the repo), plus a Foundry unit, fuzz and invariant suite and a negative-control runner that deletes each guard in turn and requires the suite to go red. It has been submitted to Olympix for an automated pre-audit scan whose results are pending. That is not an audit and we will not call it one.',
-      'Every payment recorded here is self-funded: every payer, every receiving address and every account that broadcasts is ours, except Circle\'s Gateway batches and forwarded mint. It is labeled internal and always will be. This is evidence the rails work on Arc Mainnet, not evidence of demand.',
+      'Every artifact this ledger lists is self-funded: every payer, every receiving address and every account that broadcasts is ours, except Circle\'s Gateway batches and forwarded mint. These artifacts are labeled internal and always will be: they are evidence the rails work on Arc Mainnet, not evidence of demand. Checks paid by wallets off our internal lists are not artifacts here; they are counted as external in /api/arc/season and the Gateway proof log.',
       'The Circle Gateway sale is Circle\'s batch transaction, not ours: we broadcast nothing on that rail. Gateway credited the call first (transfer 5958b158-6603-4165-a0a9-cfab2bec2ea7) and applied the net position on-chain later in a batch that may carry other parties\' transfers too, so the batch hash proves settlement of a net position rather than a one-to-one payment.',
       'We deployed nothing here except the vault. The registries, USDC, CCTP, Gateway, Memo and Multicall3From are their authors\' contracts; registration is permissionless.',
       'The vault\'s owner is still the operating wallet, a server-held key, and this contract has no owner transfer, so moving the owner to a wallet a person holds means deploying a new vault. What the 2026-09-25 split fixed is the other half: the agent key can no longer act as the owner.',

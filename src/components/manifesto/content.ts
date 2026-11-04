@@ -89,7 +89,7 @@ export const PRINCIPLES: readonly Principle[] = [
     law: 'Humans must retain meaningful control.',
     why: 'Autonomy is delegated. What is delegated can be paused, narrowed or taken back, by a person, at any time.',
     product:
-      'The owner freezes, overrides, withdraws and resets limits. On Stellar pubnet the console prepares those calls for the owner to sign from their own wallet, so the server never holds that key; the EVM mainnet vaults are still owned by our operating wallet, and the proof pages say so.',
+      'The owner freezes, overrides, withdraws and resets limits. On Stellar pubnet the console prepares those calls for the owner to sign from their own wallet, so the server never holds that key; an Arc Mainnet vault deployed from /app/vault/arc is owned by the wallet that deployed it; the EVM mainnet vaults we deployed ourselves are owned by our operating wallet, and the proof pages say so.',
   },
   {
     n: '05',
@@ -351,7 +351,7 @@ export function ourRow(counts: { live: number; beta: number; planned: number }):
     limits:
       'In an AgentSpendPolicy vault with separate owner and operator roles, which reverts an agent payment past the caps. A server pre-check and the Circle wallet screening sit around it.',
     access: 'Open. No key for reads, no sign-in for the explorer or the proof pages.',
-    status: `${counts.live} chains live, ${counts.beta} in beta, ${counts.planned} planned, per the chain registry. Every mainnet payment so far is self-funded and labeled internal; an outside payer is labeled external the moment one arrives. On Stellar pubnet the vault owner signs from their own wallet; the EVM mainnet vaults are still owned by our operating wallet, as the proof pages say.`,
+    status: `${counts.live} chains live, ${counts.beta} in beta, ${counts.planned} planned, per the chain registry. Nearly every mainnet payment so far is our own and labeled internal; the few checks paid by wallets off our internal lists are labeled external. On Stellar pubnet the vault owner signs from their own wallet, and so does the owner of an Arc Mainnet vault deployed from /app/vault/arc; the EVM mainnet vaults we deployed ourselves are owned by our operating wallet, as the proof pages say.`,
     refs: [],
     ours: true,
   }
