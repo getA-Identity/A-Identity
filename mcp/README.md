@@ -239,7 +239,7 @@ A vault deployed from `/app/vault/arc` on Arc Mainnet needs nothing from anyone:
 deploy hash to `POST /api/arc/vaults` once the agent key has an end date, from the setup or from the
 vault's own page, and a vault that passes every check is stored and counted by `GET /api/arc/season`
 with its owner not identified. A browser that never saw the deploy holds no hash, so its page only says
-what the list says. The server also looks for countable vaults on the chain by itself
+what the list says, and that the server is looking for it only while `GET /api/arc/vaults` says so. The server also looks for countable vaults on the chain by itself
 (`src/arc-vault-sweep.ts`): setting the agent key's end date logs `SessionKeyExpirySet`, it finds the
 deploy hash from the chain alone, and it calls the route's own `admitVaultDeploy`, so nothing is decided
 there and a vault from any browser can count. It reads a capped number of blocks every 5 minutes from a
