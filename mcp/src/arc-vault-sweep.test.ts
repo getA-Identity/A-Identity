@@ -1589,7 +1589,13 @@ test('a host that stalls after its headers is cut off at the read limit, and the
   const stalled: RpcHost = { label: 'stalled', request: () => new Promise(() => {}) }
   const h = harness(chain, { hostList: [stalled, host(chain, 'two')], limits: { stalledAfterMs: 5 } })
   const sweep = createVaultSweep(h.deps)
-  await sweep.tick()
+  // The read limit's timer is unref'd, as it has to be on a server, and here nothing else holds the process open.
+  const keepOpen = setInterval(() => {}, 1000)
+  try {
+    await sweep.tick()
+  } finally {
+    clearInterval(keepOpen)
+  }
   assert.deepEqual(h.asked, [v.deployTx])
   assert.equal(sweep.status().lastBlockRead, String(chain.head - 20))
 })
