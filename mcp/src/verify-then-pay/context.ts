@@ -13,6 +13,7 @@ import {
   pruneAbandonedVtpFlows,
   loadOpenVtpFlows,
   loadVtpFlow,
+  loadWaitingVtpFlows,
   persistVtpFlow,
   updateVtpFlow,
   type VtpFlowByTx,
@@ -25,6 +26,7 @@ import {
   type VtpFlowsRead,
   type VtpFlowUpdate,
   type VtpStoreIo,
+  type VtpWaitingFlows,
 } from '../storage.js'
 import type { VtpReadClient } from './reads.js'
 
@@ -52,6 +54,46 @@ export function flowUrl(flowId: string, origin: string = VTP_PUBLIC_ORIGIN): str
 }
 
 /**
+ * Where an owner approves one hand-off: the vault page, with the flow named. The origin is the site's
+ * own and never the request's: this link asks a person to sign a transfer of real money, and the
+ * Host and X-Forwarded-Host of a request are whatever the caller typed.
+ */
+export function approvalUrl(chain: ChainDescriptor, vault: string, flowId: string): string {
+  const q = new URLSearchParams({ network: chain.caip2, contract: vault.toLowerCase(), flow: flowId.toLowerCase() })
+  return `${VTP_PUBLIC_ORIGIN}/app/vault/arc?${q.toString()}`
+}
+
+/**
+ * Why the vault page will not offer this hand-off, or null when it can. The page treats a check as a
+ * request from the agent only when the vault's operator paid for it, and it never offers a payment to the
+ * agent's own key (src/lib/arc/handoff-rules.ts). The server knows both when it answers, so it hands out no
+ * link that would show the owner a refusal, or tell them a real request looks like a trick.
+ */
+export function whyNoApproval(f: { payer: string; operator: string; payee: string }): string | null {
+  const operator = f.operator.toLowerCase()
+  if (f.payee.toLowerCase() === operator) return `the payee is the vault's own operator key ${f.operator}, and the vault page does not offer a payment to it`
+  if (f.payer.toLowerCase() !== operator) return `the check was paid by ${f.payer}, not by the vault's operator key ${f.operator}, and the vault page offers only a check that key paid for`
+  return null
+}
+
+/** The link for a hand-off, or null when the vault page would refuse it. */
+export function approvalUrlFor(chain: ChainDescriptor, vault: string, flowId: string, f: { payer: string; operator: string; payee: string }): string | null {
+  return whyNoApproval(f) === null ? approvalUrl(chain, vault, flowId) : null
+}
+
+/**
+ * What a public answer says when the flow log failed. The answers below take no key, and a database error
+ * names its user and its host, and a file error an absolute path, so that text goes to the server's log and
+ * these fixed words go to the caller.
+ */
+export const FLOW_LOG_UNREADABLE = 'the flow log could not be read'
+export const FLOW_LOG_REFUSED_WRITE = 'the flow log refused the write'
+
+export function logFlowStoreFault(what: string, reason: string): void {
+  console.error(`[verify-then-pay] ${what}: ${reason}`)
+}
+
+/**
  * A row that holds a nonce and no flow: a reservation whose check is still being bought (or
  * whose server died buying it), or one the rail answered without a verdict. Its fields are the
  * unverified word of whoever posted the payment, because the signature is only checked when it
@@ -69,6 +111,8 @@ export type VtpStore = {
   findByTx(txHash: string): Promise<VtpFlowByTx>
   /** The open flows (pending or waiting for the owner) on one vault, payee and amount. */
   openFlows(match: VtpFlowMatch): Promise<VtpFlowsRead>
+  /** The flows waiting for one vault's owner, bounded. A store in a test that never lists may leave it out. */
+  waiting?(vault: string, bounds: { limit: number; othersCap: number }): Promise<{ ok: true; waiting: VtpWaitingFlows } | { ok: false; reason: string }>
   /** Remove attempts the rail refused that are older than this. Best effort. */
   prune?(olderThan: string): Promise<unknown>
 }
@@ -82,6 +126,7 @@ export function storageVtpStore(io: VtpStoreIo = {}): VtpStore {
     findByTx: (hash) => findVtpFlowByTx(hash, io),
     prune: (olderThan) => pruneAbandonedVtpFlows(olderThan, io),
     openFlows: (match) => loadOpenVtpFlows(match, io),
+    waiting: (vault, bounds) => loadWaitingVtpFlows(vault, bounds, io),
   }
 }
 

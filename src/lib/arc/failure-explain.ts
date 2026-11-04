@@ -106,6 +106,24 @@ export function explainFailure(f: TxFailure): { title: string; body?: string; ne
         next: 'An earlier transaction from this account may still be waiting. Let it finish or cancel it in your wallet, then try again.',
         tone: 'danger',
       }
+    case 'handoff_not_from_agent':
+      return { title: 'This page cannot show this came from your agent.', body: f.message, next: 'Do not send money because of it unless you know why. If you expect a payment from your agent, ask it to check the payee again with its own key.', tone: 'danger' }
+    case 'handoff_key_stopped':
+      return { title: 'The key that asked for this has been stopped.', body: f.message, next: 'Nothing was sent. If you still mean to pay this, give your agent a working key and ask it for a new check.', tone: 'danger' }
+    case 'handoff_changed':
+      return { title: 'What would be signed is not what was shown.', body: f.message, next: 'Nothing was sent. Read this page again, and look over whatever it shows then.', tone: 'danger' }
+    case 'handoff_stale':
+      return { title: 'This check is too old to act on.', body: f.message, next: 'Nothing was sent. Ask your agent to check the payee again, which costs it 0.005 USDC, and approve the new request.', tone: 'warn' }
+    case 'handoff_ended':
+      return { title: 'This payment is not waiting for you any more.', body: f.message, next: 'Nothing was sent. Read this page again to see where it stands.', tone: 'warn' }
+    case 'handoff_no_balance':
+      return { title: 'The vault does not hold enough USDC for this.', body: f.message, next: 'Nothing was sent. Add USDC to the vault below, then try again. The amount cannot be changed here. For a different amount, ask your agent for a new check.', tone: 'warn' }
+    case 'handoff_held':
+      return { title: 'A payment for this is already on its way.', body: f.message, next: 'Nothing was sent. Wait for that one to have an answer: two sends pay twice, and the contract cannot tell them apart.', tone: 'warn' }
+    case 'handoff_already_paid':
+      return { title: 'This has already been paid.', body: f.message, next: 'Nothing was sent. If you really mean to pay it again, ask your agent for a new check.', tone: 'warn' }
+    case 'handoff_unreadable':
+      return { title: 'This page could not make sure this is safe to send.', body: f.message, next: 'Nothing was sent. Wait a minute, then try again.', tone: 'danger' }
     case 'wallet_error':
     default:
       // An error from the wallet does not prove nothing went out, and a second USDC transfer is real money.

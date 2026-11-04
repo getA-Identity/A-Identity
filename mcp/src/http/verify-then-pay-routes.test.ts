@@ -42,7 +42,7 @@ async function call(handler: (ctx: RouteCtx) => Promise<boolean>, method: string
 }
 
 function stubs() {
-  const seen: { run: unknown[][]; read: unknown[][]; receipt: unknown[][] } = { run: [], read: [], receipt: [] }
+  const seen: { run: unknown[][]; read: unknown[][]; receipt: unknown[][]; list: unknown[] } = { run: [], read: [], receipt: [], list: [] }
   const deps: VtpRouteDeps = {
     run: (async (...a: unknown[]) => {
       seen.run.push(a)
@@ -51,6 +51,10 @@ function stubs() {
     read: (async (...a: unknown[]) => {
       seen.read.push(a)
       return { httpStatus: 404, body: { flowId: a[0], flow: null } }
+    }) as never,
+    list: (async (vault: unknown) => {
+      seen.list.push(vault)
+      return { httpStatus: 200, body: { vault, waiting: [] } }
     }) as never,
     receipt: (async (...a: unknown[]) => {
       seen.receipt.push(a)
@@ -100,6 +104,12 @@ test('the flow record is a GET, its receipt a POST, and nothing else under the G
   assert.equal(rec.status, 202)
   assert.deepEqual(seen.receipt, [[FLOW, TX, { origin: 'https://backend.example' }]])
   assert.equal((await call(h, 'GET', `/api/x402/gateway/flows/${FLOW}/receipt`)).status, 405)
+
+  // The list by vault is a GET at a path of its own, and the vault is the query's.
+  const listed = await call(h, 'GET', `/api/x402/gateway/flows?vault=0x${'a1'.repeat(20)}`)
+  assert.deepEqual([listed.status, listed.headers['Cache-Control']], [200, 'no-store'])
+  assert.deepEqual(seen.list, [`0x${'a1'.repeat(20)}`])
+  assert.equal((await call(h, 'POST', '/api/x402/gateway/flows')).status, 405)
 
   // The rail's own paths fall through to its group, and other prefixes are not looked at.
   for (const path of ['/api/x402/gateway/status', '/api/x402/gateway/tools/risk_check', '/api/x402/tools/risk_check', '/api/arc/season']) {

@@ -100,7 +100,7 @@ export default function VaultStatus({
         <p className="text-base font-semibold leading-snug text-foreground sm:text-lg">{h.text}</p>
         {v.autoApproveMax !== 0n && h.canPay && (
           <p className="mt-1 text-sm text-foreground/75">
-            A single agent payment above {usd(v.autoApproveMax)} is refused by the contract itself. The owner can still send more by withdrawing to that address.
+            A single agent payment above {usd(v.autoApproveMax)} is refused by the contract itself. The owner can still send more, by approving what the agent asks on this page, or by withdrawing to that address.
           </p>
         )}
         <div className="mt-2">
@@ -145,7 +145,7 @@ export default function VaultStatus({
               <Chip tone="warn">No ceiling</Chip> 0 means the contract does not cap a single payment. The daily cap still applies.
             </>
           ) : (
-            `${usd(v.autoApproveMax)} per payment. The contract refuses the agent anything above it. The owner can still send more by withdrawing to that address.`
+            `${usd(v.autoApproveMax)} per payment. The contract refuses the agent anything above it. The owner can still send more, by approving what the agent asks on this page, or by withdrawing to that address.`
           )}
         </p>
       </Group>

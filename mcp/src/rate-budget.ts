@@ -41,6 +41,10 @@ export function rateBudget(method: string, pathname: string): { bucket: string; 
   // One public verify-then-pay flow record. A single row read, and the evidence a DENY is
   // linked by, so it gets room; the bucket bounds a crawl of nonces, not a reader.
   if (method === 'GET' && /^\/api\/x402\/gateway\/flows\/[^/]+$/.test(pathname)) return { bucket: 'vtp-flow-read', max: 60, windowMs: 60_000 }
+  // The flows waiting on one vault: two bounded store reads, and any vault can be named. A page reads
+  // it when it opens and when someone asks again; through the site the key is a shared proxy address,
+  // so this has room for a few owners at once, and the page says so when it meets a 429.
+  if (method === 'GET' && pathname === '/api/x402/gateway/flows') return { bucket: 'vtp-vault-flows', max: 30, windowMs: 60_000 }
   // The admitted vault list: one store read, public and linkable.
   if (method === 'GET' && pathname === '/api/arc/vaults') return { bucket: 'arc-vault-list', max: 60, windowMs: 60_000 }
   if (method !== 'POST') return null

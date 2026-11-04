@@ -18,7 +18,10 @@
  * Whichever view holds an owner's vault asks the server to count it on /proof/arc (useVaultCount):
  * no wallet, best effort, and no control on the page waits for it.
  *
- * Deep link: ?network=<CAIP-2 or registry id>&contract=<0x...>, or ?deploy=1 for the setup. A
+ * The payments waiting for an owner are here too (OwnerApprovals), and a hand-off's approval link opens
+ * one of them: flows exist on Arc Mainnet only, so the section does too.
+ *
+ * Deep link: ?network=<CAIP-2 or registry id>&contract=<0x...>[&flow=<id>], or ?deploy=1 for the setup. A
  * network that is not an Arc chain in the registry is refused by name, and a contract with no
  * network is asked about: the network is never guessed.
  */
@@ -31,6 +34,7 @@ import { Skeleton } from '../../components/ui/skeleton'
 import { Button } from '../../components/ui/button'
 import DeployFlow from '../../components/app/arc/DeployFlow'
 import FundForm from '../../components/app/arc/FundForm'
+import OwnerApprovals from '../../components/app/arc/OwnerApprovals'
 import OwnerControls from '../../components/app/arc/OwnerControls'
 import OwnerMatch from '../../components/app/arc/OwnerMatch'
 import TxReceipt from '../../components/app/arc/TxReceipt'
@@ -88,6 +92,7 @@ export default function ArcVault() {
   const [params, setParams] = useSearchParams()
   const networkParam = params.get('network')
   const contractParam = params.get('contract')?.trim() || null
+  const flowParam = params.get('flow')?.trim() || null
   const deployMode = params.get('deploy') === '1'
   const chain = arcChainFor(networkParam)
   const network = chain?.caip2 ?? null
@@ -112,6 +117,8 @@ export default function ArcVault() {
   const [eventsRound, setEventsRound] = useState(0)
   // The setup's ended funding whose receipt was dismissed here, by hash. Only one nothing can still come of.
   const [dismissedFund, setDismissedFund] = useState<string | null>(null)
+  // An owner's approval on its way: the controls wait for it as they wait for any other transaction.
+  const [handoffHeld, setHandoffHeld] = useState(false)
   const latestKey = useRef(key)
   latestKey.current = key
 
@@ -209,6 +216,11 @@ export default function ArcVault() {
     [key],
   )
 
+  const onHandoffLanded = useCallback(() => {
+    void load()
+    setEventsRound((n) => n + 1)
+  }, [load])
+
   const v = read.key === key ? read.data : null
   const listedRow = v ? known?.vaults.find((r) => r.network === v.network && sameAddress(r.address, v.address)) : undefined
   const isOwner = Boolean(v && wallet.account && sameAddress(wallet.account, v.owner))
@@ -232,7 +244,7 @@ export default function ArcVault() {
   // block, its values are from before the write and must not read as the vault's state now.
   const landedBlock = shownTx && shownTx.outcome !== 'pending' ? shownTx.block : undefined
   const readBehind = Boolean(v && landedBlock !== undefined && v.block < landedBlock)
-  const held = shownTx?.outcome === 'pending' || setupTx !== null || readBehind
+  const held = shownTx?.outcome === 'pending' || setupTx !== null || readBehind || handoffHeld
   const inFlight: TxAction | null = shownTx && (shownTx.outcome === 'pending' || readBehind) ? shownTx.action : (setupTx?.record.action ?? null)
   const failedKind = read.key === key ? read.failure?.kind : undefined
   // The hash this browser holds for the vault on screen, if it saw the deploy. Null is common, and says nothing about the vault.
@@ -466,6 +478,31 @@ export default function ArcVault() {
                   <Skeleton className="h-32 w-full rounded-2xl" />
                 </div>
               </div>
+            )}
+
+            {v && !chain.testnet && ((!ours && !ownerIsOurKey) || flowParam) && (
+              <OwnerApprovals
+                key={`${key}:${flowParam ?? ''}`}
+                chain={chain}
+                vault={v}
+                wallet={wallet}
+                canAct={!ours && !ownerIsOurKey && v.knownBuild && v.usdcMatches}
+                oursKey={ours || ownerIsOurKey}
+                whyNot={
+                  ours || ownerIsOurKey
+                    ? 'This vault is ours, so this page offers no approval for it, whoever is connected.'
+                    : !v.knownBuild || !v.usdcMatches
+                      ? "This vault's code is not the build this page deploys, or it holds another token, so this page builds no calls for it."
+                      : undefined
+                }
+                flowParam={flowParam}
+                held={held && !handoffHeld}
+                onHoldChange={setHandoffHeld}
+                onLanded={onHandoffLanded}
+              />
+            )}
+            {v && chain.testnet && flowParam && (
+              <FailureLine title="This link names a payment on a test network." next="Payments that wait for an owner exist on Arc Mainnet only. Nothing on this page comes from this link." />
             )}
 
             {v && <VaultStatus

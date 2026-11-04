@@ -4,7 +4,7 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ContractFunctionRevertedError, decodeFunctionData, encodeErrorResult } from 'viem'
-import { runVerifyThenPay, readVtpFlow, type VtpInput } from './core.js'
+import { runVerifyThenPay, readVtpFlow, readVtpVaultFlows, VAULT_FLOWS_LIMIT, VAULT_FLOWS_OTHERS_CAP, type VtpInput } from './core.js'
 import { flowUrl, storageVtpStore, type VtpStore } from './context.js'
 import { fakeVtpPool } from './fake-pg.js'
 import { recordVtpReceipt } from './receipt.js'
@@ -330,8 +330,9 @@ test('refusals before the check never reach the rail, even with a valid payment 
     { what: 'the vault has no operator', status: 422, code: 'NotOperator', chain: { operator: '0x' + '00'.repeat(20) } },
     { what: 'the vault is frozen', status: 422, code: 'IsFrozen', chain: { frozen: true } },
     { what: 'the session key expires inside the margin, by block time', status: 422, code: 'SessionKeyExpired', chain: { sessionKeyExpiry: BLOCK_TS + 30n } },
-    { what: 'the payee is not on the allowlist', status: 422, code: 'PayeeNotAllowed', chain: { allowlistEnabled: true, allowed: false } },
-    { what: 'the amount is above the auto-approve ceiling', status: 422, code: 'AboveAutoApprove', input: { amount: '250001' } },
+    // Off the allowlist and above the ceiling are refusals only where there is no human to hand them to.
+    { what: 'the payee is not on the allowlist, on a vault with one key', status: 422, code: 'PayeeNotAllowed', chain: { allowlistEnabled: true, allowed: false, owner: OPERATOR } },
+    { what: 'the amount is above the auto-approve ceiling, on a vault with one key', status: 422, code: 'AboveAutoApprove', input: { amount: '250001' }, chain: { owner: OPERATOR } },
     { what: 'the daily cap would be passed', status: 422, code: 'DailyCapExceeded', chain: { spentToday: 800_000n } },
     { what: 'the vault holds less than the amount', status: 422, code: 'InsufficientVaultBalance', chain: { balance: 10_000n } },
     { what: 'gas is priced above the cap', status: 422, code: 'GasPriceAboveCap', chain: { gasPrice: 250n * 1_000_000_000n } },
@@ -541,7 +542,8 @@ test('402, 502 and 503 from the rail open no flow and abandon the reservation; a
   const r500b = await runVerifyThenPay(request(), header(), lost.deps)
   assert.equal(r500b.httpStatus, 500)
   assert.deepEqual([r500b.body.record?.recorded, r500b.body.record?.url, r500b.body.flowId], [false, null, null])
-  assert.match(r500b.body.next, /not recorded as a flow: the flow log refused the write \(disk full\)/)
+  assert.match(r500b.body.next, /not recorded as a flow: the flow log refused the write/)
+  assert.doesNotMatch(r500b.body.next, /disk full/, "the log's own words stay on the server")
 })
 
 test('ALLOW prepares exactly pay(payee, amount) for the operator, asks risk_check about the payee address, and executes nothing', async () => {
@@ -673,7 +675,7 @@ test('a simulation that fails after the verdict is reported, and a flow log that
   const out2 = await runVerifyThenPay(request(), header(), full.deps)
   assert.equal(out2.httpStatus, 500)
   assert.deepEqual([out2.body.stage, out2.body.code, out2.body.flowId, out2.body.prepared, out2.body.ownerHandoff], ['check_failed', 'FLOW_NOT_RECORDED', null, null, null])
-  assert.deepEqual([out2.body.record?.recorded, out2.body.record?.url, out2.body.record?.reason], [false, null, 'the flow log refused the write (disk full)'])
+  assert.deepEqual([out2.body.record?.recorded, out2.body.record?.url, out2.body.record?.reason], [false, null, 'the flow log refused the write'])
   assert.equal(out2.body.verdict?.effective, 'ALLOW', 'the verdict that was paid for is still reported')
   assert.match(out2.body.next, /could never be tied to this check/)
 })
@@ -726,7 +728,8 @@ test('a DENY or an unusable answer whose record was not written says the refusal
     assert.equal(out.body.stage, stage)
     assert.deepEqual([out.body.record?.recorded, out.body.record?.url, out.body.flowId, out.body.prepared], [false, null, null, null], stage)
     assert.match(out.body.next, /do not pay/)
-    assert.match(out.body.next, /The refusal is not public: the flow log refused the write \(disk full\)/)
+    assert.match(out.body.next, /The refusal is not public: the flow log refused the write/)
+    assert.doesNotMatch(out.body.next, /disk full/)
     assert.ok(!JSON.stringify(out.body).includes('/api/x402/gateway/flows/'), `${stage}: no link to a record that does not exist`)
   }
 })
@@ -872,7 +875,8 @@ test('a flow log that refuses the reservation refuses the request, and nothing i
   const full = setup({ store: { insert: async () => ({ ok: false, reason: 'disk full' }) } })
   const a = await runVerifyThenPay(request(), header(), full.deps)
   assert.deepEqual([a.httpStatus, a.body.stage, a.body.code, a.body.charged], [503, 'refused', 'FLOW_STORE_UNREADABLE', false])
-  assert.match(a.body.reason ?? '', /disk full/)
+  assert.match(a.body.reason ?? '', /^the flow log refused the write/)
+  assert.doesNotMatch(a.body.reason ?? '', /disk full/, "the log's own words stay on the server")
   assert.equal(full.g.spy.settles, 0)
 
   // Passed the read and lost the insert: the row appeared between the two.
@@ -1041,14 +1045,327 @@ test('a hand-off whose simulation failed tells the owner not to send it', async 
   assert.doesNotMatch(out.body.next, /can settle it/)
 })
 
-test('a payment only the owner can make says no verdict was bought and what the owner can do', async () => {
-  const above = await runVerifyThenPay(request({ amount: '250001' }), undefined, setup().deps)
+test('on a vault with one key, a payment above the ceiling stays a refusal that promises no hand-off, because nothing there can give one', async () => {
+  const above = await runVerifyThenPay(request({ amount: '250001' }), undefined, setup({ chain: { owner: OPERATOR } }).deps)
   assert.equal(above.body.code, 'AboveAutoApprove')
   assert.match(above.body.next, /no verdict on this payee/)
-  assert.match(above.body.next, /ownerPay directly/)
-  assert.match(above.body.next, /raises the ceiling or allows the payee/)
+  assert.match(above.body.next, /no person to hand this to/)
+  assert.match(above.body.next, /ALLOW prepares pay\(\) and WARN stops with the check paid/)
+  assert.match(above.body.next, /owner key the agent does not hold/)
+  assert.doesNotMatch(above.body.next, /To get a verdict and a hand-off/)
   // Any other refusal keeps its plain answer.
   const frozen = await runVerifyThenPay(request(), undefined, setup({ chain: { frozen: true } }).deps)
   assert.equal(frozen.body.code, 'IsFrozen')
   assert.doesNotMatch(frozen.body.next, /ownerPay/)
+})
+
+// ── a payment only the owner can make ─────────────────────────────────────────────
+
+const OFF_ALLOWLIST: Partial<Chain> = { allowlistEnabled: true, allowed: false }
+const ABOVE: Partial<VtpInput> = { amount: '250001' }
+
+for (const [label, input, chain, code] of [
+  ['above the ceiling', ABOVE, {}, 'AboveAutoApprove'],
+  ['off the allowlist', {}, OFF_ALLOWLIST, 'PayeeNotAllowed'],
+] as [string, Partial<VtpInput>, Partial<Chain>, string][]) {
+  test(`${label}: the 402 says up front that it will charge for the check and that only the owner can settle it`, async () => {
+    const { g, s, c, deps } = setup({ chain })
+    const out = await runVerifyThenPay(request(input), undefined, deps)
+    assert.equal(out.httpStatus, 402)
+    assert.equal(out.body.stage, 'payment_required')
+    assert.equal(out.body.charged, false)
+    assert.equal(out.body.checks?.vault.ownerOnly?.code, code)
+    assert.match(out.body.next, /only the owner can settle it/)
+    assert.match(out.body.next, /still charges 0\.005 USDC/)
+    assert.match(out.body.next, /payOnWarn cannot make the operator pay it/)
+    assert.match(out.body.next, /DENY stops it/)
+    assert.equal(g.spy.settles, 0, 'nothing is bought for the 402')
+    assert.equal(s.inserted.length, 0)
+    // What is simulated is what the payment would be: the owner's call, not the operator's.
+    assert.ok(c.calls.includes('simulate:ownerPay'))
+    assert.ok(!c.calls.includes('simulate:pay'))
+  })
+
+  for (const decision of ['ALLOW', 'WARN'] as const) {
+    test(`${label}: a usable ${decision} buys the check and hands ownerPay to the owner`, async () => {
+      const { g, s, deps } = setup({ chain, gw: { scored: verdict(decision) } })
+      const out = await runVerifyThenPay(request(input), header(), deps)
+      assert.equal(out.httpStatus, 200)
+      assert.equal(out.body.stage, 'awaiting_human')
+      assert.equal(out.body.charged, true)
+      assert.equal(g.spy.settles, 1)
+      assert.equal(out.body.prepared, null)
+      const h = out.body.ownerHandoff!
+      assert.equal(h.ownerPay.function, 'ownerPay(address,uint256)')
+      assert.equal(h.ownerPay.from, OWNER)
+      assert.equal(h.ownerOnly, code)
+      assert.match(out.body.next, /only the owner can settle it/)
+      const row = s.rows.get(NONCE)!
+      assert.deepEqual([row.outcome, row.detail, row.ownerOnly], ['awaiting_human', 'owner_only_handoff', code])
+      assert.equal(row.prepared?.function, 'ownerPay(address,uint256)')
+      // Nothing a season report counts until the chain proves a payment.
+      assert.deepEqual(toSeasonFlow(row), [])
+    })
+  }
+
+  test(`${label}: payOnWarn cannot make the operator pay what the vault would refuse`, async () => {
+    const { s, deps } = setup({ chain, gw: { scored: verdict('WARN') } })
+    const out = await runVerifyThenPay(request({ ...input, payOnWarn: true }), header(), deps)
+    assert.equal(out.body.stage, 'awaiting_human')
+    assert.equal(out.body.prepared, null)
+    assert.equal(out.body.ownerHandoff?.ownerPay.function, 'ownerPay(address,uint256)')
+    assert.equal(s.rows.get(NONCE)?.payOnWarn, true, 'the record says what was asked')
+  })
+
+  test(`${label}: DENY refuses as usual, with nothing prepared`, async () => {
+    const { s, deps } = setup({ chain, gw: { scored: verdict('DENY') } })
+    const out = await runVerifyThenPay(request(input), header(), deps)
+    assert.deepEqual([out.body.stage, out.body.prepared, out.body.ownerHandoff, out.body.charged], ['deny', null, null, true])
+    const row = s.rows.get(NONCE)!
+    assert.deepEqual([row.outcome, row.detail, row.prepared], ['blocked', 'deny', null])
+    assert.equal(row.ownerOnly, undefined)
+    // A DENY is the same refused flow the report already counts, by the same rule.
+    assert.equal(toSeasonFlow(row)[0]?.outcome, 'refused')
+  })
+
+  test(`${label}: on a vault whose owner is its operator nothing changes, because there is no human`, async () => {
+    const { g, s, deps } = setup({ chain: { ...chain, owner: OPERATOR } })
+    const out = await runVerifyThenPay(request(input), header(), deps)
+    assert.deepEqual([out.httpStatus, out.body.stage, out.body.code, out.body.charged], [422, 'refused', code, false])
+    assert.equal(out.body.checks?.vault.ownerOnly, null)
+    assert.equal(g.spy.settles, 0)
+    assert.equal(s.inserted.length, 0)
+  })
+}
+
+test('the other refusals stay refusals on a payment only the owner can make', async () => {
+  for (const [what, chain, code] of [
+    ['frozen', { frozen: true }, 'IsFrozen'],
+    ['expired', { sessionKeyExpiry: BLOCK_TS + 30n }, 'SessionKeyExpired'],
+    ['no operator', { operator: '0x' + '00'.repeat(20) }, 'NotOperator'],
+    ['no balance', { balance: 10_000n }, 'InsufficientVaultBalance'],
+    ['fee above the cap', { gasPrice: 250n * 1_000_000_000n }, 'GasPriceAboveCap'],
+    ['ownerPay would revert', { revertOwnerPay: 'TransferFailed' }, 'TransferFailed'],
+  ] as [string, Partial<Chain>, string][]) {
+    const { g, deps } = setup({ chain })
+    const out = await runVerifyThenPay(request(ABOVE), header(), deps)
+    assert.deepEqual([out.httpStatus, out.body.stage, out.body.code], [422, 'refused', code], what)
+    assert.equal(g.spy.settles, 0, what)
+  }
+})
+
+test('a real invoice on a default vault reaches the hand-off: above the ceiling and past the cap, because ownerPay has no cap check', async () => {
+  // 5 USDC on a vault with a 0.25 ceiling and a 1 USDC cap. The contract reverts on the ceiling first.
+  const { deps, s } = setup({ chain: { balance: 10_000_000n }, gw: { scored: verdict('WARN') } })
+  const out = await runVerifyThenPay(request({ amount: '5000000' }), header(), deps)
+  assert.equal(out.body.stage, 'awaiting_human')
+  assert.equal(s.rows.get(NONCE)?.ownerOnly, 'AboveAutoApprove')
+  // A cap alone, inside the ceiling and on the allowlist, stays a refusal: that is the agent's limit doing its job.
+  const capped = await runVerifyThenPay(request(), header(), setup({ chain: { spentToday: 800_000n } }).deps)
+  assert.deepEqual([capped.httpStatus, capped.body.code], [422, 'DailyCapExceeded'])
+})
+
+test('a payment only the owner can make does not ask whether the operator can pay gas it will not spend', async () => {
+  const { deps } = setup({ chain: { operatorGas: 1n }, gw: { scored: verdict('WARN') } })
+  const out = await runVerifyThenPay(request(ABOVE), header(), deps)
+  assert.equal(out.body.stage, 'awaiting_human')
+})
+
+test('an owner-only hand-off that a receipt closes counts as the paid flow the report already knows, under the same rule', async () => {
+  const { deps, s } = setup({ gw: { scored: verdict('ALLOW') } })
+  await runVerifyThenPay(request(ABOVE), header(), deps)
+  const row = s.rows.get(NONCE)!
+  const paid: VtpFlowRecord = {
+    ...row,
+    outcome: 'executed',
+    detail: 'owner_paid',
+    payment: { txHash: '0x' + '77'.repeat(32), blockNumber: '29000010', minedAt: '2026-11-01T10:05:00.000Z', status: 'success', byOwner: true, from: OWNER, to: VAULT, gasUsed: '90000', effectiveGasPrice: '21000000000', costUsdc: '0.00189', readBackAt: '2026-11-01T10:05:01.000Z', readBackFrom: 'rpc', explorerUrl: 'https://x/tx' },
+  }
+  const [flow] = toSeasonFlow(paid)
+  assert.equal(flow?.outcome, 'paid')
+  assert.equal(flow?.txHash, paid.payment?.txHash)
+})
+
+// ── the approval link ─────────────────────────────────────────────────────────────
+
+test('a hand-off carries the approval link: the vault page at the site, with the vault and the flow, whatever Host the request came on', async () => {
+  const { deps } = setup({ gw: { scored: verdict('WARN') } })
+  // deps.origin is what requestOrigin builds from Host and X-Forwarded-Host, so a caller chooses it.
+  const out = await runVerifyThenPay(request(), header(), { ...deps, origin: 'https://evil.example' })
+  const url = new URL(String(out.body.ownerHandoff!.approvalUrl))
+  assert.equal(url.origin, 'https://a-identity.xyz')
+  assert.equal(url.pathname, '/app/vault/arc')
+  assert.deepEqual(Object.fromEntries(url.searchParams), { network: arc.caip2, contract: VAULT, flow: NONCE })
+  assert.ok(out.body.next.includes(String(out.body.ownerHandoff!.approvalUrl)), 'the agent is told to send it')
+  assert.doesNotMatch(out.body.next, /evil\.example.*app\/vault/)
+})
+
+const SOMEONE = '0x' + '99'.repeat(20)
+
+async function handedOffRow(): Promise<VtpFlowRecord> {
+  const { s, deps } = setup({ gw: { scored: verdict('WARN') } })
+  await runVerifyThenPay(request(), header(), deps)
+  return s.rows.get(NONCE)!
+}
+
+test('a check another key paid for gets no approval link, because the vault page would refuse it, and the answer says what to do instead', async () => {
+  const { s, deps } = setup({
+    gw: {
+      scored: verdict('WARN'),
+      settle: { success: true, transaction: 'tr-1', network: arc.caip2, payer: SOMEONE },
+      transfers: [{ id: 'tr-1', status: 'received', fromAddress: SOMEONE, toAddress: PAY_TO, amount: '5000', nonce: NONCE }],
+    },
+  })
+  const out = await runVerifyThenPay(request(), header({}, { from: SOMEONE }), deps)
+  assert.equal(out.body.stage, 'awaiting_human')
+  assert.equal(out.body.ownerHandoff?.approvalUrl, null)
+  assert.doesNotMatch(out.body.next, /app\/vault\/arc/)
+  assert.match(out.body.next, /no link for the vault page/)
+  assert.match(out.body.next, /not by the vault's operator key/)
+  assert.match(out.body.next, /sending ownerHandoff\.ownerPay from the owner key/)
+  assert.equal(s.rows.get(NONCE)?.check.payer.toLowerCase(), SOMEONE)
+  const read = await readVtpFlow(NONCE, { store: deps.store })
+  assert.equal(read.body.approvalUrl, null, 'and reading the flow does not hand one out either')
+})
+
+test('a payment to the operator key itself gets no approval link, for the same reason', async () => {
+  const { deps } = setup({ gw: { scored: verdict('WARN', { txContext: { payee: OPERATOR, amountUsd: 0.25 }, agentId: OPERATOR }) } })
+  const out = await runVerifyThenPay(request({ payee: OPERATOR }), header(), deps)
+  assert.equal(out.body.stage, 'awaiting_human')
+  assert.equal(out.body.ownerHandoff?.approvalUrl, null)
+  assert.match(out.body.next, /the payee is the vault's own operator key/)
+  assert.equal((await readVtpFlow(NONCE, { store: deps.store })).body.approvalUrl, null)
+})
+
+for (const [label, input, chain] of [
+  ['above the ceiling', ABOVE, {}],
+  ['off the allowlist', {}, OFF_ALLOWLIST],
+] as [string, Partial<VtpInput>, Partial<Chain>][]) {
+  test(`${label}: the 402 names the key the vault page wants the check paid from, before anything is signed`, async () => {
+    const out = await runVerifyThenPay(request(input), undefined, setup({ chain }).deps)
+    assert.equal(out.httpStatus, 402)
+    assert.ok(out.body.next.includes(`operator key ${OPERATOR}`), out.body.next)
+    assert.match(out.body.next, /offers the owner this approval only if the check is paid from/)
+  })
+}
+
+test('reading an old row with no check on it gets no approval link, and does not throw on a public route', async () => {
+  const { store } = memStore([{ ...(await handedOffRow()), check: undefined } as unknown as VtpFlowRecord])
+  const out = await readVtpFlow(NONCE, { store })
+  assert.equal(out.httpStatus, 200)
+  assert.equal(out.body.approvalUrl, null)
+})
+
+test('reading a flow names its approval link only while it waits for the owner', async () => {
+  const { deps } = setup({ gw: { scored: verdict('WARN') } })
+  await runVerifyThenPay(request(), header(), deps)
+  const waiting = await readVtpFlow(NONCE, { store: deps.store, origin: 'https://evil.example' })
+  assert.match(String(waiting.body.approvalUrl), /^https:\/\/a-identity\.xyz\/app\/vault\/arc\?/)
+  await deps.store.update(NONCE, { outcome: 'executed', detail: 'owner_paid' }, ['awaiting_human'])
+  assert.equal((await readVtpFlow(NONCE, { store: deps.store })).body.approvalUrl, null)
+})
+
+// ── the list by vault ─────────────────────────────────────────────────────────────
+
+function waitingRow(id: string, over: Partial<VtpFlowRecord> = {}): VtpFlowRecord {
+  return {
+    v: 1,
+    flowId: id,
+    network: arc.caip2,
+    createdAt: '2026-11-01T10:00:00.000Z',
+    updatedAt: '2026-11-01T10:00:00.000Z',
+    vault: VAULT,
+    owner: OWNER,
+    operator: OPERATOR,
+    payee: PAYEE,
+    payeeAgentId: null,
+    asset: USDC,
+    amount: '250000',
+    amountUsd: 0.25,
+    check: { authNonce: id, transferId: 'tr', gatewayOutcome: 'credited', payer: OPERATOR, value: '5000', tool: 'risk_check', checkedAt: '2026-11-01T10:00:00.000Z', checkedAtBlock: '90', verdictBlock: '100' },
+    verdict: { decision: 'WARN', effective: 'WARN', risk: 'medium', reasons: ['we do not know this payee'], reputationScore: 60, agentId: PAYEE, checkedAt: '2026-11-01T10:00:00.000Z' },
+    payOnWarn: false,
+    prepared: null,
+    outcome: 'awaiting_human',
+    detail: 'warn_handoff',
+    ...over,
+  }
+}
+
+const id = (n: number) => '0x' + n.toString(16).padStart(64, '0')
+const STRANGER = '0x' + '99'.repeat(20)
+const strangers = (n: number, from = 1000) =>
+  Array.from({ length: n }, (_, i) => {
+    const f = id(from + i)
+    return waitingRow(f, { check: { ...waitingRow(f).check, payer: STRANGER }, createdAt: '2026-11-02T10:00:00.000Z' })
+  })
+
+for (const [name, make] of [
+  ['the file store', (rows: VtpFlowRecord[]) => {
+    const file = join(mkdtempSync(join(tmpdir(), 'vtp-list-')), 'flows.json')
+    const store = storageVtpStore({ file, getPool: async () => null })
+    return { store, ready: Promise.all(rows.map((r) => store.insert(r))) }
+  }],
+  ['Postgres', (rows: VtpFlowRecord[]) => {
+    const pool = fakeVtpPool()
+    const store = storageVtpStore({ getPool: async () => pool })
+    return { store, ready: Promise.all(rows.map((r) => store.insert(r))) }
+  }],
+] as [string, (rows: VtpFlowRecord[]) => { store: VtpStore; ready: Promise<unknown> }][]) {
+  test(`${name}: a stranger's check names the vault and is not listed as a request, only counted, and a flood of them crowds out nothing`, async () => {
+    const mine = waitingRow(id(1), { createdAt: '2026-11-01T09:00:00.000Z' })
+    const { store, ready } = make([mine, ...strangers(VAULT_FLOWS_OTHERS_CAP + 5)])
+    await ready
+    const out = await readVtpVaultFlows(VAULT, { store })
+    assert.equal(out.httpStatus, 200)
+    assert.deepEqual(out.body.waiting.map((f) => f.flowId), [mine.flowId], 'older than every stranger, and still listed')
+    assert.deepEqual(out.body.notFromOperator, { count: VAULT_FLOWS_OTHERS_CAP, capped: true })
+    assert.ok(!JSON.stringify(out.body.waiting).includes(STRANGER), "nothing of the stranger's is in the list")
+  })
+
+  test(`${name}: the list is newest first, bounded, says when it was cut, and holds only what waits on this vault`, async () => {
+    const many = Array.from({ length: VAULT_FLOWS_LIMIT + 3 }, (_, i) => waitingRow(id(i + 1), { createdAt: new Date(Date.parse('2026-11-01T00:00:00Z') + i * 1000).toISOString() }))
+    const other = waitingRow(id(500), { vault: '0x' + 'ee'.repeat(20) })
+    const paid = waitingRow(id(501), { outcome: 'executed', detail: 'owner_paid' })
+    const denied = waitingRow(id(502), { outcome: 'blocked', detail: 'deny' })
+    const opening = waitingRow(id(503), { outcome: 'opening', detail: 'opening' })
+    const { store, ready } = make([...many, other, paid, denied, opening])
+    await ready
+    const out = await readVtpVaultFlows(VAULT.toUpperCase().replace('0X', '0x'), { store })
+    assert.equal(out.body.waiting.length, VAULT_FLOWS_LIMIT)
+    assert.equal(out.body.truncated, true)
+    assert.equal(out.body.waiting[0].flowId, many[many.length - 1].flowId)
+    assert.ok(out.body.waiting.every((f) => f.outcome === 'awaiting_human' && f.vault === VAULT))
+    assert.deepEqual(out.body.notFromOperator, { count: 0, capped: false })
+  })
+}
+
+test('the list refuses a vault that is not an address, and a log it cannot read is an error and never an empty list', async () => {
+  const bad = await readVtpVaultFlows('vault.eth', { store: memStore().store })
+  assert.equal(bad.httpStatus, 400)
+  const none = await readVtpVaultFlows(null, { store: memStore().store })
+  assert.equal(none.httpStatus, 400)
+  const down = await readVtpVaultFlows(VAULT, { store: memStore([], { waiting: async () => ({ ok: false, reason: 'db down' }) }).store })
+  assert.equal(down.httpStatus, 503)
+  assert.match(String(down.body.error), /could not be read/)
+})
+
+test("a flow log that fails says fixed words to a caller with no key, and the database's own go to the server's log", async () => {
+  const secret = 'password authentication failed for user "a_identity_prod" at dpg-abc123.oregon-postgres.render.com'
+  const logged: unknown[][] = []
+  const real = console.error
+  console.error = (...args: unknown[]) => void logged.push(args)
+  try {
+    const list = await readVtpVaultFlows(VAULT, { store: memStore([], { waiting: async () => ({ ok: false, reason: secret }) }).store })
+    assert.equal(list.httpStatus, 503)
+    assert.equal(list.body.error, 'the flow log could not be read')
+    const one = await readVtpFlow(NONCE, { store: memStore([], { load: async () => ({ ok: false, reason: secret }) }).store })
+    assert.equal(one.httpStatus, 503)
+    assert.equal(one.body.error, 'the flow log could not be read')
+    for (const out of [list.body, one.body]) assert.doesNotMatch(JSON.stringify(out), /a_identity_prod|render\.com/)
+    assert.equal(logged.length, 2)
+    assert.ok(logged.every((l) => String(l[0]).includes(secret)), 'whoever runs the server still sees why')
+  } finally {
+    console.error = real
+  }
 })

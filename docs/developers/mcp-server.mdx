@@ -63,7 +63,7 @@ npm run smoke         # exercise every tool over stdio
 | `pre_action_check` | Ask whether an intended action is allowed. Returns ALLOW, WARN or DENY with the evidence |
 | `audit_log` | An agent's recorded decisions, newest first, with the USD value the policy governed |
 | `record_audit_outcome` | Record what actually happened after a decision: executed, blocked, awaiting_human or abandoned |
-| `verify_then_pay` | Before an Arc Mainnet vault pays: free checks that the vault would pay, then `risk_check` bought through Circle Gateway (0.005 USDC). ALLOW returns the exact `pay()`, WARN a prepared `ownerPay` for the owner, DENY nothing. Never signs |
+| `verify_then_pay` | Before an Arc Mainnet vault pays: free checks that the vault would pay, then `risk_check` bought through Circle Gateway (0.005 USDC). ALLOW returns the exact `pay()`, WARN a prepared `ownerPay` for the owner, DENY nothing. Above the vault's ceiling or off its allowlist the check is still charged, and ALLOW or WARN both return the `ownerPay` hand-off. Never signs |
 | `verify_then_pay_receipt` | Give a flow id and a transaction hash; the server reads the receipt from every Arc Mainnet RPC and records only what it proves. Never signs |
 
 ## The Core Reads, In Detail
@@ -128,7 +128,12 @@ charged. Called with `payment`, it buys the check and returns the call to send.
 | `asset` | string, optional | refused unless it is Arc Mainnet's USDC |
 | `payeeAgentId` | string, optional | checked on chain against the payee and refused if it is not theirs, never sent to `risk_check` |
 | `payment` | string, optional | base64 `PAYMENT-SIGNATURE` for the challenge, signed from your own Gateway balance |
-| `payOnWarn` | boolean, optional | on WARN, prepare `pay()` for the operator instead of handing the payment to the owner; default false. A payee we know nothing about gets WARN, so on such a payee this is your own explicit choice to pay it |
+| `payOnWarn` | boolean, optional | on WARN, prepare `pay()` for the operator instead of handing the payment to the owner; default false. A payee we know nothing about gets WARN, so on such a payee this is your own explicit choice to pay it. It does not apply above the vault's ceiling or off its allowlist, because the vault would refuse the operator: that stays a hand-off |
+
+A hand-off comes back with stage `awaiting_human` and `prepared` null: send `ownerHandoff.ownerPay` from the
+owner key, or send the owner `ownerHandoff.approvalUrl`, the vault page where they approve it from their own
+wallet. That link is null when the vault page would refuse it: the check was not paid by the vault's operator
+key, or the payee is that key. `ownerHandoff.ownerOnly` names the gate when the vault would refuse the operator.
 
 ### verify_then_pay_receipt
 

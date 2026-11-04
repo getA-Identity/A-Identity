@@ -142,6 +142,7 @@ test('Postgres gets the vtp_flows table once, the unique payment index, and an i
   assert.deepEqual(ddl, [
     'CREATE TABLE IF NOT EXISTS vtp_flows (flow_id text PRIMARY KEY, data jsonb NOT NULL)',
     "CREATE UNIQUE INDEX IF NOT EXISTS vtp_flows_payment_tx ON vtp_flows ((data->'payment'->>'txHash'))",
+    "CREATE INDEX IF NOT EXISTS vtp_flows_waiting_by_vault ON vtp_flows ((data->>'vault')) WHERE data->>'outcome' = 'awaiting_human'",
   ], 'the schema is created once per pool')
   assert.equal(pool.sql.find((q) => q.text.startsWith('INSERT'))?.params[0], FLOW, 'keyed by the nonce, lowercase')
   const held = await loadVtpFlow(FLOW, io)

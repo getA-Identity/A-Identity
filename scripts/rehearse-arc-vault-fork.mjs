@@ -17,7 +17,8 @@
  * hash and a 429 all end as the server's rule says. See the section at the end. Last the server's own
  * sweep is turned on, off until then so that only the posts above decide those checks: it counts a
  * vault no page asked about, with one host pruned and one rate limited, and with --browser one whose
- * owner's page had every post blocked, with no second row on reload.
+ * owner's page had every post blocked, with no second row on reload. It then runs an owner's approval of a
+ * hand-off from the vault page: see handoffRun at the end.
  *
  * What stands in for what, so nothing here is read as more than it is:
  *   - Arc USDC at 0x3600... calls a native precompile anvil cannot run, so MockUSDC from
@@ -30,6 +31,12 @@
  *     Any other outbound fetch from that process is refused and listed at the end.
  *   - "Our keys" holds one freshly generated throwaway key, under an env var nothing in the server
  *     signs with, plus the committed lists.
+ *   - Circle Gateway is a fake inside the backend process, for the owner's approval only: it advertises
+ *     Arc Mainnet, says yes to any settle and lists that transfer back. So it does not check a signature, and
+ *     check.payer here is whatever the script wrote. The real risk_check runs, against a seeded platform store.
+ *   - A record that changed after the review, and a nine-day-old row, are written by this script into what
+ *     the page reads from the backend: they stand in for a server or a store that holds them. The row's block
+ *     is a real one on the chain under the fork, so no block has to be mined to reach that far back.
  *
  * Safety: the backend gets a built-from-scratch environment (no DATABASE_URL, nothing from your
  * shell, cwd in a temp dir so no .env is found) and a copy of mcp/dist under that temp dir, so its
@@ -43,9 +50,10 @@
  *   --postgres  store admitted vaults in a throwaway local Postgres, as production does, instead of
  *               the file store; needs initdb and postgres on PATH
  *   --keep      keep the temp dir (backend log, store file, screenshots) and print its path
+ *   --handoff-only   with --browser, skip everything but the owner's approval
  * Exit: 0 all checks passed, 1 a check failed, 2 usage or a missing tool.
  */
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { spawn, spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { connect, createServer } from 'node:net'
@@ -57,9 +65,9 @@ const repo = fileURLToPath(new URL('..', import.meta.url))
 const args = process.argv.slice(2)
 const flag = (name) => args.includes(name)
 const blockArg = args.includes('--block') ? args[args.indexOf('--block') + 1] : null
-const unknown = args.filter((a, i) => !['--browser', '--keep', '--postgres', '--block'].includes(a) && args[i - 1] !== '--block')
+const unknown = args.filter((a, i) => !['--browser', '--keep', '--postgres', '--block', '--handoff-only'].includes(a) && args[i - 1] !== '--block')
 if (unknown.length || (args.includes('--block') && !/^\d+$/.test(blockArg ?? ''))) {
-  console.error('usage: rehearse-arc-vault-fork.mjs [--block N] [--browser] [--postgres] [--keep]')
+  console.error('usage: rehearse-arc-vault-fork.mjs [--block N] [--browser] [--postgres] [--keep] [--handoff-only]')
   process.exit(2)
 }
 if (spawnSync('anvil', ['--version'], { encoding: 'utf8' }).status !== 0) {
@@ -78,6 +86,7 @@ const { getChainById } = await mod('mcp/dist/chains/registry.js')
 const { committedOurKeys, OUR_KEY_PUBLIC_ADDRESSES } = await mod('mcp/dist/arc-owner-vault.js')
 const art = await mod('mcp/dist/contracts/AgentSpendPolicy.js')
 const { encodeDeployData, encodeFunctionData, decodeFunctionResult, getAddress, parseAbi, parseUnits, toFunctionSelector, toHex } = viem
+const { randomBytes } = await import('node:crypto')
 
 const chain = getChainById('arc-mainnet')
 const USDC = chain.contracts.usdc
@@ -137,7 +146,7 @@ const freePort = () =>
     })
   })
 
-async function waitFor(what, fn, ms = 60000) {
+async function waitFor(what, fn, ms = 60000, every = 300) {
   const t0 = Date.now()
   let last
   while (Date.now() - t0 < ms) {
@@ -147,7 +156,7 @@ async function waitFor(what, fn, ms = 60000) {
     } catch (e) {
       last = e
     }
-    await new Promise((r) => setTimeout(r, 300))
+    await new Promise((r) => setTimeout(r, every))
   }
   throw new Error(`${what} did not happen in ${ms} ms${last ? `: ${last.message}` : ''}`)
 }
@@ -163,10 +172,18 @@ let anvilOut = ''
 
 let rpcId = 1
 async function rpc(method, params = []) {
-  const res = await fetch(anvilUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: rpcId++, method, params }), signal: AbortSignal.timeout(60000) })
-  const j = await res.json()
-  if (j.error) throw Object.assign(new Error(j.error.message), { code: j.error.code, data: j.error.data })
-  return j.result
+  // A fork reads state it has not seen from its upstream, which rate limits it. That says nothing about
+  // this code, and anvil did nothing with a call it answered so, so the same call is asked again.
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(anvilUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: rpcId++, method, params }), signal: AbortSignal.timeout(60000) })
+    const j = await res.json()
+    if (j.error && /Fork Error|rate limit/i.test(j.error.message) && attempt < 8) {
+      await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)))
+      continue
+    }
+    if (j.error) throw Object.assign(new Error(j.error.message), { code: j.error.code, data: j.error.data })
+    return j.result
+  }
 }
 // Any registry host can serve the fork. anvil exits at once when its host rate limits it, which
 // says nothing about this code, so the next host is tried.
@@ -224,7 +241,7 @@ contract ForkUSDC is MockUSDC {
     event Transfer(address indexed from, address indexed to, uint256 value);
     function symbol() external pure returns (string memory) { return "USDC"; }
     function decimals() external pure returns (uint8) { return 6; }
-    function transfer(address to, uint256 amount) external override returns (bool) {
+    function transfer(address to, uint256 amount) external virtual override returns (bool) {
         require(to != address(0), "ERC20: transfer to the zero address");
         require(balanceOf[msg.sender] >= amount, "ERC20: transfer amount exceeds balance");
         balanceOf[msg.sender] -= amount;
@@ -233,18 +250,22 @@ contract ForkUSDC is MockUSDC {
         return true;
     }
 }
+contract ForkUSDCStopped is ForkUSDC {
+    function transfer(address, uint256) external pure override returns (bool) { revert("ERC20: transfers are stopped"); }
+}
 `
 const solOut = JSON.parse(
   solc.compile(
     JSON.stringify({
       language: 'Solidity',
       sources: { [tokensSol]: { content: readFileSync(join(repo, 'mcp', tokensSol), 'utf8') + forkToken } },
-      settings: { evmVersion: 'paris', outputSelection: { '*': { ForkUSDC: ['evm.bytecode.object', 'evm.deployedBytecode.object'] } } },
+      settings: { evmVersion: 'paris', outputSelection: { '*': { ForkUSDC: ['evm.bytecode.object', 'evm.deployedBytecode.object'], ForkUSDCStopped: ['evm.deployedBytecode.object'] } } },
     }),
   ),
 )
 const mock = solOut.contracts?.[tokensSol]?.ForkUSDC
 if (!mock) throw new Error(`the token did not compile: ${JSON.stringify(solOut.errors ?? []).slice(0, 400)}`)
+const mockStopped = solOut.contracts[tokensSol].ForkUSDCStopped
 await rpc('anvil_setCode', [USDC, `0x${mock.evm.deployedBytecode.object}`])
 say(`MockUSDC runtime, plus symbol() and decimals(), etched at ${USDC}`)
 
@@ -285,10 +306,21 @@ const storeFile = join(backendDir, 'data', 'arc-admitted-vaults.json')
 const blockedLog = join(work, 'blocked-fetches.log')
 const preload = join(work, 'redirect-rpc.mjs')
 const hostBehaviourFile = join(work, 'host-behaviour.json')
+// A process with an empty roster cannot say a payee has no record, so it stays strict and answers DENY:
+// the store holds agents, and one of them is revoked, so the real scorer can answer both ways.
+const REVOKED_PAYEE = `0x${'a1'.repeat(20)}`
+const seededAt = new Date(Date.now() - 90 * 86_400_000).toISOString()
+const seededAgent = (id, walletAddress, over) => ({ id, name: id, owner: `user_${id}`, walletAddress, chain: 'arc', chainId: chain.evmChainId, kya: 'verified', onchain: 'registered', createdAt: seededAt, followers: [], services: [], capabilities: [], ...over })
+mkdirSync(join(backendDir, 'data'), { recursive: true })
+writeFileSync(join(backendDir, 'data', 'platform.json'), JSON.stringify({ agents: [seededAgent('agent_revoked', REVOKED_PAYEE, { kya: 'revoked', kyaProof: { address: REVOKED_PAYEE } }), seededAgent('agent_seeded', `0x${'a2'.repeat(20)}`, {})] }))
+const GATEWAY_KIND = { x402Version: 2, scheme: 'exact', network: chain.caip2, extra: { name: 'GatewayWalletBatched', version: '1', verifyingContract: chain.gateway.wallet.toLowerCase(), assets: [{ symbol: 'USDC', address: USDC.toLowerCase(), decimals: 6 }] } }
+const GATEWAY_PAY_TO = privateKeyToAccount(generatePrivateKey()).address.toLowerCase()
 writeFileSync(
   preload,
   `import { appendFileSync, readFileSync } from 'node:fs'
 const hosts = new Set(${JSON.stringify(chain.rpcUrls.map((u) => new URL(u).host))})
+const gatewayHost = ${JSON.stringify(new URL(chain.gateway.facilitator).host)}
+const settled = new Map()
 const anvil = ${JSON.stringify(anvilUrl)}
 const real = globalThis.fetch
 const behaviour = () => {
@@ -301,6 +333,19 @@ const behaviour = () => {
 const nullFor = new Set(['eth_getTransactionReceipt', 'eth_getTransactionByHash', 'eth_getBlockByNumber'])
 globalThis.fetch = async (input, init) => {
   const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url)
+  if (url.host === gatewayHost) {
+    if (url.pathname === '/v1/x402/supported') return Response.json({ kinds: [${JSON.stringify(GATEWAY_KIND)}] })
+    if (url.pathname === '/v1/x402/settle') {
+      const auth = JSON.parse(init.body).paymentPayload?.payload?.authorization ?? {}
+      const nonce = String(auth.nonce).toLowerCase()
+      settled.set(nonce, { id: 'fake-' + nonce.slice(2, 14), status: 'received', fromAddress: auth.from, toAddress: auth.to, amount: String(auth.value), nonce })
+      return Response.json({ success: true, transaction: settled.get(nonce).id, network: ${JSON.stringify(chain.caip2)}, payer: auth.from })
+    }
+    if (url.pathname === '/v1/x402/transfers') {
+      const row = settled.get(String(url.searchParams.get('nonce')).toLowerCase())
+      return Response.json({ transfers: row ? [row] : [] })
+    }
+  }
   if (hosts.has(url.host)) {
     const mode = behaviour()[url.host]
     if (mode === 'stall') {
@@ -376,7 +421,7 @@ async function startBackend() {
   backend = spawn(process.execPath, ['--import', pathToFileURL(preload).href, join(backendDir, 'dist/http.js')], {
     cwd: backendDir,
     // Built from nothing on purpose. CCTP_EVM_SIGNER_KEY is on our list, has no committed address, and only a script ever signs with it.
-    env: { PATH: process.env.PATH, HOME: work, PORT: String(backendPort), CCTP_EVM_SIGNER_KEY: ourEnvKey, ...sweepEnv, ...(databaseUrl ? { DATABASE_URL: databaseUrl } : {}) },
+    env: { PATH: process.env.PATH, HOME: work, PORT: String(backendPort), CCTP_EVM_SIGNER_KEY: ourEnvKey, X402_GATEWAY_NETWORKS: chain.caip2, X402_GATEWAY_PAYTO: GATEWAY_PAY_TO, ...sweepEnv, ...(databaseUrl ? { DATABASE_URL: databaseUrl } : {}) },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   children.push(backend)
@@ -416,6 +461,13 @@ const seasonItem = (report, vault) => report.milestone1.vaults.items.find((v) =>
 const storeCount = async () => {
   if (databaseUrl) return (await getJson('/api/arc/vaults')).body.count
   return existsSync(storeFile) ? JSON.parse(readFileSync(storeFile, 'utf8')).length : 0
+}
+
+// The owner's approval is long to reach and quick to get wrong, so it can be run by itself.
+if (flag('--handoff-only')) {
+  if (!flag('--browser')) throw new Error('--handoff-only needs --browser')
+  await browserRehearsal({ handoffOnly: true })
+  finish(0)
 }
 
 // --- before anything ----------------------------------------------------------------------
@@ -729,7 +781,7 @@ async function sweepWithNoPage() {
   check(!backendOut.includes(`counted ${quiet.vault.toLowerCase()}`), 'and it was on the list, so nothing asked about it again')
 }
 
-async function browserRehearsal() {
+async function browserRehearsal({ handoffOnly = false } = {}) {
   section('the page: building it and serving it')
   const siteDir = join(work, 'site')
   const built = spawnSync(join(repo, 'node_modules/.bin/vite'), ['build', '--outDir', siteDir, '--emptyOutDir', '--logLevel', 'error'], { cwd: repo, encoding: 'utf8', env: { PATH: process.env.PATH, HOME: process.env.HOME, VITE_DOCS_URL: 'https://a-identity.mintlify.site' } })
@@ -758,7 +810,8 @@ async function browserRehearsal() {
     const agent = acct(agentIndex)
     if (ownerIndex > 9) await rpc('anvil_setBalance', [owner.address, toHex(10n ** 20n)])
     await send(foreignDeployer, { to: USDC, data: encodeFunctionData({ abi: MOCK, functionName: 'mint', args: [owner.address, parseUnits('5', 6)] }) })
-    const wallet = { chainHex: '0x1', added: new Set(['0x1']), connected: false, sent: [] }
+    // holdSend keeps a send's prompt open until it resolves. refuseSwitch declines a network switch.
+    const wallet = { chainHex: '0x1', added: new Set(['0x1']), connected: false, sent: [], holdSend: null, refuseSwitch: false }
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 1100 } })
     let page
     const emit = (event, value) => page?.evaluate(([e, v]) => window.__walletEmit?.(e, v), [event, value]).catch(() => {})
@@ -774,6 +827,7 @@ async function browserRehearsal() {
         case 'net_version':
           return String(parseInt(wallet.chainHex, 16))
         case 'wallet_switchEthereumChain': {
+          if (wallet.refuseSwitch) throw Object.assign(new Error('User rejected the request.'), { code: 4001 })
           const id = String(params[0].chainId).toLowerCase()
           if (!wallet.added.has(id)) throw Object.assign(new Error('Unrecognized chain ID'), { code: 4902 })
           wallet.chainHex = id
@@ -787,10 +841,11 @@ async function browserRehearsal() {
           const tx = params[0]
           if (wallet.chainHex !== CHAIN_HEX) throw Object.assign(new Error(`wallet is on ${wallet.chainHex}`), { code: -32000 })
           if (String(tx.from).toLowerCase() !== owner.address.toLowerCase()) throw Object.assign(new Error('from is not the account'), { code: 4100 })
+          if (wallet.holdSend) await wallet.holdSend
           const nonce = Number(await rpc('eth_getTransactionCount', [owner.address, 'pending']))
           const raw = await owner.signTransaction({ type: 'eip1559', chainId: chain.evmChainId, nonce, ...(tx.to ? { to: tx.to } : {}), data: tx.data, value: 0n, gas: BigInt(tx.gas), maxFeePerGas: BigInt(tx.maxFeePerGas), maxPriorityFeePerGas: BigInt(tx.maxPriorityFeePerGas) })
           const hash = await rpc('eth_sendRawTransaction', [raw])
-          wallet.sent.push({ hash, to: tx.to ?? null })
+          wallet.sent.push({ hash, to: tx.to ?? null, data: tx.data })
           return hash
         }
         default:
@@ -834,11 +889,29 @@ async function browserRehearsal() {
 
     const posts = []
     const seasonReads = { count: 0 }
+    // What the page asked the chain for logs, so a run can say how far a read went. And what stands in for
+    // a server or store whose record changed: rewrite is given each flow the page reads, and may return another.
+    const logReads = []
+    const stand = { rewrite: null, extra: null, failReceipt: false, vaultsOnFork: false }
     await ctx.route('**/*', async (route, request) => {
       const url = new URL(request.url())
       const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' }
       if (rpcHosts.has(url.host)) {
         if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors })
+        const call = JSON.parse(request.postData() ?? '{}')
+        if (call.method === 'eth_getLogs') {
+          const asked = { from: BigInt(call.params[0].fromBlock), to: BigInt(call.params[0].toBlock) }
+          logReads.push(asked)
+          // A vault this run deployed has no logs under the fork, and anvil would ask the real chain's host
+          // for them, which rate limits a fork. What that says is about the host, so it is left out.
+          if (stand.vaultsOnFork) {
+            if (asked.to < forkBlock) return route.fulfill({ status: 200, headers: { ...cors, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: call.id, result: [] }) })
+            if (asked.from < forkBlock) {
+              const res = await fetch(anvilUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...call, params: [{ ...call.params[0], fromBlock: toHex(forkBlock) }] }) })
+              return route.fulfill({ status: res.status, headers: { ...cors, 'content-type': 'application/json' }, body: Buffer.from(await res.arrayBuffer()) })
+            }
+          }
+        }
         const res = await fetch(anvilUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: request.postData() })
         return route.fulfill({ status: res.status, headers: { ...cors, 'content-type': 'application/json' }, body: Buffer.from(await res.arrayBuffer()) })
       }
@@ -860,7 +933,19 @@ async function browserRehearsal() {
         }
         if (url.pathname === '/api/proof/arc') await holdProof()
         const headers = { 'content-type': request.headers()['content-type'] ?? 'application/json', accept: 'application/json' }
+        if (stand.failReceipt && request.method() === 'POST' && url.pathname.endsWith('/receipt')) {
+          return route.fulfill({ status: 503, headers: { 'content-type': 'application/json' }, body: '{}' })
+        }
         const res = await fetch(`${api}${url.pathname}${url.search}`, { method: request.method(), headers, body: request.method() === 'POST' ? request.postData() : undefined })
+        if (request.method() === 'GET' && url.pathname.startsWith('/api/x402/gateway/flows') && (stand.rewrite || stand.extra)) {
+          const body = await res.json()
+          const swap = (f) => (stand.rewrite ? stand.rewrite(f) : f)
+          if (body.flow) body.flow = swap(body.flow)
+          if (Array.isArray(body.waiting)) body.waiting = [...body.waiting.map(swap), ...(stand.extra?.list ?? [])]
+          const named = stand.extra?.byId?.[url.pathname.split('/').pop()]
+          if (named) return route.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ flowId: named.flowId, flow: named }) })
+          return route.fulfill({ status: res.status, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+        }
         return route.fulfill({ status: res.status, headers: { 'content-type': res.headers.get('content-type') ?? 'application/json' }, body: Buffer.from(await res.arrayBuffer()) })
       }
       if (url.origin === base || url.protocol === 'data:') return route.continue()
@@ -899,7 +984,7 @@ async function browserRehearsal() {
     }
     /** The notice that says whether this vault counts, by what only it says. */
     const noticeSays = async () => (await text()).split('\n').find((l) => /on a-identity\.xyz\/proof\/arc|counts? on a-identity|counted on/.test(l)) ?? '(no line about the count)'
-    return { ctx, owner, agent, wallet, posts, seasonReads, pageErrors, text, waitText, stopIf, connect, noticeSays, page, newPage: async () => (page = await ctx.newPage()), current: () => page }
+    return { ctx, owner, agent, wallet, posts, seasonReads, logReads, stand, pageErrors, text, waitText, stopIf, connect, noticeSays, page, newPage: async () => (page = await ctx.newPage()), current: () => page }
   }
 
   /** The deploy flow from the form to the moment the deploy has landed and the end date is asked for. */
@@ -1249,23 +1334,454 @@ async function browserRehearsal() {
     return vault
   }
 
-  await ownerRun({ label: 'an owner goes all the way', ownerIndex: 6, agentIndex: 7, ownerActions: true })
-  await ownerRun({ label: 'the server fails twice, the first time while the last screen comes up', ownerIndex: 8, agentIndex: 7, flaky: true })
-  await waitOutPostWindow()
-  await vaultPageRun({ ownerIndex: 10, agentIndex: 7 })
-  await forgottenSetupRun({ ownerIndex: 11, agentIndex: 7 })
-  await waitOutPostWindow()
-  const closedTabVault = await closedTabRun({ ownerIndex: 12, agentIndex: 7 })
-  const otherDevice = await otherDeviceRun({ countedVault: closedTabVault, ownerIndex: 12, agentIndex: 7 })
-  await rateLimitedRun({ ownerIndex: 14, agentIndex: 7 })
+  /**
+   * An owner's approval of a hand-off, from the vault page: the real backend and the real page, against
+   * the fork, with a fake Gateway and a stand-in wallet. It moves the chain's clock forward at the end, so
+   * it runs last. See the comment at the top of this file for what stands in for what.
+   */
+  async function handoffRun({ ownerIndex, agentIndex, strangerIndex, otherOwnerIndex }) {
+    section('verify-then-pay: an owner approves a hand-off on the vault page')
+    const b = await ownerBrowser({ ownerIndex, agentIndex })
+    const { ctx, owner, agent, wallet, logReads, stand, pageErrors, text, waitText, stopIf, connect } = b
+    const stranger = acct(strangerIndex)
+    const page = b.current()
+    stand.vaultsOnFork = true
+    const { vault } = await deployVault(owner, agent.address)
+    await setExpiry(owner, vault)
+    await send(foreignDeployer, { to: USDC, data: encodeFunctionData({ abi: MOCK, functionName: 'mint', args: [vault, parseUnits('3', 6)] }) })
+    say(`vault ${vault}, ceiling ${AUTO_APPROVE_MAX} and cap ${DAILY_CAP} units, holding 3 USDC`)
 
-  await restartWithSweep()
-  await sweepWithNoPage()
-  section("the server's own sweep: the vault from another device, that no page could ask about")
-  const otherRow = await sweepCounts(otherDevice.vault)
-  check(otherRow.deployTx === otherDevice.hash.toLowerCase(), 'it is counted, under its real deploy hash, and not the one a browser had claimed for it')
-  await noHashWordsRun({ ownerIndex: 17, agentIndex: 7 })
-  await blockedPostRun({ ownerIndex: 16, agentIndex: 7 })
+    const payee = () => privateKeyToAccount(generatePrivateKey()).address.toLowerCase()
+    const vtp = async (body, header) => {
+      for (;;) {
+        const res = await fetch(`${api}/api/x402/gateway/verify-then-pay`, { method: 'POST', headers: { 'content-type': 'application/json', ...(header ? { 'PAYMENT-SIGNATURE': header } : {}) }, body: JSON.stringify(body) })
+        if (res.status !== 429) return { status: res.status, body: await res.json() }
+        say('the route says 429 (30 calls a minute): waiting out the window')
+        await new Promise((r) => setTimeout(r, 61000))
+      }
+    }
+    /** The agent, or anyone, buys a check: the 402, then the same request with a signed payment. Gateway here is a fake, so no key signs it. */
+    const buyCheck = async (payer, to, amount, over = {}) => {
+      const request = { vault, payee: to, amount: amount.toString(), ...over }
+      const free = await vtp(request)
+      if (free.status !== 402) return { free, paid: null, flowId: null }
+      const offer = free.body.challenge.accepts[0]
+      const nonce = toHex(randomBytes(32))
+      const header = Buffer.from(JSON.stringify({ x402Version: 2, network: chain.caip2, accepted: offer, payload: { signature: `0x${'11'.repeat(65)}`, authorization: { from: payer.address, to: offer.payTo, value: String(offer.amount), validAfter: '0', validBefore: '9999999999', nonce } } })).toString('base64')
+      const paid = await vtp(request, header)
+      say(`check by ${payer.address.slice(0, 10)}... on ${to.slice(0, 10)}... for ${amount} units: 402, then ${paid.status} ${paid.body.stage}${paid.body.code ? ` ${paid.body.code}` : ''}`)
+      return { free, paid, flowId: paid.body.flowId }
+    }
+    // Polled every 2.5 s at most: this route takes 60 reads a minute from one address, and the page it watches is that address too.
+    const flowOf = async (id) => (await getJson(`/api/x402/gateway/flows/${id}`)).body.flow
+    const seasonBefore = (await season()).milestone1.checks
+
+    // The hand-off, the way an agent gets it.
+    const payeeA = payee()
+    const amountA = parseUnits('0.1', 6)
+    const a = await buyCheck(agent, payeeA, amountA)
+    check(a.paid?.status === 200 && a.paid.body.stage === 'awaiting_human' && a.paid.body.verdict?.effective === 'WARN', 'an unknown payee inside the ceiling: the agent gets WARN and a hand-off')
+    const approval = new URL(a.paid.body.ownerHandoff.approvalUrl)
+    check(approval.origin === 'https://a-identity.xyz' && approval.pathname === '/app/vault/arc' && approval.searchParams.get('flow') === a.flowId && approval.searchParams.get('contract') === vault.toLowerCase(), 'the hand-off carries the approval link, at the site and not at the host the request came on')
+
+    // A real invoice on a default vault.
+    const payeeB = payee()
+    const amountB = parseUnits('5', 6) / 10n
+    const c = await buyCheck(agent, payeeB, amountB)
+    check(c.free.status === 402 && c.free.body.checks?.vault?.ownerOnly?.code === 'AboveAutoApprove', 'above the ceiling the free half does not refuse: it answers 402')
+    check(/only the owner can settle it/.test(c.free.body.next) && /still charges 0\.005 USDC/.test(c.free.body.next), 'and the 402 says up front that the check is charged and only the owner can settle it')
+    check(c.free.body.next.toLowerCase().includes(`operator key ${agent.address.toLowerCase()}`), 'and it names the key the vault page wants the check paid from')
+    check(c.paid?.status === 200 && c.paid.body.stage === 'awaiting_human' && c.paid.body.ownerHandoff?.ownerOnly === 'AboveAutoApprove', 'an above-ceiling payment reaches the hand-off')
+    const onWarn = await buyCheck(agent, payee(), amountB, { payOnWarn: true })
+    check(onWarn.paid?.body.stage === 'awaiting_human' && onWarn.paid.body.prepared === null, 'and payOnWarn cannot make the operator pay it')
+    const nothingOnChain = await rpc('eth_call', [{ from: agent.address, to: vault, data: encodeFunctionData({ abi, functionName: 'pay', args: [payeeB, amountB] }) }, 'latest']).then(() => 'no revert', (e) => String(e.data).slice(0, 10))
+    check(nothingOnChain === toFunctionSelector('AboveAutoApprove()'), "the vault really would refuse the agent: pay() reverts with the contract's own error")
+
+    // A stranger pays for a check on this vault, with a payee of their own, and reads what the agent read.
+    const payeeS = payee()
+    const s = await buyCheck(stranger, payeeS, parseUnits('1', 6))
+    check(s.paid?.body.stage === 'awaiting_human' && (await flowOf(s.flowId)).check.payer.toLowerCase() === stranger.address.toLowerCase(), "a stranger can open a flow on someone else's vault, by paying for a check, and it looks like any other")
+    check(s.paid.body.ownerHandoff.approvalUrl === null && !/app\/vault\/arc/.test(s.paid.body.next), 'and the answer hands out no link, because the page would refuse it')
+    const listed = (await getJson(`/api/x402/gateway/flows?vault=${vault}`)).body
+    check(listed.waiting.length === 3 && !listed.waiting.some((f) => f.flowId === s.flowId) && listed.notFromOperator.count === 1, `the list by vault holds the agent's three, and only counts the stranger's (${listed.waiting.length}, ${listed.notFromOperator.count})`)
+    check(!JSON.stringify(listed.waiting).includes(payeeS), "nothing of the stranger's is in it")
+
+    // A DENY, from the real scorer.
+    const denied = await buyCheck(agent, REVOKED_PAYEE, amountA)
+    check(denied.paid?.body.stage === 'deny' && denied.paid.body.ownerHandoff === null, 'a revoked payee: DENY, and nothing prepared')
+
+    /** The card's Review, or the run stops with what the card said instead. */
+    const reviewOn = async (card, ms = 120000) => {
+      const button = card.getByRole('button', { name: 'Review this payment' })
+      await button.waitFor({ timeout: ms }).catch(async () => {
+        await stopIf(false, `no Review came up: the card says ${(await card.innerText().catch(() => '(no card)')).slice(-700)}`)
+      })
+      return button
+    }
+
+    section('the page: the owner opens the link from the agent')
+    const openLink = (u) => page.goto(`${base}${u.pathname}${u.search}`, { waitUntil: 'domcontentloaded' })
+    const vaultUrl = `${base}/app/vault/arc?network=${encodeURIComponent(chain.caip2)}&contract=${vault}`
+    await openLink(approval)
+    await connect()
+    const cardA = page.locator(`[data-flow="${a.flowId}"]`)
+    // Declining the switch from the card, at phone size, where the wallet strip's own error is far off screen.
+    await page.setViewportSize({ width: 390, height: 844 })
+    wallet.refuseSwitch = true
+    await cardA.getByRole('button', { name: /Switch to Arc Mainnet/ }).click()
+    await cardA.getByText(/declined/i).first().waitFor({ timeout: 30000 }).catch(() => {})
+    const declinedSwitch = cardA.getByRole('alert')
+    const inView = await declinedSwitch.first().isVisible().catch(() => false)
+    check(inView && /declined/i.test(await declinedSwitch.first().innerText().catch(() => '')), 'a declined network switch is told on the card, beside the button')
+    wallet.refuseSwitch = false
+    await page.setViewportSize({ width: 1280, height: 1100 })
+    await cardA.getByRole('button', { name: /Switch to Arc Mainnet/ }).click()
+    const reviewA = cardA.getByRole('button', { name: 'Review this payment' })
+    await reviewA.waitFor({ timeout: 90000 }).catch(() => {})
+    const shownA = await cardA.innerText().catch(() => '')
+    await stopIf(/Your agent asks you to pay this/.test(shownA), 'a waiting flow on an owner\'s vault appears on the vault page')
+    check(shownA.includes(payeeA), 'it shows who gets paid: the full address')
+    check((await cardA.locator(`a[href$="/address/${payeeA}"]`).count()) === 1, 'with its explorer link')
+    check(/0\.1 USDC/.test(shownA), 'and how much')
+    check(/WARN/.test(shownA) && /does not mean it is bad/.test(shownA) && /Its reasons, as our server gave them/.test(shownA), 'and the verdict and its reasons as the server gave them')
+    check(/ago, at /.test(shownA), 'and when it was checked')
+    check(/counts toward today's budget/.test(shownA) && /00:00 UTC/.test(shownA), "and that approving counts toward today's budget and can stop the agent until 00:00 UTC")
+
+    section('the page: the owner approves, and the second tab and the reload do not send again')
+    await reviewA.click()
+    const confirmA = cardA.getByRole('button', { name: 'Confirm in wallet' })
+    await confirmA.waitFor({ timeout: 60000 })
+    check(/Prepared, not signed/.test(await cardA.innerText()), 'review shows the call, prepared and not signed, and simulated')
+    check(wallet.sent.length === 0, 'nothing has reached the wallet')
+    // Held in the mempool, so the hash has no answer while the second tab and the reload look at it.
+    await rpc('evm_setAutomine', [false])
+    await confirmA.click()
+    await waitFor('the wallet to send', () => wallet.sent.length === 1, 60000)
+    const sentA = wallet.sent[0]
+    check(sentA.to?.toLowerCase() === vault.toLowerCase() && sentA.data === encodeFunctionData({ abi, functionName: 'ownerPay', args: [payeeA, amountA] }), 'the wallet sends ownerPay to the vault, of exactly what was shown')
+    await page.waitForTimeout(1500)
+    const second = await ctx.newPage()
+    await second.goto(`${vaultUrl}&flow=${a.flowId}`, { waitUntil: 'domcontentloaded' })
+    const secondCard = second.locator(`[data-flow="${a.flowId}"]`)
+    await secondCard.waitFor({ timeout: 60000 })
+    await second.waitForTimeout(4000)
+    check((await secondCard.getByRole('button', { name: 'Review this payment' }).count()) === 0 && /submitted, no receipt yet/.test(await secondCard.innerText()), 'a second tab sees the hash and offers no send')
+    await second.close()
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await cardA.waitFor({ timeout: 60000 })
+    await page.waitForTimeout(4000)
+    check((await cardA.getByRole('button', { name: 'Review this payment' }).count()) === 0 && /submitted, no receipt yet/.test(await cardA.innerText()), 'a reload keeps the hash and offers no send')
+    check((await flowOf(a.flowId)).outcome === 'awaiting_human', 'and the flow is still waiting: the page says nothing is settled')
+    await rpc('evm_mine')
+    await rpc('evm_setAutomine', [true])
+    await stopIf(await waitText(/Paid\. Our server read this payment from the chain itself/, 90000), 'the receipt is posted, and the page says paid only once the server read it')
+    const settledA = await flowOf(a.flowId)
+    check(settledA.outcome === 'executed' && settledA.detail === 'owner_paid' && settledA.payment.byOwner === true && settledA.payment.txHash === sentA.hash.toLowerCase(), 'the flow reads settled: executed, owner_paid, under the hash the wallet sent')
+    check(wallet.sent.length === 1, 'one send, whatever the tabs and the reload did')
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await stopIf(await waitText(/Paid\. Our server read this payment from the chain itself/, 60000), 'a reload shows it settled')
+    await page.waitForTimeout(2000)
+    check((await cardA.getByRole('button').filter({ hasText: /Review|Confirm|Say no/ }).count()) === 0, 'with no action')
+    const bal = await read(vault, 'balance')
+    check(bal === parseUnits('3', 6) - amountA, `the vault paid once: it holds ${bal} units`)
+
+    section("the page: a stranger's check")
+    await page.goto(vaultUrl, { waitUntil: 'domcontentloaded' })
+    await stopIf(await waitText(/1 other check names this vault/, 60000), "the owner's list says only that one other check names this vault")
+    const onList = await text()
+    check(!onList.includes(payeeS), "the stranger's payee is nowhere on the page")
+    check((await page.locator(`[data-flow="${s.flowId}"]`).count()) === 0, 'and it is not a card on the list')
+    await page.goto(`${vaultUrl}&flow=${s.flowId}`, { waitUntil: 'domcontentloaded' })
+    await stopIf(await waitText(/This page cannot show this came from your agent/, 60000), 'a direct link to it shows a plain warning, of what the page knows')
+    const cardS = page.locator(`[data-flow="${s.flowId}"]`)
+    const saidS = await cardS.innerText()
+    check((await cardS.getByRole('button').count()) === 0, 'a flow from a stranger\'s check gets no action')
+    check(!saidS.includes(payeeS) && !(await text()).includes(payeeS) && saidS.includes(stranger.address.toLowerCase()), 'and no payee: it names who paid for the check')
+    check(/Do not send money/.test(saidS), 'and it says what to do')
+
+    section('the page: a DENY')
+    await page.goto(`${vaultUrl}&flow=${denied.flowId}`, { waitUntil: 'domcontentloaded' })
+    await stopIf(await waitText(/Nothing to approve here/, 60000), 'a direct link to a DENY says there is nothing to approve')
+    check((await page.locator(`[data-flow="${denied.flowId}"]`).getByRole('button').count()) === 0, 'and offers nothing')
+
+    section('the page: above the ceiling, on a frozen vault')
+    const freeze = await send(owner, vaultCall(vault, 'setFrozen', [true]))
+    check(freeze.receipt.status === '0x1', 'the owner has frozen the vault')
+    await page.goto(`${vaultUrl}&flow=${c.flowId}`, { waitUntil: 'domcontentloaded' })
+    const cardB = page.locator(`[data-flow="${c.flowId}"]`)
+    const reviewB = await reviewOn(cardB)
+    const shownB = await cardB.innerText()
+    check(/cannot pay this itself/.test(shownB) && /0\.25 USDC/.test(shownB), 'the owner is told the agent cannot pay this itself')
+    check(/approving this sends the money even while the vault is frozen/.test(shownB), 'and that a frozen vault still pays them')
+    await reviewB.click()
+    const confirmB = cardB.getByRole('button', { name: 'Confirm in wallet' })
+    await confirmB.waitFor({ timeout: 60000 })
+    await confirmB.click()
+    await stopIf(await waitFor('the second payment read back', async () => (await flowOf(c.flowId)).outcome === 'executed', 90000, 2500), 'ownerPay works while frozen, above the ceiling, and the server reads it')
+    await waitText(/Paid\. Our server read this payment/, 30000)
+    check(wallet.sent.length === 2, 'the wallet sent it once')
+    await send(owner, vaultCall(vault, 'setFrozen', [false]))
+    const report = await season()
+    check(report.milestone1.checks.count === seasonBefore.count && report.milestone1.checks.linked.paid === seasonBefore.linked.paid, `Milestone 1's flows stay what they were: ${report.milestone1.checks.count} (a check from an owner's agent is not one of our own)`)
+
+    section("the page: a wallet's speed-up")
+    const payeeD = payee()
+    const amountD = parseUnits('0.01', 6)
+    const d = await buyCheck(agent, payeeD, amountD)
+    await page.goto(`${vaultUrl}&flow=${d.flowId}`, { waitUntil: 'domcontentloaded' })
+    const cardD = page.locator(`[data-flow="${d.flowId}"]`)
+    const reviewD = await reviewOn(cardD)
+    await reviewD.click()
+    const confirmD = cardD.getByRole('button', { name: 'Confirm in wallet' })
+    await confirmD.waitFor({ timeout: 60000 })
+    await rpc('evm_setAutomine', [false])
+    await confirmD.click()
+    await waitFor('the wallet to send', () => wallet.sent.length === 3, 60000)
+    const slow = wallet.sent[2]
+    // What a speed-up is: the same nonce and the same call, with both fees raised above what is waiting.
+    const waiting = await rpc('eth_getTransactionByHash', [slow.hash])
+    const raw = await owner.signTransaction({ type: 'eip1559', chainId: chain.evmChainId, nonce: Number(waiting.nonce), to: vault, data: encodeFunctionData({ abi, functionName: 'ownerPay', args: [payeeD, amountD] }), value: 0n, gas: 200000n, maxFeePerGas: BigInt(waiting.maxFeePerGas) * 2n, maxPriorityFeePerGas: BigInt(waiting.maxPriorityFeePerGas) * 2n + 1_000_000_000n })
+    const fast = await rpc('eth_sendRawTransaction', [raw])
+    await rpc('evm_mine')
+    await rpc('evm_setAutomine', [true])
+    check(fast.toLowerCase() !== slow.hash.toLowerCase() && (await rpc('eth_getTransactionReceipt', [slow.hash])) === null, 'the wallet replaced what the page was told about: the hash the page holds has no receipt')
+    await stopIf(await waitFor('the sped-up payment read back', async () => (await flowOf(d.flowId)).outcome === 'executed', 180000, 2500), 'the page finds the payment under the new hash, posts it, and the server reads it')
+    const settledD = await flowOf(d.flowId)
+    check(settledD.payment.txHash === fast.toLowerCase(), 'the flow names the transaction that really paid')
+    check(wallet.sent.length === 3, 'and nothing was signed again')
+    check((await read(vault, 'balance')) === parseUnits('3', 6) - amountA - amountB - amountD, 'the vault paid once')
+
+    section("the page: a stranger's later identical check does not take the owner's payment")
+    const payeeF = payee()
+    const f = await buyCheck(agent, payeeF, amountA)
+    const fS = await buyCheck(stranger, payeeF, amountA)
+    await page.goto(`${vaultUrl}&flow=${f.flowId}`, { waitUntil: 'domcontentloaded' })
+    const cardF = page.locator(`[data-flow="${f.flowId}"]`)
+    await reviewOn(cardF)
+    await cardF.getByRole('button', { name: 'Review this payment' }).click()
+    await cardF.getByRole('button', { name: 'Confirm in wallet' }).waitFor({ timeout: 60000 })
+    // The prompt is held open: what the page says while a person has signed nothing yet.
+    let answerPrompt
+    wallet.holdSend = new Promise((r) => (answerPrompt = r))
+    await cardF.getByRole('button', { name: 'Confirm in wallet' }).click()
+    await stopIf(await waitText(/Confirm this in your wallet now/, 60000), 'a wallet prompt that is open says to go and answer it')
+    const whilePrompting = await cardF.innerText()
+    check(!/has not heard back/.test(whilePrompting) && !/Do not sign/.test(whilePrompting) && !/I checked/.test(whilePrompting), 'and does not tell the person not to sign what they have not signed, or offer to give up on it')
+    check(!/Your agent asks you to pay this/.test(whilePrompting) && !/counts toward today/.test(whilePrompting), 'and the card stops asking, once this tab has asked the wallet')
+    wallet.holdSend = null
+    answerPrompt()
+    await stopIf(await waitFor("the agent's flow read back", async () => (await flowOf(f.flowId)).outcome === 'executed', 90000, 2500), "the owner's payment closes the agent's flow")
+    check((await flowOf(fS.flowId)).outcome === 'awaiting_human', "and the stranger's later check, on the same vault, payee and amount, stays open and paid by nothing")
+    check((await flowOf(f.flowId)).detail === 'owner_paid', 'it reads owner_paid')
+    // The agent asks again: that is a new request, offered, and the card says what the vault already did.
+    await waitFor('the first payment on the card', async () => /Paid\. Our server read this payment/.test(await page.locator(`[data-flow="${f.flowId}"]`).innerText().catch(() => '')), 60000).catch(() => {})
+    const fAgain = await buyCheck(agent, payeeF, amountA)
+    await page.goto(`${vaultUrl}&flow=${fAgain.flowId}`, { waitUntil: 'domcontentloaded' })
+    const cardFA = page.locator(`[data-flow="${fAgain.flowId}"]`)
+    await reviewOn(cardFA)
+    check(/paid this same amount to this payee in the 6 hours before this check/.test(await cardFA.innerText()), 'the agent asks again: the page offers it, and says the vault paid the same amount to the same payee just before')
+    // A tab left open: what the card says about the balance follows the chain when the tab comes back.
+    const heldBefore = await read(vault, 'balance')
+    await send(foreignDeployer, { to: USDC, data: encodeFunctionData({ abi: MOCK, functionName: 'mint', args: [vault, parseUnits('1', 6)] }) })
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    const heldWords = `The vault holds ${Number(heldBefore + parseUnits('1', 6)) / 1e6} USDC`
+    await waitFor('the balance on the card', async () => (await cardFA.innerText()).includes(heldWords), 30000).then(
+      () => check(true, 'a tab that comes back reads the vault again, and the card says the new balance'),
+      async () => check(false, `a tab that comes back reads the vault again: the card says ${(await cardFA.innerText()).slice(0, 300)}`),
+    )
+
+    section('the page: the record changes after the review')
+    const payeeG = payee()
+    const g = await buyCheck(agent, payeeG, amountA)
+    const attacker = payee()
+    const consistentFor = (row) => ({ ...row, payee: attacker, prepared: { ...row.prepared, data: encodeFunctionData({ abi, functionName: 'ownerPay', args: [attacker, BigInt(row.amount)] }), args: [attacker, row.amount] } })
+    const onlyG = (row) => (row.flowId === g.flowId ? consistentFor(row) : row)
+    const cardG = page.locator(`[data-flow="${g.flowId}"]`)
+    const openG = async () => {
+      await page.goto(`${vaultUrl}&flow=${g.flowId}`, { waitUntil: 'domcontentloaded' })
+      await reviewOn(cardG)
+      await cardG.getByRole('button', { name: 'Review this payment' }).click()
+      await cardG.getByRole('button', { name: 'Confirm in wallet' }).waitFor({ timeout: 60000 })
+    }
+    await openG()
+    const beforeRewrite = wallet.sent.length
+    // The record is rewritten, with a consistent payee and prepared call, and the owner presses Check again.
+    stand.rewrite = onlyG
+    await page.getByRole('button', { name: 'Check again' }).click()
+    await stopIf(await waitText(/that review is gone/, 30000), 'the page read a record that changed: the review is gone, and it says why')
+    check((await cardG.getByRole('button', { name: 'Confirm in wallet' }).count()) === 0, 'no Confirm is left under a review of what the record no longer says')
+    check(wallet.sent.length === beforeRewrite, 'and the wallet was not asked')
+    stand.rewrite = null
+    // The same record, changed where only Confirm reads it: the list and the row still say what was reviewed.
+    await openG()
+    stand.rewrite = onlyG
+    await cardG.getByRole('button', { name: 'Confirm in wallet' }).click()
+    await stopIf(await waitText(/What would be signed is not what was shown/, 60000), 'a change only Confirm can see stops the send, and says so')
+    check(wallet.sent.length === beforeRewrite, 'and the wallet was not asked')
+    stand.rewrite = null
+
+    section('the page: the owner stops the key that asked')
+    const revoked = await send(owner, vaultCall(vault, 'setSessionKeyExpiry', [1n]))
+    check(revoked.receipt.status === '0x1', 'the owner revokes the agent key')
+    await page.goto(`${vaultUrl}&flow=${g.flowId}`, { waitUntil: 'domcontentloaded' })
+    await stopIf(await waitText(/This came from a key that has since been stopped/, 60000), 'its earlier request says the key has been stopped')
+    const stoppedText = await cardG.innerText()
+    check((await cardG.getByRole('button').count()) === 0, 'and gets no action')
+    check(!/Your agent asks you to pay this/.test(stoppedText) && !/agent key now/.test(stoppedText) && !stoppedText.includes(payeeG), 'and does not read as the agent asking, or put the payee on screen')
+    await setExpiry(owner, vault)
+
+    section('the page: "nothing was sent", and a slow wallet then sends it')
+    const payeeH = payee()
+    const amountH = parseUnits('0.02', 6)
+    const h = await buyCheck(agent, payeeH, amountH)
+    await page.goto(`${vaultUrl}&flow=${h.flowId}`, { waitUntil: 'domcontentloaded' })
+    const cardH = page.locator(`[data-flow="${h.flowId}"]`)
+    await reviewOn(cardH)
+    await cardH.getByRole('button', { name: 'Review this payment' }).click()
+    await cardH.getByRole('button', { name: 'Confirm in wallet' }).waitFor({ timeout: 60000 })
+    let answerSlow
+    wallet.holdSend = new Promise((r) => (answerSlow = r))
+    await cardH.getByRole('button', { name: 'Confirm in wallet' }).click()
+    await stopIf(await waitText(/Confirm this in your wallet now/, 60000), 'the prompt is open')
+    // A reload: no run in this tab is waiting on the wallet any more, so the page says what it knows.
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await stopIf(await waitText(/this page has not heard back/, 60000), 'after a reload the page says it has not heard back')
+    await cardH.getByRole('button', { name: /I checked: my wallet shows nothing was sent/ }).click()
+    await waitText(/You said nothing is on its way/, 30000)
+    wallet.holdSend = null
+    answerSlow()
+    await stopIf(await waitFor('the slow payment read back', async () => (await flowOf(h.flowId)).outcome === 'executed', 120000, 2500), 'the wallet sends it after all: the page finds the payment, posts it, and the server reads it')
+
+    section('the page: our server does not answer about a landed payment')
+    const payeeI = payee()
+    const amountI = parseUnits('0.03', 6)
+    const i = await buyCheck(agent, payeeI, amountI)
+    await page.goto(`${vaultUrl}&flow=${i.flowId}`, { waitUntil: 'domcontentloaded' })
+    const cardI = page.locator(`[data-flow="${i.flowId}"]`)
+    await reviewOn(cardI)
+    await cardI.getByRole('button', { name: 'Review this payment' }).click()
+    await cardI.getByRole('button', { name: 'Confirm in wallet' }).waitFor({ timeout: 60000 })
+    stand.failReceipt = true
+    await cardI.getByRole('button', { name: 'Confirm in wallet' }).click()
+    await stopIf(await waitText(/Our server has not read it yet/, 90000), 'the card says our server has not read it, not that it is reading it')
+    check(!/still pending/.test(await text()), "and the owner's own controls do not wait on a transaction that has landed")
+    check((await flowOf(i.flowId)).outcome === 'awaiting_human', 'and nothing reads as settled')
+    stand.failReceipt = false
+    await stopIf(await waitFor('the receipt once the server answers', async () => (await flowOf(i.flowId)).outcome === 'executed', 90000, 2500), 'once our server answers, the page posts it and it is read')
+
+    section('the page: an old waiting flow does not hold up a fresh one')
+    const payeeJ = payee()
+    const j = await buyCheck(agent, payeeJ, amountA)
+    const freshRow = await flowOf(j.flowId)
+    // A flow has no way to close, so an owner who ignored one has this row. Its block is a real one on the
+    // chain under the fork, past what the page reads back, so no block has to be mined to reach it.
+    const oldId = toHex(randomBytes(32))
+    const oldBlock = BigInt(freshRow.check.verdictBlock) - 1_300_000n
+    const oldRow = { ...freshRow, flowId: oldId, payee: payee(), createdAt: new Date(Date.now() - 9 * 86_400_000).toISOString(), check: { ...freshRow.check, authNonce: oldId, verdictBlock: oldBlock.toString(), checkedAtBlock: (oldBlock - 1n).toString(), checkedAt: new Date(Date.now() - 9 * 86_400_000).toISOString() } }
+    oldRow.prepared = { ...oldRow.prepared, data: encodeFunctionData({ abi, functionName: 'ownerPay', args: [oldRow.payee, BigInt(oldRow.amount)] }), args: [oldRow.payee, oldRow.amount] }
+    stand.extra = { list: [oldRow], byId: { [oldId]: oldRow } }
+    const cardJ = page.locator(`[data-flow="${j.flowId}"]`)
+    const lowest = (reads) => reads.reduce((m, r) => (r.from < m ? r.from : m), BigInt(freshRow.check.verdictBlock))
+    // The page's own event list reads 12 windows, 120,000 blocks. The old row is more than ten times that.
+    const reach = BigInt(freshRow.check.verdictBlock) - 200_000n
+    // Beside it on the list, and with a link naming it, which anyone can send.
+    for (const [what, url] of [
+      ['on the list', vaultUrl],
+      ['with a link naming the old one open', `${vaultUrl}&flow=${oldId}`],
+    ]) {
+      logReads.length = 0
+      const t0 = Date.now()
+      await page.goto(url, { waitUntil: 'domcontentloaded' })
+      await reviewOn(cardJ)
+      say(`${what}: Review after ${Date.now() - t0} ms and ${logReads.length} getLogs`)
+      check(lowest(logReads) >= reach, `${what}, the fresh flow gets its Review, and no read went near the old one (${logReads.length} getLogs)`)
+      if (url === vaultUrl) check(/older one was checked more than 24 hours ago/.test(await text()), 'on the list the old one is a line, with no card')
+    }
+    stand.extra = null
+
+    section('the page: what changes between the review and the wallet')
+    const payeeE = payee()
+    const e = await buyCheck(agent, payeeE, amountA)
+    const cardE = page.locator(`[data-flow="${e.flowId}"]`)
+    const openE = async () => {
+      await page.goto(`${vaultUrl}&flow=${e.flowId}`, { waitUntil: 'domcontentloaded' })
+      await reviewOn(cardE)
+    }
+    await openE()
+    await cardE.getByRole('button', { name: 'Review this payment' }).click()
+    await cardE.getByRole('button', { name: 'Confirm in wallet' }).waitFor({ timeout: 60000 })
+    const before = wallet.sent.length
+    const heldThen = await read(vault, 'balance')
+    await send(owner, vaultCall(vault, 'withdraw', [owner.address, heldThen]))
+    await cardE.getByRole('button', { name: 'Confirm in wallet' }).click()
+    await stopIf(await waitText(/The vault does not hold enough USDC for this/, 60000), 'the vault was emptied after the review: the page reads it again, says so, and sends nothing')
+    check(wallet.sent.length === before, 'the wallet was not asked')
+    await send(owner, { to: USDC, data: encodeFunctionData({ abi: MOCK, functionName: 'transfer', args: [vault, heldThen] }) })
+    await rpc('anvil_setCode', [USDC, `0x${mockStopped.evm.deployedBytecode.object}`])
+    await openE()
+    await cardE.getByRole('button', { name: 'Review this payment' }).click()
+    const refusedSim = await waitText(/The contract would refuse this/, 60000)
+    if (!refusedSim) say(`the card says: ${(await cardE.innerText().catch(() => '(no card)')).slice(-500)}`)
+    await stopIf(refusedSim, 'a failed simulation says why, before the wallet opens')
+    check(/transfers are stopped/.test(await cardE.innerText()) && wallet.sent.length === before, 'in the words the contract gave, with nothing sent')
+    await rpc('anvil_setCode', [USDC, `0x${mock.evm.deployedBytecode.object}`])
+
+    section('the page: saying no')
+    await openE()
+    await cardE.getByRole('button', { name: 'Say no' }).waitFor({ timeout: 90000 })
+    await cardE.getByRole('button', { name: 'Say no' }).click()
+    const saidNo = await cardE.innerText()
+    check(/nothing records your answer/.test(saidNo) && /your agent is not told/.test(saidNo), 'saying no says plainly that nothing records it and nobody is told')
+    check((await flowOf(e.flowId)).outcome === 'awaiting_human', 'and the flow stays open')
+    await cardE.getByRole('button', { name: 'Hide it in this browser' }).click()
+    await stopIf(await waitText(/You said no to 1 in this browser/, 30000), 'Hide works from the link too: the card goes, and the page says what it did')
+    check((await cardE.count()) === 0, 'and no Review is left on screen')
+    await page.getByRole('button', { name: 'Show it again' }).click()
+    await reviewOn(cardE)
+    check(true, 'Show it again brings it back')
+
+    section('the page: another account')
+    const other = await ownerBrowser({ ownerIndex: otherOwnerIndex, agentIndex })
+    await other.current().goto(`${vaultUrl}&flow=${e.flowId}`, { waitUntil: 'domcontentloaded' })
+    await other.connect()
+    await other.current().locator(`[data-flow="${e.flowId}"]`).waitFor({ timeout: 60000 })
+    await other.stopIf(await other.waitText(/is not this vault's owner, so this cannot be approved from it/, 60000), 'a wallet that is not the owner gets no action, and is told why')
+    check((await other.current().getByRole('button', { name: 'Review this payment' }).count()) === 0, 'there is no button to press')
+    check(other.pageErrors.length === 0, `no page errors (${other.pageErrors.slice(0, 2).join(' | ')})`)
+    await other.ctx.close()
+
+    section('the page: a check past its 24 hours')
+    await rpc('evm_increaseTime', [25 * 3600])
+    await rpc('evm_mine')
+    await page.goto(`${vaultUrl}&flow=${e.flowId}`, { waitUntil: 'domcontentloaded' })
+    await stopIf(await waitText(/it is offered for 24 hours/, 60000), 'a hand-off older than 24 hours by the chain says so')
+    await page.waitForTimeout(3000)
+    check((await cardE.getByRole('button', { name: 'Review this payment' }).count()) === 0, 'and offers no action')
+
+    check(pageErrors.length === 0, `no page errors (${pageErrors.slice(0, 2).join(' | ')})`)
+    await ctx.close()
+  }
+
+  if (!handoffOnly) {
+    await ownerRun({ label: 'an owner goes all the way', ownerIndex: 6, agentIndex: 7, ownerActions: true })
+    await ownerRun({ label: 'the server fails twice, the first time while the last screen comes up', ownerIndex: 8, agentIndex: 7, flaky: true })
+    await waitOutPostWindow()
+    await vaultPageRun({ ownerIndex: 10, agentIndex: 7 })
+    await forgottenSetupRun({ ownerIndex: 11, agentIndex: 7 })
+    await waitOutPostWindow()
+    const closedTabVault = await closedTabRun({ ownerIndex: 12, agentIndex: 7 })
+    const otherDevice = await otherDeviceRun({ countedVault: closedTabVault, ownerIndex: 12, agentIndex: 7 })
+    await rateLimitedRun({ ownerIndex: 14, agentIndex: 7 })
+
+    await restartWithSweep()
+    await sweepWithNoPage()
+    section("the server's own sweep: the vault from another device, that no page could ask about")
+    const otherRow = await sweepCounts(otherDevice.vault)
+    check(otherRow.deployTx === otherDevice.hash.toLowerCase(), 'it is counted, under its real deploy hash, and not the one a browser had claimed for it')
+    await noHashWordsRun({ ownerIndex: 17, agentIndex: 7 })
+    await blockedPostRun({ ownerIndex: 16, agentIndex: 7 })
+  }
+  await handoffRun({ ownerIndex: 18, agentIndex: 19, strangerIndex: 2, otherOwnerIndex: 17 })
   await browser.close()
   say(`hosts the browser tried and this run refused: ${[...refused].join(', ') || 'none'}`)
 }

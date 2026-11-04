@@ -39,7 +39,8 @@ const ENV = { X402_GATEWAY_NETWORKS: arc.caip2, X402_GATEWAY_PAYTO: PAY_TO } as 
 
 // The path is computed so that mcp's own compile does not reach into another package's build.
 type Sdk = {
-  verifyThenPay(o: Record<string, unknown>): Promise<{ outcome: string; flowId: string; verdict: { agentId: string; decision: string; reasons: string[]; signals?: Record<string, unknown> }; check: { amountUnits: string }; ownerPay?: { from: string; function: string; data: string }; record: { recorded: boolean; url: string } }>
+  verifyThenPay(o: Record<string, unknown>): Promise<{ outcome: string; flowId: string; verdict: { agentId: string; decision: string; reasons: string[]; signals?: Record<string, unknown> }; check: { amountUnits: string }; ownerPay?: { from: string; function: string; data: string }; approvalUrl?: string | null; ownerOnly?: string | null; record: { recorded: boolean; url: string; detail?: string } }>
+  preflightVault(o: Record<string, unknown>): Promise<{ ownerOnly: { code: string } | null }>
 }
 const sdk = (await import(new URL('../../../trust-guard/dist/arc.js', import.meta.url).href)) as Sdk
 
@@ -56,7 +57,7 @@ const encodeTopics = encodeEventTopics as unknown as (a: { abi: unknown; eventNa
 
 const payData = encodeFunctionData({ abi: AgentSpendPolicyAbi, functionName: 'pay', args: [PAYEE as Hex, AMOUNT] } as never)
 
-type Vault = { frozen: boolean; ownerIsOperator?: boolean; agentsHeld?: bigint }
+type Vault = { frozen: boolean; ownerIsOperator?: boolean; agentsHeld?: bigint; autoApproveMax?: bigint; allowlistEnabled?: boolean }
 
 const getters = (v: Vault): Record<string, unknown> => ({
   usdc: USDC,
@@ -64,9 +65,9 @@ const getters = (v: Vault): Record<string, unknown> => ({
   operator: OPERATOR,
   frozen: v.frozen,
   sessionKeyExpiry: BLOCK_TS + 14n * 86_400n,
-  allowlistEnabled: false,
+  allowlistEnabled: v.allowlistEnabled ?? false,
   allowed: false,
-  autoApproveMax: 500_000n,
+  autoApproveMax: v.autoApproveMax ?? 500_000n,
   dailyCap: 1_000_000n,
   spentToday: 0n,
   balance: 1_000_000n,
@@ -89,8 +90,8 @@ function serverChain(v: Vault): VtpReadClient {
 }
 
 /** The client's view of Arc Mainnet: the same facts, through the SDK's reader interface. */
-function clientChain(ownerIsOperator = false, agentsHeld = 1n) {
-  const v: Vault = { frozen: false, ownerIsOperator }
+function clientChain(ownerIsOperator = false, agentsHeld = 1n, over: Partial<Vault> = {}) {
+  const v: Vault = { frozen: false, ownerIsOperator, ...over }
   return {
     code: async (a: string) => (a.toLowerCase() === OPERATOR ? '0x' : '0x6001'),
     latestBlock: async () => ({ number: 29_000_001n, timestamp: BLOCK_TS }),
@@ -103,7 +104,7 @@ function clientChain(ownerIsOperator = false, agentsHeld = 1n) {
         return encodeResult({ abi: REGISTRY_ABI, functionName: name, result: name === 'balanceOf' ? agentsHeld : PAYEE })
       }
       const name = decodeCall({ abi: AgentSpendPolicyAbi, data }).functionName
-      if (name === 'pay') return '0x'
+      if (name === 'pay' || name === 'ownerPay') return '0x'
       return encodeResult({ abi: AgentSpendPolicyAbi, functionName: name, result: getters(v)[name] })
     },
     transaction: async () => ({ from: OPERATOR, to: VAULT, input: payData, maxFeePerGas: 41n * 10n ** 9n }),
@@ -164,9 +165,11 @@ function scoredBy(signals: RiskSignals): Scored {
 }
 
 /** Who a real vendor that never signed up with us is: no agent, no record. */
+const SEPARATE_PAYER = '0x' + '77'.repeat(20)
+
 const UNKNOWN_PAYEE: RiskSignals = { onchainVerified: false, kyaVerified: false, reputationScore: 0, tenureDays: 0, revoked: false, onPlatform: false }
 
-type Setup = { score?: Scored; settle?: GatewaySettleResponse; transfers?: 'none'; insertFails?: boolean; closeFails?: boolean; serverFrozen?: boolean; payOnWarn?: boolean; ownerIsOperator?: boolean; agentsHeld?: bigint }
+type Setup = { score?: Scored; settle?: GatewaySettleResponse; transfers?: 'none'; insertFails?: boolean; closeFails?: boolean; serverFrozen?: boolean; payOnWarn?: boolean; ownerIsOperator?: boolean; agentsHeld?: bigint; policy?: Partial<Vault>; payer?: string; payee?: string }
 
 function harness(o: Setup = {}) {
   const rows = new Map<string, VtpFlowRecord>()
@@ -194,15 +197,15 @@ function harness(o: Setup = {}) {
   const deps = {
     env: ENV,
     origin: ORIGIN,
-    client: serverChain({ frozen: o.serverFrozen ?? false, ownerIsOperator: o.ownerIsOperator, agentsHeld: o.agentsHeld }),
+    client: serverChain({ frozen: o.serverFrozen ?? false, ownerIsOperator: o.ownerIsOperator, agentsHeld: o.agentsHeld, ...o.policy }),
     store,
     now: () => NOW,
     rail: {
       now: () => NOW,
       sleep: async () => {},
       getSupported: async () => ({ kinds: [kind] }),
-      settle: async () => o.settle ?? { success: true, transaction: 'tr-1', network: arc.caip2, payer: OPERATOR },
-      searchTransfers: async (_u: string, p: { nonce?: string }): Promise<GatewayTransfer[]> => (o.transfers === 'none' ? [] : [{ id: 'tr-1', status: 'received', fromAddress: OPERATOR, toAddress: PAY_TO, amount: '5000', nonce: p.nonce }]),
+      settle: async () => o.settle ?? { success: true, transaction: 'tr-1', network: arc.caip2, payer: o.payer ?? OPERATOR },
+      searchTransfers: async (_u: string, p: { nonce?: string }): Promise<GatewayTransfer[]> => (o.transfers === 'none' ? [] : [{ id: 'tr-1', status: 'received', fromAddress: o.payer ?? OPERATOR, toAddress: PAY_TO, amount: '5000', nonce: p.nonce }]),
       handlers: { risk_check: async (input: { agentId?: string; txContext?: unknown }) => (o.score ?? scored('ALLOW'))(input) },
       persist: async (_r: GatewaySettlementRecord) => {},
       load: async () => [],
@@ -237,16 +240,27 @@ function harness(o: Setup = {}) {
   const run = () =>
     sdk.verifyThenPay({
       vault: VAULT,
-      payee: PAYEE,
+      payee: o.payee ?? PAYEE,
       amountUnits: AMOUNT,
       signer,
       baseUrl: ORIGIN,
       fetch: fetchFake,
-      chain: clientChain(o.ownerIsOperator, o.agentsHeld ?? 1n),
+      chain: clientChain(o.ownerIsOperator, o.agentsHeld ?? 1n, o.policy),
       clock: { now: () => 0, sleep: async () => {} },
       ...(o.payOnWarn ? { payOnWarn: true } : {}),
+      ...(o.payer
+        ? {
+            payer: {
+              address: o.payer,
+              signTypedData: async (r: unknown) => {
+                signed.push(r)
+                return `0x${'ab'.repeat(65)}`
+              },
+            },
+          }
+        : {}),
     })
-  return { run, sent, signed, rows }
+  return { run, sent, signed, rows, deps }
 }
 
 async function thrown(p: Promise<unknown>): Promise<Error & Record<string, unknown>> {
@@ -321,6 +335,79 @@ test('with payOnWarn, a payee we know nothing about is paid once, because the ca
   assert.equal(h.sent.length, 1)
   assert.equal(h.rows.get(out.flowId)?.payOnWarn, true)
 })
+
+for (const [label, policy, code] of [
+  ['above the ceiling', { autoApproveMax: AMOUNT - 1n }, 'AboveAutoApprove'],
+  ['off the allowlist', { allowlistEnabled: true }, 'PayeeNotAllowed'],
+] as [string, Partial<Vault>, string][]) {
+  for (const decision of ['ALLOW', 'WARN'] as const) {
+    test(`${label}, through both sides: a ${decision} buys the check, pays nothing, and hands the owner the call and the link`, async () => {
+      const h = harness({ score: scored(decision), policy })
+      const out = await h.run()
+      assert.equal(out.outcome, 'awaiting_human')
+      assert.equal(h.signed.length, 1, 'the check was bought')
+      assert.equal(h.sent.length, 0, 'no automatic payment')
+      assert.equal(out.verdict.decision, decision)
+      assert.equal(out.ownerOnly, code)
+      assert.equal(out.ownerPay?.from, OWNER)
+      assert.equal(out.ownerPay?.function, 'ownerPay(address,uint256)')
+      assert.equal(out.record.detail, 'owner_only_handoff')
+      assert.equal(h.rows.get(out.flowId)?.detail, 'owner_only_handoff')
+      const link = new URL(String(out.approvalUrl))
+      assert.equal(link.pathname, '/app/vault/arc')
+      assert.equal(link.searchParams.get('flow'), out.flowId)
+      assert.equal(link.searchParams.get('contract'), VAULT)
+    })
+  }
+
+  test(`${label}, through both sides: a check a separate payer paid for gets no link, because the vault page would refuse it`, async () => {
+    const h = harness({ score: scored('WARN'), policy, payer: SEPARATE_PAYER })
+    const out = await h.run()
+    assert.equal(out.outcome, 'awaiting_human')
+    assert.equal(out.approvalUrl, null, 'the SDK hands out no link')
+    assert.equal(out.ownerPay?.function, 'ownerPay(address,uint256)', 'and the call for the owner key is still there')
+  })
+
+  test(`${label}, through both sides: a payment to the operator key gets no link, for the same reason`, async () => {
+    const h = harness({ score: scored('WARN'), policy, payee: OPERATOR })
+    const out = await h.run()
+    assert.equal(out.outcome, 'awaiting_human')
+    assert.equal(out.approvalUrl, null)
+  })
+
+  test(`${label}, through both sides: payOnWarn pays nothing`, async () => {
+    const h = harness({ score: scored('WARN'), policy, payOnWarn: true })
+    const out = await h.run()
+    assert.equal(out.outcome, 'awaiting_human')
+    assert.equal(h.sent.length, 0)
+  })
+
+  test(`${label}, through both sides: a DENY throws and sends nothing`, async () => {
+    const h = harness({ score: scored('DENY'), policy })
+    const e = await thrown(h.run())
+    assert.equal(e.name, 'TrustDenyError')
+    assert.equal(h.signed.length, 1)
+    assert.equal(h.sent.length, 0)
+  })
+
+  test(`${label}, through both sides: a vault with one key stays a refusal, with nothing signed`, async () => {
+    const h = harness({ policy, ownerIsOperator: true })
+    const e = await thrown(h.run())
+    assert.equal(e.name, 'VaultPolicyError')
+    assert.equal(e.code, code)
+    assert.equal(h.signed.length, 0)
+  })
+
+  test(`${label}: the client's preflight and the server's 402 say the same thing`, async () => {
+    const p = await sdk.preflightVault({ vault: VAULT, payee: PAYEE, amountUnits: AMOUNT, operator: OPERATOR, chain: clientChain(false, 1n, policy) })
+    assert.equal(p.ownerOnly?.code, code)
+    const h = harness({ policy })
+    await h.run().catch(() => {})
+    const free = await runVerifyThenPay({ vault: VAULT, payee: PAYEE, amount: AMOUNT.toString() }, null, h.deps as never)
+    assert.equal(free.httpStatus, 402)
+    assert.equal(free.body.checks?.vault.ownerOnly?.code, code)
+  })
+}
 
 test('a platform agent with nothing against it, through both sides with the real scorer: WARN, and the owner gets the call', async () => {
   const signals: RiskSignals = { onchainVerified: true, kyaVerified: true, reputationScore: 90, tenureDays: 40, onPlatform: true, adverseRecord: false }

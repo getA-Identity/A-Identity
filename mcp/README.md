@@ -295,14 +295,25 @@ cd .. && node scripts/rehearse-arc-vault.mjs https://a-identity.xyz _internal/ar
 The first run prints the owner address to send about 0.25 test USDC to, from faucet.circle.com. Exit
 0 all checks passed, 1 a check failed, 2 usage, 3 the owner needs test USDC.
 
-`scripts/rehearse-arc-vault-fork.mjs` runs the admission's yes on Arc Mainnet forked into a local anvil,
-against the real backend and, with `--browser`, the real page, with no real money. It needs Foundry on
-PATH, and the page's run needs Playwright's chromium. It ends by blocking every post from a page, and
-the server's own sweep counts that vault. Exit 0 all checks passed, 1 a check failed, 2 usage.
+### Rehearse the vault page against a fork
+
+`scripts/rehearse-arc-vault-fork.mjs` runs the same page and the real backend against Arc Mainnet forked
+into a local anvil, with no real money and nothing sent to production. It needs Foundry on PATH, and the
+page's run needs Playwright's chromium. With `--browser` it drives the deploy flow, blocks every post from
+a page so that the server's own sweep has to count that vault, and then runs an owner's approval of a
+hand-off: a waiting flow appears on the vault page, the owner approves it, the wallet sends `ownerPay`, the
+receipt is posted, the flow reads settled, and a reload shows that with no action. A stranger's check gets
+no action and its later identical check does not take the payment, a second tab and a reload do not send
+again, a wallet's speed-up is found under its new hash, an above-ceiling payment reaches the hand-off, a
+record that changes after the review stops the send, a request from a revoked key gets no action, an old
+waiting flow does not hold up a fresh one, and Hide works from a link. `--handoff-only` runs that part
+alone. Circle Gateway is a fake there and does not check a signature, and the wallet is a stand-in that
+signs with an anvil key. So it cannot show a real wallet's own screens, how a real wallet prices or replaces
+a transaction, or Gateway really refusing a forged payer: those need a person. Exit 0 all checks passed, 1 a
+check failed, 2 usage.
 
 ```bash
-npm run build
-cd .. && node scripts/rehearse-arc-vault-fork.mjs --browser
+(cd mcp && npm run build) && node scripts/rehearse-arc-vault-fork.mjs --browser
 ```
 
 ### Run the Milestone 1 flows

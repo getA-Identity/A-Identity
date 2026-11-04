@@ -35,6 +35,7 @@ import {
 } from 'viem'
 import type { Chain } from '../chains'
 import { AGENT_SPEND_POLICY_ABI, AGENT_SPEND_POLICY_BYTECODE, AGENT_SPEND_POLICY_IMMUTABLES, AGENT_SPEND_POLICY_RUNTIME } from '../contracts/agent-spend-policy'
+import { ownerPayCalldata } from './handoff-rules'
 import { messageOf, TxStop, txStop as stop } from './send'
 import {
   RpcUnreachableError,
@@ -58,6 +59,7 @@ import {
   gasWithMargin,
   isKnownBuild,
   operatorRefusal,
+  ownerPayGas,
   REVOKED_SESSION_EXPIRY,
   sameAddress,
   sessionExpiryFor,
@@ -69,7 +71,7 @@ import {
 // page's components keep importing them from here.
 export { STEP_LABEL, TxStop, failureOf, sendPrepared, type TxFailure, type TxFailureCode, type TxStep } from './send'
 
-export type TxAction = 'deploy' | 'expiry' | 'fund' | 'freeze' | 'unfreeze' | 'policy' | 'withdraw' | 'extend' | 'revoke' | 'operator'
+export type TxAction = 'deploy' | 'expiry' | 'fund' | 'freeze' | 'unfreeze' | 'policy' | 'withdraw' | 'extend' | 'revoke' | 'operator' | 'ownerPay'
 
 /** One argument of the prepared call, as shown before signing. */
 export type ShownArg = { name: string; value: string; note?: string }
@@ -330,6 +332,7 @@ export type OwnerCall =
   | { fn: 'revoke' }
   | { fn: 'setOperator'; operator: string }
   | { fn: 'withdraw'; to: string; amount: bigint }
+  | { fn: 'ownerPay'; to: string; amount: bigint }
 
 /**
  * Prepare one owner-only call on a vault this page can verify. The session key's expiry is
@@ -357,6 +360,8 @@ export async function prepareOwnerCall(chain: Chain, v: VaultSnapshot, call: Own
     to = checkedAddress(call.to, 'destination')
     const bad = withdrawRefusal({ to, amount: call.amount, balance: v.balance, vault, usdc: v.usdc, decimals: v.decimals })
     if (bad) throw stop('refused', bad)
+  } else if (call.fn === 'ownerPay') {
+    to = checkedAddress(call.to, 'payee')
   }
 
   let r
@@ -381,7 +386,7 @@ export async function prepareOwnerCall(chain: Chain, v: VaultSnapshot, call: Own
       await c.call({ account: owner, to: vault, data })
       const estimate = await c.estimateGas({ account: owner, to: vault, data })
       const fee = await feeQuote(c)
-      const gas = gasWithMargin(estimate)
+      const gas = call.fn === 'ownerPay' ? ownerPayGas(estimate) : gasWithMargin(estimate)
       await assertCovered(c, chain, owner, gas * fee.maxFeePerGas, 0n)
       return { data, expiry, fee, gas, nonce: await nonceHint(c, owner) }
     })
@@ -480,6 +485,20 @@ function describe(
           { kind: 'transfer', token: x.usdc, from: x.vault, to: x.to as Address, value: call.amount },
         ],
       }
+    case 'ownerPay':
+      return {
+        action: 'ownerPay',
+        what: `Pay ${formatUnitsExact(call.amount, x.decimals)} USDC from the vault to ${x.to as Address}`,
+        fn: 'ownerPay',
+        shown: [
+          { name: 'to', value: x.to as Address, note: 'who gets paid' },
+          { name: 'amount', value: units(call.amount), note: 'from the vault, not from your wallet' },
+        ],
+        expect: [
+          event('Paid', { to: x.to as Address, amount: call.amount, byOwner: true }),
+          { kind: 'transfer', token: x.usdc, from: x.vault, to: x.to as Address, value: call.amount },
+        ],
+      }
   }
 }
 
@@ -504,6 +523,9 @@ function encode(call: OwnerCall, x: { expiry?: bigint; operator: Address | null;
     case 'withdraw':
       if (!x.to) throw stop('refused', 'No destination address. Nothing was sent.')
       return encodeFunctionData({ abi: AGENT_SPEND_POLICY_ABI, functionName: 'withdraw', args: [x.to, call.amount] })
+    case 'ownerPay':
+      if (!x.to) throw stop('refused', 'No payee address. Nothing was sent.')
+      return ownerPayCalldata(x.to, call.amount)
     default:
       throw stop('refused', 'This page does not build that call.')
   }

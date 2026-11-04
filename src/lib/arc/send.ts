@@ -39,6 +39,16 @@ export type TxFailureCode =
   | 'fee_too_low'
   | 'nonce'
   | 'wallet_error'
+  /** An owner's approval that this page will not send, each for its own reason. */
+  | 'handoff_not_from_agent'
+  | 'handoff_key_stopped'
+  | 'handoff_changed'
+  | 'handoff_stale'
+  | 'handoff_ended'
+  | 'handoff_no_balance'
+  | 'handoff_held'
+  | 'handoff_already_paid'
+  | 'handoff_unreadable'
 
 export type TxFailure = { code: TxFailureCode; message: string; errorName?: string }
 

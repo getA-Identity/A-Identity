@@ -190,15 +190,17 @@ The order, and what each step can cost:
 1. **Free checks, nothing signed.** The asset is the registry's USDC and the vault's; an agent named in
    `payeeAgentId` is the payee's; the vault's policy and a simulated `pay()` accept the payment; the
    operator can pay the gas. A refusal here costs nothing: the check is not bought, and no verdict comes back.
-   That includes a payment above the vault's ceiling or to a payee off its allowlist, which only the owner
-   can pay as it stands; raise the ceiling or allow the payee to get a verdict and a hand-off. A payee that
-   holds no agent is not refused: it goes on to the check.
+   A payee that holds no agent is not refused: it goes on to the check. Neither is a payment above the
+   vault's ceiling or to a payee off its allowlist, on a vault with a human: the operator cannot pay it and
+   the owner can, so `ownerPay` is simulated instead, `preflightVault` says so in `ownerOnly`, and it goes on
+   to the check, which is still charged. On a vault whose owner is its operator both stay refusals.
 2. **The verdict, 0.005 USDC.** The payer signs one Gateway authorization from its Gateway balance. It
    spends no gas. The payer needs a Gateway balance on Arc Mainnet, and may be a separate key (`payer`).
 3. **The decision.** DENY throws `TrustDenyError` and never calls the operator. WARN returns
    `awaiting_human` with a prepared `ownerPay` for the vault's owner and pays nothing, unless you set
    `payOnWarn: true`. A payee we know nothing about gets WARN, so `payOnWarn` on such a payee is your own
-   explicit choice to pay it. ALLOW goes on.
+   explicit choice to pay it. ALLOW goes on. On a payment only the owner can make, ALLOW and WARN both return
+   `awaiting_human`, with `ownerOnly` naming the gate, and `payOnWarn` cannot change that.
 4. **The payment.** Exactly one `sendTransaction` of `pay(payee, amountUnits)`, encoded from your own
    inputs and compared byte for byte with what the server prepared. The server's calldata is never
    executed, so a compromised server cannot redirect a payment. `maxFeePerGas` is at least 20 gwei,
@@ -208,11 +210,14 @@ The order, and what each step can cost:
    and `record.recorded` says whether it did. Flow records are public by flow id, at
    `/api/x402/gateway/flows/<flowId>`, DENYs included. After a WARN, send `ownerPay` from the owner's key
    and close the flow with `recordFlowReceipt({ flowId, txHash })`, unless `ownerPay.simulation.ok` is
-   false: the vault would refuse it right now, so sending it would revert and cost gas. The vault page does
-   not send `ownerPay` for you today; the integration guide has a sample that sends it from a browser
-   wallet, starting from the public flow record. An `ownerPay` counts toward the agent's day on the
-   vault: if it uses up today's room, the agent cannot pay until 00:00 UTC unless the owner raises the
-   cap, so tell the owner before they sign.
+   false: the vault would refuse it right now, so sending it would revert and cost gas. An owner with a
+   browser wallet does it on the vault page: send them `out.approvalUrl`. That is passed on only when it is
+   the vault page for this vault and this flow, and it is null otherwise. The page approves only a check the
+   operator paid for, so a flow paid by a separate `payer`, or a payment to the operator key, comes back with
+   `approvalUrl` null: send `ownerPay` from the owner key. The integration guide has a sample for that,
+   starting from the public flow record. An `ownerPay` counts toward the agent's day on the vault: if it uses
+   up today's room, the agent cannot pay until 00:00 UTC unless the owner raises the cap, so tell the owner
+   before they sign.
 
 Anything that is not a usable verdict is never treated as ALLOW: a Gateway error, a settlement that does
 not echo what was signed, an unknown decision, a reputation that is not a finite number, an ALLOW below

@@ -29,7 +29,7 @@
  *
  * A reverted receipt has no logs, so it is matched by the transaction: sent to the vault, with
  * exactly the prepared calldata, by the key the flow prepared it for. A flow waiting for its
- * owner (WARN) is closed only by the owner's call: an operator payment is not the hand-off it
+ * owner is closed only by the owner's call: an operator payment is not the hand-off it
  * prepared. Whatever does not match leaves the row exactly as it was, and one transaction
  * links to one flow at most.
  *
@@ -56,6 +56,10 @@
  * an earlier check than the one it followed, and a flow whose own payment came first cannot be
  * left behind by a later payment posted to it.
  *
+ * One exception, for an owner's payment only: a check the vault's operator paid for goes ahead of a check
+ * any other key paid for, whichever came later, so a stranger's identical check cannot take the payment
+ * an owner made on their agent's request. An operator's payment is linked by the rule above and no other.
+ *
  * What the rule cannot do, stated rather than implied. While two checks on the same vault,
  * payee and amount are open at once, which of two identical payments answered which check is
  * not on chain, so the rule decides it; each payment still came after the check it is linked
@@ -71,7 +75,7 @@ import { decodeErrorResult, parseEventLogs, type Hex, type Transaction, type Tra
 import { blockFromEveryRpc, receiptFromEveryRpc, replayCallFromEveryRpc, rpcSourceLabel, transactionFromEveryRpc, txUrl, type CallReplay, type ChainDescriptor } from '../chains/index.js'
 import { AgentSpendPolicyAbi } from '../contracts/AgentSpendPolicy.js'
 import type { VtpFlowDetail, VtpFlowOutcome, VtpFlowRecord } from '../storage.js'
-import { flowUrl, holdsNoFlow, storageVtpStore, vtpChain, VTP_PUBLIC_ORIGIN, type VtpDeps } from './context.js'
+import { FLOW_LOG_UNREADABLE, flowUrl, holdsNoFlow, logFlowStoreFault, storageVtpStore, vtpChain, VTP_PUBLIC_ORIGIN, type VtpDeps } from './context.js'
 import { gasCostUsdc, ownerPayCalldata, payCalldata } from './prepare.js'
 
 const TRANSFER_ABI = [
@@ -139,7 +143,7 @@ export function judgeReceipt(chain: ChainDescriptor, flow: VtpFlowRecord, receip
     if (!paid.length) return { ok: false, code: 'NO_MATCHING_PAID', reason: `the receipt carries no Paid event from the vault to the payee for ${flow.amount} units` }
     const byOwner = paid[0].args.byOwner
     if (flow.outcome === 'awaiting_human' && !byOwner) {
-      return { ok: false, code: 'AGENT_PAID_ON_HANDOFF', reason: 'the verdict was WARN and this flow waits for the owner, but this payment was made by the operator, not through ownerPay' }
+      return { ok: false, code: 'AGENT_PAID_ON_HANDOFF', reason: 'this flow waits for its owner, and this payment was made by the operator, not through ownerPay' }
     }
     const usdc = lc(chain.contracts.usdc)
     const moved = parseEventLogs({ abi: TRANSFER_ABI, eventName: 'Transfer', logs: receipt.logs }).filter(
@@ -193,16 +197,31 @@ function laterCheck(a: VtpFlowRecord, b: VtpFlowRecord): boolean {
   return a.flowId > b.flowId
 }
 
+/** Its check was paid for by the key that was the vault's operator: what the vault page treats as a request from the agent. */
+function paidByOperator(f: VtpFlowRecord): boolean {
+  return lc(f.check.payer) === lc(f.operator)
+}
+
 /**
  * The flow a payment answers: of the candidates that could take it, the one whose check came
  * last before the payment's block. `from` is the sender of a reverted call (a revert is matched
  * by who sent it) and null for a payment the vault's own Paid event names. Pure.
+ *
+ * An owner's payment goes first to a check the vault's operator paid for, however late another key's
+ * check came. A stranger can buy an identical check for 0.005 USDC, and without this it would take the
+ * payment the owner made on their agent's request, and leave the agent's flow open for the agent to ask
+ * again. Only an owner's payment: an operator payment links as it always has.
  */
 export function answeredFlow(candidates: VtpFlowRecord[], paymentBlock: bigint, by: { byOwner: boolean; from: string | null }): VtpFlowRecord | null {
   let best: VtpFlowRecord | null = null
   for (const f of candidates) {
     if (!couldTake(f, paymentBlock, by)) continue
-    if (!best || laterCheck(f, best)) best = f
+    if (!best) {
+      best = f
+      continue
+    }
+    const preferred = by.byOwner && paidByOperator(f) !== paidByOperator(best) ? paidByOperator(f) : laterCheck(f, best)
+    if (preferred) best = f
   }
   return best
 }
@@ -259,7 +278,10 @@ export async function recordVtpReceipt(flowIdRaw: unknown, txHashRaw: unknown, d
   const flowId = flowIdRaw.toLowerCase()
   const hash = txHashRaw.toLowerCase()
   const read = await store.load(flowId)
-  if (!read.ok) return reply(503, flowId, { code: 'FLOW_STORE_UNREADABLE', reason: read.reason, retry: true, next: 'The flow log could not be read; nothing changed. Post the same hash again shortly.' }, origin)
+  if (!read.ok) {
+    logFlowStoreFault('reading a flow for a receipt', read.reason)
+    return reply(503, flowId, { code: 'FLOW_STORE_UNREADABLE', reason: FLOW_LOG_UNREADABLE, retry: true, next: 'The flow log could not be read; nothing changed. Post the same hash again shortly.' }, origin)
+  }
   const flow = read.row
   if (!flow || holdsNoFlow(flow)) return reply(404, flowId, { code: 'UNKNOWN_FLOW', reason: 'no flow with this id', next: 'Use the flowId verify_then_pay returned for a paid check.' }, origin)
 
@@ -270,7 +292,10 @@ export async function recordVtpReceipt(flowIdRaw: unknown, txHashRaw: unknown, d
     return reply(409, flowId, { outcome: flow.outcome, detail: flow.detail, code: 'FLOW_ENDED', reason: `this flow is ${flow.outcome} (${flow.detail})${flow.payment ? ` with transaction ${flow.payment.txHash}` : ''}; it takes no receipt now`, next: 'Nothing changed.' }, origin)
   }
   const linked = await store.findByTx(hash)
-  if (!linked.ok) return reply(503, flowId, { code: 'FLOW_STORE_UNREADABLE', reason: linked.reason, retry: true, next: 'The flow log could not be read; nothing changed. Post the same hash again shortly.' }, origin)
+  if (!linked.ok) {
+    logFlowStoreFault('finding a transaction', linked.reason)
+    return reply(503, flowId, { code: 'FLOW_STORE_UNREADABLE', reason: FLOW_LOG_UNREADABLE, retry: true, next: 'The flow log could not be read; nothing changed. Post the same hash again shortly.' }, origin)
+  }
   if (linked.flowId && linked.flowId !== flowId) {
     return reply(409, flowId, { outcome: flow.outcome, detail: flow.detail, code: 'TX_LINKED_ELSEWHERE', reason: `that transaction is already linked to flow ${linked.flowId}`, next: 'One transaction proves one flow. Nothing changed.' }, origin)
   }
@@ -320,7 +345,10 @@ export async function recordVtpReceipt(flowIdRaw: unknown, txHashRaw: unknown, d
 
   // Which open flow this payment answers is the server's call, not the path's.
   const open = await store.openFlows({ vault: flow.vault, payee: flow.payee, amount: flow.amount })
-  if (!open.ok) return reply(503, flowId, { outcome: flow.outcome, detail: flow.detail, code: 'FLOW_STORE_UNREADABLE', reason: open.reason, retry: true, next: 'The flow log could not be read; nothing changed. Post the same hash again shortly.' }, origin)
+  if (!open.ok) {
+    logFlowStoreFault('reading open flows', open.reason)
+    return reply(503, flowId, { outcome: flow.outcome, detail: flow.detail, code: 'FLOW_STORE_UNREADABLE', reason: FLOW_LOG_UNREADABLE, retry: true, next: 'The flow log could not be read; nothing changed. Post the same hash again shortly.' }, origin)
+  }
   const pool = open.rows.some((r) => r.flowId === flow.flowId) ? open.rows : [...open.rows, flow]
   const answers = answeredFlow(pool, receipt.blockNumber, { byOwner: j.byOwner, from: j.outcome === 'reverted' && tx ? tx.from : null })
   if (answers && answers.flowId !== flowId) {
@@ -332,7 +360,10 @@ export async function recordVtpReceipt(flowIdRaw: unknown, txHashRaw: unknown, d
         detail: flow.detail,
         code: 'TX_ANSWERS_LATER_CHECK',
         answersFlow: answers.flowId,
-        reason: `flow ${answers.flowId} checked the same vault, payee and amount, and its verdict came back in block ${answers.check.verdictBlock}, after this flow's (block ${flow.check.verdictBlock}) and before the payment (block ${receipt.blockNumber}); a payment answers the latest check before it`,
+        reason:
+          j.byOwner && paidByOperator(answers) && !paidByOperator(flow)
+            ? `flow ${answers.flowId} checked the same vault, payee and amount before this payment (block ${receipt.blockNumber}), and the vault's operator paid for that check, which this flow's payer did not; an owner's payment answers the operator's check first`
+            : `flow ${answers.flowId} checked the same vault, payee and amount, and its verdict came back in block ${answers.check.verdictBlock}, after this flow's (block ${flow.check.verdictBlock}) and before the payment (block ${receipt.blockNumber}); a payment answers the latest check before it`,
         next: `Nothing changed. POST the same hash to ${flowUrl(answers.flowId, origin)}/receipt.`,
       },
       origin,
@@ -390,7 +421,8 @@ export async function recordVtpReceipt(flowIdRaw: unknown, txHashRaw: unknown, d
     if (u.conflict === 'tx_linked') {
       return reply(409, flowId, { outcome: flow.outcome, detail: flow.detail, code: 'TX_LINKED_ELSEWHERE', reason: u.reason, next: 'One transaction proves one flow. Nothing changed.' }, origin)
     }
-    return reply(503, flowId, { outcome: flow.outcome, detail: flow.detail, code: 'FLOW_STORE_UNREADABLE', reason: u.reason, retry: true, next: 'The receipt proved the flow but the record could not be written. Post the same hash again.' }, origin)
+    logFlowStoreFault('recording a receipt', u.reason)
+    return reply(503, flowId, { outcome: flow.outcome, detail: flow.detail, code: 'FLOW_STORE_UNREADABLE', reason: 'the flow log refused the write', retry: true, next: 'The receipt proved the flow but the record could not be written. Post the same hash again.' }, origin)
   }
   if (!u.updated) {
     if (u.row?.payment?.txHash === hash) return recorded(u.row)

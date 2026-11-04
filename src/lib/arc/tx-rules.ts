@@ -33,7 +33,7 @@ import { FEE_FLOOR_WEI, sameAddress } from './vault-rules.ts'
 
 // --- what a receipt must carry ---
 
-export type VaultEventName = 'SessionKeyExpirySet' | 'FrozenSet' | 'PolicyUpdated' | 'OperatorSet' | 'Withdrawn'
+export type VaultEventName = 'SessionKeyExpirySet' | 'FrozenSet' | 'PolicyUpdated' | 'OperatorSet' | 'Withdrawn' | 'Paid'
 
 /** One thing a settled receipt must contain. Addresses compare case-insensitively. */
 export type Expectation =
