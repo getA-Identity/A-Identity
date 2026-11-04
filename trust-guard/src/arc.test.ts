@@ -1974,3 +1974,18 @@ for (const [label, value] of [
     assert.equal((api.calls[0].body as { payOnWarn: unknown }).payOnWarn, false)
   })
 }
+
+test('the package says one version, and the README says what that version changed', () => {
+  const read = (rel: string) => readFileSync(new URL(`../${rel}`, import.meta.url), 'utf8')
+  const pkg = JSON.parse(read('package.json')) as { version: string }
+  const lock = JSON.parse(read('package-lock.json')) as { version: string; packages: Record<string, { version?: string }> }
+  assert.equal(lock.version, pkg.version)
+  assert.equal(lock.packages[''].version, pkg.version)
+  // ownerOnly and approvalUrl came after 0.4.0 went to npm, so a version that has them is past it.
+  const [major, minor, patch] = pkg.version.split('.').map(Number)
+  assert.ok(major > 0 || minor > 4 || (minor === 4 && patch >= 1), pkg.version)
+  const readme = read('README.md')
+  assert.match(readme, /\*\*Changed in 0\.4\.1\.\*\*/)
+  assert.match(readme, /`ownerOnly`/)
+  assert.match(readme, /`approvalUrl`/)
+})

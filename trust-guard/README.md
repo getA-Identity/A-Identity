@@ -150,6 +150,13 @@ claude mcp add a-identity-trust -e A_IDENTITY_ALGORAND_MNEMONIC="..." -- npx -y 
 is live. It needs version 0.4.0 or later, because 0.3.0 has no `/arc` entry point. No outside team has
 run the published package yet.**
 
+**Changed in 0.4.1.** On a vault with a human, a payment above the vault's ceiling or to a payee off its
+allowlist used to be refused before the check, for free. It now goes on to the check, which is charged,
+because the owner can pay it: `preflightVault` says so in `ownerOnly`, and `verifyThenPay` returns
+`awaiting_human` on ALLOW or WARN with `ownerOnly` naming the gate. A caller who wants the free refusal
+reads `ownerOnly` from `preflightVault` first. Every `awaiting_human` result also has `approvalUrl`, the
+link to send the owner, or null. 0.4.0 has neither field.
+
 `verifyThenPay` buys a `risk_check` through Circle Gateway and then pays the payee from an
 [AgentSpendPolicy](https://a-identity.xyz) vault, with keys only you hold. It needs Node and two
 optional peers:
