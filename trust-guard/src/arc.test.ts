@@ -180,7 +180,8 @@ function fakeChain(
         return answer(data, REGISTRY_ABI, 'ownerOf', w.agentOwner)
       }
       const d = decodeFunctionData({ abi: VAULT_ABI, data }) as { functionName: string }
-      if (d.functionName === 'pay') {
+      if (d.functionName === 'pay' || d.functionName === 'ownerPay') {
+        log.push(`simulate:${d.functionName}`)
         if (w.simRevert) throw new ArcCallRevert('execution reverted', encodeError({ abi: VAULT_ABI, errorName: w.simRevert }))
         return '0x'
       }
@@ -735,8 +736,8 @@ for (const [label, w, code] of [
   ['the vault frozen', { frozen: true }, 'IsFrozen'],
   ['the key expired by block time', { sessionKeyExpiry: BLOCK_TS - 1n }, 'SessionKeyExpired'],
   ['the key about to expire', { sessionKeyExpiry: BLOCK_TS + 30n }, 'SessionKeyExpired'],
-  ['the payee off the allowlist', { allowlistEnabled: true, allowed: false }, 'PayeeNotAllowed'],
-  ['the amount above the ceiling', { autoApproveMax: AMOUNT - 1n }, 'AboveAutoApprove'],
+  ['the payee off the allowlist, on a vault with one key', { allowlistEnabled: true, allowed: false, owner: OPERATOR }, 'PayeeNotAllowed'],
+  ['the amount above the ceiling, on a vault with one key', { autoApproveMax: AMOUNT - 1n, owner: OPERATOR }, 'AboveAutoApprove'],
   ['the daily cap spent', { dailyCap: 1_000_000n, spentToday: 800_000n }, 'DailyCapExceeded'],
   ['too little in the vault', { balance: AMOUNT - 1n }, 'InsufficientVaultBalance'],
   ['the signer not the operator', { operator: OWNER }, 'NotOperator'],
@@ -755,6 +756,117 @@ for (const [label, w, code] of [
     assert.equal(signer.sent.length, 0)
   })
 }
+
+// ── a payment only the owner can make ─────────────────────────────────────────────
+
+for (const [label, w, code] of [
+  ['the amount above the ceiling', { autoApproveMax: AMOUNT - 1n }, 'AboveAutoApprove'],
+  ['the payee off the allowlist', { allowlistEnabled: true, allowed: false }, 'PayeeNotAllowed'],
+] as const) {
+  const onlyOwner = (p: Paid, decision: 'ALLOW' | 'WARN') => warn(p, { verdict: verdictView(decision), ownerHandoff: { auditOutcome: 'awaiting_human', owner: OWNER, ownerPay: ownerPayCall(), ownerOnly: code }, record: { url: 'x', outcome: 'awaiting_human', detail: 'owner_only_handoff', recorded: true } })
+
+  test(`${label}: preflightVault says only the owner can settle it, and simulates that call`, async () => {
+    const { chain, signer } = setup({}, w as Partial<World>)
+    const p = await preflightVault({ vault: VAULT, payee: PAYEE, amountUnits: AMOUNT, operator: OPERATOR, chain })
+    assert.equal(p.ownerOnly?.code, code)
+    assert.ok(chain.log.includes('simulate:ownerPay'))
+    assert.ok(!chain.log.includes('simulate:pay'))
+    assert.equal(signer.sent.length, 0)
+  })
+
+  for (const decision of ['ALLOW', 'WARN'] as const) {
+    test(`${label}: a ${decision} buys the check, pays nothing, and hands the owner the call the client encoded`, async () => {
+      const { signer, opts } = setup({ paid: (p) => onlyOwner(p, decision) }, w as Partial<World>)
+      const out = await verifyThenPay(opts)
+      assert.equal(out.outcome, 'awaiting_human')
+      if (out.outcome !== 'awaiting_human') return
+      assert.equal(out.ownerOnly, code)
+      assert.equal(out.record.detail, 'owner_only_handoff')
+      assert.equal(out.ownerPay.data, ownerPayData())
+      assert.equal(signer.signed.length, 1, 'the check was bought')
+      assert.equal(signer.sent.length, 0, 'nothing was sent')
+    })
+  }
+
+  test(`${label}: payOnWarn cannot make the operator pay what the vault would refuse`, async () => {
+    const { signer, opts } = setup({ paid: (p) => onlyOwner(p, 'WARN') }, w as Partial<World>)
+    const out = await verifyThenPay({ ...opts, payOnWarn: true })
+    assert.equal(out.outcome, 'awaiting_human')
+    assert.equal(signer.sent.length, 0)
+  })
+
+  test(`${label}: a DENY throws, with nothing sent`, async () => {
+    const { signer, opts } = setup({ paid: (p) => deny(p) }, w as Partial<World>)
+    await refused(verifyThenPay(opts), TrustDenyError)
+    assert.equal(signer.sent.length, 0)
+  })
+
+  test(`${label}: a server that says prepared anyway does not get it sent, because the operator's own read refuses`, async () => {
+    const { signer, opts } = setup({ paid: (p) => allow(p) }, w as Partial<World>)
+    const e = await refused(verifyThenPay(opts), VaultPolicyError)
+    assert.equal(e.code, code)
+    assert.equal(e.stage, 'simulation')
+    assert.equal(signer.sent.length, 0)
+  })
+}
+
+test('the cap is the operator\'s question: above the ceiling and past the cap reaches the owner, and the cap alone is still refused', async () => {
+  const past = { autoApproveMax: AMOUNT - 1n, dailyCap: AMOUNT - 1n }
+  const { chain } = setup({}, past)
+  assert.equal((await preflightVault({ vault: VAULT, payee: PAYEE, amountUnits: AMOUNT, operator: OPERATOR, chain })).ownerOnly?.code, 'AboveAutoApprove')
+  const capped = setup({}, { dailyCap: AMOUNT - 1n })
+  await assert.rejects(preflightVault({ vault: VAULT, payee: PAYEE, amountUnits: AMOUNT, operator: OPERATOR, chain: capped.chain }), (e: Error) => e instanceof VaultPolicyError && e.code === 'DailyCapExceeded')
+})
+
+test('the other refusals stay refusals on a payment only the owner can make', async () => {
+  for (const [w, code] of [
+    [{ frozen: true }, 'IsFrozen'],
+    [{ sessionKeyExpiry: BLOCK_TS - 1n }, 'SessionKeyExpired'],
+    [{ operator: `0x${'00'.repeat(20)}` }, 'NotOperator'],
+    [{ balance: AMOUNT - 1n }, 'InsufficientVaultBalance'],
+    [{ simRevert: 'TransferFailed' }, 'TransferFailed'],
+  ] as [Partial<World>, string][]) {
+    const { api, opts } = setup({}, { autoApproveMax: AMOUNT - 1n, ...w })
+    const e = await refused(verifyThenPay(opts), VaultPolicyError)
+    assert.equal(e.code, code)
+    assert.equal(api.calls.length, 0)
+  }
+})
+
+test('the operator is not asked to hold gas for a payment it cannot make', async () => {
+  const { chain } = setup({}, { autoApproveMax: AMOUNT - 1n, operatorGas: 0n })
+  const p = await preflightVault({ vault: VAULT, payee: PAYEE, amountUnits: AMOUNT, operator: OPERATOR, chain })
+  assert.equal(p.ownerOnly?.code, 'AboveAutoApprove')
+  assert.equal(p.operatorGasWei, null)
+})
+
+test('a hand-off passes the approval link on only when it is the vault page for this vault and this flow, over https, at this server or the site', async () => {
+  const link = (nonce: string, over: Record<string, string> = {}, base = 'https://a-identity.xyz') => {
+    const q = new URLSearchParams({ network: ARC_MAINNET.caip2, contract: VAULT, flow: nonce, ...over })
+    return `${base}/app/vault/arc?${q.toString()}`
+  }
+  const run = async (make: (nonce: string) => unknown) => {
+    const { opts } = setup({ paid: (p) => warn(p, { ownerHandoff: { auditOutcome: 'awaiting_human', owner: OWNER, ownerPay: ownerPayCall(), approvalUrl: make(p.nonce) } }) })
+    const out = await verifyThenPay(opts)
+    assert.equal(out.outcome, 'awaiting_human')
+    return out.outcome === 'awaiting_human' ? out.approvalUrl : 'not a hand-off'
+  }
+  assert.match(String(await run((n) => link(n))), /^https:\/\/a-identity\.xyz\/app\/vault\/arc\?/)
+  assert.match(String(await run((n) => link(n, {}, BASE))), /^https:\/\/api\.example\//)
+  for (const [what, make] of [
+    ['absent', () => undefined],
+    ['another host', (n: string) => link(n, {}, 'https://a-identity.xyz.evil.example')],
+    ['plain http', (n: string) => link(n, {}, 'http://a-identity.xyz')],
+    ['credentials in the URL', (n: string) => link(n, {}, 'https://a-identity.xyz@evil.example')],
+    ['another path', (n: string) => link(n).replace('/app/vault/arc', '/somewhere')],
+    ['another vault', (n: string) => link(n, { contract: OWNER })],
+    ['another flow', () => link(`0x${'ee'.repeat(32)}`)],
+    ['another network', (n: string) => link(n, { network: 'eip155:1' })],
+    ['not a URL', () => 'approve here'],
+  ] as [string, (n: string) => unknown][]) {
+    assert.equal(await run(make), null, what)
+  }
+})
 
 test('a vault built before the session-key getter reads as no time bound', async () => {
   const { opts } = setup({}, { sessionKeyExpiry: 'reverts' })

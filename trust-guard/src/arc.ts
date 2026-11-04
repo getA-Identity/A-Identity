@@ -17,11 +17,17 @@
  *      named with payeeAgentId is the payee's, and the vault's policy and a simulated pay()
  *      accept the payment. A refusal here costs nothing: no check is bought for a payment the
  *      vault would refuse anyway. A payee that holds no agent is not refused: it is unknown,
- *      not bad, so it goes on to the check and gets WARN.
+ *      not bad, so it goes on to the check and gets WARN. A payment above the vault's ceiling, or
+ *      off an allowlist that is on, is not refused on a vault with a human either: the operator
+ *      cannot pay it and the owner can, so ownerPay() is simulated instead and it goes on to the
+ *      check, which is still charged. preflightVault says so in `ownerOnly`. On a vault whose owner
+ *      is its operator there is no human, so both stay refusals.
  *   B  The verdict: risk_check at the price in the offer (0.005 USDC), through Circle Gateway,
  *      signed once by the payer from its Gateway balance. The payer spends no gas.
  *   C  The decision. DENY throws TrustDenyError and never calls the operator. WARN returns
- *      `awaiting_human` with a prepared ownerPay for the owner, unless payOnWarn is set. A
+ *      `awaiting_human` with a prepared ownerPay for the owner, unless payOnWarn is set. On a
+ *      payment only the owner can make, ALLOW and WARN both return `awaiting_human`, and payOnWarn
+ *      cannot change that. Either way `approvalUrl` is the link to send the owner. A
  *      Gateway error, a settlement echo that does not match what was signed, an unknown
  *      decision, a reputation that is not a finite number, an ALLOW below the reputation ALLOW
  *      needs, a WARN carrying signals that force DENY and a verdict about another agent or
@@ -327,6 +333,9 @@ export interface VerifyThenPayOptions {
 /** What signs the Gateway authorization. What it returns is compared with the offer before use. */
 export type GatewaySchemeFactory = (payer: GatewayPayerSigner) => { createPaymentPayload(version: number, offer: unknown): Promise<unknown> }
 
+/** The two gates in pay() that ownerPay() does not have. */
+export type OwnerOnlyCode = 'PayeeNotAllowed' | 'AboveAutoApprove'
+
 export interface VaultPreflight {
   vault: Address
   payee: Address
@@ -344,6 +353,13 @@ export interface VaultPreflight {
   spentToday: bigint
   /** The vault's USDC, 6 decimals. */
   balance: bigint
+  /**
+   * Set when the operator cannot make this payment and the owner can: the gate in pay() that stops it
+   * and why. The check is still sold and still charged, and only the owner can settle it. gasEstimate,
+   * gasLimit and operatorGasWei then describe ownerPay() from the owner, and the operator's gas is
+   * not asked about. null otherwise.
+   */
+  ownerOnly: { code: OwnerOnlyCode; reason: string } | null
   /** ERC-8004 agents the payee holds on Arc Mainnet. 0 is not a refusal. null when payeeAgentId was named instead. */
   agentsHeld: number | null
   blockNumber: bigint
@@ -404,7 +420,18 @@ export interface OwnerPayHandoff {
 
 export type VerifyThenPayResult =
   | { outcome: 'executed'; flowId: Hex; verdict: RiskVerdict; check: GatewayCheckReference; payment: PaymentProof; record: FlowRecordReport }
-  | { outcome: 'awaiting_human'; flowId: Hex; verdict: RiskVerdict; check: GatewayCheckReference; ownerPay: OwnerPayHandoff; record: FlowRecordReport }
+  | {
+      outcome: 'awaiting_human'
+      flowId: Hex
+      verdict: RiskVerdict
+      check: GatewayCheckReference
+      ownerPay: OwnerPayHandoff
+      /** The link to send the owner: the vault page, where they approve this with their own wallet. null when the server named none this client would pass on. */
+      approvalUrl: string | null
+      /** The gate in pay() that makes this the owner's to pay whatever the verdict was. null: the verdict did, a WARN. */
+      ownerOnly: OwnerOnlyCode | null
+      record: FlowRecordReport
+    }
 
 export interface ArcGatewayPayerOptions {
   /** The most this payer pays for one call. Default 10000n (0.01 USDC, the dearest single-agent tool). */
@@ -691,11 +718,17 @@ async function runPreflight(ctx: Ctx, p: PreflightInput): Promise<VaultPreflight
   if (sessionKeyExpiry !== 0n && blockTimestamp + EXPIRY_MARGIN_SEC > sessionKeyExpiry) {
     throw refuse('SessionKeyExpired', `the operator's session key expires at ${sessionKeyExpiry} (unix), within ${EXPIRY_MARGIN_SEC} s of the latest block or before it`)
   }
-  if (facts.allowlistEnabled && !facts.payeeAllowed) throw refuse('PayeeNotAllowed', 'the vault has its allowlist on and the payee is not on it')
-  if (facts.autoApproveMax !== 0n && amountUnits > facts.autoApproveMax) {
-    throw refuse('AboveAutoApprove', `${amountUnits} units is above the vault's per-payment ceiling of ${facts.autoApproveMax}; only the owner can pay it (ownerPay)`)
-  }
-  if (facts.dailyCap !== 0n && facts.spentToday + amountUnits > facts.dailyCap) {
+  // The operator cannot pay past these two, and the owner can, so before the check they are not a
+  // refusal on a vault with a human. Right before a payment they are: the operator is about to send it.
+  const blocked: { code: OwnerOnlyCode; reason: string } | null =
+    facts.allowlistEnabled && !facts.payeeAllowed
+      ? { code: 'PayeeNotAllowed', reason: 'the vault has its allowlist on and the payee is not on it' }
+      : facts.autoApproveMax !== 0n && amountUnits > facts.autoApproveMax
+        ? { code: 'AboveAutoApprove', reason: `${amountUnits} units is above the vault's per-payment ceiling of ${facts.autoApproveMax}; only the owner can pay it (ownerPay)` }
+        : null
+  if (blocked && (p.stage !== 'preflight' || facts.owner === facts.operator)) throw refuse(blocked.code, blocked.reason)
+  // ownerPay has no cap check, so the cap is the operator's question alone.
+  if (!blocked && facts.dailyCap !== 0n && facts.spentToday + amountUnits > facts.dailyCap) {
     throw refuse('DailyCapExceeded', `the vault has spent ${facts.spentToday} of its ${facts.dailyCap} units today, so ${amountUnits} more would pass the cap`)
   }
   if (facts.balance < amountUnits) throw refuse('InsufficientVaultBalance', `the vault holds ${facts.balance} units, less than the ${amountUnits} to pay`)
@@ -704,26 +737,29 @@ async function runPreflight(ctx: Ctx, p: PreflightInput): Promise<VaultPreflight
   const fees = feesFor(gasPriceWei, ctx.capWei, ctx.tipWei)
   if (!fees) throw refuse('GasPriceAboveCap', `the gas price is ${gasPriceWei} wei, so even the price plus the tip is above the ${ctx.capWei} wei cap`)
 
-  // The simulation, from the operator, with the call the payment will be.
-  const data = payCalldata(v, 'pay', payee, amountUnits)
-  const sim = await got(chain.call({ to: vault, data, from: facts.operator }))
-  const est = sim.ok ? await got(chain.estimateGas({ from: facts.operator, to: vault, data })) : sim
+  // The simulation, from whoever would send it, with the call the payment will be.
+  const kind = blocked ? 'ownerPay' : 'pay'
+  const from = blocked ? facts.owner : facts.operator
+  const data = payCalldata(v, kind, payee, amountUnits)
+  const sim = await got(chain.call({ to: vault, data, from }))
+  const est = sim.ok ? await got(chain.estimateGas({ from, to: vault, data })) : sim
   if (!est.ok) {
-    if (!est.reverted) throw refuse('VaultUnreadable', `pay() could not be simulated: ${est.error}`)
+    if (!est.reverted) throw refuse('VaultUnreadable', `${kind}() could not be simulated: ${est.error}`)
     const name = vaultErrorName(v, est.data)
     const code = VAULT_REVERTS.find((c) => c === name) ?? 'SimulationReverted'
-    throw refuse(code, `pay() from the operator reverts at the latest block: ${name ?? est.error}`)
+    throw refuse(code, `${kind}() from the ${blocked ? 'owner' : 'operator'} reverts at the latest block: ${name ?? est.error}`)
   }
   const gasEstimate = est.value as bigint
   const gasLimit = gasLimitFor(gasEstimate)
 
   // The gas. A contract operator's gas is paid by whoever relays its call, so its own balance
   // proves nothing; an EOA operator holds it itself, in native USDC at 18 decimals.
+  // A payment only the owner can make costs the operator no gas, so nothing is refused over it.
   const [opCode, opGas] = await Promise.all([got(chain.code(facts.operator)), got(chain.nativeBalance(facts.operator))])
-  if (!opCode.ok) throw refuse('VaultUnreadable', `Arc Mainnet did not answer for the operator's code: ${opCode.error}`)
-  const operatorIsContract = hasCode(opCode.value)
+  if (!opCode.ok && !blocked) throw refuse('VaultUnreadable', `Arc Mainnet did not answer for the operator's code: ${opCode.error}`)
+  const operatorIsContract = opCode.ok && hasCode(opCode.value)
   let operatorGasWei: bigint | null = null
-  if (!operatorIsContract) {
+  if (!operatorIsContract && !blocked) {
     if (!opGas.ok) throw refuse('VaultUnreadable', `Arc Mainnet did not answer for the operator's gas balance: ${opGas.error}`)
     operatorGasWei = opGas.value
     const need = gasLimit * fees.maxFeePerGas
@@ -735,6 +771,7 @@ async function runPreflight(ctx: Ctx, p: PreflightInput): Promise<VaultPreflight
     payee,
     amountUnits,
     ...facts,
+    ownerOnly: blocked,
     operatorIsContract,
     sessionKeyExpiry,
     agentsHeld,
@@ -1024,7 +1061,7 @@ function warnForcedDeny(signals: unknown, rep: number, amountUsd: number): strin
 
 const UNUSABLE_CODES: readonly string[] = ['DECISION_UNKNOWN', 'REPUTATION_NOT_FINITE', 'TENURE_NOT_FINITE', 'SIGNALS_MISSING', 'SIGNALS_INCONSISTENT', 'SETTLEMENT_MISMATCH', 'TOOL_MISMATCH', 'CONTEXT_MISMATCH']
 
-type Answer = { kind: 'prepared'; prepared: Record<string, unknown> } | { kind: 'awaiting_human'; handoff: Record<string, unknown> }
+type Answer = { kind: 'prepared'; prepared: Record<string, unknown> } | { kind: 'awaiting_human'; handoff: Record<string, unknown>; ownerOnly: OwnerOnlyCode | null }
 type Verdicted = Answer & { verdict: RiskVerdict; check: GatewayCheckReference; recordUrl: string }
 
 /** What a paid answer decides. Throws for everything that is not a usable ALLOW or WARN. */
@@ -1109,8 +1146,12 @@ function readPaidAnswer(res: { status: number; body: unknown }, o: { vault: Addr
     const forced = warnForcedDeny(v.signals, rep, amountUsd)
     if (forced.length) throw new UnusableVerdictError('SIGNALS_INCONSISTENT', `WARN carries signals that force DENY: ${forced.join(', ')}`, unusable)
   }
-  // The decision, the stage and the caller's own payOnWarn have to agree.
-  const wanted = decision === 'WARN' && !o.payOnWarn ? 'awaiting_human' : 'prepared'
+  // The decision, the stage and the caller's own payOnWarn have to agree, unless the vault decides it:
+  // on a payment the operator cannot make, an ALLOW or a WARN is the owner's whatever payOnWarn says. A
+  // server that says so wrongly only stops a payment; it cannot make one happen.
+  const handoffOnly = isObject(body.ownerHandoff) ? body.ownerHandoff.ownerOnly : undefined
+  const ownerOnly: OwnerOnlyCode | null = handoffOnly === 'PayeeNotAllowed' || handoffOnly === 'AboveAutoApprove' ? handoffOnly : null
+  const wanted = ownerOnly || (decision === 'WARN' && !o.payOnWarn) ? 'awaiting_human' : 'prepared'
   if (stage !== wanted) throw new UnusableVerdictError('STAGE_MISMATCH', `a ${decision} with payOnWarn ${o.payOnWarn} must come back as ${wanted}, and it came back as ${stage}`, unusable)
   if (status !== 200 || !recordUrl) {
     throw new GatewayCheckError('FLOW_NOT_RECORDED', `the check was answered and its flow was not recorded (HTTP ${status}), so no payment on it could ever be receipted`, { paid: true, status, authNonce: nonce })
@@ -1120,7 +1161,7 @@ function readPaidAnswer(res: { status: number; body: unknown }, o: { vault: Addr
     return { kind: 'prepared', prepared: body.prepared, verdict, check, recordUrl }
   }
   if (!isObject(body.ownerHandoff)) throw new UnusableVerdictError('STAGE_MISMATCH', 'the stage is awaiting_human and the answer holds no owner hand-off', unusable)
-  return { kind: 'awaiting_human', handoff: body.ownerHandoff, verdict, check, recordUrl }
+  return { kind: 'awaiting_human', handoff: body.ownerHandoff, ownerOnly, verdict, check, recordUrl }
 }
 
 /** A wei amount as the server wrote it: digits, or a tampered answer. */
@@ -1360,6 +1401,28 @@ async function pay(i: Inputs, ctx: Ctx, a: Verdicted & { kind: 'prepared' }, flo
   }
 }
 
+/**
+ * The approval link as the server named it, if it is what it says: the vault page for this vault and
+ * this flow, over https, at the server this client talks to or at the site. Whatever else is not passed
+ * on, because a process that hands this to its owner is asking a person to sign a transfer from a link.
+ */
+export function approvalLinkFrom(raw: unknown, o: { baseUrl: string; vault: Address; flowId: Hex }): string | null {
+  if (typeof raw !== 'string') return null
+  let u: URL
+  try {
+    u = new URL(raw)
+  } catch {
+    return null
+  }
+  const hosts = [new URL(o.baseUrl).host, new URL(DEFAULT_BASE_URL).host]
+  if (u.protocol !== 'https:' || u.username || u.password || !hosts.includes(u.host)) return null
+  if (u.pathname !== '/app/vault/arc') return null
+  if (u.searchParams.get('network') !== ARC_MAINNET.caip2) return null
+  if (u.searchParams.get('contract')?.toLowerCase() !== o.vault.toLowerCase()) return null
+  if (u.searchParams.get('flow')?.toLowerCase() !== o.flowId.toLowerCase()) return null
+  return u.toString()
+}
+
 function handOff(i: Inputs, ctx: Ctx, a: Verdicted & { kind: 'awaiting_human' }, flowId: Hex, free: VaultPreflight): VerifyThenPayResult {
   const { vault, payee, amountUnits } = i
   const { recordUrl } = a
@@ -1390,8 +1453,10 @@ function handOff(i: Inputs, ctx: Ctx, a: Verdicted & { kind: 'awaiting_human' },
       gas: typeof fees.gas === 'string' ? fees.gas : null,
       simulation: sim.ok === true ? { ok: true } : { ok: false, error: typeof sim.error === 'string' ? sim.error : 'no simulation in the answer' },
     },
+    approvalUrl: approvalLinkFrom(a.handoff.approvalUrl, { baseUrl: i.baseUrl, vault, flowId }),
+    ownerOnly: a.ownerOnly,
     // The owner's transaction is not sent yet; recordFlowReceipt closes this flow once it is.
-    record: { url: recordUrl, recorded: true, outcome: 'awaiting_human', detail: 'warn_handoff' },
+    record: { url: recordUrl, recorded: true, outcome: 'awaiting_human', detail: a.ownerOnly ? 'owner_only_handoff' : 'warn_handoff' },
   }
 }
 
