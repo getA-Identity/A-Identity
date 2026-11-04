@@ -65,7 +65,7 @@ reaches every installed version with no change on your side, and the default abo
 2026-11-04 a counterparty with no on-chain identity or no record on our platform got `DENY`, and
 `guard()` threw. Now it gets `WARN`, and your installed `guard()` returns on `WARN`, so a payee that
 used to throw now returns, and code that pays on its next line pays it. If that is not what you want,
-add `denyOn: ['DENY', 'WARN']`, or upgrade to 0.4.0 when it is published.
+add `denyOn: ['DENY', 'WARN']`, or upgrade to 0.4.0.
 
 ## The full client
 
