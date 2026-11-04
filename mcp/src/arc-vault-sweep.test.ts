@@ -635,6 +635,102 @@ test('an older log brings nothing forward: only a log newer than the one it know
   assert.equal(h.asked.length, 4)
 })
 
+test('a vault refused for what its owner can still change is not closed: it is asked again at the bounded rate, and counts once they change it', async () => {
+  const nonce = 7
+  const NOW = 1_800_000_000n
+  const BLOCK_HASH = `0x${'bb'.repeat(32)}`
+  const good = { owner: OWNER, operator: OPERATOR, usdc: USDC, dailyCap: 1_000_000n, autoApproveMax: 250_000n, sessionKeyExpiry: NOW + 1000n, frozen: false, allowlistEnabled: false, balance: 0n }
+  const cases: [string, Partial<typeof good>][] = [
+    ['daily-cap', { dailyCap: 0n }],
+    ['auto-approve-max', { autoApproveMax: 0n }],
+    ['operator-set', { operator: '0x0000000000000000000000000000000000000000' }],
+    ['operator-set', { operator: OWNER }],
+  ]
+  for (const [id, bad] of cases) {
+    const dir = mkdtempSync(join(tmpdir(), 'arc-sweep-'))
+    const io: ArcVaultStoreIo = { getPool: async () => null, file: join(dir, 'vaults.json') }
+    const v = vaultAt(nonce, 200_000, 200_100)
+    const chain = new Chain().add(v)
+    let state: typeof good = { ...good, ...bad }
+    // The deploy's own arguments do not change, whatever the owner has since set.
+    const input = encodeCreationInput(AgentSpendPolicyBytecode as Hex, abi, { owner: OWNER, operator: state.operator, usdc: USDC, dailyCap: state.dailyCap, autoApproveMax: state.autoApproveMax })
+    const getters = Object.keys(good) as (keyof typeof good)[]
+    const chainHost: RpcHost = {
+      label: 'chain',
+      request: async (method, params) => {
+        switch (method) {
+          case 'eth_getTransactionReceipt':
+            return { transactionHash: params[0], status: '0x1', from: OWNER, to: null, contractAddress: v.address, blockNumber: `0x${v.deployBlock.toString(16)}`, blockHash: BLOCK_HASH }
+          case 'eth_getTransactionByHash':
+            return { hash: params[0], from: OWNER, to: null, nonce: `0x${nonce.toString(16)}`, input, blockHash: BLOCK_HASH }
+          case 'eth_getBlockByNumber':
+            return params[0] === 'latest'
+              ? { number: `0x${chain.head.toString(16)}`, hash: `0x${'cc'.repeat(32)}`, timestamp: `0x${NOW.toString(16)}` }
+              : { number: params[0], hash: BLOCK_HASH, timestamp: `0x${(NOW - 500n).toString(16)}` }
+          case 'eth_getCode':
+            return '0x6001'
+          case 'eth_call': {
+            const data = (params[0] as { data: string }).data
+            if (data.length > 100) return '0x6001'
+            const name = getters.find((n) => encodeFunctionData({ abi, functionName: n }) === data)
+            if (!name) throw new Error('no such getter')
+            return encodeFunctionResult({ abi, functionName: name, result: state[name] } as never)
+          }
+          default:
+            throw new Error(method)
+        }
+      },
+    }
+    const ours: OurAddresses = { byAddress: new Map(), envKeysDerived: ['A_KEY'], envKeysUnreadable: [], keysCommitted: [], keysNotCompared: [] }
+    const answers: VaultAdmissionAnswer[] = []
+    const realAdmit = async (deployTx: string) => {
+      const { answer } = await admitVaultDeploy(
+        { deployTx },
+        {
+          findByTx: (hash) => findAdmittedArcVaultByTx(hash, io),
+          persist: (rec) => persistAdmittedArcVault(rec, io),
+          admit: (tx) => runAdmission({ context, hosts: [chainHost], tx, ours, requireEnvKeys: true }),
+          foundBy: 'sweep',
+        },
+      )
+      answers.push(answer)
+      return answer
+    }
+    const h = harness(chain)
+    const sweep = createVaultSweep({
+      ...h.deps,
+      admit: realAdmit,
+      counted: async () => {
+        const read = await loadAdmittedArcVaults(io)
+        return read.ok ? { ok: true, vaults: new Set(read.rows.map((r) => r.address.toLowerCase())) } : read
+      },
+    })
+    await sweep.tick()
+    assert.equal(answers.length, 1, id)
+    assert.ok(answers[0].status === 'refused' && answers[0].retryable && answers[0].reasons.some((r) => r.id === id), id)
+    assert.ok(h.lines.some((l) => l.startsWith('refused for now')), id)
+    assert.ok(!h.lines.some((l) => l.startsWith('refused for good')), `${id} is not for good`)
+
+    // The same bounded rate as any retryable refusal.
+    h.clock.t += 4 * 60_000
+    await sweep.tick()
+    assert.equal(answers.length, 1, `${id}: not before the step`)
+    h.clock.t += 60_000
+    await sweep.tick()
+    assert.equal(answers.length, 2, `${id}: asked again after it`)
+
+    // setPolicy and setOperator log no end date, so this is the wait running out, at most an hour.
+    state = good
+    h.clock.t += 60 * 60_000
+    await sweep.tick()
+    assert.equal(answers.length, 3, id)
+    assert.equal(answers[2].status, 'admitted', id)
+    const rows = JSON.parse(readFileSync(io.file as string, 'utf8')) as { address: string }[]
+    assert.equal(rows.length, 1, id)
+    assert.equal(rows[0].address.toLowerCase(), v.address)
+  }
+})
+
 test('an answer that is no answer about the vault, or an admission that throws, closes nothing', async () => {
   const v = vaultAt(1, 300_000, 300_040)
   let throws = true

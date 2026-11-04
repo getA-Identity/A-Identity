@@ -78,11 +78,12 @@
  *     first contract that gets no read: nothing else in the queue could be read either.
  *   - Refused for good is remembered for the life of the process, and a new log does not reopen it. A
  *     retryable refusal waits longer each time, up to an hour, and is never given up on: what it is
- *     waiting for, a host catching up or an end date being renewed, may take longer than any count of
- *     tries. A newer log may be that end date, so the wait starts over and is cut to one step from when
- *     the contract was last asked about. With a tick and a step of 5 minutes an owner is asked about
- *     within about ten minutes of the write, which is what the page says, and a contract paying gas for
- *     logs gets one ask a step, inside the same cap per tick.
+ *     waiting for, a host catching up or an owner changing an end date, a limit or the agent key, may
+ *     take longer than any count of tries. A newer log may be that end date, so the wait starts over and
+ *     is cut to one step from when the contract was last asked about. With a tick and a step of 5 minutes
+ *     an owner is asked about within about ten minutes of the write, which is what the page says, and a
+ *     contract paying gas for logs gets one ask a step, inside the same cap per tick. A new limit or agent
+ *     key logs no end date, so that one waits its turn, at most the hour.
  * The queue itself is not capped, since dropping an entry could drop a real vault. It grows only as
  * fast as someone pays to deploy contracts, at a few hundred bytes each.
  *

@@ -415,12 +415,14 @@ export function plainRefusals(v: Verdict, run?: Pick<AdmissionRun, 'checks'>): V
 }
 
 /**
- * Whether the same post could be admitted later, with nothing new on chain other than time: a
- * host that has not caught up, hosts that disagree, a read that failed, or an end date still being
- * set. Anything else is a fact about the vault, and posting again changes nothing.
+ * Whether the same post could be admitted later: a host that has not caught up, hosts that disagree,
+ * a read that failed, or something the owner can still change on chain with one call: the end date
+ * (setSessionKeyExpiry), the limits (setPolicy) or the agent key (setOperator). Anything else is a
+ * fact about the vault, such as who deployed it, who owns it, its code or its token, and posting
+ * again changes nothing.
  */
 export function refusalIsRetryable(run: AdmissionRun): boolean {
-  const passes = new Set(['receipt-found', 'deploy-block', 'vault-state', 'session-key-expiry'])
+  const passes = new Set(['receipt-found', 'deploy-block', 'vault-state', 'session-key-expiry', 'operator-set', 'daily-cap', 'auto-approve-max'])
   const hostsSaidNothingFirm = (c: Check) =>
     (c.id === 'creation-tx' && (run.evidence?.tx.value === null || Boolean(run.evidence?.tx.conflict))) || (c.id === 'runtime-code' && creationInputMatched(run))
   return run.verdict.refusals.every((c) => passes.has(c.id) || hostsSaidNothingFirm(c) || c.ok === null)

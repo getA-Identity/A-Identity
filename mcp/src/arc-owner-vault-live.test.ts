@@ -51,6 +51,7 @@ type ChainFacts = {
   sender?: string
   operator?: string
   dailyCap?: bigint
+  autoApproveMax?: bigint
   sessionKeyExpiry?: bigint
   receipt?: boolean
   status?: string
@@ -63,7 +64,7 @@ function fakeHost(label: string, facts: ChainFacts = {}, calls: string[] = []): 
   const operator = facts.operator ?? OPERATOR
   const usdc = context.registryUsdc
   const dailyCap = facts.dailyCap ?? 1_000_000n
-  const autoApproveMax = 250_000n
+  const autoApproveMax = facts.autoApproveMax ?? 250_000n
   const nonce = 7n
   const vault = getCreateAddress({ from: sender as Hex, nonce })
   const args = { owner, operator, usdc, dailyCap, autoApproveMax }
@@ -415,10 +416,39 @@ test('a deploy no host has yet is refused as retryable; a fact about the vault i
   // The expiry is set by the transaction after the deploy, so a lagging read can still see none.
   const noExpiry = await admitVaultDeploy({ deployTx: TX }, routeDeps({ sessionKeyExpiry: 0n }))
   assert.equal(noExpiry.answer.status === 'refused' && noExpiry.answer.retryable, true)
-  const noCap = await admitVaultDeploy({ deployTx: TX }, routeDeps({ dailyCap: 0n }))
-  assert.equal(noCap.answer.status === 'refused' && noCap.answer.retryable, false)
   const reverted = await admitVaultDeploy({ deployTx: TX }, routeDeps({ status: '0x0' }))
   assert.equal(reverted.answer.status === 'refused' && reverted.answer.retryable, false)
+})
+
+test('what the owner can still change on chain is retryable, and a fact about the vault stays one even beside it', async () => {
+  const cases: [ChainFacts, string][] = [
+    [{ dailyCap: 0n }, 'daily-cap'],
+    [{ autoApproveMax: 0n }, 'auto-approve-max'],
+    [{ operator: '0x0000000000000000000000000000000000000000' }, 'operator-set'],
+    [{ operator: OWNER }, 'operator-set'],
+    [{ sessionKeyExpiry: 0n }, 'session-key-expiry'],
+    [{ sessionKeyExpiry: NOW_SECONDS - 1000n }, 'session-key-expiry'],
+  ]
+  for (const [facts, id] of cases) {
+    const { answer } = await admitVaultDeploy({ deployTx: TX }, routeDeps(facts))
+    assert.equal(answer.status, 'refused', id)
+    if (answer.status !== 'refused') continue
+    assert.deepEqual(answer.reasons.map((r) => r.id), [id])
+    assert.equal(answer.retryable, true, `the owner can change ${id} with one call, so it is not refused for good`)
+  }
+  const otherBuild = '0x6001600155' as Hex
+  const facts: [ChainFacts, RegExp][] = [
+    [{ dailyCap: 0n, status: '0x0' }, /receipt-success/],
+    [{ dailyCap: 0n, bytecode: otherBuild }, /creation-input/],
+    [{ autoApproveMax: 0n, owner: OWNER, sender: OPERATOR }, /owner-sent-deploy/],
+  ]
+  for (const [fact, id] of facts) {
+    const { answer } = await admitVaultDeploy({ deployTx: TX }, routeDeps(fact))
+    assert.ok(answer.status === 'refused' && id.test(answer.reasons.map((r) => r.id).join()), String(id))
+    assert.equal(answer.status === 'refused' && answer.retryable, false, `${id} is a fact, so a limit beside it cannot make the refusal retryable`)
+  }
+  const ours_ = await admitVaultDeploy({ deployTx: TX }, routeDeps({ dailyCap: 0n }, { ours: ours([OWNER]) }))
+  assert.equal(ours_.answer.status === 'refused' && ours_.answer.retryable, false, 'an owner of ours stays refused for good')
 })
 
 test('hosts that disagree about the receipt admit nothing', async () => {
