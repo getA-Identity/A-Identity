@@ -29,18 +29,18 @@ export default function VaultCountNotice({
 }) {
   // Asked only when it will be said: no other state of this line depends on the server's search. Look
   // again takes the line away while the list reads, so its coming back asks again, and a read that
-  // failed recovers the same way. What an earlier read said is not said while this one is out.
+  // failed recovers the same way. What an earlier read said goes with the line, so it is never said again.
   const needsSweep = !testnet && count.state === 'no-hash'
   const [sweep, setSweep] = useState<SweepSays>('reading')
   useEffect(() => {
     if (!needsSweep) return
     let current = true
-    setSweep('reading')
     void readSweepSays().then((says) => {
       if (current) setSweep(says)
     })
     return () => {
       current = false
+      setSweep('reading')
     }
   }, [needsSweep])
   const retry = (

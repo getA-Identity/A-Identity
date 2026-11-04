@@ -616,8 +616,20 @@ check(lateAnswer.body?.status === 'refused' && lateIds.length === 1 && lateIds[0
 check(lateAnswer.body?.retryable === true, 'the refusal is retryable')
 check((await season()).milestone1.vaults.count === 1, 'it is not counted')
 await setExpiry(lateOwner, late.vault)
+
+// What the owner can change with one call is no fact about the vault, so none of it is refused for good.
+const refusedFor = (answer) => (answer.body?.reasons ?? []).map((r) => r.id).sort().join()
+await send(lateOwner, vaultCall(late.vault, 'setPolicy', [0n, 0n, false]))
+const noLimits = await postVault(late.hash)
+check(noLimits.body?.status === 'refused' && refusedFor(noLimits) === 'auto-approve-max,daily-cap' && noLimits.body.retryable === true, 'with its limits set to 0 the refusal is retryable: the owner can set them')
+await send(lateOwner, vaultCall(late.vault, 'setPolicy', [DAILY_CAP, AUTO_APPROVE_MAX, false]))
+await send(lateOwner, vaultCall(late.vault, 'setOperator', [lateOwner.address]))
+const sameKey = await postVault(late.hash)
+check(sameKey.body?.status === 'refused' && refusedFor(sameKey) === 'operator-set' && sameKey.body.retryable === true, 'with the owner as its own agent key the refusal is retryable: the owner can replace it')
+await send(lateOwner, vaultCall(late.vault, 'setOperator', [agent.address]))
+
 const lateAgain = await postVault(late.hash)
-check(lateAgain.body?.status === 'admitted' && lateAgain.body.alreadyAdmitted === false, 'once the expiry is set the same post is admitted: retryable was true')
+check(lateAgain.body?.status === 'admitted' && lateAgain.body.alreadyAdmitted === false, 'once the expiry, the limits and the key are set the same post is admitted: retryable was true')
 check((await season()).milestone1.vaults.count === 2, 'the report counts 2 of 5')
 
 section('real hosts are not all up: one stalls, one is rate-limited, one has no copy of the receipt')

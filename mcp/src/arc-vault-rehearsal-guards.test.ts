@@ -384,10 +384,10 @@ test('the no-hash line can read the list again, because Refresh reads only the c
   assert.equal(shownCount(null, null, null, listing(true)).state, 'no-hash', 'the line comes back, so the search is asked about again')
   assert.equal(shownCount(null, null, null, listing(true, '0xAA')).state, 'counted', 'or a vault the sweep has counted says so, with no reload')
 
-  // The line coming back is what asks about the search again, and nothing from the last answer is said meanwhile.
+  // The line coming back is what asks about the search again, and the last answer went with the line.
   assert.match(notice, /const needsSweep = !testnet && count\.state === 'no-hash'/)
-  assert.match(notice, /if \(!needsSweep\) return\n\s+let current = true\n\s+setSweep\('reading'\)\n\s+void readSweepSays\(\)/)
-  assert.match(notice, /\}, \[needsSweep\]\)/)
+  assert.match(notice, /if \(!needsSweep\) return\n\s+let current = true\n\s+void readSweepSays\(\)/)
+  assert.match(notice, /return \(\) => \{\n\s+current = false\n\s+setSweep\('reading'\)\n\s+\}\n\s+\}, \[needsSweep\]\)/)
 })
 
 test('the words the page reads are the words the sweep can say', async () => {
