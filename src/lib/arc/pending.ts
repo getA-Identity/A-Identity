@@ -1,6 +1,7 @@
 /**
  * What this browser remembers about transactions it handed to a wallet, so a reload or a closed
- * tab never loses a hash: the latest transaction per vault, and the one vault setup in progress.
+ * tab never loses a hash: the latest transaction per vault, the one vault setup in progress, and
+ * the deploy hash of each vault it saw settle.
  *
  * Only public facts are stored (hashes, addresses, amounts, the setup's chosen limits): never a
  * key, never a signature. BigInts travel as tagged decimal strings so nothing is rounded. When
@@ -12,6 +13,7 @@
  */
 import type { Hex } from 'viem'
 import type { Expectation } from './tx-rules'
+import type { HeldDeploy } from './vault-count'
 import type { TxAction } from './vault-write'
 
 /**
@@ -102,6 +104,10 @@ export type SetupState = {
 
 /** The storage key of the one setup slot, exported so a tab can tell another tab's write to it. */
 export const SETUP_KEY = 'aid-arc-vault-setup'
+/** The deploys this browser saw settle, oldest first. Outlives the setup slot, which an owner can forget. */
+const DEPLOYS_KEY = 'aid-arc-vault-deploys'
+/** More than anyone deploys by hand from one browser: a bound on what is kept, not a rule. */
+const DEPLOYS_KEPT = 50
 const txKey = (network: string, vault: string) => `aid-arc-vault-tx:${network}:${vault.toLowerCase()}`
 
 /** Where records live while storage is blocked: this tab only, until it closes. */
@@ -165,6 +171,16 @@ export function saveTx(r: TxRecord): void {
 
 export function clearTx(network: string, vault: string): void {
   write(txKey(network, vault), null)
+}
+
+export function loadDeploys(): HeldDeploy[] {
+  const rows = read<HeldDeploy[]>(DEPLOYS_KEY)
+  return Array.isArray(rows) ? rows.filter((d) => typeof d?.network === 'string' && typeof d?.vault === 'string' && typeof d?.hash === 'string') : []
+}
+
+export function rememberDeploy(d: HeldDeploy): void {
+  const rest = loadDeploys().filter((x) => x.network !== d.network || x.vault.toLowerCase() !== d.vault.toLowerCase())
+  write(DEPLOYS_KEY, [...rest, d].slice(-DEPLOYS_KEPT))
 }
 
 export function loadSetup(): SetupState | null {

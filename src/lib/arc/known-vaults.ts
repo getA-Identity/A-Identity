@@ -52,6 +52,7 @@ type ProofNetwork = {
 
 type SeasonReport = {
   network?: string
+  logs?: { admittedVaults?: { readable?: boolean } }
   milestone1?: { vaults?: { items?: { address?: string; owner?: string; ownerKind?: 'team' | 'external' | 'unstated'; deployTx?: string; deployedAt?: string; note?: string }[] } }
 }
 
@@ -101,7 +102,13 @@ export async function listKnownVaults(onWaking?: () => void): Promise<KnownVault
     if (vaults.some((x) => x.network === seasonChain.caip2 && x.address === a)) continue
     vaults.push({ network: seasonChain.caip2, address: a, kind: 'owner-held', deployTx: v.deployTx, deployedAt: v.deployedAt, owner: v.owner, ownerKind: v.ownerKind, note: v.note })
   }
-  const partial = season ? null : 'the owner-held vaults could not be listed (GET /api/arc/season did not answer)'
+  // The report answers with the curated list alone when the admitted list is unreadable, and a list
+  // that did not load is no answer about any vault that is not on it.
+  const partial = !season
+    ? 'the owner-held vaults could not be listed (GET /api/arc/season did not answer)'
+    : season.logs?.admittedVaults?.readable === false
+      ? 'the admitted vaults could not be listed just now'
+      : null
   return { vaults, ourKeys, partial }
 }
 

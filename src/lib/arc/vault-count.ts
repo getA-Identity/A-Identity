@@ -1,17 +1,26 @@
 /**
- * Whether a vault deployed from this page counts on /proof/arc, as the deploy page tells its owner.
+ * Whether an owner's vault counts on /proof/arc, as the deploy flow and the vault's own page tell it.
  *
  * The server decides (POST /api/arc/vaults, mcp/src/arc-owner-vault-live.ts). This module only turns
  * its answer into what the page says, and decides when there is anything to ask. It imports nothing,
  * so a test can read it directly.
  */
 
-/** What the page shows. 'failed' is about the question and never about the vault. */
+/**
+ * What the page shows. 'failed' is about the question and never about the vault. 'needs-end-date'
+ * and 'no-hash' are why the page is not asking, and each says so without claiming what the server
+ * would answer.
+ */
 export type VaultCount =
   | { state: 'checking' }
   | { state: 'counted' }
   | { state: 'not-counted'; reasons: string[]; retryable: boolean }
   | { state: 'failed'; why: string }
+  | { state: 'needs-end-date' }
+  | { state: 'no-hash' }
+
+/** What the server's own list said of a vault when the page last read it. Only an answer can say a vault is not on it. */
+export type Listing = 'reading' | 'unreadable' | 'listed' | 'not-listed'
 
 type Answer = { status?: string; reason?: string; retryable?: boolean; reasons?: { reason?: string }[] }
 
@@ -47,6 +56,67 @@ export function countableDeploy(testnet: boolean, setup: DeploySetup | null): st
  */
 export function readyToCount(step: string): boolean {
   return step === 'fund' || step === 'fund-pending' || step === 'done'
+}
+
+/**
+ * The question the deploy flow puts: none before the agent key has its end date, one before the last
+ * screen and one on it. A new stage is a new question, so a first one that fails does not use up the last screen's.
+ */
+export function setupStage(hash: string | null, step: string): string | null {
+  return hash && readyToCount(step) ? `${hash}:${step === 'done' ? 'done' : 'before-done'}` : null
+}
+
+/**
+ * The question the vault's own page puts: none while the key reads no end date, and a new one each
+ * time the end date read changes, so an end date set on this page is asked about as soon as it reads
+ * back. A date that has passed still asks: the server's answer says what to do, in its own words.
+ */
+export function vaultPageStage(hash: string | null, sessionKeyExpiry: bigint): string | null {
+  return hash && sessionKeyExpiry !== 0n ? `${hash}:end-date:${sessionKeyExpiry}` : null
+}
+
+/** A settled deploy this browser saw, kept by vault so that forgetting a setup does not lose its hash. */
+export type HeldDeploy = { network: string; vault: string; hash: string }
+
+const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
+
+/**
+ * The hash to ask about a vault on screen: the setup's when it holds this vault, else what this
+ * browser kept when a deploy settled. Null when this browser never saw one, which says nothing about
+ * whether the vault counts.
+ */
+export function deployHashFor(testnet: boolean, network: string, vault: string, setup: (DeploySetup & { network: string }) | null, held: readonly HeldDeploy[]): string | null {
+  if (testnet) return null
+  if (setup?.vault && setup.network === network && same(setup.vault, vault)) {
+    const hash = countableDeploy(false, setup)
+    if (hash) return hash
+  }
+  return held.find((d) => d.network === network && same(d.vault, vault))?.hash ?? null
+}
+
+/**
+ * The vault a link with no vault opens for someone whose browser deployed one: the setup's, else the
+ * newest it saw settle. An uncounted vault is on no list, so without this its owner lands on ours
+ * and the page never asks about theirs.
+ */
+export function vaultThisBrowserHolds(setup: { vault?: string | null; network: string } | null, held: readonly HeldDeploy[], network: string): string | null {
+  if (setup?.vault && setup.network === network) return setup.vault
+  return [...held].reverse().find((d) => d.network === network)?.vault ?? null
+}
+
+/** What a list the page already read says of one vault. A list that did not fully load says nothing. */
+export function listingOf(known: { vaults: readonly { network: string; address: string; kind: string }[]; partial: string | null; loading?: boolean } | null, network: string, vault: string): Listing {
+  if (!known || known.loading) return 'reading'
+  if (known.vaults.some((v) => v.kind === 'owner-held' && v.network === network && same(v.address, vault))) return 'listed'
+  return known.partial ? 'unreadable' : 'not-listed'
+}
+
+/** What the page says, from the question it put (if it could) and the list it read. A yes from either stands. */
+export function shownCount(hash: string | null, stage: string | null, asked: VaultCount | null, listing: Listing): VaultCount {
+  if (listing === 'listed' || asked?.state === 'counted') return { state: 'counted' }
+  if (hash) return stage === null ? { state: 'needs-end-date' } : (asked ?? { state: 'checking' })
+  if (listing === 'not-listed') return { state: 'no-hash' }
+  return listing === 'unreadable' ? { state: 'failed', why: 'Our server did not answer.' } : { state: 'checking' }
 }
 
 /**
