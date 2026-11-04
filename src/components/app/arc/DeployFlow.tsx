@@ -1084,13 +1084,7 @@ export default function DeployFlow({
             </div>
             <div className="mt-2 text-foreground/80">{GIVE_THE_AGENT}</div>
             <div className="mt-1 text-foreground/80">{AFTER_SETUP}</div>
-            <VaultCountNotice
-              testnet={chain.testnet}
-              networkName={networkName(chain)}
-              count={vaultCount.count}
-              onRetry={vaultCount.retry}
-              endDate={snapshot && setup.vault && sameAddress(snapshot.address, setup.vault) ? endDateOf(snapshot.sessionKeyExpiry, snapshot.expired) : 'unknown'}
-            />
+            <VaultCountNotice testnet={chain.testnet} networkName={networkName(chain)} count={vaultCount.count} onRetry={vaultCount.retry} endDate={snapshot && setup.vault && sameAddress(snapshot.address, setup.vault) ? endDateOf(snapshot.sessionKeyExpiry, snapshot.expired) : 'unknown'} />
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <Button size="sm" onClick={() => onOpenVault(setup.network, setup.vault as string)}>
                 Open the vault
