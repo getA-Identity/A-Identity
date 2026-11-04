@@ -850,6 +850,13 @@ test('a hand-off the vault page would refuse carries no approval link, whatever 
   assert.equal(out.outcome === 'awaiting_human' ? out.ownerPay.function : 'x', 'ownerPay(address,uint256)', 'the call for the owner key is still handed back')
 })
 
+test('a hand-off that pays the operator key carries no approval link either', async () => {
+  const link = (nonce: string) => `https://a-identity.xyz/app/vault/arc?${new URLSearchParams({ network: ARC_MAINNET.caip2, contract: VAULT, flow: nonce }).toString()}`
+  const { opts } = setup({ paid: (p) => warn(p, { verdict: verdictView('WARN', { agentId: OPERATOR, txContext: { payee: OPERATOR, amountUsd: 0.25 } }), ownerHandoff: { auditOutcome: 'awaiting_human', owner: OWNER, ownerPay: ownerPayCall({ data: ownerPayData(OPERATOR), args: [OPERATOR, AMOUNT.toString()] }), approvalUrl: link(p.nonce) } }) })
+  const out = await verifyThenPay({ ...opts, payee: OPERATOR })
+  assert.equal(out.outcome === 'awaiting_human' ? out.approvalUrl : 'x', null)
+})
+
 test('a hand-off passes the approval link on only when it is the vault page for this vault and this flow, over https, at this server or the site', async () => {
   const link = (nonce: string, over: Record<string, string> = {}, base = 'https://a-identity.xyz') => {
     const q = new URLSearchParams({ network: ARC_MAINNET.caip2, contract: VAULT, flow: nonce, ...over })

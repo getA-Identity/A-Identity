@@ -781,6 +781,14 @@ test('an answer in this browser has a line of its own, and an old one does not s
   assert.match(page, /server\?\.state === 'ended'/)
 })
 
+test("a tab left open reads the vault again when it comes back, and after every recheck, and the card's figures come from the newest read", () => {
+  const page = repo('src/components/app/arc/OwnerApprovals.tsx')
+  assert.match(page, /window\.addEventListener\('focus', again\)/)
+  assert.match(page, /document\.addEventListener\('visibilitychange', again\)/)
+  assert.match(page, /const vault = readHere && readHere\.block > pageVault\.block \? readHere : pageVault/, 'never an older read over a newer one')
+  assert.equal([...page.matchAll(/onVaultRead\(r\.live\)/g)].length, 2, 'Review and Confirm both feed what they read back to the card')
+})
+
 test('the card uses the semantic tokens, and it has one way to send, behind the rules', () => {
   const page = repo('src/components/app/arc/OwnerApprovals.tsx')
   assert.doesNotMatch(page, /\b(?:bg|text|border)-(?:red|green|yellow|amber|emerald|slate|gray|zinc)-\d/)

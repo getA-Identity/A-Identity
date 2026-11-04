@@ -1414,6 +1414,15 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
     const cardFA = page.locator(`[data-flow="${fAgain.flowId}"]`)
     await reviewOn(cardFA)
     check(/paid this same amount to this payee in the 6 hours before this check/.test(await cardFA.innerText()), 'the agent asks again: the page offers it, and says the vault paid the same amount to the same payee just before')
+    // A tab left open: what the card says about the balance follows the chain when the tab comes back.
+    const heldBefore = await read(vault, 'balance')
+    await send(foreignDeployer, { to: USDC, data: encodeFunctionData({ abi: MOCK, functionName: 'mint', args: [vault, parseUnits('1', 6)] }) })
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    const heldWords = `The vault holds ${Number(heldBefore + parseUnits('1', 6)) / 1e6} USDC`
+    await waitFor('the balance on the card', async () => (await cardFA.innerText()).includes(heldWords), 30000).then(
+      () => check(true, 'a tab that comes back reads the vault again, and the card says the new balance'),
+      async () => check(false, `a tab that comes back reads the vault again: the card says ${(await cardFA.innerText()).slice(0, 300)}`),
+    )
 
     section('the page: the record changes after the review')
     const payeeG = payee()

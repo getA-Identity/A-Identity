@@ -169,7 +169,7 @@ const SEPARATE_PAYER = '0x' + '77'.repeat(20)
 
 const UNKNOWN_PAYEE: RiskSignals = { onchainVerified: false, kyaVerified: false, reputationScore: 0, tenureDays: 0, revoked: false, onPlatform: false }
 
-type Setup = { score?: Scored; settle?: GatewaySettleResponse; transfers?: 'none'; insertFails?: boolean; closeFails?: boolean; serverFrozen?: boolean; payOnWarn?: boolean; ownerIsOperator?: boolean; agentsHeld?: bigint; policy?: Partial<Vault>; payer?: string }
+type Setup = { score?: Scored; settle?: GatewaySettleResponse; transfers?: 'none'; insertFails?: boolean; closeFails?: boolean; serverFrozen?: boolean; payOnWarn?: boolean; ownerIsOperator?: boolean; agentsHeld?: bigint; policy?: Partial<Vault>; payer?: string; payee?: string }
 
 function harness(o: Setup = {}) {
   const rows = new Map<string, VtpFlowRecord>()
@@ -240,7 +240,7 @@ function harness(o: Setup = {}) {
   const run = () =>
     sdk.verifyThenPay({
       vault: VAULT,
-      payee: PAYEE,
+      payee: o.payee ?? PAYEE,
       amountUnits: AMOUNT,
       signer,
       baseUrl: ORIGIN,
@@ -366,6 +366,13 @@ for (const [label, policy, code] of [
     assert.equal(out.outcome, 'awaiting_human')
     assert.equal(out.approvalUrl, null, 'the SDK hands out no link')
     assert.equal(out.ownerPay?.function, 'ownerPay(address,uint256)', 'and the call for the owner key is still there')
+  })
+
+  test(`${label}, through both sides: a payment to the operator key gets no link, for the same reason`, async () => {
+    const h = harness({ score: scored('WARN'), policy, payee: OPERATOR })
+    const out = await h.run()
+    assert.equal(out.outcome, 'awaiting_human')
+    assert.equal(out.approvalUrl, null)
   })
 
   test(`${label}, through both sides: payOnWarn pays nothing`, async () => {
