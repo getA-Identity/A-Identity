@@ -207,7 +207,7 @@ export function shouldAsk(stage: string, count: VaultCount | null, asked: Readon
   return !sending && count?.state !== 'counted' && !asked.has(stage)
 }
 
-/** Whether time alone could change the answer, so the page may ask once more by itself. A refusal that is a fact about the vault stays. */
+/** Whether the answer could still change, with time or with what the owner can change on chain, so the page may ask once more by itself. A refusal that is a fact about the vault stays. */
 export function askAgainByItself(count: VaultCount | null): boolean {
   return count?.state === 'failed' || (count?.state === 'not-counted' && count.retryable)
 }
