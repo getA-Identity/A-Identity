@@ -1552,12 +1552,20 @@ for (const [label, answer, code] of [
   })
 }
 
-test('guard() on the arc rail returns a shown ALLOW, and a shown WARN unless denyOn names it', async () => {
+test('guard() on the arc rail returns a shown ALLOW, stops on WARN by default, and returns a shown WARN only when the caller says', async () => {
   const allowed = arcOracle((p) => ({ body: railVerdict(p) }))
   assert.equal((await allowed.oracle.guard(PAYEE)).decision, 'ALLOW')
   const warned = arcOracle((p) => ({ body: railVerdict(p, { decision: 'WARN', signals: { reputationScore: 470 } }) }))
-  assert.equal((await warned.oracle.guard(PAYEE)).decision, 'WARN')
+  const e = await refused(warned.oracle.guard(PAYEE), TrustDenyError)
+  assert.equal(e.verdict.decision, 'WARN')
+  assert.match(e.message, /pass denyOn: \['DENY'\]/)
   await refused(warned.oracle.guard(PAYEE, { denyOn: ['DENY', 'WARN'] }), TrustDenyError)
+  assert.equal((await warned.oracle.guard(PAYEE, { denyOn: ['DENY'] })).decision, 'WARN')
+})
+
+test('guard() on the arc rail with denyOn [DENY] still refuses a WARN it cannot show was paid for', async () => {
+  const { oracle } = arcOracle((p) => ({ body: railVerdict(p, { decision: 'WARN', signals: { reputationScore: 470 }, settlement: undefined }) }))
+  assert.equal((await refused(oracle.guard(PAYEE, { denyOn: ['DENY'] }), UnusableVerdictError)).code, 'SETTLEMENT_MISMATCH')
 })
 
 test('a settlement and an agent that differ only in hex case are the same', async () => {
@@ -1606,7 +1614,12 @@ for (const [label, over, named] of [
   ['a revoked signal', { signals: { onPlatform: true, onchainVerified: true, revoked: true } }, /revoked/],
   ['a revoked signal on a payee with no record', { signals: { onPlatform: false, revoked: true } }, /revoked/],
   ['a Sybil-high signal', { signals: { onPlatform: false, sybil: 'high' } }, /sybil high/],
-  ['a platform agent under 200', { reputationScore: 199, signals: { onPlatform: true, onchainVerified: true } }, /reputation 199 under 200/],
+  ['a platform agent under 200 and an old server that sends no adverseRecord', { reputationScore: 199, signals: { onPlatform: true, onchainVerified: true } }, /reputation 199 under 200/],
+  ['a platform agent under 200 and evidence against it', { reputationScore: 199, signals: { onPlatform: true, onchainVerified: true, adverseRecord: true } }, /reputation 199 under 200/],
+  ['a platform agent under 200 and an adverseRecord that is not a boolean', { reputationScore: 199, signals: { onPlatform: true, onchainVerified: true, adverseRecord: 'false' } }, /reputation 199 under 200/],
+  ['adverseRecord false and no onPlatform signal', { reputationScore: 199, signals: { adverseRecord: false, onchainVerified: true } }, /reputation 199 under 200/],
+  ['adverseRecord false and revoked', { reputationScore: 199, signals: { onPlatform: true, onchainVerified: true, adverseRecord: false, revoked: true } }, /revoked/],
+  ['adverseRecord false and Sybil high', { reputationScore: 199, signals: { onPlatform: true, onchainVerified: true, adverseRecord: false, sybil: 'high' } }, /sybil high/],
   ['no onPlatform signal and no identity', { reputationScore: 470, signals: { onchainVerified: false } }, /no on-chain identity/],
   ['no signals at all and a score under 200', { reputationScore: 60 }, /reputation 60 under 200/],
 ] as const) {
@@ -1618,6 +1631,22 @@ for (const [label, over, named] of [
     assert.equal(signer.sent.length, 0)
   })
 }
+
+test('a WARN on a platform agent with a low score is believable when the answer says adverseRecord false', async () => {
+  const clean = { onPlatform: true, onchainVerified: true, adverseRecord: false, revoked: false, sybil: 'none' }
+  const { signer, opts } = setup({ paid: (p) => warn(p, { verdict: verdictView('WARN', { reputationScore: 90, signals: clean }) }) })
+  assert.equal((await verifyThenPay(opts)).outcome, 'awaiting_human')
+  assert.equal(signer.sent.length, 0, 'still no automatic payment')
+  // At a high value too, and an ALLOW needs all it needed before.
+  const amountUnits = 100_010_000n
+  const big = { txContext: { payee: PAYEE, amountUsd: 100.01 }, reputationScore: 399, signals: clean }
+  const w = { autoApproveMax: 0n, dailyCap: 0n, balance: 200_000_000n }
+  const handoff = { auditOutcome: 'awaiting_human', owner: OWNER, ownerPay: ownerPayCall({ data: ownerPayData(PAYEE, amountUnits), args: [PAYEE, amountUnits.toString()] }) }
+  const high = setup({ paid: (p) => warn(p, { verdict: verdictView('WARN', big), ownerHandoff: handoff }) }, w)
+  assert.equal((await verifyThenPay({ ...high.opts, amountUnits })).outcome, 'awaiting_human')
+  const allow90 = setup({ paid: (p) => allow(p, { verdict: verdictView('ALLOW', { reputationScore: 90, signals: clean }) }) })
+  assert.equal((await refused(verifyThenPay(allow90.opts), UnusableVerdictError)).code, 'SIGNALS_INCONSISTENT')
+})
 
 test('a high-value WARN on a platform agent under 400, or with no signal, is SIGNALS_INCONSISTENT; with no record it is what a WARN is', async () => {
   const amountUnits = 100_010_000n

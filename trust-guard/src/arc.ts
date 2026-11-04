@@ -994,18 +994,18 @@ function readCheck(body: Record<string, unknown>, nonce: Hex, payer: Address, of
   }
 }
 
-/** The lines under which risk_check returns DENY on an agent we hold a record of. */
+/** The lines under which risk_check returns DENY on an agent whose record counts against it. */
 const DENY_BELOW_REPUTATION = 200
 const HIGH_VALUE_USD = 100
 const HIGH_VALUE_MIN_REPUTATION = 400
 
 /**
  * What a WARN carries that should have made it a DENY, the same check as the server's
- * verify-then-pay/verdict.ts. Revoked and Sybil high force DENY on anyone. A reputation forces
- * it only on an agent we hold a record of, so only an explicit onPlatform: false lifts it. An
- * answer that does not carry the signal stays on the strict side, which is what a server from
- * before the signal enforced by itself. Such a server sends no signals at all, so the identity
- * line is read only when signals are there.
+ * verify-then-pay/verdict.ts. Revoked and Sybil high force DENY on anyone. A low reputation is
+ * believable on a WARN only when the answer says there is no evidence: onPlatform false, or
+ * onPlatform true with adverseRecord false. An answer that does not carry those stays on the
+ * strict side, which is what a server from before the signals enforced by itself. Such a server
+ * sends no signals at all, so the identity line is read only when signals are there.
  */
 function warnForcedDeny(signals: unknown, rep: number, amountUsd: number): string[] {
   const s = isObject(signals) ? signals : null
@@ -1014,7 +1014,8 @@ function warnForcedDeny(signals: unknown, rep: number, amountUsd: number): strin
   if (s?.revoked === true) out.push('revoked')
   if (s?.sybil === 'high') out.push('sybil high')
   if (s && onPlatform !== true && onPlatform !== false && s.onchainVerified !== true) out.push('no on-chain identity')
-  if (onPlatform !== false) {
+  const nothingAgainstIt = onPlatform === false || (onPlatform === true && s?.adverseRecord === false)
+  if (!nothingAgainstIt) {
     if (rep < DENY_BELOW_REPUTATION) out.push(`reputation ${rep} under ${DENY_BELOW_REPUTATION}`)
     if (amountUsd > HIGH_VALUE_USD && rep < HIGH_VALUE_MIN_REPUTATION) out.push(`${amountUsd} USD with reputation ${rep} under ${HIGH_VALUE_MIN_REPUTATION}`)
   }

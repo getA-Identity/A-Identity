@@ -38,12 +38,46 @@ test('guard() returns the verdict on ALLOW (no throw)', async () => {
   assert.equal(v.decision, 'ALLOW')
 })
 
+test('guard() stops on WARN by default, says what happened, and names the option', async () => {
+  for (const rail of ['xlayer', 'algorand'] as const) {
+    const { fn } = fakeFetch(200, { tool: 'risk_check', agentId: 'meh', decision: 'WARN', risk: 'medium', reasons: ['we hold no record of it'] })
+    const g = new TrustGuard({ rail, fetch: fn })
+    await assert.rejects(() => g.guard('meh'), (e: unknown) => {
+      assert.ok(e instanceof TrustDenyError)
+      assert.equal(e.verdict.decision, 'WARN')
+      assert.match(e.message, /the verdict is WARN/)
+      assert.match(e.message, /we hold no record of it/)
+      assert.match(e.message, /not that it is bad/)
+      assert.match(e.message, /pass denyOn: \['DENY'\]/)
+      return true
+    })
+    await assert.rejects(() => guard('meh', { rail, fetch: fn }), TrustDenyError)
+    // The caller says it in code, and gets the WARN back.
+    assert.equal((await g.guard('meh', { denyOn: ['DENY'] })).decision, 'WARN')
+    assert.equal((await guard('meh', { rail, fetch: fn, denyOn: ['DENY'] })).decision, 'WARN')
+  }
+})
+
+test('DENY always throws, whatever denyOn says, and its message is not the WARN one', async () => {
+  for (const rail of ['xlayer', 'algorand'] as const) {
+    const { fn } = fakeFetch(200, { tool: 'risk_check', agentId: 'bad', decision: 'DENY', risk: 'high', reasons: ['KYA revoked'] })
+    const g = new TrustGuard({ rail, fetch: fn })
+    for (const denyOn of [[], ['WARN'], ['DENY']] as const) {
+      await assert.rejects(() => g.guard('bad', { denyOn: [...denyOn] }), (e: unknown) => {
+        assert.ok(e instanceof TrustDenyError)
+        assert.doesNotMatch(e.message, /denyOn/)
+        return true
+      })
+    }
+  }
+})
+
 test('guard({ denyOn: [DENY, WARN] }) also blocks a WARN', async () => {
   const { fn } = fakeFetch(200, { tool: 'risk_check', agentId: 'meh', decision: 'WARN', risk: 'medium', reasons: ['thin tenure'] })
   const g = new TrustGuard({ fetch: fn })
   await assert.rejects(() => g.guard('meh', { denyOn: ['DENY', 'WARN'] }), TrustDenyError)
   // ...but the default (DENY only) lets a WARN through.
-  assert.equal((await g.guard('meh')).decision, 'WARN')
+  assert.equal((await g.guard('meh', { denyOn: ['DENY'] })).decision, 'WARN')
 })
 
 test('a 402 with no payer handler throws PaymentRequiredError', async () => {
@@ -106,7 +140,7 @@ test('a v2 challenge carried only in the PAYMENT-REQUIRED header reaches the pay
 })
 
 for (const rail of ['xlayer', 'algorand'] as const) {
-  test(`guard() on the ${rail} rail keeps its behaviour since 0.1: only what denyOn names throws`, async () => {
+  test(`guard() on the ${rail} rail does not read further into an answer it returns`, async () => {
     // Pinned on purpose, not endorsed: the listings are registered against it, and tightening it
     // is a decision of its own. The arc rail fails closed; see arc.test.ts.
     for (const body of [{ decision: 'MAYBE' }, {}, { decision: 'ALLOW', signals: { reputationScore: null } }]) {
