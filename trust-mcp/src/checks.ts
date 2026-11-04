@@ -569,7 +569,7 @@ export type PayDecision = {
 
 const ADVICE: Record<Decision, string> = {
   ALLOW: 'Safe to pay, as far as these checks can tell.',
-  WARN: 'Be careful: read the reasons before paying.',
+  WARN: 'Do not pay on your own: hold this for the user and show the reasons. A WARN can mean nothing is known about the target, which is not a go-ahead.',
   DENY: 'Do not pay.',
 }
 

@@ -59,6 +59,7 @@ export const INSTRUCTIONS =
   'A-Identity trust checks, paid in USDC from the wallet this server holds; that USDC is the budget the user gave you for checks. ' +
   'Before every payment you make (to an Algorand address, an x402 seller or another agent), call check_before_pay with the target and the amount; use check_batch for several targets. ' +
   'If the decision is DENY, do not make that payment. ' +
+  'If the decision is WARN, do not pay on your own: hold the payment and show the user the reasons, unless the user has already told you to pay on WARN. A WARN can mean nothing is known about the target, which is not a go-ahead. ' +
   `Do not check the same target again: each answer is kept for ${CACHE_HOURS} hours and a repeat returns the saved answer for free, so it tells you nothing new. ` +
   'Decide on your own which targets to check; do not ask the user.'
 
@@ -111,7 +112,7 @@ export function buildTrustMcpServer(config: TrustMcpConfig = {}): McpServer {
       description:
         'Call this BEFORE every payment you make. Give the target and the amount; it picks the checks that amount calls for and returns a decision: ALLOW, WARN or DENY. ' +
         `An Algorand address or x402 seller gets "is it safe to pay" ($5). An agent gets a payment decision sized to the amount ($5), and above $${LARGE_PAYMENT_USD} its passport too ($10). ` +
-        'If the decision is DENY, do not pay. Do not check the same target again: every check is ' +
+        'If the decision is DENY, do not pay. If it is WARN, do not pay on your own: hold it and show the user the reasons, unless the user already told you to pay on WARN. Do not check the same target again: every check is ' +
         `saved for ${CACHE_HOURS} hours and a repeat returns the saved answer for free, so it brings nothing new. Paid from the wallet\'s USDC, the budget the user gave you; decide on your own, do not ask the user.`,
       inputSchema: { target, amount },
     },
@@ -124,7 +125,7 @@ export function buildTrustMcpServer(config: TrustMcpConfig = {}): McpServer {
       title: 'Check several targets before paying',
       description:
         `check_before_pay for up to ${BATCH_MAX} targets at once, each with the amount you would pay it. A target named twice is checked once, at the larger amount, ` +
-        'and targets already checked answer from their saved result for free. Do not pay a target whose decision is DENY, and do not check the same targets again.',
+        'and targets already checked answer from their saved result for free. Do not pay a target whose decision is DENY, hold a target whose decision is WARN for the user unless the user already told you to pay on WARN, and do not check the same targets again.',
       inputSchema: { targets: z.array(z.object({ target, amount })).min(1).max(BATCH_MAX).describe('The targets, each with what you are about to pay it in USD.') },
     },
     async ({ targets }) => paid(() => checkBatch(gate, targets)),
@@ -174,7 +175,7 @@ export function buildTrustMcpServer(config: TrustMcpConfig = {}): McpServer {
     {
       title: 'Should I pay this agent?',
       description:
-        `Paid ($5 USDC on Algorand). Call BEFORE paying or hiring another agent: an ALLOW / WARN / DENY verdict on the counterparty with the reasons and signals behind it. Do not pay on DENY. Prefer check_before_pay. ${SAVED}`,
+        `Paid ($5 USDC on Algorand). Call BEFORE paying or hiring another agent: an ALLOW / WARN / DENY verdict on the counterparty with the reasons and signals behind it. Do not pay on DENY, and hold a WARN for the user. Prefer check_before_pay. ${SAVED}`,
       inputSchema: { agentId, amountUsd },
     },
     async ({ agentId, amountUsd }) => one('risk_check')(agentId, amountUsd),

@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- The agent is told what to do on WARN, not only on DENY. Since 2026-11-04 the oracle answers WARN
+  for a payee it knows nothing about, where it used to answer DENY, and an instruction that named
+  only DENY read that as pay. The server instructions, the tool descriptions, the `advice` field
+  and the README prompt now say: on WARN, hold the payment and show the user the reasons, unless
+  the user already told the agent to pay on WARN. 0.4.6 and earlier do not carry this and get the
+  new answers as soon as the oracle deploys, so paste the README prompt or upgrade.
+
 ## 0.4.6 (2026-10-07)
 
 ### Fixed
