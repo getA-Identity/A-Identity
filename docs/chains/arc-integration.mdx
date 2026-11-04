@@ -508,7 +508,9 @@ deployed from the vault page your wallet is the owner, so the vault page is wher
 Open your vault at [/app/vault/arc](https://a-identity.xyz/app/vault/arc) with the owner wallet
 connected, and it lists the payments waiting for you. Or follow the link your agent sends you:
 `ownerHandoff.approvalUrl` from the hosted route, `out.approvalUrl` from `verifyThenPay`, always on
-`https://a-identity.xyz`. For each payment the page says who gets paid, how much, what the check said
+`https://a-identity.xyz`. That link is `null` on a hand-off the page would refuse: a check the operator
+key did not pay for, or a payment to the operator key itself. Then `next` says why, and `ownerPay` from
+the owner key is the way. For each payment the page says who gets paid, how much, what the check said
 and why, when it was checked, and that approving counts toward today's budget. `ownerPay` adds to the
 day's spending with no cap check, so an approval can use up the budget and stop your agent until 00:00
 UTC. It works while the vault is frozen, by design, and the page says that too. You review it, your
@@ -517,14 +519,19 @@ Nothing shows as paid before that.
 
 What the page refuses, each for a reason:
 
-- **A check your agent did not pay for.** A check costs 0.005 USDC and can name any vault, so a stranger
-  can open a flow on yours with a payee of their own, and send you a link to it. A flow counts as a
-  request from your agent only when its check was paid by this vault's operator as the chain reads it
+- **A check your agent's key did not pay for.** A check costs 0.005 USDC and can name any vault, so a
+  stranger can open a flow on yours with a payee of their own, and send you a link to it. A flow counts as
+  a request from your agent only when its check was paid by this vault's operator as the chain reads it
   now, and by the operator of the moment it was checked. Anything else gets no action. The list shows
-  only a count of them. A direct link shows a plain warning, and neither the payee nor the amount. So
-  pay for the check from the operator key, which is the default, if you want the page to offer the
-  approval: a flow whose check a separate `payer` paid gets no action on the page, and the sample below
-  is the path for that.
+  only a count of them. A direct link shows a plain warning that the page cannot show it came from your
+  agent, and neither the payee nor the amount. So pay for the check from the operator key, which is the
+  default, if you want the page to offer the approval: a flow whose check a separate `payer` paid gets no
+  action on the page and no approval link, and the sample below is the path for that.
+- **A key you have stopped.** A request from a key that has since been revoked or has run out gets no
+  action either: the server refuses a new request from that key, and one made just before does not go on
+  asking. Replacing the key has the same effect. Freezing does not: `ownerPay` works on a frozen vault by
+  design, so a request stays on the page, and the card says that it came from the key you may have frozen
+  the vault to stop. None of these changes the public record, which still reads as waiting.
 - **A record that does not match.** `owner()`, the operator and the balance are read from the chain, and
   `ownerPay` is encoded from the payee and the amount on screen and compared with the call the record
   prepared. On any difference there is no action. The connected wallet has to be the vault's owner, on
@@ -533,7 +540,11 @@ What the page refuses, each for a reason:
   by flow in your browser, from before your wallet is asked, shared by tabs and kept across a reload, and
   offers no second send until that hash has a final answer. It also reads the vault's own `Paid` events
   before it offers anything, so a payment you made from another browser or wallet is not made again. A
-  wallet's speed-up gives the payment a new hash, and the page finds that one the same way.
+  wallet's speed-up gives the payment a new hash, and the page finds that one the same way. A vault payment
+  names no check, so an owner's payment answers the latest check the operator paid for, ahead of any other
+  key's, and a stranger's identical check cannot take it. A check that comes after a payment is a new
+  request, because that is how a second payment is meant to happen, so the page offers it, and says
+  plainly when the vault paid the same amount to the same payee in the 6 hours before that check.
 - **A check older than 24 hours**, by the chain's clock. An owner has to be able to find a request in a
   working day, and past that our answer may be wrong without anyone having seen it change. A new check
   costs your agent 0.005 USDC.
@@ -544,7 +555,9 @@ What the page refuses, each for a reason:
 **Saying no.** A flow has no state for it, so nothing records your answer. The page hides the payment in
 your browser, and that is all: your agent is not told, the public record still says it is waiting, and the
 agent can ask again. It stops being offered 24 hours after the check. Saying no does not stop your agent:
-use Freeze or Revoke on the same page for that.
+use Freeze or Revoke on the same page for that. The money only ever leaves from your own wallet on this
+page, but a payment within your agent's limits is one its key can still send by itself, because the contract
+knows nothing of flows. Only a payment above the ceiling or off the allowlist is one it cannot.
 
 What only a person with a real wallet can see is how that wallet shows the call. The page has been run
 against a real backend and a real browser on a local fork of Arc Mainnet with a stand-in wallet, and that
@@ -614,11 +627,11 @@ never sent to `risk_check`) and `payOnWarn`. The body's `stage` says where the f
 
 | Status | `stage` | Meaning |
 | --- | --- | --- |
-| `400`, `422` | `refused` | Bad input, a named agent that is not the payee's, or the vault would refuse and its owner could not settle it either. `code` names why. Nothing charged, and no verdict comes back. |
+| `400`, `422` | `refused` | Bad input, a named agent that is not the payee's, or the vault would refuse and this flow hands nothing to its owner, whose `ownerPay` is a separate act. `code` names why. Nothing charged, and no verdict comes back. |
 | `409` | `refused` | `NONCE_ALREADY_USED`: this authorization already opened a flow. This request charged nothing, but the first request with this nonce may have. Read `GET /api/x402/gateway/flows/<nonce>` or the Gateway proof log before signing a new one. |
 | `402` | `payment_required` | The free checks passed. Nothing charged yet. A payee that holds no agent passes them, with `checks.payee.agentsHeld` 0, and `next` says what to expect. So does a payment only the owner can settle, with `checks.vault.ownerOnly` set, and `next` says the check is still charged. |
 | `200` | `prepared` | Send `prepared` from the operator key, unless `prepared.simulation.ok` is false, which means the vault would refuse it right now. |
-| `200` | `awaiting_human` | `WARN`, or a usable verdict on a payment only the owner can settle: send the owner `ownerHandoff.approvalUrl`, or send `ownerHandoff.ownerPay` from the owner key, unless `ownerHandoff.ownerPay.simulation.ok` is false, which means the vault would refuse it right now. A payee we know nothing about ends here. |
+| `200` | `awaiting_human` | `WARN`, or a usable verdict on a payment only the owner can settle: send the owner `ownerHandoff.approvalUrl`, which is `null` when the vault page would refuse this, or send `ownerHandoff.ownerPay` from the owner key, unless `ownerHandoff.ownerPay.simulation.ok` is false, which means the vault would refuse it right now. A payee we know nothing about ends here. |
 | `200` | `deny`, `verdict_unusable` | Do not pay. Nothing was prepared. |
 | `200` | `warn_no_human_gate` | `WARN`, and the vault's owner and operator are one key, so there is nobody to hand it to. The check was paid. Do not pay. Nothing was prepared. |
 | `409`, `500` | `deny`, `verdict_unusable` | Do not pay. The check was paid and answered, but the flow log does not hold the refusal, so it is not public. |

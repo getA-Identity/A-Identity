@@ -213,8 +213,9 @@ The order, and what each step can cost:
    false: the vault would refuse it right now, so sending it would revert and cost gas. An owner with a
    browser wallet does it on the vault page: send them `out.approvalUrl`. That is passed on only when it is
    the vault page for this vault and this flow, and it is null otherwise. The page approves only a check the
-   operator paid for, so a flow paid by a separate `payer` gets no action there; the integration guide has a
-   sample for that, starting from the public flow record.
+   operator paid for, so a flow paid by a separate `payer`, or a payment to the operator key, comes back with
+   `approvalUrl` null: send `ownerPay` from the owner key. The integration guide has a sample for that,
+   starting from the public flow record.
 
 Anything that is not a usable verdict is never treated as ALLOW: a Gateway error, a settlement that does
 not echo what was signed, an unknown decision, a reputation that is not a finite number, an ALLOW below

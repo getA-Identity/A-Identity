@@ -455,7 +455,8 @@ risk_check through Circle Gateway (0.005 USDC), never signs, and returns the exa
 pay() call on ALLOW, a prepared ownerPay for the owner on WARN, and nothing on DENY. A payee
 with no ERC-8004 agent is not refused: unknown is not bad, so it gets WARN. A payment above the
 vault's ceiling or off its allowlist still buys the check, and ALLOW or WARN hands ownerPay to the
-owner, who approves it on the vault page from the link in ownerHandoff.approvalUrl. Over HTTP: `POST /api/x402/gateway/verify-then-pay`,
+owner, who approves it on the vault page from the link in ownerHandoff.approvalUrl, which is null when the
+check was not paid from the vault's operator key, since the page offers no other. Over HTTP: `POST /api/x402/gateway/verify-then-pay`,
 `GET /api/x402/gateway/flows/<flowId>` (public), `GET /api/x402/gateway/flows?vault=0x...` (what waits
 for one vault's owner) and
 `POST /api/x402/gateway/flows/<flowId>/receipt`.

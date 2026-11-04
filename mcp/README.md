@@ -296,8 +296,10 @@ The first run prints the owner address to send about 0.25 test USDC to, from fau
 into a local anvil, with no real money and nothing sent to production. With `--browser` it drives the deploy
 flow, and then an owner's approval of a hand-off: a waiting flow appears on the vault page, the owner
 approves it, the wallet sends `ownerPay`, the receipt is posted, the flow reads settled, and a reload shows
-that with no action. A stranger's check gets no action, a second tab and a reload do not send again, a
-wallet's speed-up is found under its new hash, and an above-ceiling payment reaches the hand-off.
+that with no action. A stranger's check gets no action and its later identical check does not take the
+payment, a second tab and a reload do not send again, a wallet's speed-up is found under its new hash, an
+above-ceiling payment reaches the hand-off, a record that changes after the review stops the send, a request
+from a revoked key gets no action, an old waiting flow does not hold up a fresh one, and Hide works from a link.
 `--handoff-only` runs that part alone. Circle Gateway is a fake there and does not check a signature, and
 the wallet is a stand-in that signs with an anvil key. So it cannot show a real wallet's own screens, how a
 real wallet prices or replaces a transaction, or Gateway really refusing a forged payer: those need a person.
