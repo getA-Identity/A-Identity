@@ -403,6 +403,23 @@ test('a deposit with no --key-env moves nothing, whichever keys are in the envir
   assert.ok(!r.stdout.includes(KEY.slice(2)))
 })
 
+test('the deposit command the refused plan prints is one the script takes, for the key that will spend it', async () => {
+  const b = box()
+  const r = await runner(b, [...EXEC, '--log', b.log], { key: KEY, confirm: true, scenario: { gatewayBalance: '0.000000' } })
+  rmSync(b.dir, { recursive: true })
+  const printed = /Deposit first: cd mcp && node --env-file=\.env scripts\/gateway-deposit\.mjs (\S.*)/.exec(r.stdout)
+  assert.ok(printed, r.stdout)
+  const args = printed[1].trim().split(/\s+/)
+  assert.equal(args[args.indexOf('--key-env') + 1], 'X402_3009_BUYER_KEY', 'only the depositor can spend a balance, and the runner spends with this key')
+  const ran = await deposit(args, {})
+  assert.equal(ran.code, 0, ran.stderr)
+  assert.match(ran.stdout, /No X402_3009_BUYER_KEY set - PREPARED/)
+  const amount = Number(args[args.indexOf('--amount') + 1])
+  assert.ok(amount > 0, 'the amount is the shortfall')
+  assert.ok(ran.stdout.includes(String(Math.round(amount * 1e6))), 'the script read that amount')
+  assert.deepEqual(ran.entries, [])
+})
+
 test('a deposit naming a variable that is unset says which one, and moves nothing', async () => {
   const r = await deposit(['--chain', 'arc-mainnet', '--amount', '0.1', '--key-env', 'X402_3009_BUYER_KEY'], { X402_GATEWAY_BUYER_KEY: KEY })
   assert.equal(r.code, 0, r.stderr)
