@@ -51,7 +51,8 @@ export function sweepSaysFrom(body: unknown): SweepSays {
 
 const NOTHING_TO_SEND = 'You do not have to send anything to anyone: our server looks for vaults on the chain by itself'
 const LOOK_AGAIN = 'Look again here in a little while. If it still says this tomorrow, tell the A-Identity team, because the check may have refused it.'
-const THE_BROWSER_THAT_DEPLOYED = 'open this vault in the browser that deployed it, which can ask by itself. If you cannot, tell the A-Identity team.'
+/** Only a browser that saw the deploy settle holds its hash, and the one reading this does not, even if it sent the deploy: a deploy replaced in the wallet or found at its address leaves none. So it can only be another one. */
+const ANOTHER_BROWSER = "if another browser of yours saw this vault's deploy land, open this vault there: it can ask by itself. If none did, tell the A-Identity team."
 
 /**
  * What follows "This vault is not counted on the proof page yet" when this browser holds no hash, so
@@ -60,8 +61,8 @@ const THE_BROWSER_THAT_DEPLOYED = 'open this vault in the browser that deployed 
  */
 export function noHashWords(endDate: EndDate, sweep: SweepSays): string {
   const reason = {
-    none: ', because its agent key has no end date. Set one from this page.',
-    passed: ", because its agent key's end date has passed. Set a new one from this page.",
+    none: ", because its agent key has no end date. Set one in the Session key box on this vault's page, with its Set the expiry button.",
+    passed: ", because its agent key's end date has passed. Set a new one in the Session key box on this vault's page, with its Extend or shorten button.",
     revoked: '. Its agent key is revoked, and that does not stop a vault counting.',
     future: '.',
     unknown: '.',
@@ -78,7 +79,7 @@ export function noHashWords(endDate: EndDate, sweep: SweepSays): string {
     return `${reason} ${then}`
   }
   const opening = sweep === 'not-looking' ? 'Our server is not looking for vaults on the chain right now, so' : 'We could not find out whether our server is looking for vaults on the chain right now, so'
-  return `${reason} ${opening} ${endDate === 'none' || endDate === 'passed' ? 'after that ' : ''}${THE_BROWSER_THAT_DEPLOYED}`
+  return `${reason} ${opening} ${endDate === 'none' || endDate === 'passed' ? 'after that, ' : ''}${ANOTHER_BROWSER}`
 }
 
 /** What the server's own list said of a vault when the page last read it. Only an answer can say a vault is not on it. */

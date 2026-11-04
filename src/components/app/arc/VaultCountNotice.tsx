@@ -84,7 +84,7 @@ export default function VaultCountNotice({
             <li key={r}>{r}</li>
           ))}
         </ul>
-        <div className="mt-1">It still works as a vault. {count.retryable && retry}</div>
+        <div className="mt-1">Being counted or not changes nothing in how it works. {count.retryable && retry}</div>
       </div>
     )
   }

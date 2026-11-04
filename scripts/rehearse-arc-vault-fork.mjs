@@ -1125,7 +1125,7 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
     await setExpiry(acct(ownerIndex), other.vault)
     await open(other.vault)
     // The sweep is off until restartWithSweep, and the list says so, so the page must not say it is looking.
-    await stopIf(await waitText(/This vault is not counted on .* yet\. Our server is not looking for vaults on the chain right now, so open this vault in the browser that deployed it/, LIST_WAIT), 'an uncounted vault says it is not on the list, and with the sweep off it says nobody is looking and what still works')
+    await stopIf(await waitText(/This vault is not counted on .* yet\. Our server is not looking for vaults on the chain right now, so if another browser of yours saw this vault's deploy land, open this vault there/, LIST_WAIT), 'an uncounted vault says it is not on the list, and with the sweep off it says nobody is looking and what still works')
     say(`the vault page says: ${await noticeSays()}`)
     check(!/our server looks for vaults/.test(await text()), 'it does not claim a search that is not running')
     check(posts.length === 0 && (await rowsFor(other.vault)) === 0, 'nothing is posted and no row appears: no hash, no question')
@@ -1186,9 +1186,13 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
 
     await open(vault)
     await connect()
-    await stopIf(await waitText(/yet, because its agent key has no end date\. Set one from this page\. You do not have to send anything to anyone: our server looks for vaults/, 30000), 'no end date: it says so, says to set one, and says the server then finds it')
+    await stopIf(await waitText(/yet, because its agent key has no end date\. Set one in the Session key box on this vault's page, with its Set the expiry button\. You do not have to send anything to anyone: our server looks for vaults/, 30000), 'no end date: it says so, says where to set one, and says the server then finds it')
     say(`the vault page says: ${await noticeSays()}`)
     check(!/has the agent key end date it looks for/.test(await text()), 'and it does not claim a date the vault does not have')
+    await page.getByRole('button', { name: /^Switch to / }).first().click()
+    const sessionKeyButton = (name) => page.getByRole('region', { name: 'Session key', exact: true }).getByRole('button', { name, exact: true })
+    await sessionKeyButton('Set the expiry').waitFor({ timeout: 30000 })
+    check((await sessionKeyButton('Set the expiry').count()) === 1, 'with the wallet on this network the owner sees the box the line names, and in it the button')
 
     await setExpiry(acct(ownerIndex), vault)
     await open(vault)
@@ -1197,9 +1201,11 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
     // A date that has passed, and not the revoke's own value: admission refuses this one and takes that one.
     await send(acct(ownerIndex), vaultCall(vault, 'setSessionKeyExpiry', [2n]))
     await open(vault)
-    await stopIf(await waitText(/yet, because its agent key's end date has passed\. Set a new one from this page\. .*within about an hour of the new end date/, 30000), 'a date that has passed: it says so, to set a new one, and when the server finds it again')
+    await stopIf(await waitText(/yet, because its agent key's end date has passed\. Set a new one in the Session key box on this vault's page, with its Extend or shorten button\. .*within about an hour of the new end date/, 30000), 'a date that has passed: it says so, where to set a new one, and when the server finds it again')
     const passedSays = await noticeSays()
     say(`the vault page says: ${passedSays}`)
+    await sessionKeyButton('Extend or shorten').waitFor({ timeout: 30000 })
+    check((await sessionKeyButton('Extend or shorten').count()) === 1, 'and the box has the button the line names')
     check(!/has the agent key end date it looks for/.test(passedSays) && !/tell the A-Identity team/.test(passedSays), 'and it neither claims a date the server wants nor sends anyone to a person')
 
     // Revoked is what the page's own button writes. Admission takes it, so it is no reason, and nothing is asked of the owner.
