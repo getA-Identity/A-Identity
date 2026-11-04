@@ -7,14 +7,17 @@ Your agent pays for APIs or services on Arc Mainnet. Before each payment it buys
 trust check from A-Identity, paid in USDC through Circle Gateway nanopayments (the buyer
 signs, nobody pays gas, Circle batches the settlement), and acts on the answer. This page
 is the whole integration. Every endpoint, header, price and address on it was read from
-the running service and from Circle's own endpoints on 2026-10-19, except the
-[verifyThenPay section](#verify-then-pay-from-a-vault), which is dated on its own.
+the running service and from Circle's own endpoints on 2026-11-04, except the
+[verifyThenPay section](#verify-then-pay-from-a-vault), which is dated on its own. The ten
+minutes start once your wallet holds USDC on Arc Mainnet; [getting it there](#what-you-need)
+is the slow part for most teams.
 
 **Your team pays for every check from its own wallet and its own Gateway balance. We do not
 fund your checks and we never hold your key. Every check you pay shows on
 [/proof/arc](https://a-identity.xyz/proof/arc) as external.** That is what Milestone 2 of the
-Arc Acceleration Season asks of an outside team: buy a check before you pay on Arc Mainnet,
-then switch to `verifyThenPay` when it ships.
+Arc Acceleration Season asks of an outside team: buy a check before you pay on Arc Mainnet.
+[`verifyThenPay`](#verify-then-pay-from-a-vault) is the next step, and its hosted route and MCP
+tools are live today; only its SDK is not published yet.
 
 ## What you get
 
@@ -41,7 +44,39 @@ returns a band and flags, no verdict and no reasons, and is rate limited.
     Arc Mainnet is `eip155:5042` (chain id 5042), RPC `https://rpc.mainnet.arc.io`, no
     API key. Gas on Arc is USDC itself, so keep a little USDC beyond what you deposit.
     The payer address is the one that will appear on our proof page, so use a wallet
-    you are happy to be attributed by.
+    you are happy to be attributed by. With the SDK or the reference script that is your
+    key's own address. With a Circle CLI agent wallet it is the wallet's backing EOA, not the
+    `--address` you pass, so that is the address to send us.
+
+    **Getting USDC onto Arc Mainnet.** We do not supply it, and this is usually the first
+    thing that stops a team. What we know, read on 2026-11-04:
+
+    - The route is Circle's Cross-Chain Transfer Protocol (CCTP), which
+      [Arc names as its canonical bridge](https://docs.arc.io/integrate/infrastructure/bridges):
+      USDC is burned on the source chain and minted natively on Arc, CCTP domain `26`.
+    - [Arc's Get USDC section](https://docs.arc.io/arc-chain#get-usdc) lists the USDC Bridge
+      app at `bridge.usdc.com`, Bridge Kit for doing it from code, and
+      [USDC providers](https://www.usdc.com/providers) for buying USDC. Our proof log holds no
+      transfer through that app and no purchase from a provider, so we cannot tell you their
+      fees or timing.
+    - What we have done ourselves is a CCTP V2 burn on Base that Circle's Forwarding Service
+      minted on Arc Mainnet; the receipts are on [/proof/arc](https://a-identity.xyz/proof/arc).
+      A plain CCTP transfer ends with a `receiveMessage` call on Arc, and a wallet with no USDC
+      on Arc cannot pay the gas for it. The
+      [Forwarding Service](https://docs.arc.io/app-kit/tutorials/bridge/use-forwarding-service)
+      submits that mint for you and takes its fee from the transfer.
+
+    <Warning>
+      Fake bridge sites are a common way to lose a wallet. Open a bridge only from the link on
+      [Arc's docs](https://docs.arc.io/arc-chain#get-usdc), never from a search ad or a message,
+      and that includes a message that claims to come from us. Read what your wallet asks you to
+      sign, and send a small amount first. No bridge, and nobody from A-Identity, needs your seed
+      phrase or private key. USDC on Arc Mainnet is only the contract in the table below: Arc has
+      no wrapped USDC, so a token offered as wrapped USDC on Arc is not it.
+    </Warning>
+
+    Bring a little more than you plan to deposit. The code below deposits 1 USDC, which is 200
+    `risk_check` calls, and the Circle CLI refuses a Gateway deposit under 0.5 USDC.
   </Step>
   <Step title="USDC in a Circle Gateway balance on Arc Mainnet">
     A nanopayment spends a Gateway balance, not your wallet balance. The deposit is one
@@ -76,11 +111,16 @@ returns a band and flags, no verdict and no reasons, and is rate limited.
   <Step title="A client that can answer a 402">
     Two easy ways, and one readable reference:
 
+    - **`@circle-fin/x402-batching`**, the one to use if your team already holds a key:
+      `GatewayClient` deposits and pays from Node.js or TypeScript. For Arc Mainnet its chain
+      name is `arc`. Version 4.0.0, which a fresh install gets today, defaults to the public RPC
+      above. Version 3.x, which our own server still depends on, throws without an `rpcUrl`, and
+      passing one works on both.
     - **Circle CLI** (`npm install -g @circle-fin/cli`): `circle gateway deposit` and
-      `circle services pay` do the deposit and the payment from the command line.
-    - **`@circle-fin/x402-batching`** (we depend on `^3.4.0`): `GatewayClient` deposits
-      and pays from Node.js or TypeScript. For Arc Mainnet its chain name is `arc` and it
-      requires an `rpcUrl` (the constructor throws without one); the public RPC above works.
+      `circle services pay` do the deposit and the payment from the command line, from a Circle
+      agent wallet. `circle wallet login` registers a Circle user the first time and creates
+      that wallet. The CLI asks you to accept Circle's terms on first run; in a script or an
+      agent's shell it stops there until you set `CIRCLE_ACCEPT_TERMS=1`, which accepts them.
     - **Our reference buyer**, the buyer script we run ourselves:
       [`mcp/scripts/x402-gateway-buyer.mjs`](https://github.com/getA-Identity/A-Identity/blob/main/mcp/scripts/x402-gateway-buyer.mjs)
       reads the 402, re-proves the signing domain against Gateway's own `/v1/x402/supported`,
@@ -102,8 +142,9 @@ returns a band and flags, no verdict and no reasons, and is rate limited.
     curl -s -D - 'https://a-identity.xyz/api/x402/gateway/tools/risk_check?agentId=0x4e26Ae66840134Ac5979c56ba2509F3956b93431&amountUsd=25'
     ```
 
-    Trimmed response (the second `accepts` entry, Base `eip155:8453`, and the description
-    strings are cut; everything else is as served):
+    Trimmed response. The second `accepts` entry (Base `eip155:8453`), the descriptions, the
+    other assets in `extra.assets` and some extra fields in `accepts` and `tool` are cut; the call
+    above returns all of it:
 
     ```json
     {
@@ -155,6 +196,15 @@ returns a band and flags, no verdict and no reasons, and is rate limited.
     the Circle CLI pays only from a wallet you log in to with `circle wallet login`, and a
     key added with `circle wallet import` cannot run `circle services pay`.
 
+    From an empty folder, on Node 24, the SDK path is:
+
+    ```bash
+    npm init -y && npm pkg set type=module
+    npm install @circle-fin/x402-batching
+    # save the first tab below as check.ts, then, with a key that holds USDC on Arc Mainnet:
+    BUYER_KEY=0x... node check.ts
+    ```
+
     <CodeGroup>
     ```ts @circle-fin/x402-batching
     import { GatewayClient } from '@circle-fin/x402-batching/client'
@@ -162,14 +212,15 @@ returns a band and flags, no verdict and no reasons, and is rate limited.
     const gateway = new GatewayClient({
       chain: 'arc',                                 // Arc Mainnet, Gateway domain 26
       privateKey: process.env.BUYER_KEY as `0x${string}`,
-      rpcUrl: 'https://rpc.mainnet.arc.io',         // required by the SDK for 'arc'
+      rpcUrl: 'https://rpc.mainnet.arc.io',         // optional on 4.x, required on 3.x
     })
-    await gateway.deposit('1')                      // once: approve + deposit on the GatewayWallet
+    await gateway.deposit('1')                      // once, then remove: approve + deposit on the GatewayWallet
 
     const { data } = await gateway.pay('https://a-identity.xyz/api/x402/gateway/tools/risk_check', {
       method: 'POST',
       body: { agentId: '0x4e26Ae66840134Ac5979c56ba2509F3956b93431', txContext: { amountUsd: 25 } },
     })
+    console.log('payer', gateway.address, data)     // send us this payer address
     ```
 
     ```bash Circle CLI
@@ -304,7 +355,7 @@ rail; the 402 lists both and you pick by `network`.
 ## Where your payments show up
 
 Your wallet pays, from its own Gateway balance, and it is labeled **external** automatically:
-our own buyer wallets are hardcoded as internal on the rail, and every other payer is external. Nothing is counted until the
+our own buyer wallets are on the rail's published internal list, and every other payer is external. Nothing is counted until the
 transfer has been read back from Gateway's transfers API for the authorization's nonce,
 to our `payTo`, for the price.
 
@@ -338,7 +389,7 @@ external label itself needs nothing from you.
 
 `verifyThenPay` puts the check and the payment in one flow on Arc Mainnet. An
 [AgentSpendPolicy](/chains/arc) vault pays, its limits hold on chain, and the check is bought
-first, for 0.005 USDC, from a Gateway balance. Checked on 2026-11-02:
+first, for 0.005 USDC, from a Gateway balance. Checked on 2026-11-04:
 
 | Path | Status |
 | --- | --- |
@@ -426,11 +477,15 @@ never sent to `risk_check`) and `payOnWarn`. The body's `stage` says where the f
 | Status | `stage` | Meaning |
 | --- | --- | --- |
 | `400`, `422` | `refused` | Bad input, or the vault would refuse. `code` names why. Nothing charged. |
+| `409` | `refused` | `NONCE_ALREADY_USED`: this authorization already opened a flow. This request charged nothing, but the first request with this nonce may have. Read `GET /api/x402/gateway/flows/<nonce>` or the Gateway proof log before signing a new one. |
 | `402` | `payment_required` | The free checks passed. Nothing charged yet. |
 | `200` | `prepared` | Send `prepared` from the operator key, unless `prepared.simulation.ok` is false, which means the vault would refuse it right now. |
 | `200` | `awaiting_human` | `WARN`: send `ownerHandoff.ownerPay` from the owner key. |
 | `200` | `deny`, `verdict_unusable` | Do not pay. Nothing was prepared. |
+| `200` | `warn_no_human_gate` | `WARN`, and the vault's owner and operator are one key, so there is nobody to hand it to. Do not pay. Nothing was prepared. |
+| `409`, `500` | `deny`, `verdict_unusable` | Do not pay. The check was paid and answered, but the flow log does not hold the refusal, so it is not public. |
 | `429` | `refused` | Over the budget of 30 calls a minute per address. Nothing charged. |
+| `503` | `refused` | The chain or the flow log did not answer, so nothing could be decided. Nothing charged. Ask again shortly. |
 | `409`, `500`, `502`, `503` | `check_failed`, `unavailable` | No payment to send. `charged` says whether the check was paid, and `null` means that is not known: do not sign again before looking the nonce up. |
 | `501` | `unavailable` | The rail is not selling on Arc Mainnet right now. Nothing charged. |
 
@@ -488,7 +543,13 @@ returns the deterministic score with its breakdown, `merchant_check` returns a f
 ALLOW / WARN / DENY for a merchant-side agent before a checkout, and `get_chain_status`
 lists every chain in the registry with its live status. The free `trust_preview` on this rail is the same
 idea over plain HTTP. Free reads do not appear on the proof page, because there is no
-payment to record. The full tool list is on the [MCP server](/developers/mcp-server) page.
+payment to record, and they do not count as usage for Milestone 2, which counts paid checks only.
+The full tool list is on the [MCP server](/developers/mcp-server) page.
+
+Two free reads need the chain named. Without `chain`, `evm_pay_check` reads a bare address, a `#0`
+id or a link on Robinhood Chain, so pass `chain: "arc-mainnet"` for those; a full id such as
+`eip155:5042:8004/0` names its own chain. `resolve_agent` with a bare token id
+such as `#0` can match agents on several chains, so pass the full id, `eip155:5042:8004/0`.
 
 ## What we never do
 
@@ -504,8 +565,11 @@ payment to record. The full tool list is on the [MCP server](/developers/mcp-ser
   differs from the registry.
 - **Internal traffic labeled, never hidden.** Our own payments are on the same proof page
   as yours, tagged internal, and the season report counts them separately.
-- **One price on every rail, no settlement fee added.** The price in the 402 is the
-  whole cost, and it is the same price the tools carry on every chain we sell on.
+- **No settlement fee on this rail.** Through Circle Gateway the price in the 402 is the
+  whole cost. Our other rail on Arc Mainnet, the EIP-3009 facilitator on
+  [/arc](https://a-identity.xyz/arc), adds a settlement fee for the gas we pay, so the same tool
+  costs more there; [/api/facilitator/status](https://a-identity.xyz/api/facilitator/status?network=eip155:5042)
+  states the fee.
 
 <CardGroup cols={2}>
   <Card title="Circle Nanopayments" icon="gauge" href="/protocols/nanopayments">

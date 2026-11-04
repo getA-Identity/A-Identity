@@ -122,7 +122,7 @@ export const POSTS: BlogPost[] = [
       {
         heading: 'A Budget the Contract Enforces',
         body: [
-          'The AgentSpendPolicy vault is the contract that gives an agent a budget it cannot exceed. On Arc Mainnet it holds real USDC under a 1 USDC daily cap and a 0.25 USDC auto-approve line. It paid 0.01 inside its policy, and when we asked it to pay 0.50 the contract refused with its own typed error before anything was broadcast.',
+          'The AgentSpendPolicy vault is the contract that gives an agent a budget it cannot exceed. On Arc Mainnet it holds real USDC under a 1 USDC daily cap and a 0.25 USDC auto-approve line. It paid 0.01 inside its policy, and when we asked it to pay 0.50 the contract refused with its own typed error in simulation, before anything was broadcast. (Added 2026-11-04: that refusal was a simulation, so it left no transaction. On 2026-11-01 a 0.50 payment was mined and the vault reverted it on chain, tx 0x134de0b2e18b516d2fb3eda456201d741a089d79dcdc827d77b83e60afd6cb72.)',
         ],
       },
       {
@@ -168,7 +168,7 @@ export const POSTS: BlogPost[] = [
         {
           heading: 'Kontratin Uyguladigi Bir Butce',
           body: [
-            'AgentSpendPolicy kasasi, bir ajana asamayacagi bir butce veren kontrattir. Arc Mainnet\'te 1 USDC gunluk limit ve 0.25 USDC otomatik onay siniri altinda gercek USDC tutuyor. Politikanin icinde 0.01 odedi, 0.50 odemesini istedigimizde ise kontrat hicbir sey yayinlanmadan kendi tipli hatasiyla reddetti.',
+            'AgentSpendPolicy kasasi, bir ajana asamayacagi bir butce veren kontrattir. Arc Mainnet\'te 1 USDC gunluk limit ve 0.25 USDC otomatik onay siniri altinda gercek USDC tutuyor. Politikanin icinde 0.01 odedi, 0.50 odemesini istedigimizde ise kontrat simulasyonda, hicbir sey yayinlanmadan kendi tipli hatasiyla reddetti. (2026-11-04 notu: bu ret bir simulasyondu ve islem birakmadi. 2026-11-01\'de 0.50\'lik bir odeme zincire yazildi ve kasa onu zincirde geri cevirdi, tx 0x134de0b2e18b516d2fb3eda456201d741a089d79dcdc827d77b83e60afd6cb72.)',
           ],
         },
         {

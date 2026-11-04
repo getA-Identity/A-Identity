@@ -296,7 +296,7 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: '0x1338762a8203452d75dfeea76a33fa296c299c6e9fc297bec9112bbe801e0413',
         onChain: 'arc-mainnet',
         blockNumber: 22547671,
-        note: 'Credited by Gateway at 2026-09-24T16:42Z and 16:43Z (transfers c44c0e6f and e06f2175) and applied together in this batch, which Circle sent. Internal, like every payment on this chain so far.',
+        note: 'Credited by Gateway at 2026-09-24T16:42Z and 16:43Z (transfers c44c0e6f and e06f2175) and applied together in this batch, which Circle sent. Internal, like every payment on this chain up to that day.',
       },
       {
         kind: 'session-key',

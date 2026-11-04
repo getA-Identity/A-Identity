@@ -81,14 +81,15 @@ A payment is checked in depth - a limit you set is enforced in **three** ways:
    signs. Our server simulates every vault call first, so a refusal normally comes back from the
    simulation with the contract's typed error and nothing is broadcast. The server is only the
    pre-check and fallback; the contract has had internal reviews and no external audit. Vaults the
-   product deploys (on Arc testnet) name the human's own wallet as **`owner`** (freeze / override /
+   console deploys on Arc testnet name the human's own wallet as **`owner`** (freeze / override /
    withdraw) and the **server signer as the delegated `operator`** that calls `pay()` on the
    agent's behalf, so the *limit* holds whoever signs, while *initiating* the payment is a
-   delegated action. Our one Arc Mainnet vault is different: our server-held operating wallet is
-   its owner, the contract has no owner transfer, and since 2026-09-25 its `operator` is a
-   separate agent key that we also hold. Owner-held Arc Mainnet vaults, deployed from the browser
-   with a key we never hold, are Milestone 1 work. Roadmap: hand the `operator` role to an
-   agent-held key / Circle programmable wallet so the agent signs its own payments end-to-end.
+   delegated action. Our launch-day Arc Mainnet vault is different: our server-held operating wallet
+   is its owner, the contract has no owner transfer, and since 2026-09-25 its `operator` is a
+   separate agent key that we also hold. An owner-held Arc Mainnet vault is different again: the
+   owner's own wallet deploys it from `/app/vault/arc` and is its `owner`, the owner's own agent key
+   is its `operator`, and we hold neither key. The live count is on `/proof/arc`. Roadmap: hand the
+   `operator` role on the server-operated vaults to an agent-held key / Circle programmable wallet.
 3. **Circle Agent Wallet** (`mcp/src/circle-agent.ts`) - a hosted, Developer-Controlled wallet
    whose policy engine screens each transfer at the wallet layer (sanctions / allow-block / freeze).
 
@@ -426,13 +427,15 @@ day it lands rather than the day someone remembers to add it.
   **operator/wallet-proof attestation, not** an independent third-party audit.
 - **Circle** *screens* transfers; it does **not** enforce the USD spend cap - the server + the on-chain
   vault do.
-- **Operator custody**: today the **server signer** is the vault `operator` that submits `pay()` on the
-  agent's behalf (a delegated action). The human `owner` is the user's own wallet on vaults a user
-  deploys (Stellar today; Arc from the browser is planned), while our own three mainnet vaults are
-  owned by our server-held operating wallet. The *limit* holds either way, because the contract
-  reverts an over-limit `pay()`; the contract itself is not externally audited. The agent does not
-  yet sign its own payments - that's the roadmap (agent-held key / Circle programmable wallet). We
-  say this plainly.
+- **Operator custody**: on the vaults the console deploys on Arc testnet the **server signer** is the
+  vault `operator` that submits `pay()` on the agent's behalf (a delegated action), and on our own
+  three mainnet vaults the operator is an agent key we also hold. The human `owner` is the user's own
+  wallet on vaults a user deploys (Stellar, and Arc Mainnet from `/app/vault/arc`, where the operator
+  is the owner's own agent key and we hold neither), while our own three mainnet vaults are owned by
+  our server-held operating wallet. The *limit* holds either way, because the contract reverts an
+  over-limit `pay()`; the contract itself is not externally audited. On the vaults we operate the
+  agent does not sign its own payments - moving those is the roadmap (agent-held key / Circle
+  programmable wallet). We say this plainly.
 - **Which money is real**: Arc testnet is a testnet, so everything in the "Arc testnet" section above is
   real tech and test money. The eight live mainnets above are not: Arc Mainnet, X Layer, Celo, Robinhood
   Chain, Arbitrum One, Base, Stellar pubnet and Algorand settle real value, in small deliberate

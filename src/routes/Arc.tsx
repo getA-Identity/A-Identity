@@ -188,7 +188,7 @@ function WhatRuns({ proof }: { proof: ProofNetwork | null }) {
       {
         icon: ShieldCheck,
         title: 'A budget the contract enforces',
-        body: 'A spend vault holds real USDC under a $1 daily cap. It paid inside its policy, and a payment over its limit came back from the contract as AboveAutoApprove in simulation, so nothing was broadcast.',
+        body: 'A spend vault holds real USDC under a $1 daily cap. It paid inside its policy. On launch day a payment over its limit came back as AboveAutoApprove in simulation, with nothing broadcast. On 2026-11-01 a 0.50 payment was mined and the contract reverted it on chain with the same error (tx 0x134de0b2...).',
         artifact: receipt(proof, 'settlement', /vault/i),
       },
       {

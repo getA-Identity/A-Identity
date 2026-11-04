@@ -41,7 +41,9 @@ per-request payments.
 > [/arc](https://a-identity.xyz/arc) and [/proof/arc](https://a-identity.xyz/proof/arc);
 > the first payments were our own and are labeled internal.
 >
-> Status: early-stage and pre-revenue: every mainnet payment so far is our own. Arc was
+> Status: early-stage and pre-revenue: nearly every mainnet payment so far is our own, and the
+> few checks paid by wallets off our internal lists are labeled external on
+> [/proof/arc](https://a-identity.xyz/proof/arc). Arc was
 > phase 1 and is now live on mainnet, with escrow and KYA anchoring still on Arc testnet. Stellar is phase 2 and
 > shipped: the Soroban spend vault holds real Circle USDC on pubnet under a 1 USDC daily
 > cap, and the hosted deployment sells over the Soroban x402 rail on BOTH Stellar
@@ -288,7 +290,11 @@ Live since the day Arc Mainnet opened, 2026-09-16. Agent **#0**, the registry's 
 is ours (tx [`0x1d9f5711...`](https://explorer.arc.io/tx/0x1d9f57113cee71e6a0aa73d0905d02f88a08877489c05828e604db2a48412844)).
 x402 settled here through our own EIP-3009 facilitator (tx
 [`0xd44287c8...`](https://explorer.arc.io/tx/0xd44287c8d73790b818ab73016dc21483260d1948d58ac95e8a169be1d750df9c))
-and through Circle Gateway nanopayments, all self-funded so far. The explorer's pages open
+and through Circle Gateway nanopayments. The first payments were self-funded; wallets off our
+internal lists have paid for a few checks since, and each side is labeled. Our own verify-then-pay
+flows run here too, and one 0.5 USDC payment was mined and refused by the vault on chain (tx
+[`0x134de0b2...`](https://explorer.arc.io/tx/0x134de0b2e18b516d2fb3eda456201d741a089d79dcdc827d77b83e60afd6cb72)).
+The explorer's pages open
 in a browser without signing in (only its JSON API turns non-browser clients away with a
 bot challenge); every transaction is also at [/proof/arc](https://a-identity.xyz/proof/arc).
 

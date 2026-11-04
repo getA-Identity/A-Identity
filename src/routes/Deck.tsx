@@ -639,7 +639,9 @@ function SlideTraction() {
             ))}
           </div>
           <Reveal delay={1.4} className="mt-6 text-[15px] text-foreground/55">
-            The first Arc Mainnet payments are our own and are labeled internal.
+            The first Arc Mainnet payments are our own and are labeled internal; wallets off our lists have paid since, labeled external.
+            <br />
+            A 0.50 payment was mined and refused on chain on 1 Nov 2026.
             <br />
             Every receipt: <span className="whitespace-nowrap text-foreground/80">a-identity.xyz/proof/arc</span>
           </Reveal>
@@ -648,9 +650,9 @@ function SlideTraction() {
           <div className="grid grid-cols-2 gap-4">
             {[
               { v: 8, s: '', l: 'mainnets live' },
-              { v: 17, s: '', l: 'KYA-verified agents' },
+              { v: 21, s: '', l: 'KYA-verified agents' },
               { v: 20, s: '', l: 'escrow jobs settled on Arc testnet' },
-              { v: 1630, s: '', l: 'unit tests gate every deploy' },
+              { v: 2100, s: '+', l: 'unit tests gate every deploy' },
             ].map((c, i) => (
               <Reveal key={c.l} delay={0.5 + i * 0.12}>
                 <div className="rounded-2xl border border-border bg-card/75 p-6 backdrop-blur">

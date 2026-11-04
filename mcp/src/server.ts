@@ -117,7 +117,7 @@ export function buildServer(data: ServerData = {}): McpServer {
     {
       title: 'Resolve agent identity',
       description:
-        `Resolve an agent's identity with a LIVE on-chain read of the ERC-8004 IdentityRegistry (ownerOf + tokenURI) on any of the ${IDENTITY_CHAINS.length} chains that carry one (${IDENTITY_CHAINS.map((c) => c.shortName).join(', ')}). Query by agent id (CAIP-10), token id, or owner address. Read-only, no mocks.`,
+        `Resolve an agent's identity with a LIVE on-chain read of the ERC-8004 IdentityRegistry (ownerOf + tokenURI) on any of the ${IDENTITY_CHAINS.length} chains that carry one (${IDENTITY_CHAINS.map((c) => c.shortName).join(', ')}). Query by agent id (CAIP-10), token id, or owner address. A bare token id can exist on several chains, and the answer then lists them, so pass the CAIP-10 id to name one agent. Read-only, no mocks.`,
       inputSchema: resolveAgentInput,
     },
     async ({ query, chain }) => {
@@ -210,9 +210,9 @@ export function buildServer(data: ServerData = {}): McpServer {
   server.registerTool(
     'evm_pay_check',
     {
-      title: 'Check before paying on Robinhood Chain or Arbitrum One',
+      title: 'Check a token and a payee before paying on an EVM chain we settle on',
       description:
-        'Before an agent pays: is this the real dollar, and who gets paid? Paste a token or wallet address, an ERC-8004 agent id, or an x402 link. Read live from the chain: whether the token is the settlement dollar the registry names (USDG on Robinhood Chain, native Circle USDC on Arbitrum One and the other EVM chains we settle on) with its EIP-712 domain proven against the live DOMAIN_SEPARATOR, whether the payee holds an ERC-8004 agent id, and for a link which asset its 402 challenge asks for, which domain it hands you and who it pays. Returns a verdict (safe, careful, dont_pay, unknown) and reasons with stable codes such as NOT_CANONICAL_TOKEN or DOMAIN_MISMATCH. Free, read-only, no keys.',
+        'Before an agent pays: is this the real dollar, and who gets paid? Paste a token or wallet address, an ERC-8004 agent id, or an x402 link. Read live from the chain: whether the token is the settlement dollar the registry names (USDG on Robinhood Chain, native Circle USDC on Arbitrum One and the other EVM chains we settle on) with its EIP-712 domain proven against the live DOMAIN_SEPARATOR, whether the payee holds an ERC-8004 agent id, and for a link which asset its 402 challenge asks for, which domain it hands you and who it pays. Pass chain to choose the network: without it, a bare address, a #n id or a link is read on Robinhood Chain, so pass chain "arc-mainnet" for those on Arc Mainnet; a full agent id such as eip155:<chain>:8004/<n> names its own chain. Returns a verdict (safe, careful, dont_pay, unknown) and reasons with stable codes such as NOT_CANONICAL_TOKEN or DOMAIN_MISMATCH. Free, read-only, no keys.',
       inputSchema: evmPayCheckInput,
     },
     async ({ query, chain }) => {
@@ -226,7 +226,7 @@ export function buildServer(data: ServerData = {}): McpServer {
     {
       title: 'Get live Circle Arc status',
       description:
-        'Connect to the Circle Arc testnet over JSON-RPC and read live chain state (chainId, latest block). Arc pays gas in USDC with sub-second finality. Read-only, no keys.',
+        'Connect to the Circle Arc testnet over JSON-RPC and read live chain state (chainId, latest block). Testnet only: Arc Mainnet evidence is at GET /api/proof/arc. Arc pays gas in USDC with sub-second finality. Read-only, no keys.',
       inputSchema: getArcStatusInput,
     },
     async () => json(await getArcStatus()),
@@ -309,7 +309,7 @@ export function buildServer(data: ServerData = {}): McpServer {
       {
         title: 'Hire a verified worker agent',
         description:
-          'Hire a KYA-verified agent for a service; USDC is committed to an ERC-8183 escrow on Arc. Requires a VERIFIED session (send Authorization: Bearer <token> with the /mcp request; obtain one via SIWE). Returns the created task.',
+          'Hire a KYA-verified agent for a service; USDC is committed to an ERC-8183 escrow on Arc testnet. Requires a VERIFIED session (send Authorization: Bearer <token> with the /mcp request; obtain one via SIWE). Returns the created task.',
         inputSchema: hireAgentInput,
       },
       async ({ agentId, service, priceUsd, description }) => json(await mp.hire({ agentId, service, priceUsd, description })),
@@ -342,7 +342,7 @@ export function buildServer(data: ServerData = {}): McpServer {
       {
         title: 'Release task escrow',
         description:
-          'Approve and release a task (the hiring client): settles the ERC-8183 escrow to the worker in USDC on Arc, with an optional review. Requires a verified session. Returns the settled task.',
+          'Approve and release a task (the hiring client): settles the ERC-8183 escrow to the worker in USDC on Arc testnet, with an optional review. Requires a verified session. Returns the settled task.',
         inputSchema: releaseEscrowInput,
       },
       async ({ taskId, rating, review }) => json(await mp.release(taskId, { rating, review })),

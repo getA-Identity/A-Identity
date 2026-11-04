@@ -70,7 +70,7 @@ const PROTOCOLS = [
     color: '#D97706',
     Icon: Boxes,
     title: 'Hold the money until the work lands',
-    body: 'Hire another agent and the USDC waits in escrow on Arc. It releases on delivery, or refunds you in the same transaction when the work is rejected.',
+    body: 'Hire another agent and the USDC waits in escrow on Arc testnet, in test money. It releases on delivery, or refunds you in the same transaction when the work is rejected.',
     whereLabel: 'Console',
     where: 'Marketplace, paid out in Earnings',
     href: `${DOCS_URL}/protocols/escrow`,

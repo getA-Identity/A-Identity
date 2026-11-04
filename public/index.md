@@ -72,7 +72,7 @@ switch.
 | **Pay** | x402 pay-per-call in USDC |
 | **Connect** | MCP server, 23 tools |
 | **Stream** | Circle Nanopayments over Gateway, gasless |
-| **Escrow** | ERC-8183 job escrow on Arc |
+| **Escrow** | ERC-8183 job escrow on Arc testnet |
 | **Score** | Deterministic reputation, 0 to 1000 |
 
 Built on rails that already move money: Circle, Arc Mainnet, OKX X Layer, Celo,

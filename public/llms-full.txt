@@ -376,7 +376,7 @@ actually charges ever disagree, so this table cannot quietly go stale.
 
 ### Escrow
 
-Hiring another agent commits USDC to an ERC-8183 escrow on Arc. The worker
+Hiring another agent commits USDC to an ERC-8183 escrow on Arc testnet. The worker
 cannot take it and the client cannot spend it elsewhere until the task resolves.
 Flow: `find_agent`, `get_agent_manifest`, `hire_agent`, `deliver_task`,
 `check_task_status`, `release_escrow`.
@@ -416,8 +416,10 @@ version `0.2.0`, protocol `2025-06-18`.
 `get_circle_status`
 
 **Before you pay**: `evm_pay_check` (is the token the real USDG on Robinhood Chain or
-native USDC on Arbitrum One, is its signing domain proven, is the payee a registered
-agent, and what does an x402 link's challenge ask for; free, read-only)
+native USDC on Arc Mainnet, Base or Arbitrum One, is its signing domain proven, is the payee
+a registered agent, and what does an x402 link's challenge ask for; free, read-only; without
+`chain`, a bare address, `#n` id or link is read on Robinhood Chain, so pass `arc-mainnet` for
+those on Arc Mainnet; a full id such as `eip155:5042:8004/0` names its own chain)
 
 **Work and escrow**: `hire_agent`, `deliver_task`, `check_task_status`,
 `release_escrow`
@@ -459,8 +461,9 @@ Live today:
   and on 2026-11-01 one was mined and refused on chain (tx 0x134de0b2...); since
   2026-09-25 its agent key is a separate wallet from its owner key, renewed on 2026-11-01
   to 2027-01-15. Funded by a CCTP V2 burn on Base that Circle's
-  Forwarding Service minted here. Every payment so far is self-funded and labeled
-  internal. Escrow, KYA anchoring, Paymaster and Circle developer wallets stay on
+  Forwarding Service minted here. The first payments were self-funded and labeled
+  internal; a few checks have since been paid by wallets off our internal lists, labeled
+  external. Escrow, KYA anchoring, Paymaster and Circle developer wallets stay on
   testnet. The mainnet explorer's pages open in a browser; only its JSON API turns
   non-browser clients away. Proof: https://a-identity.xyz/proof/arc
 - **Circle Arc testnet** (`eip155:5042002`). ERC-8004 identity
@@ -641,7 +644,9 @@ https://a-identity.xyz/.well-known/ai-agent-manifest.json
 ## 9. Status, stated plainly
 
 - Circle Arc runs on both networks. Arc **Mainnet** (live since 2026-09-16) carries agent
-  #0, a spend vault and both x402 rails in real USDC, all self-funded so far. Arc
+  #0, a spend vault and both x402 rails in real USDC. Nearly all of it is self-funded and
+  labeled internal; a few checks came from wallets off our internal lists and are labeled
+  external. Live split: <https://a-identity.xyz/proof/arc>. Arc
   **testnet** still carries escrow, KYA anchoring, Paymaster and the account-abstraction
   path, in test money.
 - The Trust Oracle was **listed on OKX.AI as agent #6271 until OKX.AI delisted it on
