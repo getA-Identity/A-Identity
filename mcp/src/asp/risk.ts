@@ -9,22 +9,22 @@
  * single ALLOW/WARN/DENY decision an agent can act on before it pays a counterparty.
  * Pure and side-effect free so it unit-tests offline (no RPC, no keys).
  *
- * Where the line sits (decided 2026-11-04): DENY needs a record we hold that counts against this
- * payee, WARN means we do not know enough. A reputation counts only on an agent we hold a record
- * of: a low score there is on its own a DENY, which includes a new agent on our platform that has
- * not built a history yet, so a low score there is not always misconduct. A payee we have never
- * seen scores at most 60 because nothing has been recorded, not because anything went wrong. A
- * real vendor that never signed up with us is not known bad, so it gets WARN and reasons that say
- * what we do not know. It never gets ALLOW: ALLOW needs a record.
+ * Where the line sits (decided 2026-11-04): DENY means we hold evidence against the payee, and
+ * WARN means we do not know enough. A low score is not evidence. A payee we have never seen scores
+ * at most 60 because nothing has been recorded, and most agents on our platform score under 200
+ * because they have little history, nearly all of them with nothing against them. Signing up with
+ * us must not turn a real vendor's WARN into a DENY, so on an agent we hold a record of a low score
+ * denies only with a record against it. Neither one gets ALLOW: ALLOW needs a record, and a strong
+ * one. Revoked KYA and Sybil high are evidence on their own, so they are DENY in every case.
  *
- * The limit of that line, stated in the reasons as well: DENY binds an address we hold a record
- * of. A payee with a bad record can appear under a new address and get WARN, so WARN means
+ * The limit of that line, stated in the reasons as well: DENY binds an address we hold a proven
+ * record of. A payee with a bad record can appear under a new address and get WARN, so WARN means
  * unknown, not clean.
  *
- * So the line needs one more input, RiskSignals.onPlatform, computed where the platform state
- * is read (tools.ts). A caller that does not pass it keeps the older, stricter rule, in which
- * no identity and a low score both force DENY: nothing that does not say what it knows
- * silently loosens.
+ * So the line needs two more inputs, RiskSignals.onPlatform and RiskSignals.adverseRecord, computed
+ * where the platform state is read (tools.ts). A caller that does not pass them keeps the older,
+ * stricter rule, in which no identity and a low score both force DENY: nothing that does not say
+ * what it knows silently loosens.
  */
 
 export type RiskDecision = 'ALLOW' | 'WARN' | 'DENY'
@@ -51,6 +51,55 @@ export type RiskSignals = {
    * so the strict rule applies. Why the line sits here is at the top of this file.
    */
   onPlatform?: boolean
+  /**
+   * Does the record we hold count against this agent? See adverseRecordFrom. true: a low score
+   * denies. false, on an agent with onPlatform true: a low score is a WARN, because we hold
+   * nothing against it and not enough to vouch for it. Absent: the strict rule applies.
+   */
+  adverseRecord?: boolean
+}
+
+/** What a platform record can hold against an agent, where agentReputation echoes it. */
+export type AdverseEcho = {
+  behavioral?: { contestedEvidence?: unknown } | null
+  discipline?: { rejectedSettlements?: unknown; overrideAttempts?: unknown } | null
+}
+
+/**
+ * Whether the platform record holds evidence against this agent. Three inputs count, each a thing
+ * the record really holds, and one of any of them is enough:
+ *
+ *   - contested jobs: jobs it was hired for that an independent client refunded or disputed, once
+ *     it had delivered or the deadline had passed (contestedEvidence, platform/reputation.ts).
+ *   - rejected settlements: instructions of its own a human refused to let settle
+ *     (rejectedSettlements). Only the owner can do that, so a stranger cannot write it.
+ *   - guardrail override attempts: tries at recording a blocked action as executed
+ *     (overrideAttempts). Only the owner can do that too, and no strict policy can explain it.
+ *
+ * Left out on purpose:
+ *
+ *   - A low star rating alone. Any client with a finished job can leave one, one star is an
+ *     opinion and not an event, and a contested job already counts when the client meant it.
+ *   - The velocity breaker's refusals and the guardrail block rate. Both are the owner's own limit
+ *     doing its job, and scoring them punishes whoever configured themselves most carefully.
+ *   - Unverifiable decisions and approvals left open: sloppy integration, not conduct against a
+ *     counterparty. They lower the score and stay out of DENY.
+ *   - Settled volume, tenure and a missing identity: those say how much we know, not what we hold
+ *     against it, which is the whole distinction this file draws.
+ *
+ * Revoked KYA and Sybil high are not here because they deny by themselves.
+ *
+ * The limit, stated rather than implied: a client can still refuse a good delivery, or sit out the
+ * deadline on a job the worker never looked at. A contested job is a client's word, so it binds
+ * only a low score, and a score at or above 400 is not moved by it here.
+ *
+ * Null when the echo does not carry all three and none of them is already positive: nothing seen
+ * is not nothing held, so a caller passes that on as absent and the strict rule applies.
+ */
+export function adverseRecordFrom(echo: AdverseEcho | null | undefined): boolean | null {
+  const inputs = [echo?.behavioral?.contestedEvidence, echo?.discipline?.rejectedSettlements, echo?.discipline?.overrideAttempts]
+  if (inputs.some((n) => typeof n === 'number' && n > 0)) return true
+  return inputs.every((n) => typeof n === 'number') ? false : null
 }
 
 /** Optional transaction context - makes the decision amount-aware. */
@@ -68,9 +117,9 @@ export type RiskResult = {
 }
 
 // Thresholds. Kept as named constants so the policy is auditable and testable.
-const REP_DENY_BELOW = 200 // on an agent we hold a record of, reputation under this is untrustworthy on its own
+const REP_DENY_BELOW = 200 // with a record against the agent, reputation under this is denied
 const REP_WARN_BELOW = 500 // reputation under this warrants caution
-const REP_HIGHVALUE_MIN = 400 // on an agent we hold a record of, below this, high-value txs are denied
+const REP_HIGHVALUE_MIN = 400 // with a record against the agent, below this, high-value txs are denied
 const HIGH_VALUE_USD = 100 // "high value" relative to a low-rep counterparty, or to one we know nothing about
 const LARGE_TX_USD = 1000 // large absolute amount -> always at least a warning
 const NEW_AGENT_DAYS = 7 // younger than this is a "new agent" caution
@@ -121,6 +170,13 @@ export function assessRisk(signals: RiskSignals, txContext: TxContext | null = n
   // Explicitly true or false: the caller said what it knows, so a missing identity is a gap
   // and not evidence. Absent keeps the older rule, in which it forces DENY.
   const saidWhatItKnows = typeof signals.onPlatform === 'boolean'
+  // Both explicit: we hold a record, and it holds nothing against this agent. Anything else that
+  // is not unknownPayee stays strict, so a caller has to say both before a low score stops denying.
+  const nothingAgainstIt = signals.onPlatform === true && signals.adverseRecord === false
+  const scoreAloneDenies = !unknownPayee && !nothingAgainstIt
+  const lowScore = signals.reputationScore < REP_DENY_BELOW
+  const highValueLowScore = typeof amount === 'number' && amount > HIGH_VALUE_USD && signals.reputationScore < REP_HIGHVALUE_MIN
+  const evidence = signals.adverseRecord === true ? ', and our record of it holds evidence against it' : ''
 
   // ── DENY rules ────────────────────────────────────────────────────────────
   if (signals.revoked) {
@@ -132,12 +188,12 @@ export function assessRisk(signals: RiskSignals, txContext: TxContext | null = n
   if (!signals.onchainVerified && !saidWhatItKnows) {
     denyReasons.push('No verifiable on-chain identity (ERC-8004) found for this agent')
   }
-  if (signals.reputationScore < REP_DENY_BELOW && !unknownPayee) {
-    denyReasons.push(`Reputation ${signals.reputationScore} is below the safe threshold (${REP_DENY_BELOW})`)
+  if (lowScore && scoreAloneDenies) {
+    denyReasons.push(`Reputation ${signals.reputationScore} is below the safe threshold (${REP_DENY_BELOW})${evidence}`)
   }
-  if (typeof amount === 'number' && amount > HIGH_VALUE_USD && signals.reputationScore < REP_HIGHVALUE_MIN && !unknownPayee) {
+  if (highValueLowScore && scoreAloneDenies) {
     denyReasons.push(
-      `High-value transaction ($${amount}) to a low-reputation agent (${signals.reputationScore} < ${REP_HIGHVALUE_MIN})`,
+      `High-value transaction ($${amount}) to a low-reputation agent (${signals.reputationScore} < ${REP_HIGHVALUE_MIN})${evidence}`,
     )
   }
 
@@ -153,6 +209,12 @@ export function assessRisk(signals: RiskSignals, txContext: TxContext | null = n
     }
   } else if (!signals.onchainVerified && saidWhatItKnows) {
     warnReasons.push('No on-chain identity (ERC-8004) was found for this agent. We hold its platform record, and a missing identity alone does not mean it is bad')
+  }
+  if (nothingAgainstIt && lowScore) {
+    warnReasons.push(`Our record of this agent holds nothing against it, and not enough to vouch for it: its reputation is ${signals.reputationScore}, under ${REP_DENY_BELOW}`)
+  }
+  if (nothingAgainstIt && highValueLowScore) {
+    warnReasons.push(`This payment of $${amount} is over $${HIGH_VALUE_USD}, and our record of this agent holds nothing against it but not enough to vouch for that amount: its reputation is ${signals.reputationScore}, under ${REP_HIGHVALUE_MIN}`)
   }
   if (!signals.kyaVerified && !signals.revoked) {
     warnReasons.push(signals.onchainVerified ? 'Identity resolved but KYA (wallet-control) is not attested' : 'KYA (wallet-control) is not attested')

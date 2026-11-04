@@ -3,7 +3,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { assessRisk, classifySybil, type RiskSignals, type SybilSignals } from './risk.js'
+import { assessRisk, adverseRecordFrom, classifySybil, type RiskSignals, type SybilSignals } from './risk.js'
 
 const strong: RiskSignals = { onchainVerified: true, kyaVerified: true, reputationScore: 720, tenureDays: 90 }
 
@@ -85,7 +85,7 @@ test('a revoked agent is not also flagged as merely "KYA not attested"', () => {
   assert.ok(!r.reasons.some((x) => /not attested/i.test(x)), 'revoked should suppress the redundant not-attested warn')
 })
 
-// ── the line, decided 2026-11-04: DENY needs evidence against a payee we hold a record of ──
+// ── the line, decided 2026-11-04: DENY means we hold evidence against the payee ──
 
 const unknown: RiskSignals = { onchainVerified: false, kyaVerified: false, reputationScore: 0, tenureDays: 0, onPlatform: false }
 
@@ -134,18 +134,81 @@ test('evidence against a payee is DENY with or without a platform record', () =>
   assert.equal(assessRisk({ ...unknown, sybil: 'high' }).decision, 'DENY')
 })
 
-test('an agent on our platform keeps the DENY lines: under 200, and over 100 USD under 400', () => {
-  const platform: RiskSignals = { ...strong, onPlatform: true }
+test('a platform agent with evidence keeps the DENY lines: under 200, and over 100 USD under 400', () => {
+  const platform: RiskSignals = { ...strong, onPlatform: true, adverseRecord: true }
   const low = assessRisk({ ...platform, reputationScore: 199 })
   assert.equal(low.decision, 'DENY')
-  assert.ok(low.reasons.some((x) => /below the safe threshold/.test(x)))
+  assert.ok(low.reasons.some((x) => /below the safe threshold.*holds evidence against it/.test(x)))
   assert.equal(assessRisk({ ...platform, reputationScore: 200 }).decision, 'WARN')
   const high = assessRisk({ ...platform, reputationScore: 399 }, { amountUsd: 100.01 })
   assert.equal(high.decision, 'DENY')
-  assert.ok(high.reasons.some((x) => /High-value transaction/.test(x)))
+  assert.ok(high.reasons.some((x) => /High-value transaction.*holds evidence against it/.test(x)))
   assert.equal(assessRisk({ ...platform, reputationScore: 399 }, { amountUsd: 100 }).decision, 'WARN')
   assert.equal(assessRisk({ ...platform, reputationScore: 400 }, { amountUsd: 100.01 }).decision, 'WARN')
-  assert.equal(assessRisk(platform).decision, 'ALLOW')
+  assert.equal(assessRisk(platform).decision, 'ALLOW', 'a strong record with one contested job still gets what it earned')
+})
+
+test('a platform agent with nothing against it is WARN at the same lines, with plain reasons that name the amount', () => {
+  const platform: RiskSignals = { ...strong, onPlatform: true, adverseRecord: false }
+  const low = assessRisk({ ...platform, reputationScore: 90 })
+  assert.equal(low.decision, 'WARN')
+  assert.equal(low.risk, 'medium')
+  assert.ok(low.reasons.some((x) => /holds nothing against it, and not enough to vouch for it/.test(x) && /reputation is 90, under 200/.test(x)))
+  assert.ok(!low.reasons.some((x) => /below the safe threshold/.test(x)))
+
+  const high = assessRisk({ ...platform, reputationScore: 399 }, { amountUsd: 100.01 })
+  assert.equal(high.decision, 'WARN')
+  assert.ok(high.reasons.some((x) => /\$100\.01/.test(x) && /holds nothing against it/.test(x) && /under 400/.test(x)))
+  assert.ok(!high.reasons.some((x) => /High-value transaction/.test(x)))
+
+  const both = assessRisk({ ...platform, reputationScore: 90 }, { amountUsd: 500 })
+  assert.equal(both.decision, 'WARN')
+  assert.ok(both.reasons.some((x) => /\$500/.test(x)))
+  // At exactly 100 USD the amount is not the reason, and at 400 it is not either.
+  assert.ok(!assessRisk({ ...platform, reputationScore: 90 }, { amountUsd: 100 }).reasons.some((x) => /is over \$100/.test(x)))
+  assert.ok(!assessRisk({ ...platform, reputationScore: 400 }, { amountUsd: 500 }).reasons.some((x) => /is over \$100/.test(x)))
+})
+
+test('nothing against it is never ALLOW: everything ALLOW needs, it still needs', () => {
+  const platform: RiskSignals = { ...strong, onPlatform: true, adverseRecord: false }
+  assert.equal(assessRisk(platform).decision, 'ALLOW', 'the strong record it was')
+  for (const over of [{ reputationScore: 499 }, { kyaVerified: false }, { tenureDays: 6 }, { onchainVerified: false }, { sybil: 'medium' as const }]) {
+    assert.equal(assessRisk({ ...platform, ...over }).decision, 'WARN', JSON.stringify(over))
+  }
+})
+
+test('revoked and Sybil high are DENY in every case, whatever adverseRecord says', () => {
+  for (const adverseRecord of [true, false, undefined]) {
+    for (const onPlatform of [true, false, undefined]) {
+      for (const reputationScore of [90, 720]) {
+        const base = { ...strong, reputationScore, onPlatform, adverseRecord }
+        assert.equal(assessRisk({ ...base, revoked: true }).decision, 'DENY', JSON.stringify(base))
+        assert.equal(assessRisk({ ...base, sybil: 'high' }).decision, 'DENY', JSON.stringify(base))
+      }
+    }
+  }
+})
+
+test('adverseRecord absent keeps the strict DENY, and false lifts it only when onPlatform says true', () => {
+  const low = { ...strong, reputationScore: 90 }
+  assert.equal(assessRisk({ ...low, onPlatform: true }).decision, 'DENY')
+  assert.equal(assessRisk({ ...low, onPlatform: true, adverseRecord: undefined }).decision, 'DENY')
+  assert.equal(assessRisk({ ...low, adverseRecord: false }).decision, 'DENY', 'a caller that does not say it holds the record does not loosen')
+  assert.equal(assessRisk({ ...low }).decision, 'DENY')
+  assert.equal(assessRisk({ ...strong, reputationScore: 399, onPlatform: true }, { amountUsd: 101 }).decision, 'DENY')
+  assert.equal(assessRisk({ ...strong, reputationScore: 399, adverseRecord: false }, { amountUsd: 101 }).decision, 'DENY')
+})
+
+test('adverseRecordFrom: one of any input is enough, and nothing seen is not nothing held', () => {
+  const clean = { behavioral: { contestedEvidence: 0 }, discipline: { rejectedSettlements: 0, overrideAttempts: 0 } }
+  assert.equal(adverseRecordFrom(clean), false)
+  assert.equal(adverseRecordFrom({ ...clean, behavioral: { contestedEvidence: 1 } }), true)
+  assert.equal(adverseRecordFrom({ ...clean, discipline: { rejectedSettlements: 1, overrideAttempts: 0 } }), true)
+  assert.equal(adverseRecordFrom({ ...clean, discipline: { rejectedSettlements: 0, overrideAttempts: 2 } }), true)
+  assert.equal(adverseRecordFrom({ behavioral: {}, discipline: { overrideAttempts: 0 } }), null, 'a server from before the echo')
+  assert.equal(adverseRecordFrom({}), null)
+  assert.equal(adverseRecordFrom(null), null)
+  assert.equal(adverseRecordFrom({ discipline: { overrideAttempts: 3 } }), true, 'a positive input is seen whatever else is missing')
 })
 
 test('an agent on our platform with no identity is WARN, not ALLOW and not DENY, and no identity is claimed', () => {

@@ -229,6 +229,28 @@ test('a WARN on a platform agent that should have been DENY is blocked; a missin
   assert.equal(warn({ onchainVerified: false }).usable, true, 'WARN is what a platform agent with no identity gets')
 })
 
+test('a low score on a platform agent is believable on a WARN only when the answer says adverseRecord false', () => {
+  const big: ExpectedCheck = { ...expected, amountUsd: 100.01 }
+  const warn = (signals: Record<string, unknown>, e: ExpectedCheck = expected) =>
+    evaluateVerdict(body({ decision: 'WARN', risk: 'medium', reasons: ['r'], signals: { onPlatform: true, onchainVerified: true, kyaVerified: true, reputationScore: 90, tenureDays: 30, txContext: { amountUsd: e.amountUsd, payee: PAYEE }, ...signals } }), e)
+  assert.equal(warn({ adverseRecord: false }).usable, true)
+  assert.equal(warn({ adverseRecord: false, reputationScore: 399 }, big).usable, true)
+  const v = warn({ adverseRecord: false })
+  assert.deepEqual(v.signals, { onPlatform: true, adverseRecord: false, onchainVerified: true, revoked: false, sybil: 'none' }, 'the signal goes on to the client')
+  for (const signals of [{ adverseRecord: true }, {}, { adverseRecord: 'false' }, { adverseRecord: 0 }, { adverseRecord: null }, { adverseRecord: false, onPlatform: undefined }, { adverseRecord: false, onPlatform: 'true' }]) {
+    const denied = warn(signals)
+    assert.equal(denied.usable ? null : denied.code, 'SIGNALS_INCONSISTENT', JSON.stringify(signals))
+    assert.match(denied.usable ? '' : denied.reason, /reputation 90 under 200/)
+  }
+  const highValue = warn({ adverseRecord: true, reputationScore: 399 }, big)
+  assert.equal(highValue.usable ? null : highValue.code, 'SIGNALS_INCONSISTENT')
+  // Revoked and Sybil high are not lifted, and an ALLOW still needs its 500.
+  assert.match((warn({ adverseRecord: false, revoked: true }) as { reason: string }).reason, /revoked/)
+  assert.match((warn({ adverseRecord: false, sybil: 'high' }) as { reason: string }).reason, /sybil high/)
+  const allow = evaluateVerdict(body({ decision: 'ALLOW', risk: 'low', reasons: ['r'], signals: { onPlatform: true, adverseRecord: false, onchainVerified: true, kyaVerified: true, reputationScore: 90, tenureDays: 30, sybil: 'none', revoked: false, txContext: { amountUsd: expected.amountUsd, payee: PAYEE } } }), expected)
+  assert.equal(allow.usable, false)
+})
+
 test('an onPlatform that is not a boolean is not the signal, so the strict line holds', () => {
   for (const onPlatform of ['false', 0, null]) {
     const v = evaluateVerdict(body({ decision: 'WARN', risk: 'medium', reasons: ['r'], signals: { onPlatform, onchainVerified: false, kyaVerified: false, reputationScore: 60, tenureDays: 0 } }), expected)

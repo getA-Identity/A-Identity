@@ -4,6 +4,7 @@
  * Layering: L2 domain module; imports ./core.js and flat ../ modules only.
  */
 import { state, type PlatformAgent } from './core.js'
+import type { Task } from '../marketplace.js'
 import { computeAgentReputation } from '../reputation.js'
 import { resolveActionPolicy } from '../policy/index.js'
 import { classifySybil, type SybilSignals } from '../asp/risk.js'
@@ -34,13 +35,30 @@ function behavioralSignals(agent: PlatformAgent) {
   // make the score worse, not more honest. What honesty requires is that the caller can see
   // the split, so it is published in the echo below rather than folded away.
   const completedOnchain = released.filter((t) => t.settlement === 'onchain').length
-  const disputedTasks = hired.filter((t) => t.status === 'refunded' || t.status === 'disputed').length
+  const contested = hired.filter((t) => t.status === 'refunded' || t.status === 'disputed')
+  const disputedTasks = contested.length
+  // The contested jobs that say something about the worker; see adverseRecordFrom in asp/risk.ts.
+  const contestedEvidence = contested.filter((t) => contestCountsAgainstWorker(t, agent)).length
   const ratings = hired
     .map((t) => t.review?.rating)
     .filter((r): r is number => typeof r === 'number' && Number.isFinite(r))
   const ratedCount = ratings.length
   const avgRating = ratedCount ? ratings.reduce((a, r) => a + r, 0) / ratedCount : undefined
-  return { completedTasks, completedOnchain, disputedTasks, ratedCount, avgRating }
+  return { completedTasks, completedOnchain, disputedTasks, contestedEvidence, ratedCount, avgRating }
+}
+
+/**
+ * A client can hire any verified agent and refund the job the same minute, with nothing delivered
+ * and no deadline passed. That is the client leaving, not the worker failing, and it is free, so
+ * counting it would let a stranger put evidence on a vendor's record. It counts once the worker
+ * delivered and the client refused it, or the deadline passed with nothing delivered. A job hired
+ * by the agent's own operator says nothing either: no independent client complained.
+ */
+function contestCountsAgainstWorker(t: Task, agent: PlatformAgent): boolean {
+  if (agent.owner && t.client === agent.owner) return false
+  if (t.deliverable !== undefined) return true
+  const deadline = t.deadlineAt ? Date.parse(t.deadlineAt) : NaN
+  return Number.isFinite(deadline) && Date.parse(t.updatedAt) >= deadline
 }
 
 /**
@@ -106,12 +124,12 @@ export function repOf(agent: PlatformAgent) {
 
 export function agentReputation(agentId: string) {
   const q = agentId.trim()
-  // Resolve by platform id, on-chain token id ("#849980" / "849980"), or owner address, so the
-  // public get_reputation tool answers the same queries the trust explorer resolves identity with.
+  // Resolve by platform id or on-chain token id ("#849980" / "849980"). An address is not read
+  // here, because a wallet named on a record is not proof the record is that wallet's:
+  // reputationForQuery (agents.ts) answers an address, for every surface that takes one.
   const agent =
     state.agents.find((a) => a.id === q) ??
-    state.agents.find((a) => a.onchainAgentId && (a.onchainAgentId === q || `#${a.onchainAgentId}` === q)) ??
-    (/^0x[0-9a-fA-F]{40}$/.test(q) ? state.agents.find((a) => a.walletAddress?.toLowerCase() === q.toLowerCase()) : undefined)
+    state.agents.find((a) => a.onchainAgentId && (a.onchainAgentId === q || `#${a.onchainAgentId}` === q))
   if (!agent) return { error: 'Unknown agent' }
   // A transparent echo of the behavioral inputs so a caller (or an OKX reviewer) sees WHY the
   // behavior band moved the score, not just the number. Every field is real, from state.tasks.
@@ -124,6 +142,8 @@ export function agentReputation(agentId: string) {
     completedJobsOnchain: b.completedOnchain,
     completedJobsSimulated: b.completedTasks - b.completedOnchain,
     contestedJobs: b.disputedTasks,
+    // Of those, the ones that say something about the worker: the input to risk_check's evidence.
+    contestedEvidence: b.contestedEvidence,
     disputeRate: terminalHired > 0 ? Math.round((b.disputedTasks / terminalHired) * 100) / 100 : 0,
     avgRating: b.avgRating != null ? Math.round(b.avgRating * 100) / 100 : null,
     ratedJobs: b.ratedCount,
@@ -149,6 +169,9 @@ export function agentReputation(agentId: string) {
     decisions: dsc.policyDecisions,
     policyConfigured: dsc.policyConfigured,
     overrideAttempts: dsc.overrideAttempts,
+    // A human refused this agent's own instruction. The velocity breaker's refusals are not in
+    // here: see adverseRecordFrom in asp/risk.ts.
+    rejectedSettlements: state.instructions.filter((i) => i.agentId === agent.id && i.status === 'rejected' && i.denyCode !== 'velocity_exceeded').length,
     unverifiableDecisions: dsc.unverifiableDecisions,
     approvalsAwaited: dsc.warnDecisions,
     approvalsUnclosed: dsc.danglingApprovals,

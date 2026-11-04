@@ -12,7 +12,7 @@ import { createIdentityProvider } from '../erc8004.js'
 import { getArcStatus } from '../arc.js'
 import { getCircleStatus } from '../circle.js'
 import { oauthEnabled, protectedResourceMetadata } from '../oauth.js'
-import { agentReputation, listPlatformAgents } from '../platform.js'
+import { agentReputation, listPlatformAgents, reputationForQuery } from '../platform.js'
 import { merchantCheck } from '../commerce.js'
 import {
   x402PayTo, paymentRequirements, verifyPayment, premiumResource,
@@ -79,10 +79,11 @@ export async function handlePublicRoutes(ctx: RouteCtx): Promise<boolean> {
   if (req.method === 'GET' && url.pathname === '/api/reputation') {
     const id = url.searchParams.get('id') ?? ''
     if (!id) { sendJson(res, 400, { error: 'Missing ?id= parameter' }); return true }
-    let rep = agentReputation(id)
+    let rep: ReturnType<typeof reputationForQuery> = reputationForQuery(id)
     // Accept an on-chain id too (e.g. "eip155:5042002:8004/849980" or a bare token id):
     // map it to the platform agent anchored at that ERC-8004 token, then score it for real.
-    if ('error' in rep) {
+    // An address is not one: the digits it happens to end in are not a token id.
+    if ('error' in rep && !/^0x[0-9a-fA-F]{40}$/.test(id.trim())) {
       const tokenId = id.match(/(\d+)\s*$/)?.[1]
       const anchored = tokenId ? listPlatformAgents().find((a) => a.onchainAgentId === tokenId) : undefined
       if (anchored) rep = agentReputation(anchored.id)

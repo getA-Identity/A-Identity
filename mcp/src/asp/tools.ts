@@ -28,7 +28,7 @@ import {
   type PlatformAgent,
 } from '../platform.js'
 import { notRegisteredProfile, unobservableProfile } from '../policy/index.js'
-import { assessRisk, type RiskSignals, type TxContext, type SybilLevel } from './risk.js'
+import { assessRisk, adverseRecordFrom, type RiskSignals, type TxContext, type SybilLevel } from './risk.js'
 import { getReputationAttestation } from './attestations.js'
 import { PRICES } from './payment.js'
 
@@ -58,6 +58,8 @@ type Bundle = {
   tenureDays: number
   /** Do we hold a platform record of this agent? See onPlatformSignal. */
   onPlatform: boolean | undefined
+  /** Does that record count against it? Undefined when it could not be read. See adverseRecordFrom. */
+  adverseRecord: boolean | undefined
 }
 
 /** A transparent echo of the behavioral inputs behind the reputation `behavior` band. */
@@ -238,12 +240,18 @@ async function gather(agentId: string): Promise<Bundle> {
   // Reputation: platform scorer when we have platform state (real settlement history);
   // else compute from the on-chain signals we can actually see (identity + tenure).
   let reputation: Bundle['reputation']
+  // Read here with the rest of the platform state. Its inputs are contested jobs, rejected
+  // settlements and guardrail override attempts, and a low star rating is left out; why each one
+  // counts or does not is at adverseRecordFrom. A record that cannot be read leaves this undefined,
+  // which is the strict rule.
+  let adverseRecord: boolean | undefined
   if (platform) {
     const r = agentReputation(platform.id)
     if ('error' in r) {
       reputation = { ...computeAgentReputation({ settledCount: 0, rejected: 0, onchainRegistered: onchainVerified, createdAt: createdAt ?? new Date() }), basis: 'onchain-identity+tenure', behavioral: null, sybil: null }
     } else {
       reputation = { score: r.score, breakdown: r.breakdown, settledOnchain: r.settledOnchain, settledEffective: r.settledEffective, settledUsd: r.settledUsd, basis: 'platform-settlements+identity+tenure+behavior', behavioral: r.behavioral, sybil: r.sybil }
+      adverseRecord = adverseRecordFrom(r) ?? undefined
     }
   } else {
     reputation = {
@@ -254,7 +262,7 @@ async function gather(agentId: string): Promise<Bundle> {
     }
   }
 
-  return { agentId: q, platform, walletClaim: atAddress?.claim ?? null, addressNote, identity, tokenId, validation, humanProof, reputation, onchainVerified, kyaVerified, kyaStatus, revoked: kyaStatus === 'revoked', tenureDays, onPlatform: onPlatformSignal(platform, agents, q, identity, rosterReadable) }
+  return { agentId: q, platform, walletClaim: atAddress?.claim ?? null, addressNote, identity, tokenId, validation, humanProof, reputation, onchainVerified, kyaVerified, kyaStatus, revoked: kyaStatus === 'revoked', tenureDays, onPlatform: onPlatformSignal(platform, agents, q, identity, rosterReadable), adverseRecord }
 }
 
 /** The signals every verdict in this file is scored from. */
@@ -266,6 +274,7 @@ const riskSignals = (b: Bundle): RiskSignals => ({
   revoked: b.revoked,
   sybil: b.reputation.sybil?.level,
   onPlatform: b.onPlatform,
+  adverseRecord: b.adverseRecord,
 })
 
 /** The verdict of a bundle, with what the address itself adds to its reasons. */
@@ -470,10 +479,10 @@ export async function agentPassport(agentId: string) {
 
 /**
  * Coarse public band for a 0-1000 score. The free tier deliberately returns a band, not
- * the exact score: bands align with the risk thresholds for an agent we hold a record of
- * (DENY < 200, WARN 200-500), so a free caller still gets an actionable signal while the
- * exact score + breakdown stay a paid read. A payee with no platform record gets WARN on any
- * band: its score only says we have no history for it.
+ * the exact score: bands align with the risk thresholds (under 200, and 200-500), so a free
+ * caller still gets an actionable signal while the exact score + breakdown stay a paid read.
+ * A band is not a verdict: under 200 is a DENY only with a record against the agent, and a payee
+ * with no platform record gets WARN on any band, because its score only says we have no history.
  */
 export function scoreBand(score: number): 'very-low' | 'low' | 'medium' | 'high' {
   if (score < 200) return 'very-low'

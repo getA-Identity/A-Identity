@@ -9,6 +9,8 @@ import {
   recordWallet,
   assignWallet,
   agentGuardrailProfile,
+  agentReputation,
+  reputationForQuery,
   startCirclePolicyChallenge,
   attestCirclePolicy,
   getCirclePolicyAttestation,
@@ -20,6 +22,8 @@ import {
 } from '../platform.js'
 import { state } from './core.js'
 import type { ContractSignatureCheck } from '../erc1271.js'
+import { adverseRecordFrom } from '../asp/risk.js'
+import type { Task } from '../marketplace.js'
 
 /**
  * The owner-attested Circle policy.
@@ -211,4 +215,112 @@ test('a proven wallet the agent moves off stays on its record, so a later revoca
   agent.kya = 'revoked'
   assert.equal(recordAtAddress(listPlatformAgents(), SCA).record?.id, agent.id)
   assert.equal(recordAtAddress(listPlatformAgents(), SCA).currentWallet, false)
+})
+
+// ── a wallet the record never proved does not read as that record ─────────────────
+
+test('someone who proves their own wallet, revokes, then assigns a vendor\'s wallet cannot force DENY on the vendor', () => {
+  const own = privateKeyToAccount(generatePrivateKey()).address
+  const vendor = privateKeyToAccount(generatePrivateKey()).address
+  const griefer = seed(own)
+  griefer.kya = 'revoked'
+  griefer.kyaProof = { address: own, at: new Date().toISOString(), method: 'wallet-signature' }
+  recordWallet(vendor)
+  assert.ok(!('error' in assignWallet(vendor, griefer.id, OWNER)))
+  assert.equal(griefer.walletAddress, vendor)
+  assert.equal(griefer.kya, 'revoked', 'assignWallet keeps it, which is the way in')
+
+  const at = recordAtAddress(listPlatformAgents(), vendor)
+  assert.equal(at.record, null)
+  assert.equal(at.claim?.id, griefer.id, 'returned so the reasons can say so')
+  assert.ok('error' in reputationForQuery(vendor), 'the free read does not answer with that record either')
+  // The wallet it did prove stays bound, and the record itself stays revoked by its own id.
+  assert.equal(recordAtAddress(listPlatformAgents(), own).record?.id, griefer.id)
+  const atOwn = reputationForQuery(own)
+  assert.equal('error' in atOwn ? null : atOwn.kya, 'revoked')
+  const byId = reputationForQuery(griefer.id)
+  assert.equal('error' in byId ? null : byId.kya, 'revoked')
+})
+
+test('the free read answers an address with the record that proved it, and never with one that only names it', () => {
+  const wallet = privateKeyToAccount(generatePrivateKey()).address
+  const named = seed(wallet)
+  assert.ok('error' in reputationForQuery(wallet), 'named without proof')
+  assert.ok('error' in agentReputation(wallet), 'agentReputation does not read an address at all')
+  assert.ok(!('error' in reputationForQuery(named.id)), 'by its own id it is still itself')
+
+  named.kya = 'verified'
+  const proven = reputationForQuery(wallet.toLowerCase())
+  assert.equal('error' in proven ? null : proven.agentId, named.id)
+  assert.equal('error' in proven ? null : proven.kya, 'verified')
+
+  // Moved off: it can count against the old address, and it does not vouch for it.
+  named.kyaProof = { address: wallet, at: new Date().toISOString(), method: 'wallet-signature' }
+  const next = privateKeyToAccount(generatePrivateKey()).address
+  recordWallet(next)
+  assert.ok(!('error' in assignWallet(next, named.id, OWNER)))
+  named.kya = 'verified'
+  const former = reputationForQuery(wallet)
+  assert.equal('error' in former ? null : former.agentId, named.id)
+  assert.equal('error' in former ? null : former.kya, 'unverified')
+})
+
+// ── what a record really holds against an agent ───────────────────────────────────
+
+test('what counts as evidence on a platform record, from what the record really holds', () => {
+  const agent = seed(privateKeyToAccount(generatePrivateKey()).address)
+  const evidence = () => adverseRecordFrom(agentReputation(agent.id) as never)
+  const at = (ms: number) => new Date(ms).toISOString()
+  const NOW = Date.now()
+  const job = (over: Partial<Task>): Task => ({ id: `task_${Math.random()}`, client: 'stranger@test', agentId: agent.id, service: 's', priceUsd: 1, description: '', status: 'refunded', createdAt: at(NOW), updatedAt: at(NOW), deadlineAt: at(NOW + 3_600_000), ...over })
+  const without = () => {
+    state.tasks = state.tasks.filter((t) => t.agentId !== agent.id)
+    state.instructions = state.instructions.filter((i) => i.agentId !== agent.id)
+    delete state.audits[agent.id]
+  }
+  assert.equal(evidence(), false, 'a new agent with nothing on its record: nothing against it, so nothing to deny on')
+
+  // A refund the same minute, with nothing delivered and no deadline passed, is the client leaving.
+  state.tasks.push(job({}))
+  assert.equal(evidence(), false)
+  const rep = agentReputation(agent.id)
+  assert.equal('error' in rep ? null : rep.behavioral.contestedJobs, 1, 'the scorer still sees it')
+  assert.equal('error' in rep ? null : rep.behavioral.contestedEvidence, 0)
+  without()
+  // Delivered, then refused.
+  state.tasks.push(job({ deliverable: 'the work' }))
+  assert.equal(evidence(), true)
+  without()
+  // Disputed counts the same way as refunded.
+  state.tasks.push(job({ status: 'disputed', deliverable: '' }))
+  assert.equal(evidence(), true, 'an empty deliverable is still a delivery')
+  without()
+  // Refunded after the deadline passed with nothing delivered.
+  state.tasks.push(job({ deadlineAt: at(NOW - 1000) }))
+  assert.equal(evidence(), true)
+  without()
+  // Its own operator's job says nothing, delivered or not.
+  state.tasks.push(job({ client: OWNER, deliverable: 'the work' }))
+  assert.equal(evidence(), false)
+  without()
+
+  // A settlement a human rejected counts, and the velocity breaker's refusal does not.
+  const ix = { id: 'ix', agentId: agent.id, type: 'payment', amountUsd: 1, count: 1, payee: 'p', memo: '', status: 'rejected', policyNote: '', createdAt: at(NOW) } as (typeof state.instructions)[number]
+  state.instructions.push({ ...ix, denyCode: 'velocity_exceeded' })
+  assert.equal(evidence(), false)
+  state.instructions.push(ix)
+  assert.equal(evidence(), true)
+  without()
+
+  // A guardrail override attempt counts, and a DENY the policy gave by itself does not.
+  state.audits[agent.id] = [{ id: 'a', verdict: 'DENY', outcome: 'refused' } as never]
+  assert.equal(evidence(), false)
+  state.audits[agent.id] = [{ id: 'a', verdict: 'DENY', outcome: 'refused', overrideAttempts: 1 } as never]
+  assert.equal(evidence(), true)
+  without()
+
+  // A low star rating alone does not count.
+  state.tasks.push(job({ status: 'released', settlement: 'simulated', review: { by: 'stranger@test', rating: 1, text: '', at: at(NOW) } }), job({ status: 'released', settlement: 'simulated', review: { by: 'other@test', rating: 1, text: '', at: at(NOW) } }))
+  assert.equal(evidence(), false)
+  without()
 })

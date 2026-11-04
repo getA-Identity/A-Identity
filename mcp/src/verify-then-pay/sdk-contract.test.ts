@@ -322,9 +322,21 @@ test('with payOnWarn, a payee we know nothing about is paid once, because the ca
   assert.equal(h.rows.get(out.flowId)?.payOnWarn, true)
 })
 
+test('a platform agent with nothing against it, through both sides with the real scorer: WARN, and the owner gets the call', async () => {
+  const signals: RiskSignals = { onchainVerified: true, kyaVerified: true, reputationScore: 90, tenureDays: 40, onPlatform: true, adverseRecord: false }
+  const h = harness({ score: scoredBy(signals), agentsHeld: 0n })
+  const out = await h.run()
+  assert.equal(out.outcome, 'awaiting_human')
+  assert.equal(h.signed.length, 1, 'the check was bought')
+  assert.equal(h.sent.length, 0, 'no automatic payment')
+  assert.equal(out.verdict.decision, 'WARN')
+  assert.equal(out.verdict.signals?.adverseRecord, false)
+  assert.match(out.verdict.reasons.join(' '), /holds nothing against it, and not enough to vouch for it/)
+})
+
 test('evidence against a payee we hold a record of, through both sides with the real scorer, is still DENY and sends nothing', async () => {
-  const platform: RiskSignals = { onchainVerified: true, kyaVerified: true, reputationScore: 720, tenureDays: 40, onPlatform: true }
-  for (const signals of [{ ...platform, revoked: true }, { ...platform, sybil: 'high' as const }, { ...platform, reputationScore: 150 }]) {
+  const platform: RiskSignals = { onchainVerified: true, kyaVerified: true, reputationScore: 720, tenureDays: 40, onPlatform: true, adverseRecord: false }
+  for (const signals of [{ ...platform, revoked: true }, { ...platform, sybil: 'high' as const }, { ...platform, reputationScore: 150, adverseRecord: true }]) {
     const h = harness({ score: scoredBy(signals), agentsHeld: 0n })
     const e = await thrown(h.run())
     assert.equal(e.name, 'TrustDenyError', JSON.stringify(signals))
@@ -335,6 +347,7 @@ test('evidence against a payee we hold a record of, through both sides with the 
 for (const [label, score, code] of [
   ['a WARN carrying a revoked signal', scored('WARN', {}, { revoked: true, onPlatform: false }), 'SIGNALS_INCONSISTENT'],
   ['a WARN on a platform agent under 200', scored('WARN', { reputationScore: 150 }, { onPlatform: true }), 'SIGNALS_INCONSISTENT'],
+  ['a WARN on a platform agent under 200 with evidence against it', scored('WARN', { reputationScore: 150 }, { onPlatform: true, adverseRecord: true }), 'SIGNALS_INCONSISTENT'],
   ['a WARN with no identity and no onPlatform signal', scored('WARN', {}, { onchainVerified: false }), 'SIGNALS_INCONSISTENT'],
   ['an ALLOW below 500', scored('ALLOW', { reputationScore: 60 }), 'SIGNALS_INCONSISTENT'],
   ['a null reputation', scored('ALLOW', { reputationScore: null }), 'REPUTATION_NOT_FINITE'],

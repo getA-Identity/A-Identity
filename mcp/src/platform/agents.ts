@@ -11,6 +11,7 @@ import {
   type PlatformAgent, type PlatformUser, type LinkedWallet, type Wallet, type Permissions, type Service,
 } from './core.js'
 import { sanitizeVelocity } from './permissions.js'
+import { agentReputation } from './reputation.js'
 import { ARC_TESTNET } from '../arc.js'
 import { registerAgentOnchain } from '../arc-contracts.js'
 import { normalizePriceUsd } from '../marketplace.js'
@@ -255,21 +256,31 @@ type AddressFacts = Pick<PlatformAgent, 'walletAddress' | 'kya' | 'kyaProof' | '
 
 const sameAddress = (a: string | null | undefined, b: string) => typeof a === 'string' && a.toLowerCase() === b.toLowerCase()
 
+/** Did this record ever prove control of this address? A proof names its address, so it covers that one and no other. */
+function everProved(a: AddressFacts, address: string): boolean {
+  return sameAddress(a.kyaProof?.address, address) || sameAddress(a.claimProof?.address, address) || (a.formerProvenWallets ?? []).some((w) => sameAddress(w, address))
+}
+
 /**
  * Has this record proved control of the wallet it names? A walletAddress is a free text claim at
  * registration, so anyone can name anyone's wallet. `verified` always means the current wallet:
  * assignWallet resets it when the wallet changes, and a claim writes the wallet it proved.
- * `revoked` counts only after a proof, because any owner can revoke a record that proved nothing.
+ *
+ * `revoked` counts only at an address the record proved, because assignWallet keeps a revoked
+ * record's status and its old proof when the wallet changes. Counting any proof at all would let
+ * someone prove their own wallet, revoke the record, assign a vendor's wallet and force DENY on
+ * the vendor. This gives up nothing: a revoked operator who wants to dodge DENY can use any fresh
+ * address anyway, so DENY on an address it merely named adds no safety. The limit, stated rather
+ * than implied: a revoked record binds the addresses it proved, every one of them, and no other.
  */
 export function walletControlProven(a: AddressFacts): boolean {
   if (!a.walletAddress) return false
-  return a.kya === 'verified' || (a.kya === 'revoked' && Boolean(a.kyaProof))
+  return a.kya === 'verified' || (a.kya === 'revoked' && everProved(a, a.walletAddress))
 }
 
 /** An address this record proved control of and that is not its wallet now. */
 export function formerlyProvenAddress(a: AddressFacts, address: string): boolean {
-  if (sameAddress(a.walletAddress, address)) return false
-  return sameAddress(a.kyaProof?.address, address) || sameAddress(a.claimProof?.address, address) || (a.formerProvenWallets ?? []).some((w) => sameAddress(w, address))
+  return !sameAddress(a.walletAddress, address) && everProved(a, address)
 }
 
 /** Has this record proved control of this address, now or before? */
@@ -296,6 +307,22 @@ export function recordAtAddress<T extends AddressFacts>(agents: T[], address: st
   const former = agents.filter((a) => formerlyProvenAddress(a, address))
   const record = [...proven, ...former].find((a) => a.kya === 'revoked') ?? proven[0] ?? former[0] ?? null
   return { record, currentWallet: record !== null && proven.includes(record), claim: record ? null : (atWallet[0] ?? null) }
+}
+
+/**
+ * The reputation a free read answers for a query, the same reading risk_check gives an address.
+ * An address speaks for the record that proved it and no other, so a registration that names a
+ * vendor's wallet is no answer about that wallet, revoked or not. A record that has moved off the
+ * address can count against it, and does not vouch for it: KYA attests the wallet it uses now.
+ */
+export function reputationForQuery(query: string) {
+  const q = query.trim()
+  if (!/^0x[0-9a-fA-F]{40}$/.test(q)) return agentReputation(q)
+  const at = recordAtAddress(state.agents, q)
+  if (!at.record) return { error: 'Unknown agent' as const }
+  const view = agentReputation(at.record.id)
+  if ('error' in view) return view
+  return at.currentWallet || view.kya !== 'verified' ? view : { ...view, kya: 'unverified' as const }
 }
 
 /**

@@ -27,7 +27,7 @@ export function renderProofHtml(): string {
   const vColor = verdict === 'ALLOW' ? 'var(--ok)' : verdict === 'WARN' ? 'var(--warn)' : 'var(--bad)'
   const gradeLabel =
     scoreNum >= 800 ? 'Excellent · AAA' : scoreNum >= 650 ? 'Strong · AA' : scoreNum >= 500 ? 'Good · A'
-    : scoreNum >= 350 ? 'Fair · BBB' : scoreNum >= 200 ? 'Weak · B' : 'High risk · C'
+    : scoreNum >= 350 ? 'Fair · BBB' : scoreNum >= 200 ? 'Weak · B' : 'Low · C'
 
   const SERVICES = [
     ['verify_agent', '$0.001', 'ERC-8004 on-chain identity + KYA status'],

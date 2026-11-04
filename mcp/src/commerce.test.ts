@@ -89,6 +89,47 @@ test('no on-chain identity never reaches ALLOW, and evidence against the merchan
   assert.equal(computeMerchantVerdict({ ...healthy, identityFound: false, reputationScore: 150 }).verdict, 'DENY')
 })
 
+test('a low score on a record is DENY with evidence, WARN with nothing against it, and DENY when it was not read', () => {
+  const low = { ...healthy, reputationScore: 90 }
+  const clean = computeMerchantVerdict({ ...low, adverseRecord: false })
+  assert.equal(clean.verdict, 'WARN')
+  const reason = clean.reasons.find((x) => x.code === 'low_reputation')
+  assert.equal(reason?.severity, 'warn')
+  assert.match(reason?.detail ?? '', /holds nothing against it, and not enough to vouch for it/)
+  const evidence = computeMerchantVerdict({ ...low, adverseRecord: true })
+  assert.equal(evidence.verdict, 'DENY')
+  assert.match(evidence.reasons[0].detail, /holds evidence against it/)
+  assert.equal(computeMerchantVerdict({ ...low, adverseRecord: null }).verdict, 'DENY')
+  assert.equal(computeMerchantVerdict(low).verdict, 'DENY')
+  // Revoked and Sybil high stay DENY, and nothing against it is never ALLOW.
+  assert.equal(computeMerchantVerdict({ ...low, adverseRecord: false, kya: 'revoked' }).verdict, 'DENY')
+  assert.equal(computeMerchantVerdict({ ...low, adverseRecord: false, sybil: 'high' }).verdict, 'DENY')
+  assert.notEqual(computeMerchantVerdict({ ...healthy, reputationScore: 499, adverseRecord: false }).verdict, 'ALLOW')
+})
+
+test('the whole check reads the evidence from the platform view, and a view without it stays strict', async () => {
+  const owner = '0x' + 'c'.repeat(40)
+  const check = async (over: Record<string, unknown>) => {
+    const r = await merchantCheck(
+      { agentId: 'agent_shop' },
+      {
+        resolveIdentity: async () => ({ agentId: 'agent_shop', tokenId: 7, owner, registrationUri: '', domain: 'shop.example', valid: false, registeredAt: '2026-01-01', chain: 'arc' }),
+        platformView: async () => ({ agentId: 'agent_shop', name: 'Shop', kya: 'verified', score: 90, settledOnchain: 0, sybil: { level: 'none' }, ...over }),
+      },
+    )
+    assert.ok(!('error' in r))
+    return (r as Exclude<typeof r, { error: string }>).verdict
+  }
+  const clean = { behavioral: { contestedEvidence: 0 }, discipline: { rejectedSettlements: 0, overrideAttempts: 0 } }
+  assert.equal(await check(clean), 'WARN')
+  assert.equal(await check({ ...clean, behavioral: { contestedEvidence: 1 } }), 'DENY')
+  assert.equal(await check({ ...clean, discipline: { rejectedSettlements: 1, overrideAttempts: 0 } }), 'DENY')
+  assert.equal(await check({ ...clean, discipline: { rejectedSettlements: 0, overrideAttempts: 1 } }), 'DENY')
+  assert.equal(await check({}), 'DENY', 'a view that does not carry the inputs stays strict')
+  assert.equal(await check({ ...clean, kya: 'revoked' }), 'DENY')
+  assert.equal(await check({ ...clean, sybil: { level: 'high' } }), 'DENY')
+})
+
 test('sybil-high wash reputation is DENY; sybil-medium is only WARN', () => {
   assert.equal(computeMerchantVerdict({ ...healthy, sybil: 'high' }).verdict, 'DENY')
   const medium = computeMerchantVerdict({ ...healthy, sybil: 'medium' })

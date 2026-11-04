@@ -6,7 +6,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { asTokenId, isAddress, onPlatformSignal, sameOperator, scoreBand, livenessTarget, selfLookupCandidates } from './tools.js'
-import { recordAtAddress, type PlatformAgent } from '../platform.js'
+import { recordAtAddress, recordProvesAddress, walletControlProven, type PlatformAgent } from '../platform.js'
 
 // A minimal agent for the counterparty_check same-operator relationship signal.
 const agent = (over: Partial<PlatformAgent>): PlatformAgent => ({ id: 'a', owner: undefined, walletAddress: null, ...over } as PlatformAgent)
@@ -185,19 +185,41 @@ test('recordAtAddress: a record counts at an address only once it proved control
 
 test('recordAtAddress: the wallet a proven record moved off still reads as that record, and a stranger cannot make that happen', () => {
   const proof = (address: string) => ({ address, at: 'x', method: 'wallet-signature' as const })
-  // Revoked, then moved: the proof stays on the record.
+  // Revoked, then moved: the proof stays on the record, so the wallet it proved reads as it.
   const revoked = { id: 'bad', walletAddress: W2, kya: 'revoked', kyaProof: proof(W) } as PlatformAgent
   assert.deepEqual(recordAtAddress([revoked], W), { record: revoked, currentWallet: false, claim: null })
-  assert.deepEqual(recordAtAddress([revoked], W2), { record: revoked, currentWallet: true, claim: null }, 'revoked after a proof, so its new wallet reads as it too')
   // Verified, moved, then revoked: assignWallet drops the proof and keeps the address.
   const moved = { id: 'moved', walletAddress: W2, kya: 'revoked', formerProvenWallets: [W] } as PlatformAgent
   assert.equal(recordAtAddress([moved], W).record, moved)
+  // Moved off and back to a wallet it proved: that is an address it proved, so it reads as it.
+  const back = { id: 'back', walletAddress: W, kya: 'revoked', formerProvenWallets: [W] } as PlatformAgent
+  assert.deepEqual(recordAtAddress([back], W), { record: back, currentWallet: true, claim: null })
   // A claimed token's signer.
   const claimed = { id: 'claimed', walletAddress: W2, kya: 'verified', claimProof: { address: W, at: 'x', method: 'wallet-signature', tokenId: '1', chain: 'arc' } } as PlatformAgent
   assert.deepEqual(recordAtAddress([claimed], W), { record: claimed, currentWallet: false, claim: null })
   // Written by anyone: importing a vendor's token, or recording its wallet, is not a proof.
   const imported = { id: 'imported', walletAddress: null, kya: 'unclaimed', importedFrom: { chain: 'arc', tokenId: '1', registry: '0x', owner: W, at: 'x' } } as PlatformAgent
   assert.equal(recordAtAddress([imported], W).record, null)
+})
+
+test('recordAtAddress: a record cannot force DENY on a wallet it never proved, revoked or not', () => {
+  const proof = (address: string) => ({ address, at: 'x', method: 'wallet-signature' as const })
+  // Prove your own wallet, revoke the record, assign a vendor's wallet: W2 is the vendor here.
+  const griefer = { id: 'griefer', walletAddress: W2, kya: 'revoked', kyaProof: proof(W) } as PlatformAgent
+  assert.deepEqual(recordAtAddress([griefer], W2), { record: null, currentWallet: false, claim: griefer })
+  assert.equal(recordProvesAddress(griefer, W2), false)
+  assert.equal(walletControlProven(griefer), false)
+  // The same with a claim proof, and with a wallet it proved and moved off.
+  const claimed = { id: 'claimed', walletAddress: W2, kya: 'revoked', claimProof: { address: W, at: 'x', method: 'wallet-signature', tokenId: '1', chain: 'arc' } } as PlatformAgent
+  assert.equal(recordAtAddress([claimed], W2).record, null)
+  const moved = { id: 'moved', walletAddress: W2, kya: 'revoked', formerProvenWallets: [W] } as PlatformAgent
+  assert.equal(recordAtAddress([moved], W2).record, null)
+  // And what it did prove still binds it, at the wallet it uses now and at one it moved off.
+  assert.equal(recordAtAddress([griefer], W).record, griefer)
+  const stays = { id: 'stays', walletAddress: W, kya: 'revoked', kyaProof: proof(W) } as PlatformAgent
+  assert.deepEqual(recordAtAddress([stays], W.toLowerCase()), { record: stays, currentWallet: true, claim: null })
+  assert.equal(recordProvesAddress(stays, W), true)
+  assert.equal(walletControlProven(stays), true)
 })
 
 test('the ASP process re-reads the roster before it scores', () => {

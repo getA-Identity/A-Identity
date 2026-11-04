@@ -12,7 +12,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { buildServer } from './server.js'
 import {
   agentManifest,
-  agentReputation,
+  reputationForQuery,
   checkAgentAction,
   deliverTask,
   getAgentActionPolicy,
@@ -306,7 +306,7 @@ const server = http.createServer(async (req, res) => {
       const mcpCaller = isVerified(caller) ? callerId : undefined
       const mcp = buildServer({
         listAgents: publicAgents,
-        getReputation: (id) => agentReputation(id),
+        getReputation: (id) => reputationForQuery(id),
         marketplace: {
           catalog: () => marketplaceCatalog(),
           manifest: (agentId) => agentManifest(agentId),
