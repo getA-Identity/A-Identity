@@ -1200,6 +1200,12 @@ test('a hand-off carries the approval link: the vault page at the site, with the
 
 const SOMEONE = '0x' + '99'.repeat(20)
 
+async function handedOffRow(): Promise<VtpFlowRecord> {
+  const { s, deps } = setup({ gw: { scored: verdict('WARN') } })
+  await runVerifyThenPay(request(), header(), deps)
+  return s.rows.get(NONCE)!
+}
+
 test('a check another key paid for gets no approval link, because the vault page would refuse it, and the answer says what to do instead', async () => {
   const { s, deps } = setup({
     gw: {
@@ -1240,6 +1246,13 @@ for (const [label, input, chain] of [
     assert.match(out.body.next, /offers the owner this approval only if the check is paid from/)
   })
 }
+
+test('reading an old row with no check on it gets no approval link, and does not throw on a public route', async () => {
+  const { store } = memStore([{ ...(await handedOffRow()), check: undefined } as unknown as VtpFlowRecord])
+  const out = await readVtpFlow(NONCE, { store })
+  assert.equal(out.httpStatus, 200)
+  assert.equal(out.body.approvalUrl, null)
+})
 
 test('reading a flow names its approval link only while it waits for the owner', async () => {
   const { deps } = setup({ gw: { scored: verdict('WARN') } })

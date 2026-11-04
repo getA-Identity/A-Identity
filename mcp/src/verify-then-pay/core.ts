@@ -1117,7 +1117,7 @@ export async function readVtpFlow(flowIdRaw: unknown, deps: Pick<VtpDeps, 'store
       url: flowUrl(id, origin),
       receiptUrl: `${origin.replace(/\/$/, '')}${flowPath(id)}/receipt`,
       paymentExplorerUrl: read.row.payment?.explorerUrl ?? null,
-      approvalUrl: read.row.outcome === 'awaiting_human' ? approvalUrlFor(vtpChain(), read.row.vault, id, { payer: read.row.check.payer, operator: read.row.operator, payee: read.row.payee }) : null,
+      approvalUrl: read.row.outcome === 'awaiting_human' ? approvalUrlFor(vtpChain(), read.row.vault, id, { payer: read.row.check?.payer ?? '', operator: read.row.operator ?? '', payee: read.row.payee ?? '' }) : null,
       note,
     },
   }
