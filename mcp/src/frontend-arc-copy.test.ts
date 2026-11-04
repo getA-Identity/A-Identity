@@ -116,7 +116,7 @@ test('a vault with its allowlist on never reads green, since the list may be emp
   }
   for (const over of [{}, { balance: 500_000n }, { remainingToday: null }]) {
     const h = r.vaultHeadline({ ...v, ...over })
-    assert.notEqual(h.tone, 'ok', JSON.stringify(over))
+    assert.notEqual(h.tone, 'ok', Object.keys(over).join() || 'plain')
     assert.match(h.state, /^Allowlist on/)
     assert.doesNotMatch(h.state, /Can pay/)
     assert.match(h.text, /every agent payment is refused/)
