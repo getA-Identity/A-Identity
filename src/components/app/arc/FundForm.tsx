@@ -5,6 +5,8 @@
  * On Arc USDC is also the gas token, so the transfer is refused unless the account keeps enough
  * behind for this fee and two later owner actions (a freeze, a withdrawal). Two steps, like a
  * withdrawal: the form prepares and simulates, and only the review's Confirm opens the wallet.
+ * A caller that must leave a trace of a request the wallet may send (the setup) hears about it
+ * right before the wallet is asked, and again if the wallet stops without a hash.
  */
 import { useState, type FormEvent } from 'react'
 import { ArrowLeft, Loader2 } from 'lucide-react'
@@ -13,7 +15,7 @@ import { track } from '../../../lib/analytics'
 import type { TxRecord } from '../../../lib/arc/pending'
 import { networkWord, type VaultSnapshot } from '../../../lib/arc/vault-read'
 import { aboveSoftWarn, parseUnitsExact } from '../../../lib/arc/vault-rules'
-import { STEP_LABEL, prepareFund, preparedStale, sendPrepared, type PreparedTx } from '../../../lib/arc/vault-write'
+import { STEP_LABEL, failureOf, prepareFund, preparedStale, sendPrepared, type PreparedTx, type TxFailure, type TxStep } from '../../../lib/arc/vault-write'
 import type { Eip1193 } from '../../../lib/wallets'
 import { Button } from '../../ui/button'
 import FailureNotice from './FailureNotice'
@@ -30,6 +32,8 @@ export default function FundForm({
   initial = '',
   confirmLabel = 'Confirm in wallet',
   stillCurrent,
+  onHandOff,
+  onHandOffEnded,
 }: {
   chain: Chain
   vault: VaultSnapshot
@@ -41,6 +45,10 @@ export default function FundForm({
   confirmLabel?: string
   /** Asked before preparing and again before the wallet. False stops it; the caller says why. */
   stillCurrent?: () => boolean
+  /** Right before the wallet is asked to send this amount. */
+  onHandOff?: (amount: bigint) => void
+  /** The wallet was asked and stopped with no hash. */
+  onHandOffEnded?: (failure: TxFailure) => void
 }) {
   const [amount, setAmount] = useState(initial)
   const [invalid, setInvalid] = useState<string | null>(null)
@@ -87,9 +95,23 @@ export default function FundForm({
         onStep('simulating')
         p = await prepareFund(chain, vault, account, raw)
       }
-      const hash = await sendPrepared(provider, p, onStep)
       const first = p.expect[0]
       const value = first && first.kind === 'transfer' ? first.value : undefined
+      let handedOff = false
+      const handOff = (s: TxStep) => {
+        if (s === 'wallet' && value !== undefined) {
+          handedOff = true
+          onHandOff?.(value)
+        }
+        onStep(s)
+      }
+      let hash: Awaited<ReturnType<typeof sendPrepared>>
+      try {
+        hash = await sendPrepared(provider, p, handOff)
+      } catch (e) {
+        if (handedOff) onHandOffEnded?.(failureOf(e))
+        throw e
+      }
       onSubmitted({ ...recordOf(p, hash, vault.address), ...(value !== undefined ? { amount: value } : {}) })
       track('arc_vault_owner_action', { network: networkWord(chain), action: 'fund', outcome: 'submitted' })
       setPrepared(null)

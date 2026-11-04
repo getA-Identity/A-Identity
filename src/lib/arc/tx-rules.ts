@@ -19,6 +19,9 @@
  *     words, and the nonce read while preparing is watched too. That nonce is a guess (the wallet
  *     may have given this hash a later one), so its use is never a final 'replaced': the record
  *     stops holding the page as 'untracked', which says it may still land.
+ *   - No answer is never a verdict. A host that is rate limited or down has said nothing about the
+ *     chain, so only hosts that really answered "not found" can make a transaction unseen or
+ *     replaced, and a check too few of them answered ends any watch that was running.
  *   - No funding is offered before the vault's key is bounded in time, and the vault's live
  *     state wins over a record that only says pending.
  *   - An expiry or a funding is prepared only from the setup the slot holds right now, and only
@@ -110,6 +113,16 @@ export function firstFound<T>(asks: readonly Promise<T>[], isNotFound: (e: unkno
       )
     })
   })
+}
+
+/**
+ * Whether enough hosts really answered for "nobody has it" to mean anything: more than half. One
+ * host's null is routine on Arc (one mainnet host returned none of 19 receipts that exist), and a
+ * host that errored or was rate limited did not answer at all, so a landed transaction can look
+ * absent from whichever hosts are left. Below this, nothing is known about the chain.
+ */
+export function heardEnough(answered: number, total: number): boolean {
+  return total > 0 && answered * 2 > total
 }
 
 // --- a receipt that a host returned ---
@@ -231,7 +244,9 @@ export const UNSEEN_NOTE =
 /** What one check found while no host had a receipt. Every field is optional: a check reads only some. */
 export type Unseen = {
   now: number
-  /** The transaction itself, when a host returned it on this check. */
+  /** How many hosts said "no receipt" on this check, of how many were asked. Missing counts as nobody. */
+  receipts?: { answered: number; total: number }
+  /** The transaction itself, when a host returned it; null when enough hosts answered and none has it; missing when nothing is known. */
   tx?: { maxFeePerGas: bigint | null; gasPrice: bigint | null; nonce: number; from: string } | null
   /** The sender's mined nonce ('latest'), when read on this check. */
   latestNonce?: number | null
@@ -289,8 +304,15 @@ export function decideUnseen(record: TxRecord, f: Unseen): TxRecord {
       vault: f.createdAt.address,
       contractAddress: f.createdAt.address,
       nonceUsedAt: undefined,
+      unseen: undefined,
       note: 'No network node has a receipt for this transaction, but a vault that reads back exactly as asked now exists at the address it would create: your wallet sent a replacement (a speed-up) that landed.',
     }
+
+  // Too few hosts answered, so "no receipt" was not actually said. Nothing below may be decided
+  // on this check, and a watch running toward 'replaced' starts over: a rate limit on the receipt
+  // calls alone must never turn into a final verdict on a transaction that landed.
+  if (!(f.receipts && heardEnough(f.receipts.answered, f.receipts.total)))
+    return next.nonceUsedAt ? { ...next, nonceUsedAt: undefined, note: undefined } : next
 
   // Only the nonce the chain says this hash carries can show it was replaced. A nonce the page
   // read while preparing may have gone to another transaction the wallet had queued first.
@@ -314,6 +336,8 @@ export function decideUnseen(record: TxRecord, f: Unseen): TxRecord {
     }
 
   if (next.nonceUsedAt && f.now - Date.parse(next.nonceUsedAt) >= REPLACED_AFTER_MS) {
+    // A hash never seen needs the transaction read to have been answered as well.
+    if (guess !== undefined && f.tx !== null) return next
     if (guess !== undefined)
       return {
         ...next,
@@ -326,6 +350,7 @@ export function decideUnseen(record: TxRecord, f: Unseen): TxRecord {
       return {
         ...next,
         outcome: 'replaced',
+        unseen: undefined,
         note: "Your wallet sent another transaction in its place (a speed-up or a cancel) and no network node has a receipt for this one, so this one can no longer land. The vault's state, read again, shows what happened. Check your wallet's activity before signing anything again.",
       }
     // A deploy is final only once the address its nonce creates has actually been read.
@@ -334,6 +359,7 @@ export function decideUnseen(record: TxRecord, f: Unseen): TxRecord {
       return {
         ...next,
         outcome: 'replaced',
+        unseen: undefined,
         note: `Your wallet sent another transaction in its place, and ${at.address}, the address this one would create, ${
           at.back.status === 'no_code' ? 'holds no contract' : `does not read back as asked (${at.back.why ?? 'its values differ'})`
         }. No vault came out of this transaction. Check your wallet's activity before deploying again.`,
@@ -351,6 +377,8 @@ export function untracked(r: TxRecord): TxRecord {
   return {
     ...r,
     outcome: 'untracked',
+    // The box that said "nobody has seen this" belongs to a pending record, and it hides the note.
+    unseen: undefined,
     note: "You stopped tracking this transaction with no receipt seen on any network node. If it is still in your wallet's queue it can land later: check your wallet's activity and the explorer before signing anything again.",
   }
 }
@@ -419,12 +447,40 @@ export function readBeforeFunding(s: SetupState, snapshot: VaultSnapshot | null)
   return fundingLanded(s.fundTx) && block !== undefined && live !== null && live.block < block
 }
 
+/** A read of the vault from before the expiry's own block, so a 0 it shows is not the vault's state now. */
+export function readBeforeExpiry(s: SetupState, snapshot: VaultSnapshot | null): boolean {
+  const live = liveOf(s, snapshot)
+  const tx = s.expiryTx
+  return tx?.outcome === 'settled' && tx.block !== undefined && live !== null && live.block < tx.block
+}
+
 /**
  * A funding that left for a wallet and whose fate this page cannot see: replaced by another
  * transaction or no longer tracked. A second funding is offered only after the person confirms.
  */
 export function fundingUnresolved(r: TxRecord | undefined): boolean {
   return Boolean(r && (r.outcome === 'replaced' || r.outcome === 'untracked'))
+}
+
+/** The same, for the whole setup: the wallet was asked and no hash came back counts too. */
+export function fundingInDoubt(s: SetupState): boolean {
+  return Boolean(s.fundIntent) || fundingUnresolved(s.fundTx)
+}
+
+/** Saved right before the wallet is asked for a funding, so a hash that never comes back still leaves a trace. */
+export function fundAsked(s: SetupState, amount: bigint, at: string): SetupState {
+  return { ...s, fundIntent: { amount, at } }
+}
+
+/** The wallet's hash came back: the intent is over, and a skip pressed while it was open no longer holds. */
+export function fundSent(s: SetupState, r: TxRecord): SetupState {
+  return { ...s, fundTx: { ...r, action: 'fund' }, fundIntent: undefined, fundSkipped: undefined }
+}
+
+/** What counts as the funding having arrived. An amount edited down at step 3 is what was really asked for. */
+export function fundTarget(s: SetupState): bigint {
+  const asked = s.fundIntent?.amount ?? s.fundTx?.amount
+  return asked !== undefined && asked < s.funding ? asked : s.funding
 }
 
 /**
@@ -440,11 +496,23 @@ export function setupStep(s: SetupState | null, prepared: boolean, snapshot: Vau
     return 'deploy-failed'
   }
   if (!expirySet(s, snapshot)) return s.expiryTx?.outcome === 'pending' ? 'expiry-pending' : 'expiry'
-  if (s.funding <= 0n || s.fundSkipped) return 'done'
+  if (s.funding <= 0n) return 'done'
   const live = liveOf(s, snapshot)
-  if (fundingLanded(s.fundTx) || (live !== null && live.balance >= s.funding)) return 'done'
+  if (fundingLanded(s.fundTx) || (live !== null && live.balance >= fundTarget(s))) return 'done'
+  // A funding on its way is not skipped, whichever button was pressed while the wallet was open.
   if (s.fundTx?.outcome === 'pending') return 'fund-pending'
-  return 'fund'
+  return s.fundSkipped ? 'done' : 'fund'
+}
+
+/**
+ * The setup's own transaction still pending on this vault, or null: it holds the vault page's
+ * controls exactly as a transaction from that page does, so nothing is signed twice between them.
+ */
+export function setupTxOn(s: SetupState | null, network: string | null, vault: string | null): { field: 'expiryTx' | 'fundTx'; record: TxRecord } | null {
+  if (!s || !network || !vault || s.network !== network || !sameAddress(s.vault, vault)) return null
+  if (s.expiryTx?.outcome === 'pending') return { field: 'expiryTx', record: s.expiryTx }
+  if (s.fundTx?.outcome === 'pending') return { field: 'fundTx', record: s.fundTx }
+  return null
 }
 
 /** A record written into the setup; a deploy that settled or was replaced into a vault names the vault. */

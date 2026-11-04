@@ -25,13 +25,14 @@ import { ArrowLeft, CheckCircle2, Loader2, ShieldAlert } from 'lucide-react'
 import type { Chain } from '../../../lib/chains'
 import { track } from '../../../lib/analytics'
 import { AGENT_KEY_CAN, AGENT_KEY_CANNOT, CALL_FEE_ABOUT, CONFIRMATIONS, FEES_LINE, IF_A_STEP_FAILS, OWNER_KEY_LINE, REVIEW_LINE, WALLET_GONE, WHAT_IS_A_VAULT, WRONG_ACCOUNT } from '../../../lib/arc/deploy-copy'
-import { loadSetup, type SetupState, type TxRecord } from '../../../lib/arc/pending'
+import { loadSetup, loadTx, saveTx, type SetupState, type TxRecord } from '../../../lib/arc/pending'
 import { FUND_RISK } from '../../../lib/arc/ours'
 import { deployReadback } from '../../../lib/arc/receipt'
-import { deployEnd, fundingUnresolved, liveOf, predictedVault, readBeforeFunding, setupDrift, setupStep, vaultToLookFor, withRecord } from '../../../lib/arc/tx-rules'
+import { deployEnd, fundAsked, fundSent, fundingInDoubt, liveOf, predictedVault, readBeforeExpiry, readBeforeFunding, setupDrift, setupStep, vaultToLookFor, withRecord, type DeployBack } from '../../../lib/arc/tx-rules'
 import {
   ARC_CHAINS,
   arcChainFor,
+  localTime,
   networkName,
   networkWord,
   readUsdcFacts,
@@ -80,7 +81,7 @@ import { useVaultCount } from './useVaultCount'
 const INPUT =
   'mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60'
 
-/** While a step waits on the chain (a pending expiry or funding), the vault is read again this often. */
+/** While a step waits on the owner or the chain (steps 2 and 3), the vault is read again this often. */
 const REREAD_MS = 10_000
 /** How soon a read from before the funding's block is tried again: a host catches up in seconds. */
 const BEHIND_MS = 3_000
@@ -91,6 +92,15 @@ const WALLET_SLOW_MS = 30_000
 /** After a failure with the setup kept: the failure's own "try again" is not on offer here. */
 const SENDING_NEXT =
   "Check your wallet's activity. If this page finds the vault at its address it carries on from there. If your wallet shows nothing was sent, use the start again button below."
+
+/** What the last look at a deploy's address found. Only an answer can say a vault is not there. */
+function lookedLine(l: { at: string; status: DeployBack['status']; why: string | null } | null): string {
+  if (!l || l.status === 'ok') return ''
+  const when = new Date(l.at).toLocaleTimeString()
+  if (l.status === 'unreadable') return ` Last look at ${when}: the network did not answer, which says nothing about your vault. This page looks again by itself.`
+  if (l.status === 'mismatch') return ` Last look at ${when}: a contract is there, but it does not read back as asked${l.why ? ` (${l.why})` : ''}.`
+  return ` Last look at ${when}: no vault there yet.`
+}
 
 const STEPS: { key: string; label: string }[] = CONFIRMATIONS.map((c, i) => ({ key: String(i), label: `${i + 1}. ${c.title}` }))
 
@@ -133,7 +143,11 @@ export default function DeployFlow({
   const [prepared, setPrepared] = useState<PreparedTx | null>(null)
   const [snapshot, setSnapshot] = useState<VaultSnapshot | null>(null)
   const [snapshotNote, setSnapshotNote] = useState<string | null>(null)
-  const [looked, setLooked] = useState<{ at: string; found: boolean; why: string | null } | null>(null)
+  const [looked, setLooked] = useState<{ at: string; status: DeployBack['status']; why: string | null } | null>(null)
+  // This tab asked the wallet for the funding and has not heard back: its form stays up, waiting.
+  const [fundAsking, setFundAsking] = useState(false)
+  // The latest transaction the vault's own page sent, which holds step 3 as a setup transaction holds that page.
+  const [pageTx, setPageTx] = useState<TxRecord | null>(null)
   const [refundConfirmed, setRefundConfirmed] = useState(false)
   const { busy, step: txStep, failure, setFailure, run, release } = useArcTx()
   // A wallet that never answers: its promise can stay open for good, so the wait says so.
@@ -183,6 +197,7 @@ export default function DeployFlow({
     setSnapshot(null)
     setSnapshotNote(null)
     setRefundConfirmed(false)
+    setFundAsking(false)
   }, [startedAt])
 
   /**
@@ -210,25 +225,53 @@ export default function DeployFlow({
     if (!readAddress) return
     const r = await readVault(chain, readAddress)
     if (r.ok) {
-      setSnapshot(r.data)
+      // A host a block behind the last one answered never takes the page back in time.
+      setSnapshot((prev) => (prev && sameAddress(prev.address, r.data.address) && prev.network === r.data.network && prev.block > r.data.block ? prev : r.data))
       setSnapshotNote(null)
+    } else if (r.failure.kind === 'unreachable') {
+      setSnapshotNote(`The network did not answer just now, which says nothing about your vault. This page reads it again every ${REREAD_MS / 1000} seconds.`)
     } else {
       setSnapshotNote(`The vault could not be read just now (${r.failure.reason}). Its state is shown once a read succeeds.`)
     }
   }, [chain, readAddress])
 
   const fundedReadBehind = setup ? readBeforeFunding(setup, snapshot) : false
+  const expiryReadBehind = setup ? readBeforeExpiry(setup, snapshot) : false
+  const readBehind = fundedReadBehind || expiryReadBehind
+  const haveRead = liveVault !== null
 
   useEffect(() => {
     if (step !== 'expiry' && step !== 'expiry-pending' && step !== 'fund' && step !== 'fund-pending' && step !== 'done' && !created) return
     void readBack()
-    // A pending step is decided by the chain as much as by its receipt: a transaction that will
-    // never land must not hold the setup, and a value set by any other means counts. The last
-    // screen must not leave a balance from before the funding standing either.
-    if (step !== 'expiry-pending' && step !== 'fund-pending' && !fundedReadBehind) return
-    const t = setInterval(() => void readBack(), fundedReadBehind ? BEHIND_MS : REREAD_MS)
+    // Steps 2 and 3 are decided by the chain as much as by their receipts: a transaction that will
+    // never land must not hold the setup, a value set by any other means counts, one failed read
+    // must not leave the step stuck, and USDC is never offered again on a balance read once, long
+    // ago. The last screen must not leave a value from before its write standing either, or no
+    // value at all. A read this page will never use is not made while the tab is hidden.
+    const keepReading = step === 'expiry' || step === 'expiry-pending' || step === 'fund' || step === 'fund-pending' || (step === 'done' && !haveRead)
+    if (!keepReading && !readBehind) return
+    const t = setInterval(() => {
+      if (!document.hidden) void readBack()
+    }, readBehind ? BEHIND_MS : REREAD_MS)
     return () => clearInterval(t)
-  }, [step, created, readBack, fundedReadBehind])
+  }, [step, created, readBack, readBehind, haveRead])
+
+  // An expiry that landed while the wallet's promise never settled (a phone browser suspended while
+  // the wallet app was open): the vault says it is done, so the page moves on rather than wait on it.
+  useEffect(() => {
+    if (busy === 'expiry' && step !== 'expiry' && step !== 'expiry-pending') release('expiry')
+  }, [busy, step, release])
+
+  // Leaving step 3 ends this tab's wait on the wallet: the vault read shows the USDC has arrived.
+  useEffect(() => {
+    if (step !== 'fund') setFundAsking(false)
+  }, [step])
+
+  const pageTxVault = setup?.vault ?? null
+  const setupNetwork = setup?.network ?? null
+  useEffect(() => {
+    setPageTx(setupNetwork && pageTxVault ? loadTx(setupNetwork, pageTxVault) : null)
+  }, [setupNetwork, pageTxVault, step])
 
   // A deploy with no hash back, or one no longer tracked, can still create the vault: look for it
   // where it should be, and take it only if it reads back exactly as this setup asked.
@@ -236,7 +279,7 @@ export default function DeployFlow({
   const lookForVault = useCallback(async () => {
     if (!target) return
     const back = await deployReadback(chain, target.predicted, target.deployArgs)
-    setLooked({ at: new Date().toISOString(), found: back.status === 'ok', why: back.why })
+    setLooked({ at: new Date().toISOString(), status: back.status, why: back.why })
     if (back.status === 'ok') {
       patch((s) => (vaultToLookFor(s)?.predicted === target.predicted ? { ...s, vault: target.predicted } : s))
       // The wallet's promise may never settle (a phone browser suspended while the wallet app was
@@ -256,12 +299,13 @@ export default function DeployFlow({
     return () => clearInterval(t)
   }, [target, lookForVault])
 
+  const waitingOnWallet = (busy === 'deploy' && target !== null) || busy === 'expiry' || fundAsking
   useEffect(() => {
     setWalletSlow(false)
-    if (busy !== 'deploy' || !target) return
+    if (!waitingOnWallet) return
     const t = setTimeout(() => setWalletSlow(true), WALLET_SLOW_MS)
     return () => clearTimeout(t)
-  }, [busy, target])
+  }, [waitingOnWallet])
 
   const updateRecord = useCallback(
     (field: 'deploy' | 'expiryTx' | 'fundTx', r: TxRecord) => patch((s) => withRecord(s, field, r)),
@@ -310,7 +354,8 @@ export default function DeployFlow({
     void run('prepare', async (onStep) => {
       onStep('checking')
       const facts = await readUsdcFacts(on)
-      if (!facts.ok) throw new TxStop({ code: 'refused', message: facts.reason })
+      // A rate limit says nothing about the values typed, so it never asks to change them.
+      if (!facts.ok) throw new TxStop({ code: facts.noAnswer ? 'rpc_unreachable' : 'refused', message: facts.reason })
       onStep('simulating')
       const p = await prepareDeploy(on, input)
       setPrepared(p)
@@ -428,6 +473,7 @@ export default function DeployFlow({
 
   const forget = () => {
     if (startedAt) storeForget(startedAt)
+    if (busy) release(busy)
     setPrepared(null)
     setSnapshot(null)
     setLooked(null)
@@ -684,7 +730,7 @@ export default function DeployFlow({
                   <div className="mt-1 text-xs text-foreground/80">
                     A phone wallet can send it and never tell this page. This page looks for your vault at <Mono>{setup.intent.predicted}</Mono> every{' '}
                     {LOOK_MS / 1000} seconds and carries on when it is there. Reloading this page is safe: the setup is kept in this browser.
-                    {looked && !looked.found && ` Last look at ${new Date(looked.at).toLocaleTimeString()}: no vault there yet${looked.why ? ` (${looked.why})` : ''}.`}
+                    {lookedLine(looked)}
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <Button size="sm" variant="outline" onClick={() => void lookForVault()}>
@@ -700,7 +746,7 @@ export default function DeployFlow({
               <div className="mt-1 text-xs text-foreground/80">
                 If your wallet sent it (a phone wallet can approve after this tab closed), the vault appears at <Mono>{setup.intent.predicted}</Mono>,
                 the address your account's next transaction creates, and this page picks it up from there. It looks every {LOOK_MS / 1000} seconds.
-                {looked && !looked.found && ` Last look at ${new Date(looked.at).toLocaleTimeString()}: no vault there yet${looked.why ? ` (${looked.why})` : ''}.`}
+                {lookedLine(looked)}
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <Button size="sm" variant="outline" onClick={() => void lookForVault()}>
@@ -825,6 +871,17 @@ export default function DeployFlow({
                   `Set it now: valid for ${SESSION_CHOICES.find((c) => c.seconds === setup.sessionSeconds)?.label ?? `${setup.sessionSeconds} seconds`}`}
               </Button>
               {!liveVault && <span className="text-xs text-foreground/60">{snapshotNote ?? 'Reading the new vault back...'}</span>}
+              {!liveVault && (
+                <Button size="sm" variant="outline" onClick={() => void readBack()}>
+                  Read again
+                </Button>
+              )}
+              {busy === 'expiry' && walletSlow && (
+                <p className="w-full text-xs text-foreground/80">
+                  Your wallet has not answered. A phone wallet can send it and never tell this page. This page reads the vault every {REREAD_MS / 1000} seconds and carries on once
+                  the end date reads set. Reloading this page is safe: the setup is kept in this browser.
+                </p>
+              )}
               {(walletGone || ownerMismatch) && <div className="w-full"><WalletGap wrongAccount={!walletGone} /></div>}
             </div>
           )}
@@ -844,22 +901,49 @@ export default function DeployFlow({
               the receipt above says.
             </p>
           )}
-          {step === 'fund' && fundingUnresolved(setup.fundTx) && !refundConfirmed && (
+          {step === 'fund' && pageTx?.outcome === 'pending' && (
+            <TxReceipt
+              record={pageTx}
+              onUpdate={(r) => {
+                saveTx(r)
+                setPageTx(r)
+              }}
+              onSettled={() => void readBack()}
+            />
+          )}
+          {step === 'fund' && liveVault && (
+            <p className="text-xs text-foreground/70">
+              The vault holds {formatUnitsExact(liveVault.balance, decimals)} USDC, read at {localTime(liveVault.readAt)}. This page reads it again every {REREAD_MS / 1000} seconds.
+              {snapshotNote && ` The last read failed: ${snapshotNote} Nothing new can be sent until a read comes back.`}
+            </p>
+          )}
+          {step === 'fund' && fundingInDoubt(setup) && !fundAsking && !refundConfirmed && (
             <div role="alert" className="rounded-xl border border-warn/30 bg-warn/10 p-4 text-xs text-foreground/85">
-              <div className="font-semibold text-foreground">This page does not know what happened to the first USDC transfer.</div>
-              <div className="mt-1">
-                {setup.fundTx?.outcome === 'replaced' || setup.fundTx?.likelyReplaced
-                  ? 'Your wallet appears to have sent another transaction in its place: if that was a speed-up, the USDC may already be in the vault.'
-                  : 'You stopped tracking it with no receipt seen: it may still land.'}{' '}
-                The vault reads {liveVault ? `${formatUnitsExact(liveVault.balance, decimals)} USDC` : 'as not yet read'}. Check your wallet's activity
-                before sending USDC again.
+              <div className="font-semibold text-foreground">
+                {setup.fundIntent ? 'Your wallet was asked to send USDC, and this page never heard back.' : 'This page does not know what happened to the first USDC transfer.'}
               </div>
-              <Button size="sm" variant="outline" className="mt-2" onClick={() => setRefundConfirmed(true)}>
+              <div className="mt-1">
+                {setup.fundIntent
+                  ? `It may have sent ${formatUnitsExact(setup.fundIntent.amount, decimals)} USDC: if it did, this page sees it land in the vault and carries on.`
+                  : setup.fundTx?.outcome === 'replaced' || setup.fundTx?.likelyReplaced
+                    ? 'Your wallet appears to have sent another transaction in its place: if that was a speed-up, the USDC may already be in the vault.'
+                    : 'You stopped tracking it with no receipt seen: it may still land.'}{' '}
+                Check your wallet's activity before sending USDC again.
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-2"
+                onClick={() => {
+                  patch((s) => ({ ...s, fundIntent: undefined }))
+                  setRefundConfirmed(true)
+                }}
+              >
                 I checked: send USDC again
               </Button>
             </div>
           )}
-          {step === 'fund' && liveVault && provider && account && !ownerMismatch && (!fundingUnresolved(setup.fundTx) || refundConfirmed) && (
+          {step === 'fund' && liveVault && provider && account && !ownerMismatch && (!fundingInDoubt(setup) || fundAsking || refundConfirmed) && (
             <div className="rounded-xl border border-border bg-background/60 p-4">
               <h3 className="text-sm font-semibold text-foreground">Confirmation 3 of 3: put USDC in the vault</h3>
               <p className="mt-1 text-xs text-foreground/70">
@@ -873,21 +957,47 @@ export default function DeployFlow({
                   vault={liveVault}
                   provider={provider}
                   account={account}
-                  held={false}
+                  held={pageTx?.outcome === 'pending' || snapshotNote !== null}
                   initial={formatUnitsExact(setup.funding, decimals)}
                   stillCurrent={() => !driftNow()}
-                  onSubmitted={(r) => {
+                  onHandOff={(amount) => {
+                    setFundAsking(true)
                     setRefundConfirmed(false)
-                    patch((s) => ({ ...s, fundTx: { ...r, action: 'fund' } }))
+                    patch((s) => fundAsked(s, amount, new Date().toISOString()))
+                  }}
+                  onHandOffEnded={(f) => {
+                    setFundAsking(false)
+                    // Declined: nothing was sent. Any other stop may have left the wallet sending it.
+                    if (f.code === 'rejected') patch((s) => ({ ...s, fundIntent: undefined }))
+                    else setFailure(f)
+                  }}
+                  onSubmitted={(r) => {
+                    setFundAsking(false)
+                    setRefundConfirmed(false)
+                    patch((s) => fundSent(s, r))
                   }}
                 />
               </div>
             </div>
           )}
+          {step === 'fund' && fundAsking && walletSlow && (
+            <p className="text-xs text-foreground/80">
+              Your wallet has not answered. A phone wallet can send it and never tell this page. This page reads the vault every {REREAD_MS / 1000} seconds and carries on once the USDC
+              is there. Reloading this page is safe: the setup is kept in this browser, and it remembers your wallet was asked.
+            </p>
+          )}
           {step === 'fund' && (walletGone || ownerMismatch) && <WalletGap wrongAccount={!walletGone} />}
-          {step === 'fund' && !liveVault && <p className="text-xs text-foreground/60">{snapshotNote ?? 'Reading the vault back...'}</p>}
-          {/* Needs no wallet and sends nothing, so it stays on offer whatever else is missing. */}
-          {step === 'fund' && (
+          {step === 'fund' && !liveVault && (
+            <div className="flex flex-wrap items-center gap-2 text-xs text-foreground/60">
+              {snapshotNote ?? 'Reading the vault back...'}
+              <Button size="sm" variant="outline" onClick={() => void readBack()}>
+                Read again
+              </Button>
+            </div>
+          )}
+          {/* Needs no wallet and sends nothing, so it stays on offer whatever else is missing, but
+              not while the wallet has been asked: USDC on its way is not a skip. */}
+          {step === 'fund' && !fundAsking && !setup.fundIntent && (
             <button
               type="button"
               onClick={() => patch((s) => ({ ...s, fundSkipped: true }))}
@@ -908,7 +1018,7 @@ export default function DeployFlow({
               <Mono>{setup.vault}</Mono> on {networkName(chain)}, owned by <Mono>{setup.owner}</Mono>
               {liveVault ? (
                 <>
-                  , agent key {liveVault.sessionKeyExpiry === 0n ? <Chip tone="danger">no time bound</Chip> : 'with an end date'}
+                  , agent key {expiryReadBehind ? 'with its end date still being read' : liveVault.sessionKeyExpiry === 0n ? <Chip tone="danger">no time bound</Chip> : 'with an end date'}
                   {fundedReadBehind ? ', its balance still being read.' : `, balance ${formatUnitsExact(liveVault.balance, decimals)} USDC.`}
                 </>
               ) : (
@@ -980,7 +1090,7 @@ export default function DeployFlow({
             </>
           ) : null}
           .{' '}
-          <button type="button" onClick={forget} disabled={busy !== null} className="font-semibold text-accent underline underline-offset-2 disabled:opacity-50">
+          <button type="button" onClick={forget} disabled={busy !== null && !walletSlow} className="font-semibold text-accent underline underline-offset-2 disabled:opacity-50">
             Forget this setup
           </button>
         </p>

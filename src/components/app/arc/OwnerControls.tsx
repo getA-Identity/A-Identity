@@ -7,9 +7,11 @@
  * exist on purpose (that is where an owner-held vault lives) and are labelled as real money.
  *
  * While a transaction from this page is still pending for the vault, the controls that change
- * limits or move money wait for it, so nothing is signed twice. Freeze and Revoke never wait:
- * they are how an owner stops the agent, and a pending record (possibly one that will never get
- * a receipt) must not stand in the way. They say instead how a wallet orders nonces.
+ * limits or move money wait for it, so nothing is signed twice. Freeze and Revoke do not wait for
+ * any other transaction: they are how an owner stops the agent, and a pending record (possibly one
+ * that will never get a receipt) must not stand in the way. They say instead how a wallet orders
+ * nonces. They wait only for themselves: the same call already on its way is not signed again, and
+ * stopping tracking it (or the read catching up) gives the button back.
  *
  * Every control simulates its call as the owner first, so a refusal shows here before the wallet
  * opens, then hands the wallet one transaction with explicit gas and fees. A-Identity signs none
@@ -33,7 +35,7 @@ import {
   parseUnitsExact,
   withdrawRefusal,
 } from '../../../lib/arc/vault-rules'
-import { STEP_LABEL, prepareOwnerCall, preparedStale, sendPrepared, type OwnerCall, type PreparedTx } from '../../../lib/arc/vault-write'
+import { STEP_LABEL, prepareOwnerCall, preparedStale, sendPrepared, type OwnerCall, type PreparedTx, type TxAction } from '../../../lib/arc/vault-write'
 import type { Eip1193 } from '../../../lib/wallets'
 import { Button } from '../../ui/button'
 import FailureNotice from './FailureNotice'
@@ -50,7 +52,11 @@ type Shared = {
   onSubmitted: (r: TxRecord) => void
   /** A transaction for this vault is still pending: nothing new is prepared or signed, but a freeze or a revoke. */
   held: boolean
+  /** What that transaction does, while it is pending or landed and not yet read back. */
+  inFlight?: TxAction | null
 }
+
+const SENT_LABEL = 'Sent, waiting for it to land'
 
 /** Said under Freeze and Revoke while another transaction from this page is pending. */
 function NonceOrder() {
@@ -118,10 +124,11 @@ function FreezeControl(props: Shared) {
   const { vault, held } = props
   const { busy, step, failure, act } = useOwnerAction(props)
   const next = !vault.frozen
+  const sent = props.inFlight === (next ? 'freeze' : 'unfreeze')
   return (
     <Card title="Freeze">
       <div className="flex flex-wrap items-center gap-3">
-        <Button variant="outline" size="sm" onClick={() => void act('freeze', { fn: 'setFrozen', frozen: next })} disabled={busy !== null || (held && !next)}>
+        <Button variant="outline" size="sm" onClick={() => void act('freeze', { fn: 'setFrozen', frozen: next })} disabled={busy !== null || sent || (held && !next)}>
           {busy ? (
             <Loader2 size={14} className="animate-spin" aria-hidden="true" />
           ) : next ? (
@@ -129,7 +136,7 @@ function FreezeControl(props: Shared) {
           ) : (
             <Sun size={14} className="text-ok" aria-hidden="true" />
           )}
-          {working(busy, step, next ? 'Freeze the vault' : 'Unfreeze the vault')}
+          {sent ? SENT_LABEL : working(busy, step, next ? 'Freeze the vault' : 'Unfreeze the vault')}
         </Button>
         <span className="text-xs text-foreground/65">
           {vault.frozen
@@ -137,7 +144,7 @@ function FreezeControl(props: Shared) {
             : 'Freezing stops every agent payment on-chain at once. Your wallet prompt is the confirmation.'}
         </span>
       </div>
-      {held && next && <NonceOrder />}
+      {held && next && !sent && <NonceOrder />}
       {failure && (
         <div className="mt-3">
           <FailureNotice failure={failure} />
@@ -152,6 +159,7 @@ function SessionKeyControl(props: Shared) {
   const [seconds, setSeconds] = useState(DEFAULT_SESSION_SECONDS)
   const { busy, step, failure, act } = useOwnerAction(props)
   const id = `session-${vault.address.slice(2, 10)}`
+  const revokeSent = props.inFlight === 'revoke'
   return (
     <Card title="Session key">
       {vault.sessionKeyExpiry === 0n && (
@@ -181,17 +189,17 @@ function SessionKeyControl(props: Shared) {
           size="sm"
           className="border-danger/40 text-danger hover:bg-danger/10"
           onClick={() => void act('revoke', { fn: 'revoke' })}
-          disabled={busy !== null || vault.expired}
+          disabled={busy !== null || vault.expired || revokeSent}
         >
           {busy === 'revoke' && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
-          {busy === 'revoke' ? working(busy, step, '') : 'Revoke now'}
+          {busy === 'revoke' ? working(busy, step, '') : revokeSent ? SENT_LABEL : 'Revoke now'}
         </Button>
       </div>
       <p className="mt-2 text-[11px] text-foreground/60">
         The expiry is the latest block's time plus the lifetime chosen, never this browser's clock. Revoking writes 1, a second already past on
         every chain; this page never writes 0, which would mean no time bound at all.
       </p>
-      {held && !vault.expired && <NonceOrder />}
+      {held && !vault.expired && !revokeSent && <NonceOrder />}
       {failure && (
         <div className="mt-3">
           <FailureNotice failure={failure} />

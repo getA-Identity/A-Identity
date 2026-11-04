@@ -44,7 +44,7 @@ import type { Chain } from '../../lib/chains'
 import { listKnownVaults, seededKnownVaults, type KnownVaults } from '../../lib/arc/known-vaults'
 import { autoLandVault, FUND_RISK, isOurKey, isOurVault, NAMES_OUR_KEY, NOT_MY_VAULT } from '../../lib/arc/ours'
 import { clearTx, loadTx, saveTx, type TxRecord } from '../../lib/arc/pending'
-import { predictedVault, setupAlert, withRecord } from '../../lib/arc/tx-rules'
+import { predictedVault, setupAlert, setupStep, setupTxOn, withRecord } from '../../lib/arc/tx-rules'
 import {
   ARC_CHAINS,
   ARC_MAINNET,
@@ -59,6 +59,12 @@ import {
   type VaultSnapshot,
 } from '../../lib/arc/vault-read'
 import { deployFormRefused, sameAddress } from '../../lib/arc/vault-rules'
+import type { TxAction } from '../../lib/arc/vault-write'
+
+/** How soon a read from before a settled write's block is tried again: a host catches up in seconds. */
+const BEHIND_MS = 3_000
+/** How often a read no host answered is tried again. No answer is not a verdict, so nobody has to press Refresh. */
+const UNANSWERED_RETRY_MS = 10_000
 
 type ReadState = {
   /** The vault this state is about, so a late answer for another vault is dropped. */
@@ -184,6 +190,30 @@ export default function ArcVault() {
   // land. The last is hidden only when the vault on screen IS that vault and reads an expiry.
   const alert = setupAlert(setup, v)
   const setupAt = setup ? predictedVault(setup) : null
+  // A transaction the setup has on its way holds this page as one from this page does.
+  const setupTx = setupTxOn(setup, network, contract)
+  const fundIntentHere = Boolean(setup?.fundIntent && setup.network === network && contract && sameAddress(setup.vault, contract) && setupStep(setup, false, v) === 'fund')
+  // The receipt can come from a host ahead of the one read: until the read reaches the write's own
+  // block, its values are from before the write and must not read as the vault's state now.
+  const landedBlock = shownTx && shownTx.outcome !== 'pending' ? shownTx.block : undefined
+  const readBehind = Boolean(v && landedBlock !== undefined && v.block < landedBlock)
+  const held = shownTx?.outcome === 'pending' || setupTx !== null || readBehind
+  const inFlight: TxAction | null = shownTx && (shownTx.outcome === 'pending' || readBehind) ? shownTx.action : (setupTx?.record.action ?? null)
+  const failedKind = read.key === key ? read.failure?.kind : undefined
+
+  useEffect(() => {
+    if (!readBehind) return
+    const t = setInterval(() => void load(), BEHIND_MS)
+    return () => clearInterval(t)
+  }, [readBehind, load])
+
+  useEffect(() => {
+    if (failedKind !== 'unreachable') return
+    const t = setInterval(() => {
+      if (!document.hidden) void load()
+    }, UNANSWERED_RETRY_MS)
+    return () => clearInterval(t)
+  }, [failedKind, load])
 
   return (
     <AppPage
@@ -321,6 +351,12 @@ export default function ArcVault() {
                     setEventsRound((n) => n + 1)
                   }}
                 />
+                {readBehind && v && landedBlock !== undefined && (
+                  <p role="status" className="rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground/85">
+                    This landed in block {landedBlock.toLocaleString('en-US')}, and the values below are still from block {v.block.toLocaleString('en-US')}, just before it.
+                    They may not show it yet. The vault is being read again every {BEHIND_MS / 1000} seconds, and the controls wait until then.
+                  </p>
+                )}
                 {shownTx.outcome !== 'pending' && (
                   <button
                     type="button"
@@ -334,6 +370,17 @@ export default function ArcVault() {
                   </button>
                 )}
               </div>
+            )}
+
+            {setupTx && setup && (
+              <TxReceipt
+                record={setupTx.record}
+                onUpdate={(r) => store.patch(setup.startedAt, (s) => withRecord(s, setupTx.field, r))}
+                onSettled={() => {
+                  void load()
+                  setEventsRound((n) => n + 1)
+                }}
+              />
             )}
 
             {read.failure && read.key === key && (
@@ -387,7 +434,8 @@ export default function ArcVault() {
                     wallet={wallet}
                     ours={ours}
                     ownerIsOurKey={ownerIsOurKey}
-                    pending={shownTx?.outcome === 'pending'}
+                    pending={held}
+                    inFlight={inFlight}
                     onSubmitted={onSubmitted}
                   />
                 </div>
@@ -399,7 +447,17 @@ export default function ArcVault() {
                 <h3 className="text-sm font-semibold text-foreground">Fund this vault</h3>
                 <p className="mt-1 text-xs text-foreground/70">{FUND_RISK} Send only after its session key has an expiry.</p>
                 <div className="mt-3">
-                  {!wallet.account || !wallet.wallet ? (
+                  {fundIntentHere && setup ? (
+                    <div className="space-y-2 text-xs text-foreground/85">
+                      <p role="alert">
+                        Your wallet was asked to put USDC in this vault during its setup, and this page never heard back, so it may already be on its way. Nothing is offered
+                        here until the setup has that sorted out.
+                      </p>
+                      <Button size="sm" onClick={() => openDeploy(setup.network)}>
+                        Finish the setup
+                      </Button>
+                    </div>
+                  ) : !wallet.account || !wallet.wallet ? (
                     <p className="text-xs text-foreground/65">Connect an EVM wallet above to send USDC into it.</p>
                   ) : wallet.chainId !== chain.chainId ? (
                     <p className="text-xs text-foreground/65">Your wallet is on another chain. Switch it to {networkName(chain)} in the strip above.</p>
@@ -429,7 +487,7 @@ export default function ArcVault() {
                           provider={wallet.wallet.provider}
                           account={wallet.account}
                           onSubmitted={onSubmitted}
-                          held={shownTx?.outcome === 'pending'}
+                          held={held}
                         />
                       )}
                     </>
@@ -497,6 +555,7 @@ function OwnerSection({
   ours,
   ownerIsOurKey,
   pending,
+  inFlight,
   onSubmitted,
 }: {
   v: VaultSnapshot
@@ -505,6 +564,7 @@ function OwnerSection({
   ours: boolean
   ownerIsOurKey: boolean
   pending: boolean
+  inFlight: TxAction | null
   onSubmitted: (r: TxRecord) => void
 }) {
   const ownerLine = <OwnerMatch vault={v} account={wallet.account} ownerIsOurKey={ownerIsOurKey} />
@@ -564,6 +624,7 @@ function OwnerSection({
         provider={wallet.wallet.provider}
         onSubmitted={onSubmitted}
         held={pending}
+        inFlight={inFlight}
       />
     </>
   )

@@ -7,7 +7,8 @@
  * the host's latest block is read first, and the code and every view are then read pinned to
  * that block number, so the values on screen describe a single moment and the stamp under them
  * names it. A host that does not answer, or answers for another chain, passes the snapshot to the
- * next host in registry order.
+ * next host in registry order. So does one host saying there is no code or no vault, which may only
+ * mean it is behind or broken: that verdict takes two hosts (agreedAbsence, hosts.ts).
  *
  * A receipt is different: one host returning null proves nothing on Arc (on 2026-10-11 one of
  * the four mainnet hosts returned none of 19 receipts that exist), so a receipt is asked of
@@ -19,11 +20,7 @@
  * page can say so instead of showing the previous numbers as if they were current.
  */
 import {
-  AbiDecodingDataSizeTooSmallError,
-  AbiDecodingZeroDataError,
   BaseError,
-  ContractFunctionRevertedError,
-  ContractFunctionZeroDataError,
   TransactionNotFoundError,
   TransactionReceiptNotFoundError,
   createPublicClient,
@@ -40,10 +37,11 @@ import {
 } from 'viem'
 import { CHAIN_BY_ID, CHAIN_RPC_URLS, CHAIN_USDC, type Chain } from '../chains'
 import { AGENT_SPEND_POLICY_ABI, AGENT_SPEND_POLICY_IMMUTABLES, AGENT_SPEND_POLICY_RUNTIME } from '../contracts/agent-spend-policy'
-import { NoHostAnswered, onHosts } from './hosts'
-import { firstFound, missingFrom, type DecodedLog, type Expectation } from './tx-rules'
+import { NoHostAnswered, agreedAbsence, isContractAnswer, onHosts } from './hosts'
+import { firstFound, heardEnough, missingFrom, type DecodedLog, type Expectation } from './tx-rules'
 import { isKnownBuild, readableDate, sameAddress } from './vault-rules'
 
+export { isContractAnswer }
 export type { Expectation, VaultEventName } from './tx-rules'
 
 // --- which chains ---
@@ -131,21 +129,6 @@ export function clientFor(chain: Chain, url: string): ArcClient {
     clients.set(key, c)
   }
   return c
-}
-
-/** True when the failure was the contract's own answer (a revert, or no data), not the host's. */
-export function isContractAnswer(e: unknown): boolean {
-  if (!(e instanceof BaseError)) return false
-  return Boolean(
-    e.walk(
-      (x) =>
-        x instanceof ContractFunctionRevertedError ||
-        x instanceof ContractFunctionZeroDataError ||
-        x instanceof AbiDecodingZeroDataError ||
-        x instanceof AbiDecodingDataSizeTooSmallError ||
-        (typeof (x as { code?: unknown }).code === 'number' && (x as { code: number }).code === 3),
-    ),
-  )
 }
 
 export class RpcUnreachableError extends Error {
@@ -245,7 +228,7 @@ export const READ_FAILURE_TITLE: Record<ReadFailureKind, string> = {
   no_contract: 'No contract at that address on this network',
   not_a_vault: 'This contract does not answer like an AgentSpendPolicy vault',
   wrong_chain: 'An RPC answered for a different chain',
-  unreachable: 'No RPC answered',
+  unreachable: 'The network did not answer',
 }
 
 export const READ_FAILURE_NEXT: Record<ReadFailureKind, string> = {
@@ -255,7 +238,8 @@ export const READ_FAILURE_NEXT: Record<ReadFailureKind, string> = {
     'Check the network: a vault on Arc testnet does not exist on Arc Mainnet, and the other way round. A vault deployed seconds ago may need one more read.',
   not_a_vault: 'Paste the vault contract address, not the owner, the operator or the USDC contract.',
   wrong_chain: 'Nothing was read from that host. Press Refresh; if it persists, the registry entry for this chain needs a look.',
-  unreachable: 'Check your connection, then press Refresh. Nothing is shown in place of the values until a read succeeds.',
+  unreachable:
+    'This says nothing about the vault: network nodes limit how fast a page can ask, and they may be busy. This page tries again by itself, and Refresh does the same. Nothing is shown in place of the values until a read succeeds.',
 }
 
 /**
@@ -274,6 +258,7 @@ export async function readVault(
   const usdc = usdcOf(chain)
   if (!usdc) return failed('no_usdc', `${chain.name} has no USDC entry in the registry`)
   const tried: string[] = []
+  const said: { kind: 'no_contract' | 'not_a_vault'; reason: string }[] = []
   let lastReason = ''
   const urls = [...rpcUrls(chain)]
   if (opts.preferHost) urls.sort((a, b) => Number(hostOf(b) === opts.preferHost) - Number(hostOf(a) === opts.preferHost))
@@ -295,7 +280,13 @@ export async function readVault(
       const head = opts.blockNumber === undefined || latest.number === opts.blockNumber ? latest : await client.getBlock({ blockNumber: opts.blockNumber })
       const blockNumber = head.number
       const code = await client.getCode({ address: vault, blockNumber })
-      if (!code || code === '0x') return failed('no_contract', `${host} has no code at ${vault} at block ${blockNumber}`)
+      if (!code || code === '0x') {
+        lastReason = `${host} has no code at ${vault} at block ${blockNumber}`
+        said.push({ kind: 'no_contract', reason: lastReason })
+        const agreed = agreedAbsence(said, urls.length)
+        if (agreed) return failed(agreed.kind, agreed.reason)
+        continue
+      }
       const at = { address: vault, abi: AGENT_SPEND_POLICY_ABI, blockNumber } as const
       let views
       try {
@@ -313,8 +304,12 @@ export async function readVault(
           client.readContract({ ...at, functionName: 'balance' }),
         ] as const)
       } catch (e) {
-        if (isContractAnswer(e)) return failed('not_a_vault', 'one of its views reverted or returned nothing, so it is not an AgentSpendPolicy vault')
-        throw e
+        if (!isContractAnswer(e)) throw e
+        lastReason = `${host}: one of its views reverted or returned nothing`
+        said.push({ kind: 'not_a_vault', reason: 'one of its views reverted or returned nothing, so it is not an AgentSpendPolicy vault' })
+        const agreed = agreedAbsence(said, urls.length)
+        if (agreed) return failed(agreed.kind, agreed.reason)
+        continue
       }
       const [ownerRaw, operator, tokenRaw, dailyCap, autoApproveMax, frozen, allowlistEnabled, sessionKeyExpiry, today, spentToday, balance] = views
       const owner = getAddress(ownerRaw)
@@ -392,7 +387,7 @@ export async function readUsdcBalance(chain: Chain, address: string): Promise<bi
  * The USDC contract's own symbol and decimals, read live and checked against the registry,
  * failing closed: a mismatch would make every amount on the page wrong by a power of ten.
  */
-export async function readUsdcFacts(chain: Chain): Promise<{ ok: true; symbol: string; decimals: number } | { ok: false; reason: string }> {
+export async function readUsdcFacts(chain: Chain): Promise<{ ok: true; symbol: string; decimals: number } | { ok: false; reason: string; noAnswer?: boolean }> {
   const usdc = usdcOf(chain)
   if (!usdc) return { ok: false, reason: `${chain.name} has no USDC entry in the registry.` }
   try {
@@ -408,7 +403,8 @@ export async function readUsdcFacts(chain: Chain): Promise<{ ok: true; symbol: s
     if (symbol !== 'USDC') return { ok: false, reason: `The registry's USDC contract reports the symbol "${symbol}". Refusing to move money until that is explained.` }
     return { ok: true, symbol, decimals: Number(decimals) }
   } catch (e) {
-    return { ok: false, reason: `The USDC contract could not be read: ${shortReason(e)}` }
+    // No host answering says nothing about the contract, or about what the person typed.
+    return { ok: false, reason: `The USDC contract could not be read: ${shortReason(e)}`, noAnswer: e instanceof RpcUnreachableError }
   }
 }
 
@@ -466,8 +462,14 @@ export type SentTx = {
   host: string
 }
 
-export async function readTransaction(chain: Chain, hash: Hex): Promise<SentTx | null> {
-  for (const url of rpcUrls(chain)) {
+/**
+ * The transaction from the first host that has it; null when enough hosts answered and none does;
+ * undefined when too few answered to say. A host that errored or was rate limited said nothing.
+ */
+export async function readTransaction(chain: Chain, hash: Hex): Promise<SentTx | null | undefined> {
+  const urls = rpcUrls(chain)
+  let answered = 0
+  for (const url of urls) {
     try {
       const tx = await clientFor(chain, url).getTransaction({ hash })
       return {
@@ -482,10 +484,10 @@ export async function readTransaction(chain: Chain, hash: Hex): Promise<SentTx |
         host: hostOf(url),
       }
     } catch (e) {
-      if (e instanceof TransactionNotFoundError) continue
+      if (e instanceof TransactionNotFoundError) answered += 1
     }
   }
-  return null
+  return heardEnough(answered, urls.length) ? null : undefined
 }
 
 export type ReceiptPoll =
