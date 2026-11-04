@@ -151,6 +151,7 @@ test('the zero state reports every metric at 0 with its target and a reason, on 
     deliverable2Due: '2026-10-30',
     milestone1Due: '2026-11-05',
     milestone2Due: '2026-11-06',
+    measuredThrough: '2026-11-13',
   })
   assert.deepEqual(r.logs, { gateway: { readable: true, rows: 0 }, facilitator: { readable: true, rows: 0 } })
   assert.deepEqual(r.usage.internal, EMPTY_SIDE)

@@ -75,8 +75,11 @@ export const ARC_SEASON_CHAIN = ADMISSION_CHAIN
 export const ARC_SEASON_PROGRAM = {
   name: 'Arc Acceleration Season',
   deliverable2Due: '2026-10-30',
+  // The two milestone dates are the targets the team set itself. The program said on 2026-11-04 that the
+  // Deliverable 1 milestones are measured through its last day, and that traction can extend past it.
   milestone1Due: '2026-11-05',
   milestone2Due: '2026-11-06',
+  measuredThrough: '2026-11-13',
 } as const
 
 /** The Deliverable 1 commitments as Circle revised them on 2026-10-19. */
@@ -1160,6 +1163,6 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
       },
       note: `After the program the reference is ${ARC_SEASON_TARGETS.activeExternalWallets} external wallets with a settled check inside the last ${ARC_SEASON_TARGETS.activeWindowDays} days, measured on a rolling window from the time of each read.`,
     },
-    note: 'Targets are the Deliverable 1 commitments as revised by Circle on 2026-10-19; counts are read from the settlement logs and the admitted vault list on every request, and the curated lists (vaults, refusals, partners) fill only when the evidence exists.',
+    note: `Targets are the Deliverable 1 commitments as revised by Circle on 2026-10-19; counts are read from the settlement logs and the admitted vault list on every request, and the curated lists (vaults, refusals, partners) fill only when the evidence exists. The date on each milestone is the target the team set; the program measures them through ${ARC_SEASON_PROGRAM.measuredThrough}, its last day, and traction can extend past that.`,
   }
 }
