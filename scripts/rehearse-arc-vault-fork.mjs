@@ -43,7 +43,7 @@
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { spawn, spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { createServer } from 'node:net'
+import { connect, createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -301,10 +301,22 @@ const api = `http://127.0.0.1:${backendPort}`
 let databaseUrl = null
 if (flag('--postgres')) {
   const pgDir = join(work, 'pg')
-  const init = spawnSync('initdb', ['-D', pgDir, '-U', 'rehearsal', '--auth=trust', '-E', 'UTF8'], { encoding: 'utf8' })
+  // On macOS postgres refuses to start under an unset or invalid locale.
+  const pgEnv = { PATH: process.env.PATH, LC_ALL: 'C' }
+  const init = spawnSync('initdb', ['-D', pgDir, '-U', 'rehearsal', '--auth=trust', '-E', 'UTF8', '--locale=C'], { encoding: 'utf8', env: pgEnv })
   if (init.status !== 0) throw new Error(`initdb failed: ${init.error?.message ?? init.stderr}`)
   const pgPort = await freePort()
-  children.push(spawn('postgres', ['-D', pgDir, '-p', String(pgPort), '-h', '127.0.0.1', '-k', ''], { stdio: 'ignore' }))
+  children.push(spawn('postgres', ['-D', pgDir, '-p', String(pgPort), '-h', '127.0.0.1', '-k', ''], { stdio: 'ignore', env: pgEnv }))
+  const accepting = () =>
+    new Promise((resolve) => {
+      const c = connect(pgPort, '127.0.0.1')
+      c.once('connect', () => {
+        c.destroy()
+        resolve(true)
+      })
+      c.once('error', () => resolve(false))
+    })
+  await waitFor('Postgres accepting connections', accepting, 30000)
   databaseUrl = `postgres://rehearsal@127.0.0.1:${pgPort}/postgres`
 }
 let backendOut = ''
