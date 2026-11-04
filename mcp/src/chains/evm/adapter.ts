@@ -44,15 +44,24 @@ import { AgentSpendPolicyAbi, AgentSpendPolicyBytecode } from '../../contracts/A
  * Why a vault deploy is refused before any key or RPC is touched, or null when its caps are
  * usable. In AgentSpendPolicy a daily cap or a per-payment ceiling of 0 is not a small limit,
  * it is no limit (the pay gates are skipped when the value is 0), so a vault deployed with one
- * would carry no bound on that axis at all. A deploy asks for both above 0; turning a bound off
- * later stays possible through setPolicy, by the owner, on purpose.
+ * would carry no bound on that axis at all. A write from this backend asks for both above 0, in
+ * token units as well as in dollars, because an amount too small for the token's decimals rounds
+ * to 0. Turning a bound off stays possible from the owner's own wallet, on purpose.
  */
-export function vaultCapsRefusal(dailyCapUsd: number, autoApproveUsd: number): string | null {
+export function vaultCapsRefusal(dailyCapUsd: number, autoApproveUsd: number, decimals = 6): string | null {
+  const usable = (usd: number) => Number.isFinite(usd) && usd > 0 && Math.round(usd * 10 ** decimals) >= 1
   const bad: string[] = []
-  if (!(Number.isFinite(dailyCapUsd) && dailyCapUsd > 0)) bad.push('daily cap')
-  if (!(Number.isFinite(autoApproveUsd) && autoApproveUsd > 0)) bad.push('per-payment ceiling')
+  if (!usable(dailyCapUsd)) bad.push('daily cap')
+  if (!usable(autoApproveUsd)) bad.push('per-payment ceiling')
   if (!bad.length) return null
-  return `Refused before any transaction: a ${bad.join(' and a ')} of 0 means no limit in AgentSpendPolicy, so this vault would carry no bound there. Set both above 0.`
+  return `Refused before any transaction: a ${bad.join(' and a ')} of 0 means no limit in AgentSpendPolicy, so this vault would carry no bound there. Set both above 0, and not so small that it rounds to 0.`
+}
+
+/** Why an expiry is not written, or null. 0 means no time bound at all, and nothing here sends it by accident. */
+export function vaultExpiryRefusal(expiryUnix: number): string | null {
+  return Number.isFinite(expiryUnix) && Math.floor(expiryUnix) >= 1
+    ? null
+    : 'Refused before any transaction: an expiry of 0 means the agent key never expires, so it is not written. To revoke, write a time already past, such as 1.'
 }
 
 type Hex = `0x${string}`
@@ -803,7 +812,7 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
     input: { owner?: string; operator?: string; dailyCapUsd: number; autoApproveUsd: number },
     env: NodeJS.ProcessEnv = process.env,
   ): Promise<VaultDeployed | VaultNoKey | VaultReverted | Unconfirmed> {
-    const capsRefused = vaultCapsRefusal(input.dailyCapUsd, input.autoApproveUsd)
+    const capsRefused = vaultCapsRefusal(input.dailyCapUsd, input.autoApproveUsd, chain.usdcDecimals)
     if (capsRefused) return { executed: false, reverted: false, reason: capsRefused }
     const signer = await walletClient(env)
     if (!signer) return { executed: false, reverted: false, reason: NO_KEY }
@@ -874,19 +883,27 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
     vaultPayment(vault, 'pay', to, amountUsd, env, hooks)
   const policyOwnerPay = (vault: string, to: string, amountUsd: number, env: NodeJS.ProcessEnv = process.env, hooks: BroadcastHooks = {}) =>
     vaultPayment(vault, 'ownerPay', to, amountUsd, env, hooks)
-  const policySetPolicy = (
+  const policySetPolicy = async (
     vault: string,
     input: { dailyCapUsd: number; autoApproveUsd: number; allowlistEnabled: boolean },
     env: NodeJS.ProcessEnv = process.env,
-  ) => vaultWrite(vault, 'setPolicy', [usdcUnits(chain, input.dailyCapUsd), usdcUnits(chain, input.autoApproveUsd), input.allowlistEnabled], env)
+  ): Promise<VaultResult> => {
+    const capsRefused = vaultCapsRefusal(input.dailyCapUsd, input.autoApproveUsd, chain.usdcDecimals)
+    if (capsRefused) return { executed: false, reverted: false, reason: capsRefused }
+    return vaultWrite(vault, 'setPolicy', [usdcUnits(chain, input.dailyCapUsd), usdcUnits(chain, input.autoApproveUsd), input.allowlistEnabled], env)
+  }
   const policySetFrozen = (vault: string, frozen: boolean, env: NodeJS.ProcessEnv = process.env) =>
     vaultWrite(vault, 'setFrozen', [frozen], env)
   /** Grant / extend / revoke the agent's session key by setting the UNIX expiry (seconds).
-   *  A future time grants/extends; a second already past revokes at once; 0 = no time bound.
-   *  The current second is NOT a revoke: pay still passes until it ends, so revoke with 1
+   *  A future time grants/extends; a second already past revokes at once. 0 would mean no time
+   *  bound, so it is refused here, and a negative number no longer clamps to it. The current
+   *  second is NOT a revoke: pay still passes until it ends, so revoke with 1
    *  (platform/vault-adapter.ts REVOKED_SESSION_EXPIRY). */
-  const policySetSessionExpiry = (vault: string, expiryUnix: number, env: NodeJS.ProcessEnv = process.env) =>
-    vaultWrite(vault, 'setSessionKeyExpiry', [BigInt(Math.max(0, Math.floor(expiryUnix)))], env)
+  const policySetSessionExpiry = async (vault: string, expiryUnix: number, env: NodeJS.ProcessEnv = process.env): Promise<VaultResult> => {
+    const expiryRefused = vaultExpiryRefusal(expiryUnix)
+    if (expiryRefused) return { executed: false, reverted: false, reason: expiryRefused }
+    return vaultWrite(vault, 'setSessionKeyExpiry', [BigInt(Math.floor(expiryUnix))], env)
+  }
   const policySetAllowed = (vault: string, payee: string, ok: boolean, env: NodeJS.ProcessEnv = process.env) =>
     vaultWrite(vault, 'setAllowed', [payee as Hex, ok], env)
   const policyWithdraw = (vault: string, to: string, amountUsd: number, env: NodeJS.ProcessEnv = process.env) =>

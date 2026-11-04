@@ -37,6 +37,10 @@ const arg = (name, def) => {
 }
 const DAILY_CAP_USD = Number(arg('daily-cap', '25'))
 const AUTO_APPROVE_USD = Number(arg('auto-approve', '5'))
+if (!(DAILY_CAP_USD > 0) || !(AUTO_APPROVE_USD > 0)) {
+  console.error('error: --daily-cap and --auto-approve must be above 0. In AgentSpendPolicy 0 means no limit, not no spending.')
+  process.exit(1)
+}
 const SESSION_DAYS = Number(arg('session-days', '7'))
 
 let getChainById, resolveRpcUrls, AgentSpendPolicyAbi, AgentSpendPolicyBytecode
@@ -74,6 +78,10 @@ const [symbol, decimals] = await Promise.all([
   pub.readContract({ address: derived, abi: ERC20_META, functionName: 'decimals' }),
 ])
 const units = (usd) => BigInt(Math.round(usd * 10 ** Number(decimals)))
+if (units(DAILY_CAP_USD) < 1n || units(AUTO_APPROVE_USD) < 1n) {
+  console.error(`error: --daily-cap and --auto-approve round to 0 at ${decimals} decimals, and in AgentSpendPolicy 0 means no limit.`)
+  process.exit(1)
+}
 
 console.log(`Target: ${chain.name} (${chain.caip2})`)
 console.log(`Token:  ${derived} (${symbol}, ${decimals} decimals) - canonical-bridge of Sepolia USDC, testnet-only`)

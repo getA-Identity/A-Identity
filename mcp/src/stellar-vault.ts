@@ -113,10 +113,12 @@ export function ownerCallPlan(action: OwnerAction, args: OwnerCallArgs, decimals
   const money = (usd: number) => ({ kind: 'i128' as const, value: toRawUnits(usd, decimals) })
   switch (action) {
     case 'set_policy': {
-      const cap = positiveUsd(args.dailyCapUsd, { allowZero: true })
-      const ceiling = positiveUsd(args.autoApproveUsd, { allowZero: true })
-      if (cap === null) return { ok: false, reason: 'dailyCapUsd must be a number from 0 upward (0 means no cap)' }
-      if (ceiling === null) return { ok: false, reason: 'autoApproveUsd must be a number from 0 upward (0 means no ceiling)' }
+      // In the contract 0 is no limit, not no spending, and an amount too small for the token's
+      // decimals rounds to it. This backend prepares neither; to stop an agent, freeze the vault.
+      const cap = positiveUsd(args.dailyCapUsd, { allowZero: false })
+      const ceiling = positiveUsd(args.autoApproveUsd, { allowZero: false })
+      if (cap === null || money(cap).value === '0') return { ok: false, reason: 'dailyCapUsd must be a number above 0 (0 would mean no cap)' }
+      if (ceiling === null || money(ceiling).value === '0') return { ok: false, reason: 'autoApproveUsd must be a number above 0 (0 would mean no ceiling)' }
       if (typeof args.allowlistEnabled !== 'boolean') {
         return { ok: false, reason: 'allowlistEnabled must be true or false; leaving it out would silently change the allowlist' }
       }
@@ -151,19 +153,16 @@ export function ownerCallPlan(action: OwnerAction, args: OwnerCallArgs, decimals
     }
     case 'set_session_key_expiry': {
       const expiry = args.expiryUnix
-      if (typeof expiry !== 'number' || !Number.isFinite(expiry) || expiry < 0 || !Number.isInteger(expiry)) {
-        return { ok: false, reason: 'expiryUnix must be a whole number of UNIX seconds, 0 or more' }
-      }
       // The contract's rule, restated because it is the one people get backwards: 0 is NO
-      // time bound at all, which is an operator whose authority never lapses.
+      // time bound at all, which is an operator whose authority never lapses. So it is refused.
+      if (typeof expiry !== 'number' || !Number.isFinite(expiry) || expiry < 1 || !Number.isInteger(expiry)) {
+        return { ok: false, reason: 'expiryUnix must be a whole number of UNIX seconds, 1 or more (0 would mean the operator never lapses)' }
+      }
       return {
         ok: true,
         method: action,
         args: [{ kind: 'u64', value: String(expiry) }],
-        summary:
-          expiry === 0
-            ? 'remove the session-key time bound entirely (0 means the operator never lapses)'
-            : `session key expires ${new Date(expiry * 1000).toISOString()}; pay() reverts SessionKeyExpired after it`,
+        summary: `session key expires ${new Date(expiry * 1000).toISOString()}; pay() reverts SessionKeyExpired after it`,
       }
     }
     case 'withdraw':

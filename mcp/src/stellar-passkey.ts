@@ -1414,6 +1414,10 @@ export function passkeyDeployPlan(body: unknown, decimals: number, caps: Passkey
   if (!finite(b.autoApproveUsd) || b.autoApproveUsd <= 0 || b.autoApproveUsd > caps.autoApproveUsd) {
     return { ok: false, reason: `autoApproveUsd must be a number above 0 and at most ${caps.autoApproveUsd} on ${network} (0 would mean no ceiling)` }
   }
+  // Above 0 in dollars can still round to 0 raw units, which the contract reads as no limit.
+  if (toRawUnits(b.dailyCapUsd, decimals) === '0' || toRawUnits(b.autoApproveUsd, decimals) === '0') {
+    return { ok: false, reason: `dailyCapUsd and autoApproveUsd are too small for ${decimals} decimals: they round to 0, and 0 would mean no limit` }
+  }
   let seedUsd: number = caps.seedUsdDefault
   if (b.seedUsd !== undefined) {
     if (!finite(b.seedUsd) || b.seedUsd < 0 || b.seedUsd > caps.seedUsdMax) {

@@ -69,12 +69,15 @@ export async function updateAgentPermissions(
   const agent = state.agents.find((a) => a.id === agentId)
   if (!agent) return { error: 'Unknown agent' }
   if (!ownsAgent(agent, caller)) return { error: 'Forbidden: not the agent owner' }
+  const listBefore = agent.permissions.payeeAllowlist
   agent.permissions = { ...agent.permissions, ...sanitizePermissions(partial) }
+  const members = (list: readonly string[]) => [...list].sort().join('\n')
+  const allowlistChanged = members(listBefore) !== members(agent.permissions.payeeAllowlist)
   pushActivity(agent, 'Permissions updated by a human')
 
   // If the agent has an on-chain policy vault, push the new limits to it so the
   // chain-enforced policy tracks the UI instead of staying frozen at deploy time.
-  const vaultSync = agent.vaultAddress ? await syncVaultPolicy(agent) : undefined
+  const vaultSync = agent.vaultAddress ? await syncVaultPolicy(agent, allowlistChanged) : undefined
   save(state)
   return vaultSync ? { ...agent, vaultSync } : agent
 }

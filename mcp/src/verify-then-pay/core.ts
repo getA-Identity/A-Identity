@@ -930,7 +930,7 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
     awaiting_human:
       ownerHandoff?.ownerPay.simulation.ok === false
         ? `WARN: the agent must not pay this on its own, and the vault would refuse the owner's payment right now (${ownerHandoff.ownerPay.simulation.error}): do not send ownerHandoff.ownerPay, it would revert and cost gas. Ask again once the vault can pay.`
-        : `WARN: the agent must not pay this on its own. The owner can settle it by sending ownerHandoff.ownerPay from the owner key ${pre.owner}${ownerHandoff ? `, with ${sendInstruction(ownerHandoff.ownerPay, 'ownerHandoff.ownerPay')}` : ''}; then POST {"txHash": "0x..."} to ${receiptUrl} and the server reads the receipt itself.`,
+        : `WARN: the agent must not pay this on its own. The owner can settle it by sending ownerHandoff.ownerPay from the owner key ${pre.owner}${ownerHandoff ? `, with ${sendInstruction(ownerHandoff.ownerPay, 'ownerHandoff.ownerPay')}` : ''}; then POST {"txHash": "0x..."} to ${receiptUrl} and the server reads the receipt itself. This payment counts toward the agent's day on the vault: if it uses up today's room, the agent cannot pay until 00:00 UTC unless the owner raises the cap.`,
     warn_no_human_gate: `WARN, and this vault's owner and operator are the same key (${pre.owner}), so there is no human to hand the payment to: do not pay. Nothing was prepared and no approval was recorded. Give the vault an owner key the agent does not hold${
       // A payee we know nothing about, on a vault with no human by construction: pointing an
       // autonomous agent at payOnWarn here would walk it into paying a stranger with no one asked.

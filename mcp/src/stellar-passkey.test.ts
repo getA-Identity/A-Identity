@@ -635,6 +635,9 @@ test('a zero cap is refused although the contract accepts it, because here zero 
   const owner = contractId()
   assert.equal(passkeyDeployPlan({ owner, ownerPublicKey: passkeyKey(), dailyCapUsd: 0, autoApproveUsd: 1 }, DECIMALS, PASSKEY_CAPS, NET).ok, false)
   assert.equal(passkeyDeployPlan({ owner, ownerPublicKey: passkeyKey(), dailyCapUsd: 5, autoApproveUsd: 0 }, DECIMALS, PASSKEY_CAPS, NET).ok, false)
+  // Above 0 in dollars, 0 in raw units: the same no-limit, reached by rounding.
+  assert.equal(passkeyDeployPlan({ owner, ownerPublicKey: passkeyKey(), dailyCapUsd: 1e-8, autoApproveUsd: 1 }, DECIMALS, PASSKEY_CAPS, NET).ok, false)
+  assert.equal(passkeyDeployPlan({ owner, ownerPublicKey: passkeyKey(), dailyCapUsd: 5, autoApproveUsd: 1e-8 }, DECIMALS, PASSKEY_CAPS, NET).ok, false)
   // A zero SEED is fine: it means the vault starts empty, which is a choice, not a policy.
   const noSeed = passkeyDeployPlan({ owner, ownerPublicKey: passkeyKey(), dailyCapUsd: 5, autoApproveUsd: 1, seedUsd: 0 }, DECIMALS, PASSKEY_CAPS, NET)
   assert.equal(noSeed.ok, true)
