@@ -173,7 +173,14 @@ try {
   console.error(`error: mcp/dist is not built (${e.message}). Run: cd mcp && npm run build`)
   process.exit(1)
 }
-const { ARC_MAINNET, arcChainReader, arcViemChain, fromViemWallet, preflightVault, recordFlowReceipt, usdcUnits, verifyThenPay } = arc
+const { ARC_MAINNET, arcChainReader, arcViemChain, fromViemWallet, preflightVault: sdkPreflight, recordFlowReceipt, usdcUnits, verifyThenPay } = arc
+
+/** This run pays from the operator's key, so a payment only the owner can settle is a refusal for it, and no check is bought for one. */
+const preflightVault = async (o) => {
+  const free = await sdkPreflight(o)
+  if (free.ownerOnly) throw Object.assign(new Error(free.ownerOnly.reason), { name: 'VaultPolicyError', code: free.ownerOnly.code, stage: 'preflight' })
+  return free
+}
 try {
   guardCore.requireSecureBaseUrl(baseUrl)
 } catch (e) {

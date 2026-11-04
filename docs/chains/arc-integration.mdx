@@ -438,7 +438,8 @@ labeled internal.
     payee's. The vault's policy and a simulated `pay()` from its operator accept the payment (not
     frozen, session key valid, payee allowed, within auto-approve, daily cap and balance). The
     operator can pay the gas. If the vault would refuse, the answer is a refusal named after the
-    vault's own error, and the check is not bought. A payee that holds no agent is not refused.
+    vault's own error, and the check is not bought. A payee that holds no agent is not refused, and
+    neither is a payment the operator cannot make and the owner can (see below).
   </Step>
   <Step title="The check, 0.005 USDC">
     `risk_check` through Circle Gateway, with the payee's address as `agentId` and the amount in
@@ -475,8 +476,8 @@ reputations come from our own demo payments, so they show the rule path, not ind
 | Our operating wallet, `0xd305607510e0db2c95807173c7a05bea53c1ed36` (internal) | Holds Arc Mainnet agent #0, off-platform | `WARN` since 2026-11-04, reputation 60: we hold no record of it. It got `DENY` on 2026-11-02, under the older rule, and those recorded flows stand |
 | `0xA65F35B21aB90D088c1197728cDd0563c1308735` | An agent on our platform named `test`, which we are not vouching for in any way | `DENY` by the rule, from the free reads on 2026-11-04 (`/api/reputation`: Sybil high, both of its 2 jobs hired by its own operator, reputation 90). The Sybil flag is the evidence: the low score alone would be `WARN`. No check was bought on it, so read the live answer, and do not pay it to see |
 
-A payee that holds no agent on Arc Mainnet passes the free checks, within the vault's ceiling and
-allowlist, and the check is then bought for 0.005 USDC. Unless it is an agent on our platform, the
+A payee that holds no agent on Arc Mainnet passes the free checks, and the check is then bought for
+0.005 USDC. Unless it is an agent on our platform, the
 answer is `WARN`, so it reaches `awaiting_human` with the owner's prepared payment. The same goes
 for one that holds an agent but has no record on our platform. On a vault whose owner and operator
 are one key, that `WARN` stops at `warn_no_human_gate` instead, with the check paid and nothing
