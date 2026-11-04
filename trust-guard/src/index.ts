@@ -28,9 +28,9 @@
  * If a call returns HTTP 402, the guard either invokes your `onPaymentRequired` payer and
  * retries once, or throws `PaymentRequiredError` with the challenge so you can pay.
  *
- * On rail 'arc', guard() returns only a verdict it can show is the one it paid for; see
- * TrustGuard.guard. The other two rails do not make that check, because their listings are
- * registered against what they answer, so tightening them is a decision of its own.
+ * On every rail guard() returns only on a recognized ALLOW or WARN, so a page that is not a verdict
+ * cannot read as a go-ahead. On rail 'arc' it also returns only a verdict it can show is the one it
+ * paid for; see TrustGuard.guard. The other two rails do not carry a settlement record to compare.
  */
 
 export type Decision = 'ALLOW' | 'WARN' | 'DENY'
@@ -104,7 +104,8 @@ export interface TrustDenyContext {
 
 /**
  * Thrown by `guard()` when the verdict is one it stops on, and by `verifyThenPay` on a DENY.
- * `verdict.decision` says which: a WARN is not a finding against the counterparty.
+ * `verdict.decision` says which, and `verdict.reasons` says why: most WARNs mean we do not know the
+ * counterparty, and a WARN can also name something our record holds against it.
  */
 export class TrustDenyError extends Error {
   readonly verdict: RiskVerdict
@@ -113,7 +114,7 @@ export class TrustDenyError extends Error {
     const reasons = verdict.reasons?.join('; ') || 'no reasons'
     super(
       verdict.decision === 'WARN'
-        ? `Trust guard stopped before paying agent ${verdict.agentId}: the verdict is WARN (${reasons}). WARN means we do not know enough, not that it is bad, and it does not pay by itself. To pay on WARN, pass denyOn: ['DENY'] and read the reasons it returns.`
+        ? `Trust guard stopped before paying agent ${verdict.agentId}: the verdict is WARN (${reasons}). WARN does not pay by itself: read the reasons above for what we know and what we do not. To pay on WARN, pass denyOn: ['DENY'] and read the reasons it returns.`
         : `Trust guard blocked agent ${verdict.agentId}: ${verdict.decision} (${reasons})`,
     )
     this.name = 'TrustDenyError'
@@ -351,12 +352,12 @@ export class TrustGuard {
    * to pay on WARN says it in code with `denyOn: ['DENY']`, and then gets the WARN and its reasons
    * back to branch on.
    *
-   * On rail 'arc' this fails closed, because the caller's next line signs a payment: anything that
-   * is not ALLOW or WARN throws. A returned verdict is also about this agent, carries a finite
-   * reputation (at least 500 on an ALLOW), and carries a settlement record for the nonce signed for
-   * this call. Anything else throws `UnusableVerdictError`. For a verdict and a payment from a
-   * vault, use `verifyThenPay` from `@a-identity/trust-guard/arc`, where WARN hands the payment to
-   * the owner.
+   * On every rail this fails closed, because the caller's next line pays: an answer that is not a
+   * recognized ALLOW or WARN, such as an HTML page, an empty body or an unknown decision, throws
+   * `UnusableVerdictError`. On rail 'arc' a returned verdict is also about this agent, carries a
+   * finite reputation (at least 500 on an ALLOW), and carries a settlement record for the nonce
+   * signed for this call. For a verdict and a payment from a vault, use `verifyThenPay` from
+   * `@a-identity/trust-guard/arc`, where WARN hands the payment to the owner.
    */
   async guard(agentId: string, opts: { txContext?: TxContext; denyOn?: Decision[] } = {}): Promise<RiskVerdict> {
     const denyOn = opts.denyOn ?? DEFAULT_DENY_ON
@@ -365,7 +366,11 @@ export class TrustGuard {
       return judgeArcVerdict(data as unknown as RiskVerdict, agentId, signed, denyOn)
     }
     const verdict = await this.riskCheck(agentId, opts.txContext)
-    if (verdict.decision === 'DENY' || denyOn.includes(verdict.decision)) throw new TrustDenyError(verdict)
+    const decision: unknown = verdict.decision
+    if (decision === 'DENY' || denyOn.includes(decision as Decision)) throw new TrustDenyError(verdict)
+    if (decision !== 'ALLOW' && decision !== 'WARN') {
+      throw new UnusableVerdictError('DECISION_UNKNOWN', `the answer cannot be acted on: the decision is ${JSON.stringify(decision ?? null)}, not ALLOW, WARN or DENY`, { verdict })
+    }
     return verdict
   }
 

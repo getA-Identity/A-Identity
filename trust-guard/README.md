@@ -6,10 +6,11 @@ Agents are starting to hire and pay other agents at machine speed. `trust-guard`
 verification gate in front of that payment: it calls the live **A-Identity Trust Oracle**
 (ERC-8004 on-chain identity + KYA + a deterministic 0-1000 reputation + a Sybil check) and
 **throws unless the verdict is ALLOW**. DENY means we hold evidence against the counterparty (revoked KYA, a Sybil
-flag, or a low reputation with contested jobs, rejected settlements or guardrail override attempts on its record),
-and it is refused at that address. A counterparty we know nothing about, or one we hold a record of that holds
-nothing against it and not enough to vouch for it, gets WARN. WARN means unknown, not clean, and it does not pay by
-itself: `guard()` throws on it too. If you want to pay on WARN, say so in code with `denyOn: ['DENY']`.
+flag, or a low reputation with rejected settlements or guardrail override attempts on its record), or that we could
+not read our record and stayed strict, and the reasons say which. It is refused at that address. A counterparty we
+know nothing about, or one we hold a record of that holds nothing against it and not enough to vouch for it, gets
+WARN. WARN means unknown, not clean, and it does not pay by itself: `guard()` throws on it too. If you want to pay
+on WARN, say so in code with `denyOn: ['DENY']`.
 
 ```bash
 npm install @a-identity/trust-guard
@@ -45,12 +46,19 @@ const verdict = await guard(id, { denyOn: ['DENY'] }) // returns on WARN as well
 if (verdict.decision === 'WARN') return askAPerson(verdict.reasons)
 ```
 
-The error's `verdict.decision` says which one it was. The message on a `WARN` says it is not a finding
-against the counterparty, and names `denyOn: ['DENY']`.
+The error's `verdict.decision` says which one it was, and `verdict.reasons` says why. The message on a `WARN`
+says to read the reasons, because most mean we do not know the counterparty and one can name something our
+record holds against it, and it names `denyOn: ['DENY']`.
+
+An answer that is not a verdict at all, such as an HTML page, an empty body or an unknown decision, throws
+`UnusableVerdictError` on every rail, whatever `denyOn` says, because the next line pays.
 
 **Behavior change in 0.4.0.** `guard()` used to default to `denyOn: ['DENY']`, so a `WARN` returned and
 the next line paid. It now defaults to `['DENY', 'WARN']` on every rail. A caller who relied on `WARN`
 returning adds `denyOn: ['DENY']`. `verifyThenPay` is not affected: it never paid on `WARN` by itself.
+
+On the `xlayer` and `algorand` rails `guard()` used to return on any answer with no recognized decision.
+That is the second behavior change in 0.4.0: it throws `UnusableVerdictError` now, as the `arc` rail already did.
 
 **If you installed 0.3.0 or earlier, read this.** The verdict's rule lives on the server, so it
 reaches every installed version with no change on your side, and the default above does not. Until
@@ -226,8 +234,9 @@ independently either: it comes from the same server, so it binds the answer to y
 | `VaultPaymentError` | The payment step failed. With a `txHash`, look that hash up: never send again with a new nonce, because a transaction reported as missing can still land. |
 
 Who gets what: `risk_check` scores the payee's address. DENY means we hold evidence against the payee: KYA revoked,
-Sybil high, or, on an agent on our platform whose record holds contested jobs, rejected settlements or guardrail
-override attempts, a reputation under 200 or a payment over 100 USD with reputation under 400. A low score alone is
+Sybil high, or, on an agent on our platform whose record holds rejected settlements or guardrail override attempts,
+a reputation under 200 or a payment over 100 USD with reputation under 400. It also comes out when we could not read
+our record and stayed strict, and the reasons say which. A low score alone is
 not evidence. An agent on our platform with nothing against it gets WARN at those lines, with reasons that say our
 record holds nothing against it and not enough to vouch for it, and the amount named when it is over 100 USD. A
 payee with no on-chain identity, or with an identity and no record on our platform, is not known bad, so it gets
