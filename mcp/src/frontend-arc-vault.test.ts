@@ -47,6 +47,13 @@ type Rules = {
   weiToUnitsCeil: (wei: bigint, nativeDecimals: number, tokenDecimals: number) => bigint
   weiToUnitsFloor: (wei: bigint, nativeDecimals: number, tokenDecimals: number) => bigint
   capsRefusal: (dailyCap: bigint | null, autoApproveMax: bigint | null, decimals: number) => string | null
+  followLive: <T>(edit: { value: T; base: T } | null, live: T) => T
+  ownerFormMoved: (
+    shown: { dailyCap: bigint; autoApproveMax: bigint; allowlistEnabled: boolean; sessionKeyExpiry: bigint },
+    live: { dailyCap: bigint; autoApproveMax: bigint; allowlistEnabled: boolean; sessionKeyExpiry: bigint },
+  ) => string | null
+  extendReArms: (v: { sessionKeyExpiry: bigint; expired: boolean; operator: string }) => { text: string; mustTick: boolean } | null
+  replaceKeyNotice: (v: { sessionKeyExpiry: bigint; expired: boolean }) => string
   sessionSecondsRefusal: (seconds: number) => string | null
   sessionExpiryFor: (chainNow: bigint, seconds: number) => bigint | null
   expiryRefusal: (expiry: bigint) => string | null
@@ -1916,4 +1923,95 @@ test('a wallet failure does not outlive its step: no "try again" once the USDC h
   assert.match(flow, /onSubmitted=\{\(r\) => \{[^}]*setFailure\(null\)/, 'a send that worked keeps the old failure on screen')
   assert.match(flow, /setRefundConfirmed\(true\)\s*setFailure\(null\)/, '"I checked" answers the failure')
   assert.match(raw, /const FUND_ASKED_NEXT =\s*"Do not send it again yet/)
+})
+
+test('a policy form left open cannot send back a flag or a cap the chain no longer has', async () => {
+  const r = await rules()
+  // Seeded once at mount, this form used to send a stale false with the new caps and turn the allowlist off.
+  assert.equal(r.followLive(null, true), true, 'an untouched field reads the chain')
+  assert.equal(r.followLive({ value: false, base: true }, true), false, 'an edit holds while its base does')
+  assert.equal(r.followLive({ value: true, base: false }, true), true, 'an edit against an old value is dropped')
+  assert.equal(r.followLive({ value: '2', base: '1' }, '3'), '3')
+  const form = codeOnly(repo('src/components/app/arc/OwnerControls.tsx'))
+  assert.doesNotMatch(form, /useState\(vault\.allowlistEnabled\)|useState\(formatUnitsExact\(vault\.(dailyCap|autoApproveMax)/, 'a field is seeded once again')
+  assert.match(form, /const allowlist = followLive\(allowlistEdit, vault\.allowlistEnabled\)/)
+  assert.match(form, /const cap = followLive\(capEdit, liveCap\)/)
+  assert.match(form, /const ceiling = followLive\(ceilingEdit, liveCeiling\)/)
+  // The Stellar form had the same seeding under a stable key, and now follows the same rule.
+  const stellar = codeOnly(repo('src/components/app/stellar/OwnerControls.tsx'))
+  assert.doesNotMatch(stellar, /useState\(vault\.allowlistEnabled\)/)
+  assert.match(stellar, /const allowlist = followLive\(allowlistEdit, vault\.allowlistEnabled\)/)
+})
+
+test('a write built from what the page showed is refused when the chain has moved since', async () => {
+  const r = await rules()
+  const shown = { dailyCap: 1_000_000n, autoApproveMax: 250_000n, allowlistEnabled: false, sessionKeyExpiry: 1_900_000_000n }
+  assert.equal(r.ownerFormMoved(shown, { ...shown }), null)
+  assert.match(r.ownerFormMoved(shown, { ...shown, allowlistEnabled: true }) ?? '', /allowlist setting changed .*nothing was sent/)
+  assert.match(r.ownerFormMoved(shown, { ...shown, dailyCap: 1n }) ?? '', /daily cap/)
+  assert.match(r.ownerFormMoved(shown, { ...shown, autoApproveMax: 1n }) ?? '', /per-payment ceiling/)
+  assert.match(r.ownerFormMoved(shown, { ...shown, sessionKeyExpiry: 1n }) ?? '', /end date/)
+  const write = codeOnly(repo('src/lib/arc/vault-write.ts'))
+  const prepare = fnBody(write, 'prepareOwnerCall')
+  assert.ok(prepare.indexOf('assertFormStill(c, v, call)') >= 0, 'the owner call no longer re-reads what the form showed')
+  assert.ok(prepare.indexOf('assertFormStill(c, v, call)') < prepare.indexOf('c.call('), 'it re-reads after simulating')
+  // A freeze and a revoke take nothing from the form, so a moved value cannot stand in the way of stopping an agent.
+  assert.match(write, /if \(call\.fn !== 'setPolicy' && call\.fn !== 'extend' && call\.fn !== 'setOperator'\) return/)
+})
+
+test('a new end date after a revoke or a lapse says it turns the same key back on, and a revoke needs a tick', async () => {
+  const r = await rules()
+  const operator = '0x2222222222222222222222222222222222222222'
+  const revoked = r.extendReArms({ sessionKeyExpiry: r.REVOKED_SESSION_EXPIRY, expired: true, operator })
+  assert.equal(revoked?.mustTick, true)
+  assert.match(revoked?.text ?? '', /turns the same agent key back on/)
+  assert.ok(revoked?.text.includes(operator), 'the owner is not told which key')
+  assert.match(revoked?.text ?? '', /may have leaked, replace it first/)
+  const lapsed = r.extendReArms({ sessionKeyExpiry: 1_700_000_000n, expired: true, operator })
+  assert.equal(lapsed?.mustTick, false, 'a normal renewal stays one click')
+  assert.match(lapsed?.text ?? '', /turns the same agent key back on/)
+  assert.equal(r.extendReArms({ sessionKeyExpiry: 1_900_000_000n, expired: false, operator }), null, 'a live key is not being woken')
+  assert.equal(r.extendReArms({ sessionKeyExpiry: 0n, expired: false, operator }), null, 'the first end date wakes nothing')
+  assert.equal(r.extendReArms({ sessionKeyExpiry: 1n, expired: true, operator: r.ZERO_ADDRESS }), null, 'no key to wake')
+  const form = codeOnly(repo('src/components/app/arc/OwnerControls.tsx'))
+  assert.match(form, /const reArms = extendReArms\(vault\)/)
+  assert.match(form, /disabled=\{busy !== null \|\| held \|\| \(reArms\?\.mustTick === true && !knowsReArm\)\}/)
+  assert.match(form, /I know this key can pay again as soon as this lands\./)
+  // The revoke button itself stays free of it: stopping an agent is one click.
+  assert.match(form, /disabled=\{busy !== null \|\| vault\.expired \|\| revokeSent\}/)
+})
+
+test('replacing the key says it stops the old key and what the new key keeps', async () => {
+  const r = await rules()
+  const live = r.replaceKeyNotice({ sessionKeyExpiry: 1_900_000_000n, expired: false })
+  assert.match(live, /this alone stops a leaked key/)
+  assert.match(live, /keeps the same end date, 2030-03-17 17:46 UTC/)
+  assert.match(live, /replace it first and set a new end date after/)
+  assert.match(r.replaceKeyNotice({ sessionKeyExpiry: r.REVOKED_SESSION_EXPIRY, expired: true }), /keeps the revoked date, so it cannot pay until you set a new end date/)
+  assert.match(r.replaceKeyNotice({ sessionKeyExpiry: 1_700_000_000n, expired: true }), /already past, so it cannot pay/)
+  assert.match(r.replaceKeyNotice({ sessionKeyExpiry: 0n, expired: false }), /no end date at all, so it has no time limit/)
+  assert.match(repo('src/components/app/arc/OwnerControls.tsx'), /\{replaceKeyNotice\(vault\)\}/)
+  // A headline after a replacement is about the vault's date, not a key nobody revoked.
+  const v = { frozen: false, operator: '0x2222222222222222222222222222222222222222', allowlistEnabled: false, balance: 1n, remainingToday: 1n, decimals: 6 }
+  const h = r.vaultHeadline({ ...v, sessionKeyExpiry: r.REVOKED_SESSION_EXPIRY, expired: true })
+  assert.match(h.text, /A new end date turns that same key back on/)
+  assert.doesNotMatch(`${h.text} ${repo('src/components/app/arc/VaultStatus.tsx')}`, /The owner ended/)
+})
+
+test('a 0 typed anywhere on the Arc page stops at the same rule, wired in every place it is sent from', () => {
+  // The rule is pinned as a pure function above. This holds the calls: with them gone, a 0 would reach the wallet.
+  const write = codeOnly(repo('src/lib/arc/vault-write.ts'))
+  for (const fn of ['prepareDeploy', 'prepareOwnerCall']) assert.match(fnBody(write, fn), /capsRefusal\(/, `${fn} no longer refuses a 0`)
+  assert.match(fnBody(write, 'prepareOwnerCall'), /expiryRefusal\(expiry\)/, 'prepareOwnerCall no longer refuses an expiry of 0')
+  assert.match(write, /x\.expiry === undefined \|\| expiryRefusal\(x\.expiry\) !== null/, 'encode no longer refuses an expiry of 0')
+  assert.match(fnBody(write, 'prepareOwnerCall'), /expiry = REVOKED_SESSION_EXPIRY/)
+  assert.match(codeOnly(repo('src/components/app/arc/OwnerControls.tsx')), /capsRefusal\(c, a, vault\.decimals\)/)
+  assert.match(codeOnly(repo('src/components/app/arc/DeployFlow.tsx')), /capsRefusal\(/)
+})
+
+test('a 0 typed on the Stellar owner form is refused too, and the label no longer reads as "none"', () => {
+  const form = repo('src/components/app/stellar/OwnerControls.tsx')
+  assert.match(form, /if \(c === 0n \|\| a === 0n\) \{/)
+  assert.match(form, /means NO LIMIT in this contract, not no spending/)
+  assert.doesNotMatch(form, /0 = none/)
 })

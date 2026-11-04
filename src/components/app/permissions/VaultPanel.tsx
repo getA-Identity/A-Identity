@@ -284,7 +284,9 @@ export default function VaultPanel({ agentId }: { agentId: string }) {
               </div>
               <p className="mt-1 text-[11px] text-foreground/45">
                 Grant the agent a spend authority scoped to the cap/allowlist above and a <b>time limit</b>.
-                When it expires, the agent's on-chain payments revert until you extend or re-grant it.
+                When it expires, the agent's on-chain payments revert until you extend or re-grant it. A new date turns the current key back on,
+                even after Revoke, because the date belongs to the vault and not to one key. If the key may have leaked, freeze the vault and replace
+                the key first.
               </p>
               <div className="mt-2 flex flex-wrap items-end gap-2">
                 <div>

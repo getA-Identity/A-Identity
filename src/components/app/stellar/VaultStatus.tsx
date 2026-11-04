@@ -71,7 +71,7 @@ export default function VaultStatus({ v, refreshing }: { v: VaultRead; refreshin
         <Group title="Today (UTC day)" stamp={stamp}>
           <dl className="grid gap-3 sm:grid-cols-2">
             <Field label="Daily cap">{isZero(v.dailyCap) ? 'No cap set' : money(v.dailyCap, sym)}</Field>
-            <Field label="Spent today">{money(v.spentToday, sym)}</Field>
+            <Field label="Spent today (agent and owner payments, not withdrawals)">{money(v.spentToday, sym)}</Field>
             <Field label="Still allowed today">
               {v.remainingToday ? money(v.remainingToday, sym) : 'No cap, so no daily limit'}
             </Field>

@@ -29,6 +29,8 @@ type Rules = {
   feeFields: (base: bigint | null, tip: bigint | null) => { maxFeePerGas: bigint }
   gasWithMargin: (estimate: bigint) => bigint
   vaultHeadline: (v: Record<string, unknown>) => Headline
+  ZERO_ADDRESS: string
+  operatorRefusal: (operator: string, ctx: { owner: string | null; usdc: string; vault?: string | null }) => string | null
 }
 type Call = { method: string; params?: unknown[] }
 type Wallet = { request: (a: Call) => Promise<unknown> }
@@ -735,4 +737,90 @@ test('the guide keeps its DENY example on real evidence, and no sample passes de
   assert.match(readme, /Behavior change in 0\.4\.0/)
   assert.match(readme, /a payee that\s+used to throw now returns/)
   assert.equal(JSON.parse(repo('trust-guard/package.json')).version, '0.4.0', '0.4.0 is not published, so it does not move')
+})
+
+test('the daily limit says at the field that twice it can go around the reset, and how to size for that', async () => {
+  const c = await copy()
+  assert.match(c.DAILY_LIMIT_TWICE, /up to twice this can go within seconds/)
+  assert.match(c.DAILY_LIMIT_TWICE, /set it to half the most you would accept losing quickly/)
+  // On the deploy form beside the number, and on the post-deploy form beside the same number.
+  assert.match(repo(FLOW), /The day resets at 00:00 UTC\. \{DAILY_LIMIT_TWICE\}/)
+  const controls = repo('src/components/app/arc/OwnerControls.tsx')
+  assert.match(controls, /The day resets at 00:00 UTC\. \{DAILY_LIMIT_TWICE\} \{LOWERING_THE_CAP\}/)
+  assert.match(c.LOWERING_THE_CAP, /does not undo what was already spent today/)
+  assert.match(c.LOWERING_THE_CAP, /To stop the agent now, freeze the vault/)
+  assert.match(repo('src/components/app/stellar/OwnerControls.tsx').replace(/\s+/g, ' '), /up to twice the cap can go within seconds/)
+})
+
+test('an owner is told a payment they approve counts toward the agent day and a withdrawal does not', async () => {
+  const c = await copy()
+  const r = await rules()
+  // The contract: ownerPay writes the bucket pay reads, with no cap check, and withdraw leaves it alone.
+  const sol = repo(CONTRACT)
+  const ownerPay = sol.slice(sol.indexOf('function ownerPay'), sol.indexOf('// ── owner policy controls'))
+  assert.match(ownerPay, /spentOnDay\[d\] \+= amount;/)
+  assert.doesNotMatch(ownerPay, /dailyCap/)
+  assert.doesNotMatch(sol.slice(sol.indexOf('function withdraw')), /spentOnDay/)
+  assert.match(c.OWNER_PAYMENT_COUNTS, /counts toward the agent's day and can stop the agent until 00:00 UTC, unless you raise the cap/)
+  assert.match(c.OWNER_PAYMENT_COUNTS, /A withdrawal does not count/)
+  assert.match(repo(FLOW), /\{OWNER_PAYMENT_COUNTS\}/)
+  assert.match(repo('src/components/app/arc/OwnerControls.tsx'), /\{OWNER_PAYMENT_COUNTS\}/)
+  for (const page of ['src/components/app/arc/VaultStatus.tsx', 'src/components/app/stellar/VaultStatus.tsx'])
+    assert.match(repo(page), /Spent today \(agent and owner payments, not withdrawals\)/, page)
+  const full = r.vaultHeadline({
+    frozen: false,
+    operator: '0x2222222222222222222222222222222222222222',
+    sessionKeyExpiry: 1_900_000_000n,
+    expired: false,
+    allowlistEnabled: false,
+    balance: 1_000_000n,
+    remainingToday: 0n,
+    decimals: 6,
+  })
+  assert.match(full.text, /unless the owner raises the cap\. Payments the owner approved count toward it\./)
+})
+
+test('turning the allowlist off is said before it is signed, on both owner forms', () => {
+  for (const page of ['src/components/app/arc/OwnerControls.tsx', 'src/components/app/stellar/OwnerControls.tsx']) {
+    const form = repo(page)
+    assert.match(form, /\{!allowlist && vault\.allowlistEnabled && \(/, page)
+    assert.match(form.replace(/\s+/g, ' '), /This turns the allowlist off: the agent key can then pay any address/, page)
+  }
+  assert.match(repo('src/components/app/arc/OwnerControls.tsx'), /This one call writes both limits and the allowlist setting/)
+})
+
+test('a leak has a remedy that keeps the agent running, and the page names it', async () => {
+  const c = await copy()
+  const r = await rules()
+  assert.match(c.AGENT_KEY_CANNOT, /until you freeze the vault, replace the key, the key ends or the vault is empty/)
+  assert.match(r.operatorRefusal(r.ZERO_ADDRESS, { owner: null, usdc: '0x3333333333333333333333333333333333333333' }) ?? '', /replace it with a new key/)
+  for (const panel of ['src/components/app/permissions/VaultPanel.tsx', 'src/components/app/permissions/StellarVaultPanel.tsx'])
+    assert.match(repo(panel).replace(/\s+/g, ' '), /A new date turns the current key back on, even after Revoke/, panel)
+})
+
+test('the public docs state the five vault behaviours, without calling the contracts audited', () => {
+  const said = (page: string) => repo(page).replace(/\s+/g, ' ')
+  const guide = said('docs/chains/arc-integration.mdx')
+  assert.match(guide, /up to twice it can go around 00:00 UTC/)
+  assert.match(guide, /one second more can touch a third day and reach 3x/)
+  assert.match(guide, /An owner payment counts toward the agent's day/)
+  assert.match(guide, /`setPolicy` writes both limits and the allowlist setting in one call/)
+  assert.match(guide, /0 means no limit, not no spending/)
+  assert.match(guide, /The end date belongs to the vault, not to one key/)
+  assert.match(guide, /call `setOperator` first, which stops the old key at once/)
+  const concept = said('docs/concepts/bounded-authority.mdx')
+  const full = said('public/llms-full.txt')
+  for (const [page, text] of [['bounded-authority', concept], ['llms-full', full]] as const) {
+    assert.match(text, /00:00 UTC/, page)
+    assert.match(text, /counts? toward the agent's day/, page)
+    assert.match(text, /writes both limits and the allowlist/, page)
+    assert.match(text, /0 means no limit, not no spending/, page)
+    assert.match(text, /A new end date after a revoke turns the same key back on/, page)
+  }
+  assert.match(said('docs/chains/stellar.mdx'), /same five behaviours as the Solidity vault/)
+  assert.match(said('public/llms.txt'), /up to 2x the cap can move within seconds around 00:00 UTC/)
+  assert.match(concept, /sessionKeyExpiry != 0 && block\.timestamp > sessionKeyExpiry\) revert SessionKeyExpired/, 'the pay() shown has lost a gate')
+  for (const page of ['docs/chains/arc-integration.mdx', 'docs/concepts/bounded-authority.mdx', 'docs/chains/stellar.mdx', 'public/llms.txt', 'public/llms-full.txt']) {
+    assert.doesNotMatch(repo(page), /\b(is|are|been|was|were) audited\b/i, page)
+  }
 })
