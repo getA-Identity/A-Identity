@@ -34,6 +34,7 @@ const loadRules = async () =>
     vaultCountFromAnswer: (httpStatus: number, body: unknown) => VaultCount
     listReads: <T>(deliver: (answer: T) => void) => { begin: () => (answer: T) => void; out: () => boolean; stop: () => void }
     endDateOf: (sessionKeyExpiry: bigint, expired: boolean) => string
+    endDateFromRead: (live: { sessionKeyExpiry: bigint; expired: boolean } | null, readBehind: boolean) => string
     sweepSaysFrom: (body: unknown) => string
     noHashWords: (endDate: string, sweep: string) => string
     PAST_RATE_WINDOW_MS: number
@@ -398,11 +399,38 @@ test('both places that show the notice pass what the vault reads as, and the pro
   assert.match(page, /expired=\{v\.expired\}/, 'the vault page passes whether the date has passed')
   assert.match(page, /endDate=\{endDateOf\(expiry, expired\)\}/)
   const flow = readSource('src/components/app/arc/DeployFlow.tsx')
-  assert.match(flow, /endDate=\{snapshot && setup\.vault && sameAddress\(snapshot\.address, setup\.vault\) \? endDateOf\(snapshot\.sessionKeyExpiry, snapshot\.expired\) : 'unknown'\}/)
+  assert.match(flow, /endDate=\{endDateFromRead\(liveVault, expiryReadBehind\)\}/)
+  assert.match(flow, /const liveVault = setup \? liveOf\(setup, snapshot\) : null/, 'with the network check liveOf has')
+  assert.match(flow, /const expiryReadBehind = setup \? readBeforeExpiry\(setup, snapshot\) : false/)
   const notice = readSource('src/components/app/arc/VaultCountNotice.tsx')
   assert.match(notice, /^ {2}endDate: EndDate$/m, 'required')
   assert.doesNotMatch(notice, /endDate\s*=\s*'/, 'with no default')
   assert.match(notice, /readSweepSays\(\)/, 'and it asks the server whether anyone is looking')
+})
+
+test('on the last screen a read from before the end date, or of another network, says nothing about the end date', async () => {
+  const { endDateFromRead, endDateOf, noHashWords } = await loadRules()
+  const rules = (await import(repoUrl('src/lib/arc/tx-rules.ts').href)) as {
+    liveOf: (setup: unknown, snapshot: unknown) => { sessionKeyExpiry: bigint; expired: boolean } | null
+    readBeforeExpiry: (setup: unknown, snapshot: unknown) => boolean
+  }
+  const setup = { network: 'n', vault: '0xAA', expiryTx: { action: 'expiry', outcome: 'settled', hash: '0xh', block: 100n } }
+  const snap = (over: Record<string, unknown>) => ({ network: 'n', address: '0xaa', block: 100n, sessionKeyExpiry: 5000n, expired: false, ...over })
+  const onScreen = (snapshot: unknown) => endDateFromRead(rules.liveOf(setup, snapshot), rules.readBeforeExpiry(setup, snapshot))
+
+  // The deploy left 0, and this host has not reached the block of the write. The box says it is still being read.
+  const behind = snap({ block: 99n, sessionKeyExpiry: 0n })
+  assert.equal(endDateOf(0n, false), 'none', 'as a plain read it would say no end date')
+  assert.equal(onScreen(behind), 'unknown')
+  assert.doesNotMatch(noHashWords(onScreen(behind), 'looking'), /has no end date/, 'so the line does not say so beside it')
+  assert.equal(onScreen(snap({ sessionKeyExpiry: 0n })), 'none', 'a read that reached the block and reads 0 is a key with no date')
+  assert.equal(onScreen(snap({})), 'future')
+  assert.equal(onScreen(snap({ sessionKeyExpiry: 1n, expired: true })), 'revoked')
+  assert.equal(onScreen(snap({ sessionKeyExpiry: 2n, expired: true })), 'passed')
+
+  assert.equal(onScreen(snap({ network: 'm' })), 'unknown', 'the same address on another network is another vault')
+  assert.equal(onScreen(snap({ address: '0xbb' })), 'unknown', 'another vault')
+  assert.equal(onScreen(null), 'unknown', 'nothing read yet')
 })
 
 test('admission is what it was: only the deploy hash goes in, and the same checks stand', () => {

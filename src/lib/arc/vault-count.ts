@@ -37,6 +37,15 @@ export function endDateOf(sessionKeyExpiry: bigint, expired: boolean): EndDate {
   return expired ? 'passed' : 'future'
 }
 
+/**
+ * The end date the setup's last screen may speak from: only a read of this setup's own vault (liveOf
+ * in tx-rules.ts), and not one from before the expiry's own block, which can still show the 0 the
+ * deploy left while the same box says the date is still being read.
+ */
+export function endDateFromRead(live: { sessionKeyExpiry: bigint; expired: boolean } | null, readBehind: boolean): EndDate {
+  return live && !readBehind ? endDateOf(live.sessionKeyExpiry, live.expired) : 'unknown'
+}
+
 /** Whether the server's own search is running, as GET /api/arc/vaults said. Only that answer can say it is. */
 export type SweepSays = 'reading' | 'looking' | 'not-looking' | 'unknown'
 
