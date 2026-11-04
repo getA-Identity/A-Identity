@@ -803,9 +803,10 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
    * One owner in one browser profile: a stub wallet, the routing, and helpers to read the page.
    * failPost(n) is asked about the nth POST to /api/arc/vaults, and may wait; true answers it 503, and
    * 429 answers it as the route's limiter does. failSeason makes GET /api/arc/season fail, so the
-   * page's list does not load. holdSeason and holdProof keep their route unanswered until they resolve.
+   * page's list does not load, and failSweepRead makes GET /api/arc/vaults fail, so it cannot find out
+   * what the sweep is doing. holdSeason and holdProof keep their route unanswered until they resolve.
    */
-  async function ownerBrowser({ ownerIndex, agentIndex, failPost = async () => false, failSeason = () => false, holdSeason = async () => {}, holdProof = async () => {} }) {
+  async function ownerBrowser({ ownerIndex, agentIndex, failPost = async () => false, failSeason = () => false, failSweepRead = () => false, holdSeason = async () => {}, holdProof = async () => {} }) {
     const owner = acct(ownerIndex)
     const agent = acct(agentIndex)
     if (ownerIndex > 9) await rpc('anvil_setBalance', [owner.address, toHex(10n ** 20n)])
@@ -889,6 +890,7 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
 
     const posts = []
     const seasonReads = { count: 0 }
+    const sweepReads = { count: 0 }
     // What the page asked the chain for logs, so a run can say how far a read went. And what stands in for
     // a server or store whose record changed: rewrite is given each flow the page reads, and may return another.
     const logReads = []
@@ -925,6 +927,10 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
           if (failing) {
             return route.fulfill({ status: 503, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: 'unavailable', retryable: true, reason: 'held by the rehearsal' }) })
           }
+        }
+        if (request.method() === 'GET' && url.pathname === '/api/arc/vaults') {
+          sweepReads.count++
+          if (failSweepRead()) return route.fulfill({ status: 503, headers: { 'content-type': 'application/json' }, body: '{}' })
         }
         if (url.pathname === '/api/arc/season') {
           seasonReads.count++
@@ -984,7 +990,7 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
     }
     /** The notice that says whether this vault counts, by what only it says. */
     const noticeSays = async () => (await text()).split('\n').find((l) => /on a-identity\.xyz\/proof\/arc|counts? on a-identity|counted on/.test(l)) ?? '(no line about the count)'
-    return { ctx, owner, agent, wallet, posts, seasonReads, logReads, stand, pageErrors, text, waitText, stopIf, connect, noticeSays, page, newPage: async () => (page = await ctx.newPage()), current: () => page }
+    return { ctx, owner, agent, wallet, posts, seasonReads, sweepReads, logReads, stand, pageErrors, text, waitText, stopIf, connect, noticeSays, page, newPage: async () => (page = await ctx.newPage()), current: () => page }
   }
 
   /** The deploy flow from the form to the moment the deploy has landed and the end date is asked for. */
@@ -1170,8 +1176,10 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
   /** What a browser with no hash says with the sweep on, for each thing the vault's end date can read as. The page's prop decides this, so only the page can prove it. */
   async function noHashWordsRun({ ownerIndex, agentIndex }) {
     section('the page: with the sweep on and no hash, it says what the end date reads as')
-    const b = await ownerBrowser({ ownerIndex, agentIndex })
-    const { ctx, posts, pageErrors, text, waitText, stopIf, connect, noticeSays } = b
+    let sweepReadDown = false
+    let seasonHeld = Promise.resolve()
+    const b = await ownerBrowser({ ownerIndex, agentIndex, failSweepRead: () => sweepReadDown, holdSeason: () => seasonHeld })
+    const { ctx, posts, seasonReads, sweepReads, pageErrors, text, waitText, stopIf, connect, noticeSays } = b
     const page = b.current()
     const open = (address) => page.goto(`${base}/app/vault/arc?network=${encodeURIComponent(chain.caip2)}&contract=${address}`, { waitUntil: 'domcontentloaded' })
     const { vault, hash } = await deployVault(acct(ownerIndex), acct(agentIndex).address)
@@ -1201,8 +1209,33 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
     const revokedSays = await noticeSays()
     say(`the vault page says: ${revokedSays}`)
     check(!/has passed|new one|has the agent key end date it looks for/.test(revokedSays), 'and it neither calls that a date that has passed nor asks the owner to turn the key back on')
+
+    // A read of what the sweep is doing fails. Look again has to bring that back as well as the list.
+    const lookAgain = () => page.getByRole('button', { name: 'Look again', exact: true })
+    sweepReadDown = true
+    await open(vault)
+    await stopIf(await waitText(/We could not find out whether our server is looking for vaults on the chain right now/, 40000), 'a read of what the sweep is doing that fails is said to be that')
+    check((await lookAgain().count()) === 1, 'and the line still offers Look again')
+    sweepReadDown = false
+    let answerSeason
+    seasonHeld = new Promise((r) => (answerSeason = r))
+    const seasonBefore = seasonReads.count
+    const sweepBefore = sweepReads.count
+    await lookAgain().click()
+    check(await waitText(/Checking whether this vault counts on/, 3000), 'Look again goes back to Checking at once, so the click shows')
+    check((await lookAgain().count()) === 0, 'and offers no second click while it reads')
+    answerSeason()
+    seasonHeld = Promise.resolve()
+    await stopIf(await waitText(/our server looks for vaults on the chain by itself, and it finds this one with its key revoked too/, 30000), 'the line comes back and says the server is looking: the read that failed recovers, with no reload')
+    check(!/We could not find out whether our server/.test(await text()), 'and the words from the read that failed are gone')
+    check(seasonReads.count === seasonBefore + 1, `one click, one read of the list (${seasonReads.count - seasonBefore})`)
+    check(sweepReads.count === sweepBefore + 1, `and one read of what the sweep is doing (${sweepReads.count - sweepBefore})`)
+
     const counted = await sweepCounts(vault)
     check(counted.deployTx === hash.toLowerCase(), 'and it was true: the sweep counts the vault with its key revoked')
+    check(/This vault is not counted on/.test(await noticeSays()), 'this page has not read the list since, so it does not know yet')
+    await lookAgain().click()
+    await stopIf(await waitText(/This vault is now counted on/, 30000), 'Look again reads the list and says it is counted, with no reload')
     const onlyRevoked = await deployVault(acct(ownerIndex), acct(agentIndex).address)
     await send(acct(ownerIndex), vaultCall(onlyRevoked.vault, 'setSessionKeyExpiry', [1n]))
     check((await sweepCounts(onlyRevoked.vault)).deployTx === onlyRevoked.hash.toLowerCase(), "and it finds a vault whose only log is the revoke's own")

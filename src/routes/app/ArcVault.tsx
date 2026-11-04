@@ -134,7 +134,7 @@ export default function ArcVault() {
     return () => reads.stop()
   }, [reads, readList])
 
-  // From the notice's Try again: it goes back to Checking at once, so the click visibly did something.
+  // From the notice's Try again and Look again: it goes back to Checking at once, so the click visibly did something.
   const readListAgain = useCallback(() => {
     if (reads.out()) return
     setKnown((k) => k && { ...k, partial: null, loading: true, ownerHeldRead: false })

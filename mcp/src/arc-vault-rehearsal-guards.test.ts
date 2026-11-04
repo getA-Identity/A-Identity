@@ -341,6 +341,32 @@ test('with no hash the page says why from the end date, and says the server is l
   for (const body of [null, {}, { sweep: null }, { sweep: { on: 'yes' } }]) assert.equal(sweepSaysFrom(body), 'unknown')
 })
 
+test('the no-hash line can read the list again, because Refresh reads only the chain and the line tells the owner to look', async () => {
+  const notice = readSource('src/components/app/arc/VaultCountNotice.tsx')
+  const line = notice.slice(notice.indexOf("count.state === 'no-hash') {"), notice.indexOf("count.state === 'checking'"))
+  assert.match(line, /\{noHashWords\(endDate, sweep\)\} \{lookAgain\}/, 'whatever the words are, in every state of the search: a read of it that failed recovers through this')
+  assert.match(notice, /const lookAgain = \(\s*<button type="button" onClick=\{onRetry\}[^>]*>\s*Look again\s*<\/button>/)
+
+  // The click reaches the list: a null hash goes to the page's read of the list, from both places that show the line.
+  const hook = readSource('src/components/app/arc/useVaultCount.ts')
+  assert.match(hook, /if \(hash\) void send\(hash\)\s*else onReadListAgain\(\)/)
+  assert.match(readSource('src/routes/app/ArcVault.tsx'), /const \{ count, retry \} = useVaultCount[^\n]*\n[^\n]*onRetry=\{retry\}/)
+  assert.match(readSource('src/components/app/arc/DeployFlow.tsx'), /onRetry=\{vaultCount\.retry\}/)
+
+  // That read takes the line away and brings it back, or brings the answer.
+  const { listingOf, shownCount } = await loadRules()
+  const listing = (ownerHeldRead: boolean, address?: string) => listingOf({ vaults: address ? [{ network: 'n', address, kind: 'owner-held' }] : [], partial: null, ownerHeldRead }, 'n', '0xaa')
+  assert.equal(shownCount(null, null, null, listing(true)).state, 'no-hash')
+  assert.equal(shownCount(null, null, null, listing(false)).state, 'checking', 'the click shows at once')
+  assert.equal(shownCount(null, null, null, listing(true)).state, 'no-hash', 'the line comes back, so the search is asked about again')
+  assert.equal(shownCount(null, null, null, listing(true, '0xAA')).state, 'counted', 'or a vault the sweep has counted says so, with no reload')
+
+  // The line coming back is what asks about the search again, and nothing from the last answer is said meanwhile.
+  assert.match(notice, /const needsSweep = !testnet && count\.state === 'no-hash'/)
+  assert.match(notice, /if \(!needsSweep\) return\n\s+let current = true\n\s+setSweep\('reading'\)\n\s+void readSweepSays\(\)/)
+  assert.match(notice, /\}, \[needsSweep\]\)/)
+})
+
 test('the words the page reads are the words the sweep can say', async () => {
   const sweep = readSource('mcp/src/arc-vault-sweep.ts')
   for (const word of ['admission-not-ready', 'list-unreadable', 'round-failed', 'round-stalled']) assert.match(sweep, new RegExp(`\\| '${word}'`), word)

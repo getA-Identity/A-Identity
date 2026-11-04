@@ -27,12 +27,15 @@ export default function VaultCountNotice({
   /** What the vault's agent key end date reads as. No default: "has one" is a claim to the owner, and only a read can make it. */
   endDate: EndDate
 }) {
-  // Asked only when it will be said: no other state of this line depends on the server's search.
+  // Asked only when it will be said: no other state of this line depends on the server's search. Look
+  // again takes the line away while the list reads, so its coming back asks again, and a read that
+  // failed recovers the same way. What an earlier read said is not said while this one is out.
   const needsSweep = !testnet && count.state === 'no-hash'
   const [sweep, setSweep] = useState<SweepSays>('reading')
   useEffect(() => {
     if (!needsSweep) return
     let current = true
+    setSweep('reading')
     void readSweepSays().then((says) => {
       if (current) setSweep(says)
     })
@@ -43,6 +46,12 @@ export default function VaultCountNotice({
   const retry = (
     <button type="button" onClick={onRetry} className="font-semibold text-accent underline underline-offset-2">
       Try again
+    </button>
+  )
+  // With no hash the list is all this line has. Refresh on the page reads only the chain, so a vault the server has since counted says so through this.
+  const lookAgain = (
+    <button type="button" onClick={onRetry} className="font-semibold text-accent underline underline-offset-2">
+      Look again
     </button>
   )
   const box = 'mt-2 rounded-xl border border-border bg-background/60 px-3 py-2 text-xs text-foreground/80'
@@ -56,7 +65,7 @@ export default function VaultCountNotice({
   if (count.state === 'no-hash') {
     return (
       <div className={box}>
-        This vault is not counted on {PROOF_LINK} yet{noHashWords(endDate, sweep)}
+        This vault is not counted on {PROOF_LINK} yet{noHashWords(endDate, sweep)} {lookAgain}
       </div>
     )
   }
