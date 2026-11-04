@@ -205,7 +205,7 @@ type Candidate = {
   vault: string
   /** Since when it has waited: found, or last asked about. The longest wait goes first on its turn. */
   waitingSince: number
-  /** Its newest log, so an owner who sets a new end date is new again. */
+  /** Its newest log. It orders the contracts nobody has asked about yet, and changes nothing for one already asked. */
   logBlock: number
   /** Admission has been asked about it at least once. */
   asked: boolean
@@ -657,23 +657,35 @@ export function createVaultSweep(deps: VaultSweepDeps): VaultSweep {
       note('admission-not-ready')
       return
     }
-    let counted: Awaited<ReturnType<VaultSweepDeps['counted']>>
-    try {
-      counted = await timed(deps.counted, limits.listDeadlineMs, 'the list')
-    } catch (e) {
-      if (!(e instanceof TimedOut)) throw e
-      note('list-unreadable', e.message)
-      return
+    const readList = async (): Promise<ReadonlySet<string> | null> => {
+      let counted: Awaited<ReturnType<VaultSweepDeps['counted']>>
+      try {
+        counted = await timed(deps.counted, limits.listDeadlineMs, 'the list')
+      } catch (e) {
+        if (!(e instanceof TimedOut)) throw e
+        note('list-unreadable', e.message)
+        return null
+      }
+      if (!counted.ok) {
+        note('list-unreadable', counted.reason)
+        return null
+      }
+      return counted.vaults
     }
-    if (!counted.ok) {
-      note('list-unreadable', counted.reason)
-      return
-    }
-    const budget = readBudget(deps.hosts(), limits.readsPerTick, limits.pauseMs, pause)
+    const anyDue = () => [...candidates.values()].some((c) => c.notBefore <= now())
+    // The list only matters when there is someone to ask. Reading it every tick would keep a database
+    // that sleeps when idle awake around the clock. A new process still reads it before any chain read.
+    let counted = cursor === null || anyDue() ? await readList() : undefined
+    if (counted === null) return
+    // viem's own timeout stops at the response headers, so a host that stalls in the body needs this.
+    const stoppable = deps.hosts().map((h): RpcHost => ({ ...h, request: (method, params) => timed(() => h.request(method, params), limits.stalledAfterMs + 1000, `${h.label} ${method}`) }))
+    const budget = readBudget(stoppable, limits.readsPerTick, limits.pauseMs, pause)
     const hosts = withDeadline(benchStalledHosts(budget.hosts, limits.stalledAfterMs, now), limits.tickDeadlineMs, now)
     const bounded: Budget = { ...budget, hosts }
     const deadline = now() + limits.tickDeadlineMs
-    if (await readNewBlocks(bounded)) await askAboutCandidates(bounded, counted.vaults, deadline)
+    if (!(await readNewBlocks(bounded)) || !anyDue()) return
+    counted ??= await readList()
+    if (counted !== null) await askAboutCandidates(bounded, counted, deadline)
   }
 
   return {
@@ -765,7 +777,9 @@ export function sweepConfig(env: Readonly<Record<string, string | undefined>>): 
     const n = Number(s)
     return Number.isSafeInteger(n) && n >= atLeast ? n : null
   }
-  const seconds = whole(env.ARC_VAULT_SWEEP_EVERY_SECONDS, 1)
+  const asked = whole(env.ARC_VAULT_SWEEP_EVERY_SECONDS, 1)
+  // setTimeout reads anything past 2^31 - 1 ms as 1 ms, which is the busy loop this is here to prevent.
+  const seconds = asked !== null && asked * 1000 <= 2 ** 31 - 1 ? asked : null
   return {
     on: !/^(off|0|false|no)$/i.test(env.ARC_VAULT_SWEEP?.trim() ?? ''),
     everyMs: seconds === null ? DEFAULT_EVERY_MS : seconds * 1000,

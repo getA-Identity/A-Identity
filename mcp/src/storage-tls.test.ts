@@ -10,6 +10,7 @@
  * failure mode of the old setting was that it was silent: nothing logged it, nothing tested
  * it, and it read as a normal line of connection config.
  */
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { sslOptions } from './storage.js'
@@ -55,4 +56,13 @@ test('a private CA verifies rather than skipping the check', () => {
   } as NodeJS.ProcessEnv)
   assert.equal(opts.rejectUnauthorized, true)
   assert.equal(typeof opts.ca, 'string')
+})
+
+test('a connection dropped while idle in the pool does not end the process: the pool has an error listener', () => {
+  // With no listener, pg-pool's error event throws. The listener has to sit on the one pool, right where it is made.
+  const source = readFileSync(new URL('../src/storage.ts', import.meta.url), 'utf8')
+  const made = source.indexOf('pool = new Pool(')
+  assert.ok(made > 0, 'the pool is made here')
+  assert.match(source.slice(made, made + 400), /pool\.on\('error',/)
+  assert.equal(source.match(/new Pool\(/g)?.length, 1, 'and it is the only pool')
 })

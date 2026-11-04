@@ -61,6 +61,8 @@ async function getPool() {
   const Pool = pgMod.default?.Pool ?? pgMod.Pool
   const local = DB_URL.includes('localhost') || DB_URL.includes('127.0.0.1')
   pool = new Pool({ connectionString: DB_URL, ssl: local ? false : sslOptions() })
+  // A connection dropped while idle in the pool emits this, and with no listener it ends the process.
+  pool.on('error', (e: Error) => console.error('[storage] idle database connection lost:', e.message))
   await pool.query('CREATE TABLE IF NOT EXISTS app_state (id text PRIMARY KEY, data jsonb NOT NULL)')
   return pool
 }

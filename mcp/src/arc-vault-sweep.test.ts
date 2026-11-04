@@ -1511,3 +1511,135 @@ test('with no off switch the live start turns it on, and sets its timer', () => 
   assert.deepEqual(timers, [30_000], 'the first tick waits for the health check')
   assert.equal(unrefd, 1, 'and holds nothing open')
 })
+
+test('a tick with nobody to ask reads nothing from the store, so a database that sleeps when idle can sleep', async () => {
+  const v = vaultAt(3, 123_456, 123_999)
+  const chain = new Chain().add(v)
+  let reads = 0
+  const h = harness(chain, {
+    counted: async () => {
+      reads++
+      return { ok: true, vaults: new Set<string>() }
+    },
+  })
+  const sweep = createVaultSweep(h.deps)
+  await sweep.tick()
+  assert.equal(reads, 1, 'a new process reads the list once, before any chain read')
+  assert.deepEqual(h.asked, [v.deployTx])
+  for (let i = 0; i < 3; i++) {
+    h.clock.t += 5 * 60_000
+    chain.head += 600
+    await sweep.tick()
+  }
+  assert.equal(reads, 1, 'nobody to ask, so no read')
+  assert.equal(sweep.status().lastProblem, null)
+
+  // A vault that turns up later is checked against the list before it is asked about.
+  const later = vaultAt(4, chain.head + 100, chain.head + 200)
+  chain.add(later)
+  chain.head += 600
+  h.clock.t += 5 * 60_000
+  await sweep.tick()
+  assert.equal(reads, 2, 'someone to ask, so one read')
+  assert.deepEqual(h.asked, [v.deployTx, later.deployTx])
+})
+
+test('a vault already on the list is not asked about, when the list was only read because it turned up', async () => {
+  const chain = new Chain()
+  const listed = new Set<string>()
+  const h = harness(chain, { counted2: listed })
+  const sweep = createVaultSweep(h.deps)
+  await sweep.tick()
+  const v = vaultAt(4, chain.head + 100, chain.head + 200)
+  chain.add(v)
+  listed.add(v.address)
+  chain.head += 600
+  h.clock.t += 5 * 60_000
+  await sweep.tick()
+  assert.deepEqual(h.asked, [], 'the list answered it')
+  // The same vault with the list emptied is asked about, so the line above is the list's doing.
+  const unlisted = harness(chain)
+  await createVaultSweep(unlisted.deps).tick()
+  assert.deepEqual(unlisted.asked, [v.deployTx])
+})
+
+test('a list that cannot be read when someone turns up says so, and asks nobody', async () => {
+  const chain = new Chain()
+  let up = true
+  const h = harness(chain, { counted: async () => (up ? { ok: true, vaults: new Set<string>() } : { ok: false, reason: 'pg: down' }) })
+  const sweep = createVaultSweep(h.deps)
+  await sweep.tick()
+  const v = vaultAt(4, chain.head + 100, chain.head + 200)
+  chain.add(v)
+  chain.head += 600
+  up = false
+  h.clock.t += 5 * 60_000
+  await sweep.tick()
+  assert.equal(sweep.status().lastProblem, 'list-unreadable')
+  assert.deepEqual(h.asked, [])
+  up = true
+  h.clock.t += 5 * 60_000
+  await sweep.tick()
+  assert.deepEqual(h.asked, [v.deployTx], 'and it is asked once the list reads')
+})
+
+test('a host that stalls after its headers is cut off at the read limit, and the next host answers', { timeout: 10_000 }, async () => {
+  const v = vaultAt(3, 123_456, 123_999)
+  const chain = new Chain().add(v)
+  const stalled: RpcHost = { label: 'stalled', request: () => new Promise(() => {}) }
+  const h = harness(chain, { hostList: [stalled, host(chain, 'two')], limits: { stalledAfterMs: 5 } })
+  const sweep = createVaultSweep(h.deps)
+  await sweep.tick()
+  assert.deepEqual(h.asked, [v.deployTx])
+  assert.equal(sweep.status().lastBlockRead, String(chain.head - 20))
+})
+
+test('a hole is read again only on a host that has reached it: one far behind cannot close it with an empty list', async () => {
+  const FULL = 250_000
+  const inside = vaultAt(1, 240_000, FULL)
+  const chain = new Chain().add(inside)
+  let block: number | null = FULL
+  const behind = host(chain, 'behind', { head: 100_000, on: (method) => (method === 'eth_getLogs' ? [] : undefined) })
+  const hosts = [refusing(chain, 'one', () => block, { receipts: true }), refusing(chain, 'two', () => block, { receipts: true }), behind]
+  const h = harness(chain, { hostList: hosts, limits: { logReadsPerTick: 1000, readsPerTick: 2000 } })
+  const sweep = createVaultSweep(h.deps)
+  await sweep.tick()
+  assert.equal(sweep.status().lastProblem, 'logs-not-read')
+  h.clock.t += 3600_000
+  await sweep.tick()
+  assert.equal(sweep.status().lastProblem, 'logs-not-read', 'the host far behind did not close it')
+  assert.deepEqual(h.asked, [])
+  block = null
+  h.clock.t += 3600_000
+  await sweep.tick()
+  assert.deepEqual(h.asked, [inside.deployTx], 'and it is found once a host that has the block reads it')
+})
+
+test('two refused blocks in a row are two holes, not an outage: the reread uses the last block a host answered', async () => {
+  const FULL = [250_000, 250_001]
+  const after = vaultAt(2, 300_000, 350_000)
+  const chain = new Chain().add(after)
+  const one = host(chain, 'one', {
+    on: (method, params) => {
+      const hit = (b: number) => FULL.includes(b)
+      if (method === 'eth_getLogs') {
+        const { fromBlock, toBlock } = (params as readonly { fromBlock: string; toBlock: string }[])[0]
+        return FULL.some((b) => num(fromBlock) <= b && b <= num(toBlock)) ? new Error('query exceeds max results 20000') : undefined
+      }
+      if (method === 'eth_getBlockReceipts' && hit(num(params[0]))) return new Error('response too large')
+      return undefined
+    },
+  })
+  const h = harness(chain, { hostList: [one], limits: { logReadsPerTick: 1000, readsPerTick: 2000 } })
+  const sweep = createVaultSweep(h.deps)
+  await sweep.tick()
+  assert.deepEqual(h.asked, [after.deployTx], 'the vault after both was found')
+  assert.equal(sweep.status().lastBlockRead, String(chain.head - 20), 'the scan went on past both')
+  assert.equal(sweep.status().lastProblem, 'logs-not-read')
+})
+
+test('a value too large for a timer falls back to the default, so a typo cannot make a busy loop', () => {
+  assert.equal(sweepConfig({ ARC_VAULT_SWEEP_EVERY_SECONDS: '2147483' }).everyMs, 2_147_483_000)
+  assert.equal(sweepConfig({ ARC_VAULT_SWEEP_EVERY_SECONDS: '2147484' }).everyMs, 300_000)
+  assert.equal(sweepConfig({ ARC_VAULT_SWEEP_EVERY_SECONDS: '99999999999' }).everyMs, 300_000)
+})

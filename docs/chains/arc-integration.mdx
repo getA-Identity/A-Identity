@@ -417,7 +417,7 @@ first, for 0.005 USDC, from a Gateway balance. Checked on 2026-11-04:
 | --- | --- |
 | Hosted routes | **Live.** They validate input and serve flow records. 100 flows have run on Arc Mainnet, all through our own launch-day vault to payees of ours and labeled so: 75 `ALLOW` flows that the vault paid, and 25 `DENY` flows stopped before signing, answered on 2026-11-01 and 2026-11-02 UTC under the rule of that day. Each is listed on [/proof/arc](https://a-identity.xyz/proof/arc). |
 | MCP tools | **Live** on `https://a-identity.xyz/mcp`, which lists both. The stdio server does not carry them. |
-| SDK, `@a-identity/trust-guard` 0.4.0 | **On npm**, with the `/arc` entry point. This code ran our own 100 flows. No outside team has run the published package yet. |
+| SDK, `@a-identity/trust-guard` 0.4.0 | **On npm**, with the `/arc` entry point. This code ran our own 100 flows. No outside team has run the published package yet. `ownerOnly` and `approvalUrl` come with 0.4.1, which is in the repo and not on npm yet; the hosted route already answers with both. |
 
 <Note>
 A vault payment is a direct USDC transfer to the checked payee, not an x402 settlement. The vault
