@@ -452,7 +452,9 @@ if (flag('--handoff-only')) {
 section('before any vault')
 const list0 = await getJson('/api/arc/vaults')
 check(list0.status === 200 && list0.body.readable === true && list0.body.count === 0, 'GET /api/arc/vaults answers an empty, readable list')
-check(list0.body.admission?.ready === true && list0.body.admission?.keysCompared === 1 + Object.values(OUR_KEY_PUBLIC_ADDRESSES).filter(Boolean).length, `the route says it can admit, with ${list0.body.admission?.keysCompared} keys compared: the one env key and the committed ones`)
+// Counted by key name, and the env key's name is on the committed list too, so it does not add one.
+const keysExpected = new Set(['CELO_BUYER_KEY', ...Object.entries(OUR_KEY_PUBLIC_ADDRESSES).filter(([, a]) => a).map(([name]) => name)]).size
+check(list0.body.admission?.ready === true && list0.body.admission?.keysCompared === keysExpected, `the route says it can admit, with ${list0.body.admission?.keysCompared} keys compared: the env key and the committed ones`)
 check(list0.body.admission?.keysNotCompared?.includes('X402_3009_FUNDER_KEY') && !list0.body.admission.keysNotCompared.includes('CELO_BUYER_KEY'), 'and it names the keys it holds neither the key nor a committed address for')
 const report0 = await season()
 check(report0.milestone1.vaults.count === 0 && report0.milestone1.vaults.target === 5, `GET /api/arc/season counts ${report0.milestone1.vaults.count} of ${report0.milestone1.vaults.target}`)
@@ -1309,9 +1311,9 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
     await confirmD.click()
     await waitFor('the wallet to send', () => wallet.sent.length === 3, 60000)
     const slow = wallet.sent[2]
-    const nonce = Number(await rpc('eth_getTransactionCount', [owner.address, 'latest']))
-    const fee = BigInt(await rpc('eth_gasPrice')) * 4n + 10_000_000_000n
-    const raw = await owner.signTransaction({ type: 'eip1559', chainId: chain.evmChainId, nonce, to: vault, data: encodeFunctionData({ abi, functionName: 'ownerPay', args: [payeeD, amountD] }), value: 0n, gas: 200000n, maxFeePerGas: fee, maxPriorityFeePerGas: fee / 2n })
+    // What a speed-up is: the same nonce and the same call, with both fees raised above what is waiting.
+    const waiting = await rpc('eth_getTransactionByHash', [slow.hash])
+    const raw = await owner.signTransaction({ type: 'eip1559', chainId: chain.evmChainId, nonce: Number(waiting.nonce), to: vault, data: encodeFunctionData({ abi, functionName: 'ownerPay', args: [payeeD, amountD] }), value: 0n, gas: 200000n, maxFeePerGas: BigInt(waiting.maxFeePerGas) * 2n, maxPriorityFeePerGas: BigInt(waiting.maxPriorityFeePerGas) * 2n + 1_000_000_000n })
     const fast = await rpc('eth_sendRawTransaction', [raw])
     await rpc('evm_mine')
     await rpc('evm_setAutomine', [true])
