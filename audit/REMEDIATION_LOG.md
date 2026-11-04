@@ -41,8 +41,8 @@ names it, the register says OPEN even when the change looks as though it may hav
 incidentally, and says so. Re-verified against the working tree on 2026-08-25; the
 verification is noted inline wherever it was more than reading a commit message.
 
-**62 findings: 21 FIXED, 14 ACCEPTED, 27 OPEN.** Most of the open set is documentation and
-process, and most of it is cheap. One of the 21, A3-02, is fixed in source only: every deployed v0.1.0
+**62 findings: 23 FIXED, 14 ACCEPTED, 25 OPEN.** Most of the open set is documentation and
+process, and most of it is cheap. One of the 23, A3-02, is fixed in source only: every deployed v0.1.0
 vault (pubnet `CB5LYXFK...`; testnet `CAIL6ECR...` and the 2026-09-19 passkey rehearsal
 vaults `CBGTXWFB...` and `CCV2MMK4...`; and any vault /stellar deploys on pubnet) still
 answers the old order, since a vault is fixed only when a v0.1.1 vault replaces it, and its
@@ -63,6 +63,10 @@ to say (`DESIGN-DECISIONS.md` D-3 has the reason). **A3-08** and **A5-04**: INV-
 order per entrypoint, which is the documentation both asked for. Two ids that were bundled
 with A3-02 did NOT move: **A4-01** and **A7-01** (via D-2 option C) are explicitly deferred
 past v0.1.1, because each changes the contract's public interface.
+
+Updated 2026-11-04. Two ids moved, both OPEN to FIXED, by the same wording change: **A2-06** and
+**A3-09**. The 2x bound across 00:00 UTC is the contract's behaviour and stays; what closed them is
+that it is now stated where an owner reads it. No contract changed.
 
 ### A1 - authorization
 
