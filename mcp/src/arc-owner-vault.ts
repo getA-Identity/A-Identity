@@ -598,6 +598,22 @@ export type StateContext = {
   chainId: string
 }
 
+/**
+ * What "Revoke now" on /app/vault/arc writes. Only the owner can write it, and it is a second past
+ * on every chain, so the key is off for good until the owner sets a new end date. Admission takes
+ * exactly this value and no other lapsed one: revoking is the owner using the control the vault is
+ * for, and it leaves the vault safer than a live key would, while any other past expiry is a key
+ * left to run out and still refuses. 0 still refuses too, because the contract reads it as no end
+ * date at all.
+ */
+export const REVOKED_KEY_EXPIRY = 1n
+
+export function keyIsRevoked(s: VaultState): boolean {
+  return s.sessionKeyExpiry === REVOKED_KEY_EXPIRY
+}
+
+const SESSION_KEY_EXPIRY_LABEL = 'sessionKeyExpiry is set and later than the current block time, or revoked by the owner'
+
 export function stateChecks(c: StateContext): Check[] {
   const out: Check[] = []
   const s = c.state
@@ -645,7 +661,7 @@ export function stateChecks(c: StateContext): Check[] {
     out.push({ id: 'usdc', group: 'policy', required: true, label: `usdc() is the registry USDC for ${c.chainId}`, ...blocked })
     out.push({ id: 'daily-cap', group: 'policy', required: true, label: 'dailyCap is set (0 means no daily cap)', ...blocked })
     out.push({ id: 'auto-approve-max', group: 'policy', required: true, label: 'autoApproveMax is set (0 means no per-payment ceiling)', ...blocked })
-    out.push({ id: 'session-key-expiry', group: 'policy', required: true, label: 'sessionKeyExpiry is set and later than the current block time', ...blocked })
+    out.push({ id: 'session-key-expiry', group: 'policy', required: true, label: SESSION_KEY_EXPIRY_LABEL, ...blocked })
     return out
   }
 
@@ -734,12 +750,14 @@ export function stateChecks(c: StateContext): Check[] {
     id: 'session-key-expiry',
     group: 'policy',
     required: true,
-    label: 'sessionKeyExpiry is set and later than the current block time',
-    ok: expiry !== 0n && expiry > c.blockTime,
+    label: SESSION_KEY_EXPIRY_LABEL,
+    ok: keyIsRevoked(s) || (expiry !== 0n && expiry > c.blockTime),
     detail:
       expiry === 0n
         ? 'sessionKeyExpiry is 0, which the contract reads as a key that never expires'
-        : expiry <= c.blockTime
+        : keyIsRevoked(s)
+          ? `sessionKeyExpiry is ${REVOKED_KEY_EXPIRY}: the owner revoked the agent key, so it cannot pay until the owner sets a new end date`
+          : expiry <= c.blockTime
           ? `the key expires ${isoFromSeconds(expiry)}, not later than the current block time ${isoFromSeconds(c.blockTime)}`
           : `valid to ${isoFromSeconds(expiry)}; the current block time is ${isoFromSeconds(c.blockTime)}`,
   })
@@ -762,6 +780,7 @@ export function keyOutlivesPage(s: VaultState, blockTime: bigint): boolean {
 export function stateNotes(s: VaultState, blockTime: bigint): string[] {
   const notes: string[] = []
   if (s.frozen) notes.push('frozen: the operator cannot pay until the owner unfreezes it. Not a refusal: freezing is the owner\'s own control.')
+  if (keyIsRevoked(s)) notes.push('revoked: the owner has switched the agent key off, so the operator cannot pay until the owner sets a new end date. Not a refusal: revoking is the owner\'s own control.')
   if (keyOutlivesPage(s, blockTime)) {
     notes.push(`the session key is valid for longer than the vault page allows (to ${isoFromSeconds(s.sessionKeyExpiry)}, and the page stops at thirty days); the rule only asks that it be set and in the future, so this refuses nothing, and the entry says so`)
   }
@@ -817,7 +836,7 @@ function entryNote(i: EntryInput, detailed: boolean): string {
   const amount = (u: bigint) => `${formatUnits(u, i.token.decimals)} ${i.token.symbol}`
   const s = i.state
   const operator = `operator ${getAddress(s.operator)}${i.operatorIsOurs ? ' (our agent key: the agent that pays is ours, the owner is not)' : ''}`
-  const read = `Read back on ${utcDayFromSeconds(i.checkedBlockTime)} at block ${i.checkedBlock}: ${operator}, dailyCap ${amount(s.dailyCap)}, autoApproveMax ${amount(s.autoApproveMax)}, session key valid to ${isoFromSeconds(s.sessionKeyExpiry)}${s.frozen ? ', frozen by the owner' : ''}.`
+  const read = `Read back on ${utcDayFromSeconds(i.checkedBlockTime)} at block ${i.checkedBlock}: ${operator}, dailyCap ${amount(s.dailyCap)}, autoApproveMax ${amount(s.autoApproveMax)}, ${keyIsRevoked(s) ? 'session key revoked by the owner' : `session key valid to ${isoFromSeconds(s.sessionKeyExpiry)}`}${s.frozen ? ', frozen by the owner' : ''}.`
   return `${lead} ${read} ${tail}`
 }
 

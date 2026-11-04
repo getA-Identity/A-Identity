@@ -16,6 +16,9 @@
  * outcome, time). The report reads it only when the check's own row has aged out of the
  * retained Gateway log, which keeps its newest rows; vtp_flows keeps every flow.
  *
+ * Every season flow, paid or refused, names its public flow record, so a reviewer can walk from
+ * any row back to the check and the verdict that opened it, and the vault it ran through.
+ *
  * A payment or a revert is timed by the block it was mined in (payment.minedAt, the block's own
  * timestamp), never by when the server read the receipt: a read-back time is always after the
  * check, so it would make "the outcome came after the check" true of everything. The receipt
@@ -40,6 +43,8 @@ export function toSeasonFlow(row: VtpFlowRecord): ArcVerifyThenPayFlow[] {
     payer: row.check.payer,
     payee: row.payee,
     check: { network: row.network, payer: row.check.payer, outcome: row.check.gatewayOutcome, ts: row.check.checkedAt },
+    recordUrl: flowUrl(row.flowId, VTP_PUBLIC_ORIGIN),
+    ...(typeof row.vault === 'string' ? { vault: row.vault } : {}),
     ...(typeof row.owner === 'string' && typeof row.operator === 'string' ? { vaultKeys: { owner: row.owner, operator: row.operator } } : {}),
   }
   const amount = `${formatUnitsString(BigInt(row.amount), vtpChain().usdcDecimals)} USDC`

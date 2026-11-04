@@ -17,7 +17,9 @@ import {
   type ArcOwnerHeldVault,
   type ArcVerifyThenPayFlow,
 } from './arc-season.js'
+import { REVOKED_KEY_EXPIRY, stateChecks, stateNotes, type VaultState } from './arc-owner-vault.js'
 import { getChainById } from './chains/index.js'
+import { PROVENANCE } from './chains/provenance.js'
 import { addressUrl, txUrl } from './chains/explorer.js'
 import { internalPayers as gatewayInternalPayers } from './x402-gateway/rail.js'
 import { internalPayers as facilitatorInternalPayers } from './x402-3009/rail.js'
@@ -577,10 +579,13 @@ test('an unreadable list of admitted vaults is said plainly and counts the curat
   )
   assert.equal(r.milestone1.vaults.count, 1)
   assert.equal(r.logs.admittedVaults?.readable, false)
-  assert.match(r.milestone1.vaults.note, /admitted vaults could not be read on this request \(db down\)/)
+  assert.match(r.milestone1.vaults.note, /admitted vaults could not be read on this request, so any vault it holds is missing/)
+  assert.equal(r.milestone1.vaults.incomplete, true)
+  assert.ok(!JSON.stringify(r).includes('db down'))
   const none = await arcSeasonReport(deps({ admittedVaults: async () => { throw new Error('db down') } }))
   assert.equal(none.milestone1.vaults.count, 0)
   assert.match(none.milestone1.vaults.note, /could not be read/)
+  assert.doesNotMatch(none.milestone1.vaults.note, /No owner-held vault yet/)
 })
 
 test('a stored row the loader will not count is named and not counted', async () => {
@@ -742,7 +747,7 @@ test('an unreadable facilitator log is reported as unreadable rather than as zer
     throw new Error('postgres unreachable')
   }
   const r = await arcSeasonReport(d)
-  assert.deepEqual(r.logs.facilitator, { readable: false, rows: 0, reason: 'postgres unreachable' })
+  assert.deepEqual(r.logs.facilitator, { readable: false, rows: 0, reason: 'the log did not answer on this request' })
   assert.deepEqual(r.logs.gateway, { readable: true, rows: 1 })
   assert.equal(r.usage.external.checks, 1)
 })
@@ -789,9 +794,9 @@ test('an unreadable flow log is reported as unreadable, and the count says what 
       },
     }),
   )
-  assert.deepEqual(r.logs.flows, { readable: false, rows: 0, reason: 'vtp_flows unreachable' })
+  assert.deepEqual(r.logs.flows, { readable: false, rows: 0, reason: 'the log did not answer on this request' })
   assert.equal(r.milestone1.checks.count, 1, 'the curated list still counts')
-  assert.match(r.milestone1.checks.note, /^The verify-then-pay flow log could not be read on this request \(vtp_flows unreachable\)/)
+  assert.match(r.milestone1.checks.note, /^The verify-then-pay flow log could not be read on this request, so any flow it holds is missing/)
   // Without a loader wired, there is no flow log to report on at all.
   assert.equal((await arcSeasonReport(deps())).logs.flows, undefined)
 })
@@ -883,9 +888,9 @@ test('an unreadable Gateway log is reported as unreadable, and Milestone 1 says 
     throw new Error('postgres unreachable')
   }
   const r = await arcSeasonReport(d)
-  assert.deepEqual(r.logs.gateway, { readable: false, rows: 0, reason: 'postgres unreachable' })
+  assert.deepEqual(r.logs.gateway, { readable: false, rows: 0, reason: 'the log did not answer on this request' })
   assert.equal(r.milestone1.checks.count, 0)
-  assert.match(r.milestone1.checks.note, /^The Circle Gateway settlement log could not be read on this request \(postgres unreachable\), so no check, and no flow linked to one, is counted/)
+  assert.match(r.milestone1.checks.note, /^The Circle Gateway settlement log could not be read on this request, so no check, and no flow linked to one, is counted/)
   // The live deps read it through the loader that tells the two apart.
   assert.ok(Array.isArray(await liveArcSeasonDeps({} as NodeJS.ProcessEnv).gatewayRows()))
 })
@@ -915,4 +920,341 @@ test("a recorded flow whose check aged out of a full Gateway log links by its ow
     throw new Error('postgres unreachable')
   }
   assert.equal((await arcSeasonReport(dark)).milestone1.checks.count, 0)
+})
+
+test('a whole-second block time does not drop a paid flow mined in the same second as its check, and only that', async () => {
+  const check = gw({ payer: OURS_GATEWAY, ts: '2026-11-02T10:00:05.050Z' })
+  const counted = async (f: ArcVerifyThenPayFlow, c = check) => (await arcSeasonReport(deps({ gateway: [c], flows: [f] }))).milestone1.checks.count
+  // Mined at 05.950, which the block reports as 05.000.
+  assert.equal(await counted(flow({ checkNonce: check.authNonce, at: '2026-11-02T10:00:05.000Z' })), 1, 'same second, named by a transaction')
+  assert.equal(await counted(flow({ checkNonce: check.authNonce, at: '2026-11-02T10:00:06.000Z' })), 1, 'a later second')
+  assert.equal(await counted(flow({ checkNonce: check.authNonce, at: '2026-11-02T10:00:04.000Z' })), 0, 'an earlier block is still before the check')
+  // A DENY has no block: its time is the server's own, in milliseconds, and keeps the full comparison.
+  assert.equal(await counted(denyFlow(check.authNonce, { at: '2026-11-02T10:00:05.000Z' })), 0, 'a DENY is compared to the millisecond')
+  assert.equal(await counted(denyFlow(check.authNonce, { at: '2026-11-02T10:00:05.060Z' })), 1)
+})
+
+test('a recorded flow names its record and its vault, whatever its outcome', () => {
+  const nonce = '0x' + 'c1'.repeat(32)
+  const tx = '0x' + 'c2'.repeat(32)
+  const base = {
+    flowId: nonce,
+    network: arc.caip2,
+    vault: EXT_C,
+    payee: CHECKED_PAYEE,
+    amount: '10000',
+    createdAt: '2026-11-01T10:00:01.000Z',
+    verdict: { decision: 'ALLOW' },
+    check: { payer: OURS_GATEWAY, gatewayOutcome: 'credited', checkedAt: '2026-11-01T09:59:00.000Z' },
+  }
+  const payment = { status: 'success', txHash: tx, minedAt: '2026-11-01T10:00:02.000Z', blockNumber: '1', readBackFrom: 'rpc.example' }
+  const rows = [
+    { ...base, outcome: 'executed', detail: 'agent_paid', payment },
+    { ...base, outcome: 'blocked', detail: 'reverted_onchain', payment: { ...payment, status: 'reverted', revertReason: 'AboveAutoApprove' } },
+    { ...base, outcome: 'blocked', detail: 'deny', verdict: { decision: 'DENY' } },
+  ] as unknown as VtpFlowRecord[]
+  const flows = seasonFlowsFromRows(rows)
+  assert.deepEqual(flows.map((f) => f.outcome), ['paid', 'refused', 'refused'])
+  for (const f of flows) {
+    assert.equal(f.vault, EXT_C)
+    assert.ok(f.recordUrl?.startsWith('https://a-identity.xyz/') && f.recordUrl.endsWith(nonce), f.recordUrl)
+  }
+})
+
+test('every flow can be traced end to end: its record, the payment, and the batch as the Gateway row now says', async () => {
+  const batch = '0x' + 'd1'.repeat(32)
+  const landed = gw({ payer: OURS_GATEWAY, outcome: 'completed', tx: batch })
+  const waiting = gw({ payer: OURS_GATEWAY })
+  const asRecorded = { network: arc.caip2, payer: lower(OURS_GATEWAY), outcome: 'credited', ts: '2026-10-18T10:00:00Z' }
+  const recordUrl = 'https://a-identity.xyz/flows/x'
+  const r = await arcSeasonReport(
+    deps({
+      gateway: [landed, waiting],
+      flows: [flow({ checkNonce: landed.authNonce, recordUrl, check: asRecorded }), flow({ checkNonce: waiting.authNonce, recordUrl, check: asRecorded })],
+    }),
+  )
+  const [a, b] = r.milestone1.checks.items
+  assert.equal(a.recordUrl, recordUrl)
+  assert.equal(a.explorerUrl, txUrl(arc, a.txHash!))
+  assert.deepEqual(a.checkSettlement, { outcome: 'completed', readFrom: 'gateway-log', batchTx: batch, batchExplorerUrl: txUrl(arc, batch) })
+  assert.deepEqual(b.checkSettlement, { outcome: 'credited', readFrom: 'gateway-log' })
+  // The record's frozen copy cannot contradict the row: the item does not carry it.
+  assert.equal('check' in a, false)
+  assert.match(r.milestone1.checks.note, /net position/)
+
+  // A check whose row aged out says that it is the record's word, and gets no batch.
+  const kept = [0, 1, 2].map((i) => gw({ payer: OURS_GATEWAY, ts: `2026-11-01T10:0${i}:00Z` }))
+  const old = flow({ payer: OURS_GATEWAY, at: '2026-11-01T09:00:07Z', check: { ...asRecorded, ts: '2026-11-01T09:00:00Z' } })
+  const aged = await arcSeasonReport(deps({ gateway: kept, gatewayCap: 3, flowRows: async () => [old] }))
+  assert.deepEqual(aged.milestone1.checks.items[0].checkSettlement, { outcome: 'credited', readFrom: 'flow-record' })
+})
+
+test('the report says which vault the flows ran through, and that they are our own runs and not external use', async () => {
+  const launch = PROVENANCE.find((p) => p.chain === 'arc-mainnet')!.contracts.find((c) => c.name.startsWith('AgentSpendPolicy'))!.address
+  const held = '0x' + 'e1'.repeat(20)
+  const [c1, c2, c3, c4] = [0, 1, 2, 3].map(() => gw({ payer: OURS_GATEWAY }))
+  const r = await arcSeasonReport(
+    deps({
+      gateway: [c1, c2, c3, c4],
+      vaults: [vaultEntry(held)],
+      flows: [
+        flow({ checkNonce: c1.authNonce, vault: launch }),
+        flow({ checkNonce: c2.authNonce, vault: shouty(held) }),
+        flow({ checkNonce: c3.authNonce, vault: EXT_C }),
+        flow({ checkNonce: c4.authNonce }),
+      ],
+    }),
+  )
+  const c = r.milestone1.checks
+  assert.deepEqual(c.byVault, { 'launch-day': 1, 'owner-held': 1, other: 1, 'not-recorded': 1 })
+  assert.deepEqual(c.items.map((f) => f.vaultKind), ['launch-day', 'owner-held', 'other', 'not-recorded'])
+  assert.match(c.note, /1 of the flows ran through the launch-day vault/)
+  assert.match(c.note, /1 through an owner-held vault counted in the row above; 2 through another vault or with no vault on record/)
+  assert.doesNotMatch(c.note, /separate measures/)
+  assert.match(c.note, /Circle's intro to this program asks for external use, and these 4 flows are not that: they are our own runs/)
+
+  // Every flow on our own vault, as today: said outright, next to a card that also counts vaults.
+  const own = await arcSeasonReport(deps({ gateway: [c1], flows: [flow({ checkNonce: c1.authNonce, vault: launch })] }))
+  assert.match(own.milestone1.checks.note, /separate measures: none of these payments came from an owner's vault/)
+  // No flow, no claim about flows.
+  assert.doesNotMatch((await arcSeasonReport(deps({ gateway: [c1] }))).milestone1.checks.note, /Circle's intro/)
+})
+
+test("a check paid by the owner of a vault labeled team is ours, not a wallet A-Identity does not control", async () => {
+  const r = await arcSeasonReport(
+    deps({
+      vaults: [vaultEntry(EXT_C, { ownerKind: 'team', owner: shouty(EXT_A) }), vaultEntry('0x' + 'e2'.repeat(20), { ownerKind: 'external', owner: EXT_B })],
+      gateway: [gw({ payer: EXT_A }), gw({ payer: EXT_B })],
+    }),
+  )
+  assert.equal(r.milestone2.externalChecks.count, 1)
+  assert.deepEqual(r.usage.external.wallets, [lower(EXT_B)])
+  assert.deepEqual(r.usage.internal.wallets, [lower(EXT_A)])
+  assert.equal(r.milestone1.checks.external, 1)
+  assert.match(r.usage.basis, /owns a vault labeled team/)
+})
+
+test('a wallet that paid and owns a vault nobody identified stays external, and the note says it could be ours', async () => {
+  const r = await arcSeasonReport(deps({ vaults: [vaultEntry(EXT_C, { owner: EXT_A })], gateway: [gw({ payer: EXT_A })] }))
+  assert.equal(r.milestone2.externalChecks.count, 1)
+  assert.match(r.milestone2.externalChecks.note, /1 of these wallet\(s\) also own a vault admitted with the owner not identified/)
+})
+
+test('the vault metric splits owners by kind and shows what the chain cannot say', async () => {
+  const r = await arcSeasonReport(
+    deps({
+      vaults: [
+        vaultEntry('0x' + 'f1'.repeat(20), { ownerKind: 'team' }),
+        vaultEntry('0x' + 'f2'.repeat(20), { ownerKind: 'team' }),
+        vaultEntry('0x' + 'f3'.repeat(20), { ownerKind: 'external' }),
+        vaultEntry('0x' + 'f4'.repeat(20)),
+      ],
+    }),
+  )
+  const v = r.milestone1.vaults
+  assert.deepEqual(v.byKind, { team: 2, external: 1, unstated: 1 })
+  assert.match(v.note, /2 of them someone on our own team, in their own wallet; 1 someone outside the team; 1 not identified/)
+  assert.match(v.note, /chain cannot show which tool sent a deploy/)
+})
+
+test('with a settlement log unreadable nothing says that no outside wallet has paid, and the reason stays off the page', async () => {
+  const secret = 'connect ECONNREFUSED db.internal.example:5432'
+  const d = deps({ facilitator: [fac({ payer: OURS_FACILITATOR })] })
+  d.gatewayRows = async () => {
+    throw new Error(secret)
+  }
+  const r = await arcSeasonReport(d)
+  const m2 = r.milestone2
+  for (const metric of [m2.externalChecks, m2.externalTeamsLive, m2.teamActiveOnSeveralDays, m2.publicReference]) {
+    assert.equal(metric.incomplete, true)
+    assert.match(metric.note, /Circle Gateway settlement log could not be read on this request, so this is a lower limit/)
+    assert.doesNotMatch(metric.note, /^No |Every check settled/)
+  }
+  assert.equal(r.afterProgram.activeExternalWallets.incomplete, true)
+  assert.equal(r.afterProgram.weekly.incomplete, true)
+  assert.doesNotMatch(m2.unattributed.note, /Every external wallet/)
+  assert.equal(r.milestone1.checks.incomplete, true)
+  assert.equal(r.milestone1.checks.unlinked, null)
+  assert.doesNotMatch(r.milestone1.checks.note, /No verify-then-pay flow yet/)
+  assert.ok(!JSON.stringify(r).includes(secret), 'a driver error reaches the public report')
+
+  // A readable report sets no such flag, so an older page and a newer one read it alike.
+  const clean = await arcSeasonReport(deps())
+  assert.equal(JSON.stringify(clean).includes('"incomplete"'), false)
+  assert.match(clean.milestone2.externalChecks.note, /^No paid check from a wallet outside our own yet/)
+})
+
+test('with the flow log unreadable nobody is told how many checks have nothing linked, and refusals say why they are short', async () => {
+  const check = gw({ payer: OURS_GATEWAY })
+  const r = await arcSeasonReport(
+    deps({
+      gateway: [check],
+      flowRows: async () => {
+        throw new Error('vtp_flows unreachable')
+      },
+    }),
+  )
+  assert.equal(r.milestone1.checks.unlinked, null)
+  assert.equal(r.milestone1.checks.incomplete, true)
+  assert.doesNotMatch(r.milestone1.checks.note, /No verify-then-pay flow yet|nothing linked/)
+  assert.equal(r.milestone1.refusals.incomplete, true)
+  assert.match(r.milestone1.refusals.note, /any DENY it holds is missing from this count/)
+  assert.equal(r.milestone2.externalFlows.incomplete, true)
+  assert.doesNotMatch(r.milestone2.externalFlows.note, /No external verify-then-pay flow is recorded yet/)
+  assert.equal(r.milestone2.externalChecks.incomplete, undefined, 'the settlement logs answered')
+  assert.ok(!JSON.stringify(r).includes('vtp_flows unreachable'))
+})
+
+test("an external team's verify-then-pay flow is listed under Milestone 2, by the same rules, and never in Milestone 1", async () => {
+  const theirs = gw({ payer: EXT_A, ts: '2026-11-03T10:00:00.000Z' })
+  const ours = gw({ payer: OURS_GATEWAY })
+  const tx = nextTx()
+  const paid = flow({ checkNonce: theirs.authNonce, payer: EXT_A, at: '2026-11-03T10:00:09.000Z', txHash: tx, recordUrl: 'https://a-identity.xyz/flows/t' })
+  const r = await arcSeasonReport(deps({ gateway: [theirs, ours], flows: [paid, flow({ checkNonce: ours.authNonce })] }))
+  assert.deepEqual([r.milestone1.checks.count, r.milestone1.checks.external], [1, 1])
+  const e = r.milestone2.externalFlows
+  assert.deepEqual([e.count, e.linked], [1, { paid: 1, refused: 0 }])
+  assert.equal(e.items[0].explorerUrl, txUrl(arc, tx))
+  assert.equal(e.items[0].recordUrl, 'https://a-identity.xyz/flows/t')
+  assert.equal(r.milestone2.externalChecks.count, 1, 'the check itself still counts once')
+  assert.ok(!r.milestone1.checks.items.some((f) => f.txHash === tx))
+
+  // No check, no flow; before the check, no flow; one transaction stands behind one flow only.
+  const quiet = await arcSeasonReport(deps({ gateway: [ours], flows: [paid] }))
+  assert.equal(quiet.milestone2.externalFlows.count, 0)
+  assert.match(quiet.milestone2.externalFlows.note, /^No external verify-then-pay flow is recorded yet/)
+  const early = await arcSeasonReport(deps({ gateway: [theirs], flows: [flow({ checkNonce: theirs.authNonce, at: '2026-11-03T09:00:00.000Z' })] }))
+  assert.equal(early.milestone2.externalFlows.count, 0)
+  const reused = await arcSeasonReport(deps({ gateway: [theirs, ours], flows: [flow({ checkNonce: ours.authNonce, txHash: tx }), { ...paid }] }))
+  assert.deepEqual([reused.milestone1.checks.count, reused.milestone2.externalFlows.count], [1, 0])
+})
+
+test("a team's days are counted across all its wallets, and the dates and the span are stated so a reader can judge them", async () => {
+  const r = await arcSeasonReport(
+    deps({
+      partners: [
+        { wallet: EXT_A, team: 'Team A', publicReference: false },
+        { wallet: EXT_B, team: 'Team A', publicReference: false },
+      ],
+      gateway: [
+        gw({ payer: EXT_A, ts: '2026-10-19T20:10:00Z' }),
+        gw({ payer: EXT_B, ts: '2026-10-20T12:22:00Z' }),
+        // Attributed to nobody, on two dates hours apart.
+        gw({ payer: EXT_C, ts: '2026-10-19T20:00:00Z' }),
+        gw({ payer: EXT_C, ts: '2026-10-20T12:00:00Z' }),
+      ],
+    }),
+  )
+  const m = r.milestone2.teamActiveOnSeveralDays
+  assert.deepEqual([m.count, m.teams], [1, ['Team A']], 'neither wallet alone paid on two days')
+  assert.deepEqual(m.byTeam, [{ team: 'Team A', activeDays: ['2026-10-19', '2026-10-20'], firstTs: '2026-10-19T20:10:00Z', lastTs: '2026-10-20T12:22:00Z' }])
+  assert.match(m.note, /Team A on 2026-10-19 and 2026-10-20, 16\.2 hours from the first check to the last/)
+  assert.match(m.note, new RegExp(`Wallet ${lower(EXT_C)} paid on 2026-10-19 and 2026-10-20, 16 hours from the first check to the last, and is attributed to no team, so it does not count here`))
+  assert.deepEqual(r.milestone2.externalTeamsLive.teams.map((t) => t.team), ['Team A', 'Team A'])
+
+  // One team on one date stays at zero, with the same wallets.
+  const one = await arcSeasonReport(
+    deps({
+      partners: [
+        { wallet: EXT_A, team: 'Team A', publicReference: false },
+        { wallet: EXT_B, team: 'Team A', publicReference: false },
+      ],
+      gateway: [gw({ payer: EXT_A, ts: '2026-10-19T01:00:00Z' }), gw({ payer: EXT_B, ts: '2026-10-19T23:00:00Z' })],
+    }),
+  )
+  assert.equal(one.milestone2.teamActiveOnSeveralDays.count, 0)
+})
+
+test('weekly usage counts external checks per UTC week, keeps empty weeks, and names the wallets that came back', async () => {
+  const r = await arcSeasonReport(
+    deps({
+      partners: [
+        { wallet: EXT_A, team: 'Team A', publicReference: false },
+        { wallet: EXT_C, team: 'Team A', publicReference: false },
+      ],
+      gateway: [
+        // Sunday night and Monday morning are different weeks.
+        gw({ payer: EXT_A, ts: '2026-10-04T23:59:00Z' }),
+        gw({ payer: EXT_B, ts: '2026-10-05T00:01:00Z' }),
+        gw({ payer: EXT_B, ts: '2026-10-05T09:00:00Z' }),
+        gw({ payer: EXT_B, ts: '2026-10-06T09:00:00Z' }),
+        gw({ payer: OURS_GATEWAY, ts: '2026-10-06T09:00:00Z' }),
+        gw({ payer: EXT_B, ts: 'not a date' }),
+      ],
+      facilitator: [fac({ payer: EXT_C, ts: '2026-10-19T11:00:00Z' }), fac({ payer: EXT_B, ts: '2026-10-19T11:00:00Z' })],
+      now: () => Date.parse('2026-10-20T12:00:00Z'),
+    }),
+  )
+  const w = r.afterProgram.weekly
+  assert.deepEqual(
+    w.weeks.map((x) => [x.weekStart, x.weekEnd, x.inProgress, x.checks, x.activeWallets, x.activeDays, x.returningWallets]),
+    [
+      ['2026-09-28', '2026-10-04', false, 1, [lower(EXT_A)], ['2026-10-04'], []],
+      ['2026-10-05', '2026-10-11', false, 3, [lower(EXT_B)], ['2026-10-05', '2026-10-06'], []],
+      ['2026-10-12', '2026-10-18', false, 0, [], [], []],
+      ['2026-10-19', '2026-10-25', true, 2, [lower(EXT_B), lower(EXT_C)], ['2026-10-19'], [lower(EXT_B)]],
+    ],
+  )
+  assert.deepEqual(w.repeatWallets, [lower(EXT_B)])
+  assert.deepEqual(w.repeatTeams, ['Team A'], "a team's weeks are counted across its wallets")
+  assert.match(w.note, /1 wallet\(s\) and 1 team\(s\) so far/)
+  // Nothing external, nothing listed, and a sentence saying so.
+  const none = (await arcSeasonReport(deps({ gateway: [gw({ payer: OURS_GATEWAY })] }))).afterProgram.weekly
+  assert.deepEqual([none.weeks, none.repeatWallets, none.repeatTeams], [[], [], []])
+  assert.match(none.note, /^No external check to report by week yet/)
+})
+
+test('admission takes a key the owner revoked, and no other lapsed key', () => {
+  const blockTime = 2_000_000_000n
+  const OWNER_KEY = '0x1234567890123456789012345678901234567890'
+  const state: VaultState = {
+    owner: OWNER_KEY,
+    operator: EXT_A,
+    usdc: arc.contracts.usdc!,
+    dailyCap: 1n,
+    autoApproveMax: 1n,
+    sessionKeyExpiry: REVOKED_KEY_EXPIRY,
+    frozen: false,
+    allowlistEnabled: false,
+    balance: null,
+  }
+  const verdictOn = (sessionKeyExpiry: bigint) =>
+    stateChecks({
+      state: { ...state, sessionKeyExpiry },
+      deployer: OWNER_KEY,
+      registryUsdc: arc.contracts.usdc!,
+      ours: { byAddress: new Map(), envKeysDerived: [], envKeysUnreadable: [] },
+      blockTime,
+      runtime: null,
+      runtimeRequired: false,
+      token: { symbol: 'USDC', decimals: 6 },
+      chainId: arc.caip2,
+    }).find((c) => c.id === 'session-key-expiry')!
+  const revoked = verdictOn(REVOKED_KEY_EXPIRY)
+  assert.equal(revoked.ok, true)
+  assert.match(revoked.detail, /the owner revoked the agent key/)
+  assert.equal(verdictOn(0n).ok, false, 'no end date at all still refuses')
+  assert.equal(verdictOn(2n).ok, false, 'any other past value is a key left to lapse')
+  assert.equal(verdictOn(blockTime).ok, false)
+  assert.equal(verdictOn(blockTime + 1n).ok, true)
+  assert.ok(stateNotes({ ...state, sessionKeyExpiry: REVOKED_KEY_EXPIRY }, blockTime).some((n) => n.startsWith('revoked:')))
+  assert.equal(stateNotes({ ...state, sessionKeyExpiry: blockTime + 1n }, blockTime).some((n) => n.startsWith('revoked:')), false)
+})
+
+test("the Arc ledger lists Simon's identity and the first paid flow, with caveats that keep the ledger from claiming the whole log", () => {
+  const entry = PROVENANCE.find((p) => p.chain === 'arc-mainnet')!
+  const expected: [string, number, RegExp][] = [
+    ['0x7ad5e5b46e752b70c3b7e29bf009d3bcc5dc6aec1a9cc5c9d3ac5cd8d75cad21', 29173344, /Simon is ours/],
+    ['0x0723c5e83130dfe3a16cae0de01e7dbfe514b76b2192fb161c8508f61a888652', 29173360, /That wallet is ours as well/],
+    ['0x32ea75ef07923f4b2e1955158fa2a25778e3c89ae0cc3dff7b01b0f9a34cfa67', 29173603, /Internal from end to end/],
+  ]
+  for (const [hash, block, says] of expected) {
+    const a = entry.artifacts.find((x) => x.txHash === hash)
+    assert.ok(a, `${hash} is not in the ledger`)
+    assert.equal(a.blockNumber, block)
+    assert.equal(a.onChain, 'arc-mainnet')
+    assert.match(a.note ?? '', says)
+  }
+  assert.ok(entry.caveats.some((c) => /This ledger is not the whole settlement log/.test(c) && /counts those as external/.test(c)))
+  assert.ok(!entry.caveats.some((c) => /Every payment recorded here is self-funded/.test(c)))
 })
