@@ -15,7 +15,8 @@ export type VaultCount =
   | { state: 'checking' }
   | { state: 'counted' }
   | { state: 'not-counted'; reasons: string[]; retryable: boolean }
-  | { state: 'failed'; why: string }
+  /** waitMs: how long a question asked again by itself must wait, when the usual delay would be wasted. */
+  | { state: 'failed'; why: string; waitMs?: number }
   | { state: 'needs-end-date' }
   | { state: 'no-hash' }
 
@@ -26,6 +27,12 @@ type Answer = { status?: string; reason?: string; retryable?: boolean; reasons?:
 
 const NO_REASON = 'The check did not say why.'
 
+/**
+ * Past the route's 60 second window (rate-budget.ts; a test holds the two together), so a question
+ * asked again after a 429 lands in a new one.
+ */
+export const PAST_RATE_WINDOW_MS = 65_000
+
 /** The HTTP status and JSON body of POST /api/arc/vaults as what the page says. Anything unrecognized is a failure, never counted. */
 export function vaultCountFromAnswer(httpStatus: number, body: unknown): VaultCount {
   const a = (body ?? {}) as Answer
@@ -34,7 +41,8 @@ export function vaultCountFromAnswer(httpStatus: number, body: unknown): VaultCo
     const reasons = (a.reasons ?? []).map((r) => r.reason).filter((r): r is string => Boolean(r))
     return { state: 'not-counted', reasons: reasons.length ? reasons : [NO_REASON], retryable: a.retryable === true }
   }
-  if (httpStatus === 429) return { state: 'failed', why: 'Too many tries from this connection in the last minute.' }
+  // The limit can be shared with strangers behind the same proxy, so this does not say whose tries they were.
+  if (httpStatus === 429) return { state: 'failed', why: 'Our server is taking too many of these checks right now.', waitMs: PAST_RATE_WINDOW_MS }
   if (a.status === 'unavailable') return { state: 'failed', why: 'Our server could not finish the check just now.' }
   return { state: 'failed', why: 'Our server did not give an answer.' }
 }
@@ -116,7 +124,7 @@ export function shownCount(hash: string | null, stage: string | null, asked: Vau
   if (listing === 'listed' || asked?.state === 'counted') return { state: 'counted' }
   if (hash) return stage === null ? { state: 'needs-end-date' } : (asked ?? { state: 'checking' })
   if (listing === 'not-listed') return { state: 'no-hash' }
-  return listing === 'unreadable' ? { state: 'failed', why: 'Our server did not answer.' } : { state: 'checking' }
+  return listing === 'unreadable' ? { state: 'failed', why: 'Our server could not give its list of counted vaults just now.' } : { state: 'checking' }
 }
 
 /**
@@ -131,4 +139,30 @@ export function shouldAsk(stage: string, count: VaultCount | null, asked: Readon
 /** Whether time alone could change the answer, so the page may ask once more by itself. A refusal that is a fact about the vault stays. */
 export function askAgainByItself(count: VaultCount | null): boolean {
   return count?.state === 'failed' || (count?.state === 'not-counted' && count.retryable)
+}
+
+/**
+ * The page's reads of its list, of which only the newest may answer: a slow older read must not
+ * overwrite a newer one. begin() starts one and returns where its answers go, out() says whether the
+ * newest has yet to say anything about owner-held vaults, and stop() drops whatever is still out.
+ */
+export function listReads<T>(deliver: (answer: T) => void): { begin: () => (answer: T) => void; out: () => boolean; stop: () => void } {
+  let round = 0
+  let waiting = false
+  return {
+    begin() {
+      const mine = ++round
+      waiting = true
+      return (answer) => {
+        if (mine !== round) return
+        waiting = false
+        deliver(answer)
+      }
+    },
+    out: () => waiting,
+    stop() {
+      round++
+      waiting = false
+    },
+  }
 }

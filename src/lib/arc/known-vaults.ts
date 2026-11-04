@@ -116,7 +116,7 @@ function knownFrom(proof: { networks?: ProofNetwork[] } | null, season: SeasonRe
   // The report answers with the curated list alone when the admitted list is unreadable, and a list
   // that did not load is no answer about any vault that is not on it.
   const partial = !season
-    ? 'the owner-held vaults could not be listed (GET /api/arc/season did not answer)'
+    ? 'the owner-held vaults could not be listed (GET /api/arc/season gave no list)'
     : season.logs?.admittedVaults?.readable === false
       ? 'the admitted vaults could not be listed just now'
       : null

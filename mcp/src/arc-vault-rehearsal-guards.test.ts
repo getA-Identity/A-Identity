@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import { benchStalledHosts, withDeadline, type RpcHost } from './arc-owner-vault-live.js'
+import { rateBudget } from './rate-budget.js'
 
 /**
  * Guards the fork rehearsal found or needed: a stalled host must not use up an admission's deadline,
@@ -16,7 +17,7 @@ import { benchStalledHosts, withDeadline, type RpcHost } from './arc-owner-vault
 const repoUrl = (rel: string) => new URL(`../../${rel}`, import.meta.url)
 const repoPath = (rel: string) => fileURLToPath(repoUrl(rel))
 
-type VaultCount = { state: string; retryable?: boolean; reasons?: string[]; why?: string }
+type VaultCount = { state: string; retryable?: boolean; reasons?: string[]; why?: string; waitMs?: number }
 type Held = { network: string; vault: string; hash: string }
 type KnownList = { vaults: { network: string; address: string; kind: string }[]; partial: string | null; ownerHeldRead?: boolean } | null
 const loadRules = async () =>
@@ -29,6 +30,9 @@ const loadRules = async () =>
     vaultThisBrowserHolds: (setup: { vault?: string | null; network: string } | null, held: readonly Held[], network: string) => string | null
     listingOf: (known: KnownList, network: string, vault: string) => string
     shownCount: (hash: string | null, stage: string | null, asked: VaultCount | null, listing: string) => VaultCount
+    vaultCountFromAnswer: (httpStatus: number, body: unknown) => VaultCount
+    listReads: <T>(deliver: (answer: T) => void) => { begin: () => (answer: T) => void; out: () => boolean; stop: () => void }
+    PAST_RATE_WINDOW_MS: number
   }
 const readSource = (rel: string) => readFileSync(repoPath(rel), 'utf8')
 
@@ -196,6 +200,60 @@ test('only a list that loaded can say a vault is not on it', async () => {
   assert.deepEqual(shownCount('0xh', 's', refused, 'not-listed'), refused)
   assert.deepEqual(shownCount('0xh', 's', failed, 'unreadable'), failed)
   assert.equal(shownCount('0xh', 's', { state: 'counted' }, 'not-listed').state, 'counted', 'the answer is newer than the list the page read')
+})
+
+test('the no-hash failure line is true whether the server gave no answer, a 429 or a list it could not read', async () => {
+  const { shownCount } = await loadRules()
+  const told = shownCount(null, null, null, 'unreadable')
+  assert.equal(told.state, 'failed')
+  assert.equal(told.why, 'Our server could not give its list of counted vaults just now.')
+  assert.doesNotMatch(told.why ?? '', /did not answer/)
+  assert.doesNotMatch(readSource('src/lib/arc/known-vaults.ts'), /did not answer/)
+})
+
+test('a 429 does not blame the owner, and the page asks again only past the route\'s window', async () => {
+  const { vaultCountFromAnswer, askAgainByItself, PAST_RATE_WINDOW_MS } = await loadRules()
+  const limited = vaultCountFromAnswer(429, { error: 'Too many requests.' })
+  assert.equal(limited.state, 'failed')
+  assert.doesNotMatch(limited.why ?? '', /your|connection|you\b/i, 'through the site the limit is shared with strangers')
+  assert.equal(limited.waitMs, PAST_RATE_WINDOW_MS)
+  assert.equal(askAgainByItself(limited), true)
+  const budget = rateBudget('POST', '/api/arc/vaults')
+  assert.ok(budget && PAST_RATE_WINDOW_MS > budget.windowMs, 'a retry inside the window could only be refused again')
+  assert.equal(vaultCountFromAnswer(503, { status: 'unavailable', retryable: true }).waitMs, undefined, 'anything else keeps the usual delay')
+  const hook = readSource('src/components/app/arc/useVaultCount.ts')
+  assert.match(hook, /answer\.waitMs \?\? AUTO_RETRY_MS/)
+})
+
+test('only the newest read of the list may answer, and a read out holds a second one', async () => {
+  const { listReads } = await loadRules()
+  const shown: string[] = []
+  const reads = listReads<string>((a) => shown.push(a))
+  assert.equal(reads.out(), false)
+
+  // The first load's proof read is slow; its season read has failed, so the owner clicks Try again.
+  const first = reads.begin()
+  first('first: season failed')
+  assert.equal(reads.out(), false, 'that answered, so a click can start a new read')
+  const second = reads.begin()
+  assert.equal(reads.out(), true, 'a further click finds this one out')
+  second('second: season answered')
+  assert.equal(reads.out(), false)
+  first('first: its Promise.all ends with season null')
+  assert.deepEqual(shown, ['first: season failed', 'second: season answered'], 'the older read does not overwrite the newer')
+  second('second: with proof')
+  assert.equal(shown.at(-1), 'second: with proof')
+
+  const third = reads.begin()
+  reads.stop()
+  third('after the page closed')
+  assert.equal(shown.at(-1), 'second: with proof')
+  assert.equal(reads.out(), false)
+
+  const page = readSource('src/routes/app/ArcVault.tsx')
+  assert.match(page, /listReads<KnownVaults>\(setKnown\)/)
+  assert.equal([...page.matchAll(/listKnownVaults\(/g)].length, 1, 'the first load and Try again are the same read')
+  assert.match(page, /if \(reads\.out\(\)\) return\n\s+setKnown\(\(k\) => k && \{ \.\.\.k, partial: null, loading: true, ownerHeldRead: false \}\)/, 'the click shows at once, and does nothing while a read is out')
 })
 
 test('the vault page reuses the hook and the notice, asks with no wallet, and the route is the only way in', () => {

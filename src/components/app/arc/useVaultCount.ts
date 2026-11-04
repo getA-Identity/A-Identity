@@ -6,7 +6,8 @@
  *
  * If a question is still out when the next stage comes up, that one goes out when the first comes back
  * (shouldAsk). A refusal or a failure that time may fix, such as a host that has not caught up, is
- * asked about once more by itself (askAgainByItself). The server treats a repeat of a counted deploy as
+ * asked about once more by itself (askAgainByItself), after a 429 only once the limit's window has
+ * passed. The server treats a repeat of a counted deploy as
  * a no-op, so a reload costs nothing. With no hash to ask about, what the page says comes from the list
  * it already read, and a list that did not load is said to have failed, never read as a no.
  */
@@ -67,14 +68,15 @@ export function useVaultCount({
 
   // Used up only when the timer fires: a question sent for another reason in the meantime clears it.
   const askAgain = askAgainByItself(answer)
+  const waitMs = answer?.state === 'failed' ? (answer.waitMs ?? AUTO_RETRY_MS) : AUTO_RETRY_MS
   useEffect(() => {
     if (!hash || !askAgain || autoRetried.current.has(hash)) return
     const t = setTimeout(() => {
       autoRetried.current.add(hash)
       void send(hash)
-    }, AUTO_RETRY_MS)
+    }, waitMs)
     return () => clearTimeout(t)
-  }, [hash, askAgain, send])
+  }, [hash, askAgain, waitMs, send])
 
   const retry = useCallback(() => {
     if (hash) void send(hash)

@@ -49,7 +49,7 @@ import type { Chain } from '../../lib/chains'
 import { listKnownVaults, seededKnownVaults, type KnownVaults } from '../../lib/arc/known-vaults'
 import { autoLandVault, FUND_RISK, isOurKey, isOurVault, NAMES_OUR_KEY, NOT_MY_VAULT } from '../../lib/arc/ours'
 import { clearTx, loadDeploys, loadTx, rememberDeploy, saveTx, type TxRecord } from '../../lib/arc/pending'
-import { countableDeploy, deployHashFor, listingOf, vaultPageStage, vaultThisBrowserHolds, type Listing } from '../../lib/arc/vault-count'
+import { countableDeploy, deployHashFor, listingOf, listReads, vaultPageStage, vaultThisBrowserHolds, type Listing } from '../../lib/arc/vault-count'
 import { fundingUnresolved, predictedVault, setupAlert, setupFundEndedOn, setupFundInDoubtOn, setupTxOn, withRecord } from '../../lib/arc/tx-rules'
 import {
   ARC_CHAINS,
@@ -115,17 +115,24 @@ export default function ArcVault() {
   const latestKey = useRef(key)
   latestKey.current = key
 
-  useEffect(() => {
-    let alive = true
-    void listKnownVaults(undefined, (k) => alive && setKnown(k)).then((k) => alive && setKnown(k))
-    return () => {
-      alive = false
-    }
-  }, [])
+  // One newest read of the list, the first included: a slow older one never overwrites a newer answer.
+  const reads = useMemo(() => listReads<KnownVaults>(setKnown), [])
+  const readList = useCallback(() => {
+    const answered = reads.begin()
+    void listKnownVaults(undefined, answered).then(answered)
+  }, [reads])
 
+  useEffect(() => {
+    readList()
+    return () => reads.stop()
+  }, [reads, readList])
+
+  // From the notice's Try again: it goes back to Checking at once, so the click visibly did something.
   const readListAgain = useCallback(() => {
-    void listKnownVaults(undefined, setKnown).then(setKnown)
-  }, [])
+    if (reads.out()) return
+    setKnown((k) => k && { ...k, partial: null, loading: true, ownerHeldRead: false })
+    readList()
+  }, [reads, readList])
 
   // Kept by vault the moment a deploy settles: an owner can forget the setup and carry on from the
   // vault's page, as the setup itself offers, and the hash is what asks for this vault to be counted.
