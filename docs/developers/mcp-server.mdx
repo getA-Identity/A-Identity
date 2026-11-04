@@ -130,17 +130,17 @@ charged. Called with `payment`, it buys the check and returns the call to send.
 | `payment` | string, optional | base64 `PAYMENT-SIGNATURE` for the challenge, signed from your own Gateway balance |
 | `payOnWarn` | boolean, optional | on WARN, prepare `pay()` for the operator instead of handing the payment to the owner; default false. A payee we know nothing about gets WARN, so on such a payee this is your own explicit choice to pay it. It does not apply above the vault's ceiling or off its allowlist, because the vault would refuse the operator: that stays a hand-off |
 
+A hand-off comes back with stage `awaiting_human` and `prepared` null: send `ownerHandoff.ownerPay` from the
+owner key, or send the owner `ownerHandoff.approvalUrl`, the vault page where they approve it from their own
+wallet. That link is null when the vault page would refuse it: the check was not paid by the vault's operator
+key, or the payee is that key. `ownerHandoff.ownerOnly` names the gate when the vault would refuse the operator.
+
 ### verify_then_pay_receipt
 
 | Input | Type | Notes |
 | --- | --- | --- |
 | `flowId` | string | the `flowId` `verify_then_pay` returned, the check's authorization nonce |
 | `txHash` | string | the `pay()` or `ownerPay()` transaction |
-
-A hand-off comes back with stage `awaiting_human` and `prepared` null: send `ownerHandoff.ownerPay` from the
-owner key, or send the owner `ownerHandoff.approvalUrl`, the vault page where they approve it from their own
-wallet. That link is null when the vault page would refuse it: the check was not paid by the vault's operator
-key, or the payee is that key. `ownerHandoff.ownerOnly` names the gate when the vault would refuse the operator.
 
 The flow moves to executed only when the receipt proves the payment. Both tools share the per-address
 budgets of the routes they front. The vault payment is a direct USDC transfer to the checked payee,
