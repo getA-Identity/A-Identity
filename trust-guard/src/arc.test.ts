@@ -766,9 +766,22 @@ test('preflightVault runs the free checks alone and signs nothing', async () => 
   assert.equal(p.operator, OPERATOR)
   assert.equal(p.balance, 1_000_000n)
   assert.equal(p.agentsHeld, 1)
-  assert.equal(p.gasLimit, 120_000n)
+  assert.equal(p.gasLimit, 125_000n)
   await assert.rejects(preflightVault({ vault: VAULT, payee: VAULT, amountUnits: AMOUNT, operator: OPERATOR, chain }), (e: Error) => e instanceof VaultPolicyError && e.code === 'InvalidPayee')
   await assert.rejects(preflightVault({ vault: VAULT, payee: `0x${'00'.repeat(20)}`, amountUnits: AMOUNT, operator: OPERATOR, chain }), (e: Error) => e instanceof VaultPolicyError && e.code === 'ZeroAddress')
+})
+
+test('the gas limit leaves room for the first payment of a UTC day, read just before midnight', async () => {
+  // Measured on Arc Mainnet: estimate 74,115 with spentOnDay nonzero, and 90,341 needed once the
+  // block is on the new day. 20% on top is 88,938, which runs out of gas.
+  const at = async (estimate: bigint) => {
+    const { chain } = setup()
+    chain.estimateGas = async () => estimate
+    return (await preflightVault({ vault: VAULT, payee: PAYEE, amountUnits: AMOUNT, operator: OPERATOR, chain })).gasLimit
+  }
+  assert.ok((await at(74_115n)) >= 90_341n)
+  assert.equal(await at(74_115n), 99_115n)
+  assert.equal(await at(200_000n), 240_000n, 'a large estimate keeps its 20%')
 })
 
 // ── 9. after the check ────────────────────────────────────────────────────────────
