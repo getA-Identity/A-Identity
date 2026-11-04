@@ -100,8 +100,6 @@ export type AgentIdentity = {
 export type Behavioral = {
   completedJobs: number
   contestedJobs: number
-  /** Of those, the ones that count against the worker. Absent on a backend from before it. */
-  contestedEvidence?: number
   disputeRate: number
   avgRating: number | null
   ratedJobs: number

@@ -7,9 +7,12 @@ import {
   markImportedAgent,
   startClaimChallenge,
   verifyAgentClaim,
+  agentReputation,
   type PlatformAgent,
 } from '../platform.js'
 import { state } from './core.js'
+import { recordAuditOutcome } from './guardrail.js'
+import { adverseRecordFrom } from '../asp/risk.js'
 
 /**
  * Claiming an imported record.
@@ -174,4 +177,47 @@ test('a settled claim cannot be replayed with the same challenge', async () => {
   })
   assert.ok('error' in second, 'the record is no longer unclaimed, so there is nothing to claim')
   assert.equal(state.agents.find((a) => a.id === agent.id)?.owner, 'first@test')
+})
+
+// ── what a stranger wrote on a record does not follow it to the real owner ─────────
+
+test('rows the importer wrote are not evidence on the record, before the claim or after it', async () => {
+  const agent = seedImported()
+  const importer = agent.owner as string
+  const evidence = () => adverseRecordFrom(agentReputation(agent.id) as never)
+  const row = { id: `ix_${agent.id}`, agentId: agent.id, type: 'payment', amountUsd: 1, count: 1, payee: 'p', memo: '', status: 'rejected', policyNote: '', createdAt: new Date(Date.now() - 60_000).toISOString() } as (typeof state.instructions)[number]
+  state.instructions.push(row)
+  state.audits[agent.id] = [{ id: `aud_${agent.id}`, ts: new Date(Date.now() - 60_000).toISOString(), verdict: 'DENY', outcome: 'refused' } as never]
+  assert.ok('error' in recordAuditOutcome(agent.id, `aud_${agent.id}`, 'executed', importer), 'the importer owns the row, so it can write this')
+  assert.equal(evidence(), false, 'on an unclaimed record the owner is the importer, so none of it is conduct')
+
+  const ch = startClaimChallenge(agent.id)
+  assert.ok(!('error' in ch))
+  const signature = await holder.signMessage({ message: ch.message })
+  const r = await verifyAgentClaim(agent.id, ch.message, signature, holder.address, 'vendor@test', { readOwner: liveOwner(holder.address) })
+  assert.ok(!('error' in r))
+  assert.equal(evidence(), false, "the vendor's wallet does not inherit a DENY by following the claim flow")
+  const read = agentReputation(agent.id)
+  assert.equal('error' in read ? null : read.discipline.rejectedSettlements, 0)
+  assert.equal('error' in read ? null : read.discipline.overrideAttempts, 0)
+
+  // What the real owner does from here on is its own conduct.
+  assert.ok('error' in recordAuditOutcome(agent.id, `aud_${agent.id}`, 'executed', 'vendor@test'))
+  const after = agentReputation(agent.id)
+  assert.equal('error' in after ? null : after.discipline.overrideAttempts, 1)
+  assert.equal(evidence(), true)
+  state.instructions = state.instructions.filter((i) => i.agentId !== agent.id)
+  delete state.audits[agent.id]
+  delete state.meters[agent.id]
+})
+
+test('a claim with no session takes the record from the importer', async () => {
+  const agent = seedImported()
+  assert.ok(agent.owner, 'the importer owned it')
+  const ch = startClaimChallenge(agent.id)
+  assert.ok(!('error' in ch))
+  const signature = await holder.signMessage({ message: ch.message })
+  const r = await verifyAgentClaim(agent.id, ch.message, signature, holder.address, undefined, { readOwner: liveOwner(holder.address) })
+  assert.ok(!('error' in r))
+  assert.equal(agent.owner, undefined, 'or it could revoke the record and DENY the wallet just proved')
 })

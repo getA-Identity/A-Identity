@@ -145,7 +145,8 @@ test('a platform agent with evidence keeps the DENY lines: under 200, and over 1
   assert.ok(high.reasons.some((x) => /High-value transaction.*holds evidence against it/.test(x)))
   assert.equal(assessRisk({ ...platform, reputationScore: 399 }, { amountUsd: 100 }).decision, 'WARN')
   assert.equal(assessRisk({ ...platform, reputationScore: 400 }, { amountUsd: 100.01 }).decision, 'WARN')
-  assert.equal(assessRisk(platform).decision, 'ALLOW', 'a strong record with one contested job still gets what it earned')
+  assert.equal(assessRisk(platform).decision, 'ALLOW', 'evidence binds a low score, so a strong record still gets what it earned')
+  assert.ok(assessRisk(platform).reasons.some((x) => /holds evidence against it/.test(x)), 'and the answer names it')
 })
 
 test('a platform agent with nothing against it is WARN at the same lines, with plain reasons that name the amount', () => {
@@ -199,16 +200,55 @@ test('adverseRecord absent keeps the strict DENY, and false lifts it only when o
   assert.equal(assessRisk({ ...strong, reputationScore: 399, adverseRecord: false }, { amountUsd: 101 }).decision, 'DENY')
 })
 
-test('adverseRecordFrom: one of any input is enough, and nothing seen is not nothing held', () => {
-  const clean = { behavioral: { contestedEvidence: 0 }, discipline: { rejectedSettlements: 0, overrideAttempts: 0 } }
+test('adverseRecordFrom: one of either input is enough, and nothing seen is not nothing held', () => {
+  const clean = { discipline: { rejectedSettlements: 0, overrideAttempts: 0 } }
   assert.equal(adverseRecordFrom(clean), false)
-  assert.equal(adverseRecordFrom({ ...clean, behavioral: { contestedEvidence: 1 } }), true)
-  assert.equal(adverseRecordFrom({ ...clean, discipline: { rejectedSettlements: 1, overrideAttempts: 0 } }), true)
-  assert.equal(adverseRecordFrom({ ...clean, discipline: { rejectedSettlements: 0, overrideAttempts: 2 } }), true)
-  assert.equal(adverseRecordFrom({ behavioral: {}, discipline: { overrideAttempts: 0 } }), null, 'a server from before the echo')
+  assert.equal(adverseRecordFrom({ ...clean, behavioral: { contestedEvidence: 1, contestedJobs: 3 } } as never), false, 'a contest is free to write, so it is not evidence')
+  assert.equal(adverseRecordFrom({ discipline: { rejectedSettlements: 1, overrideAttempts: 0 } }), true)
+  assert.equal(adverseRecordFrom({ discipline: { rejectedSettlements: 0, overrideAttempts: 2 } }), true)
+  assert.equal(adverseRecordFrom({ discipline: { overrideAttempts: 0 } }), null, 'a server from before the echo')
   assert.equal(adverseRecordFrom({}), null)
   assert.equal(adverseRecordFrom(null), null)
   assert.equal(adverseRecordFrom({ discipline: { overrideAttempts: 3 } }), true, 'a positive input is seen whatever else is missing')
+})
+
+test('no DENY tells the reader our record holds nothing against the agent', () => {
+  const low = { ...strong, reputationScore: 90, onPlatform: true, adverseRecord: false }
+  const sybil = assessRisk({ ...low, sybil: 'high' as const }, { amountUsd: 500 })
+  assert.equal(sybil.decision, 'DENY')
+  assert.ok(!sybil.reasons.some((r) => /holds (nothing|no evidence) against it/.test(r)), sybil.reasons.join(' | '))
+  const revoked = assessRisk({ ...low, revoked: true, kyaVerified: false, contestedJobs: 1 }, { amountUsd: 500 })
+  assert.equal(revoked.decision, 'DENY')
+  assert.ok(!revoked.reasons.some((r) => /holds (nothing|no evidence) against it/.test(r)), revoked.reasons.join(' | '))
+  // And the WARN still says it, with the words nothing else on the record contradicts.
+  assert.ok(assessRisk(low).reasons.some((r) => /holds nothing against it/.test(r)))
+})
+
+test('a WARN on a record holding evidence names it, and says where the amount line is', () => {
+  const moderate = { ...strong, reputationScore: 424, onPlatform: true, adverseRecord: true }
+  for (const amountUsd of [50, 500]) {
+    const r = assessRisk(moderate, { amountUsd })
+    assert.equal(r.decision, 'WARN')
+    assert.ok(r.reasons.some((x) => /holds evidence against it: rejected settlements or guardrail override attempts/.test(x)), r.reasons.join(' | '))
+    assert.ok(!r.reasons.some((x) => /proceed with caution/.test(x)), 'WARN is not a go-ahead')
+    assert.ok(!r.reasons.some((x) => /would be refused/.test(x)), 'at or above 400 the amount does not refuse it')
+  }
+  const below = assessRisk({ ...moderate, reputationScore: 390 }, { amountUsd: 50 })
+  assert.equal(below.decision, 'WARN')
+  assert.ok(below.reasons.some((x) => /A payment over \$100 to it would be refused/.test(x)), below.reasons.join(' | '))
+  assert.equal(assessRisk({ ...moderate, reputationScore: 390 }, { amountUsd: 101 }).decision, 'DENY')
+})
+
+test('contested jobs are named in the reasons and never decide the verdict', () => {
+  const clean = { ...strong, onPlatform: true, adverseRecord: false }
+  const allow = assessRisk({ ...clean, contestedJobs: 2 })
+  assert.equal(allow.decision, 'ALLOW', 'a contest lowers the score, and the score decides')
+  assert.ok(allow.reasons.some((x) => /holds 2 jobs a client refunded or disputed/.test(x)))
+  const low = assessRisk({ ...clean, reputationScore: 90, contestedJobs: 1 }, { amountUsd: 500 })
+  assert.equal(low.decision, 'WARN', 'a stranger cannot write a DENY by contesting a job')
+  assert.ok(low.reasons.some((x) => /holds no evidence against it/.test(x)))
+  assert.ok(!low.reasons.some((x) => /holds nothing against it/.test(x)), 'with a contest on the record, "nothing" would be false')
+  assert.ok(low.reasons.some((x) => /holds 1 job a client refunded or disputed/.test(x)))
 })
 
 test('an agent on our platform with no identity is WARN, not ALLOW and not DENY, and no identity is claimed', () => {

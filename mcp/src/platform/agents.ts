@@ -8,19 +8,18 @@
  */
 import {
   state, save, id, ownsAgent, ownsUser, normalizeSubject, pushActivity, short, inFlightAgentOps,
+  canRememberProvenAddress, rememberProvenAddress, MAX_FORMER_PROVEN_WALLETS,
   type PlatformAgent, type PlatformUser, type LinkedWallet, type Wallet, type Permissions, type Service,
 } from './core.js'
 import { sanitizeVelocity } from './permissions.js'
 import { agentReputation } from './reputation.js'
 import { adverseRecordFrom } from '../asp/risk.js'
+import { addressInQuery, recordNamedBy } from '../agent-query.js'
 import { ARC_TESTNET } from '../arc.js'
 import { registerAgentOnchain } from '../arc-contracts.js'
 import { normalizePriceUsd } from '../marketplace.js'
 
 // ── wallets ───────────────────────────────────────────────────────────────────
-
-/** Enough to keep a moved record's history without letting it balloon the state document. */
-const MAX_FORMER_PROVEN_WALLETS = 20
 
 /** asp/risk.ts's high-value line: under this, evidence on a record denies a payment over 100 USD. */
 const EVIDENCE_DENIES_BELOW = 400
@@ -73,13 +72,17 @@ export function assignWallet(address: string, agentId: string, caller?: string):
   // wallets is routine, so it drops back to `unverified`: re-sign the challenge with the
   // new key and it verifies again. The old proof goes with it, because a proof about an
   // address this agent no longer uses is worse than no proof.
-  const hadProof = agent.kya === 'verified' && agent.walletAddress?.toLowerCase() !== wallet.address.toLowerCase()
-  const provenBefore = hadProof ? agent.walletAddress : null
+  const moving = agent.walletAddress?.toLowerCase() !== wallet.address.toLowerCase()
+  const hadProof = agent.kya === 'verified' && moving
+  // Whatever this record ever proved stays proven when it leaves, revoked or not: see formerProvenWallets.
+  const leaving = moving && agent.walletAddress && (hadProof || everProved(agent, agent.walletAddress)) ? agent.walletAddress : null
+  if (leaving && !canRememberProvenAddress(agent, leaving)) {
+    return { error: `This record has already moved across ${MAX_FORMER_PROVEN_WALLETS} proven wallets, and a proven address is never forgotten, so it cannot move again` }
+  }
   wallet.agentId = agentId
   agent.walletAddress = wallet.address
+  if (leaving) rememberProvenAddress(agent, leaving)
   if (hadProof) {
-    // The proof goes, the fact that it was proven stays: see formerProvenWallets.
-    if (provenBefore) agent.formerProvenWallets = [...(agent.formerProvenWallets ?? []), provenBefore].slice(-MAX_FORMER_PROVEN_WALLETS)
     agent.kya = 'unverified'
     delete agent.kyaProof
     delete agent.kyaOnchainTx
@@ -282,14 +285,22 @@ export function walletControlProven(a: AddressFacts): boolean {
   return a.kya === 'verified' || (a.kya === 'revoked' && everProved(a, a.walletAddress))
 }
 
-/** An address this record proved control of and that is not its wallet now. */
+/** Is this address the wallet this record has control of proven for right now? */
+const provenNow = (a: AddressFacts, address: string): boolean => sameAddress(a.walletAddress, address) && walletControlProven(a)
+
+/**
+ * An address this record proved control of and has no current proof for. Usually one it moved off,
+ * and also one it moved back to and has not proved again: assigning wallet B and then wallet A takes
+ * two unsigned calls, and if A stopped being proved by coming back, those two calls would clear a
+ * DENY at A. Being its wallet again does not undo what it proved there.
+ */
 export function formerlyProvenAddress(a: AddressFacts, address: string): boolean {
-  return !sameAddress(a.walletAddress, address) && everProved(a, address)
+  return !provenNow(a, address) && everProved(a, address)
 }
 
 /** Has this record proved control of this address, now or before? */
 export function recordProvesAddress(a: AddressFacts, address: string): boolean {
-  return (sameAddress(a.walletAddress, address) && walletControlProven(a)) || formerlyProvenAddress(a, address)
+  return provenNow(a, address) || everProved(a, address)
 }
 
 /**
@@ -328,19 +339,27 @@ export function recordHoldsEvidence(a: Pick<PlatformAgent, 'id'>): boolean {
 }
 
 /**
- * The reputation a free read answers for a query, the same reading risk_check gives an address.
- * An address speaks for the record that proved it and no other, so a registration that names a
- * vendor's wallet is no answer about that wallet, revoked or not. A record that has moved off the
- * address can count against it, and does not vouch for it: KYA attests the wallet it uses now.
+ * The reputation a free read answers for a query, the same reading risk_check gives it. An address,
+ * in any of its forms, speaks for the record that proved it and no other, so a registration that names
+ * a vendor's wallet is no answer about that wallet, revoked or not. A record that has moved off the
+ * address can count against it, and does not vouch for it: KYA attests the wallet it uses now. A token
+ * speaks for the record anchored at it, on the chain it names (see agent-query.ts).
+ *
+ * provenWallet is the wallet the record has control of proven for right now, or null. It is how a
+ * reader finds the on-chain identity of a record with no token anchored: a wallet a record merely
+ * names is not offered, because a free registration could name anyone's and borrow their identity.
  */
 export function reputationForQuery(query: string) {
   const q = query.trim()
-  if (!/^0x[0-9a-fA-F]{40}$/.test(q)) return agentReputation(q)
-  const at = recordAtAddress(state.agents, q, recordHoldsEvidence)
-  if (!at.record) return { error: 'Unknown agent' as const }
-  const view = agentReputation(at.record.id)
-  if ('error' in view) return view
-  return at.currentWallet || view.kya !== 'verified' ? view : { ...view, kya: 'unverified' as const }
+  const address = addressInQuery(q)
+  const at = address ? recordAtAddress(state.agents, address, recordHoldsEvidence) : null
+  const record = address ? at?.record : recordNamedBy(state.agents, q)
+  if (!record) return { error: 'Unknown agent' as const }
+  const view = agentReputation(record.id)
+  if ('error' in view) return { error: 'Unknown agent' as const }
+  const provenWallet = record.walletAddress && provenNow(record, record.walletAddress) ? record.walletAddress : null
+  const kya = at && !at.currentWallet && view.kya === 'verified' ? ('unverified' as const) : view.kya
+  return { ...view, kya, provenWallet }
 }
 
 /**

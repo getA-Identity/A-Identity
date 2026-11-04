@@ -194,6 +194,11 @@ test('recordAtAddress: the wallet a proven record moved off still reads as that 
   // Moved off and back to a wallet it proved: that is an address it proved, so it reads as it.
   const back = { id: 'back', walletAddress: W, kya: 'revoked', formerProvenWallets: [W] } as PlatformAgent
   assert.deepEqual(recordAtAddress([back], W), { record: back, currentWallet: true, claim: null })
+  // The same with KYA no longer verified: two unsigned calls must not clear what it proved here.
+  const unverifiedBack = { id: 'back2', walletAddress: W, kya: 'unverified', formerProvenWallets: [W] } as PlatformAgent
+  assert.deepEqual(recordAtAddress([unverifiedBack], W), { record: unverifiedBack, currentWallet: false, claim: null })
+  assert.equal(recordProvesAddress(unverifiedBack, W), true)
+  assert.equal(walletControlProven(unverifiedBack), false, 'it does not vouch for the wallet until it proves it again')
   // A claimed token's signer.
   const claimed = { id: 'claimed', walletAddress: W2, kya: 'verified', claimProof: { address: W, at: 'x', method: 'wallet-signature', tokenId: '1', chain: 'arc' } } as PlatformAgent
   assert.deepEqual(recordAtAddress([claimed], W), { record: claimed, currentWallet: false, claim: null })

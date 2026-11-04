@@ -127,8 +127,12 @@ export type PlatformAgent = {
    * invalidate it.
    */
   importedFrom?: { chain: string; tokenId: string; registry: string; owner: string; at: string; tokenUri?: string }
-  /** How an `unclaimed` record was claimed: the signature, and the ownerOf read it beat. */
-  claimProof?: { address: string; at: string; method: 'wallet-signature'; tokenId: string; chain: string }
+  /**
+   * How an `unclaimed` record was claimed: the signature, and the ownerOf read it beat.
+   * overrideAttemptsAtClaim is the override meter at that moment: what the importer did to the record
+   * before the real owner arrived is not the owner's conduct. See ownerConductCounts in reputation.ts.
+   */
+  claimProof?: { address: string; at: string; method: 'wallet-signature'; tokenId: string; chain: string; overrideAttemptsAtClaim?: number }
   /**
    * How KYA was proven. 'wallet-signature' is a key-held wallet recovered offline;
    * 'erc1271-signature' is a smart contract account (a Circle agent wallet, for one)
@@ -141,6 +145,8 @@ export type PlatformAgent = {
    * proof when the wallet changes, so without this the old address would read as a stranger's
    * and a record gone bad could be paid at the wallet it just left. Only ever a proven address:
    * state.wallets[].agentId is not, because anyone can record a wallet and point it at an agent.
+   * Never trimmed: a record that could roll an address off the end could clear its own DENY there.
+   * rememberProvenAddress refuses a further move at the bound instead.
    */
   formerProvenWallets?: string[]
   /**
@@ -610,6 +616,25 @@ export function nextUtcMidnight(): string {
  *  owner is actable by NO ONE (previously any verified caller could act on an ownerless
  *  agent). Every API-created agent gets an owner (http.ts sets owner=callerId), so this
  *  just closes the latent authorization gap without affecting real agents. */
+/** Enough for any honest record, and a bound on the state document. See rememberProvenAddress. */
+export const MAX_FORMER_PROVEN_WALLETS = 64
+
+/**
+ * Whether this address can be added to the proven history. Once it holds the bound, a move that would
+ * forget a proven address is refused rather than dropping the oldest, because a DENY binds every
+ * address a record proved, and dropping one would let the record clear that DENY by moving enough times.
+ */
+export function canRememberProvenAddress(agent: Pick<PlatformAgent, 'formerProvenWallets'>, address: string): boolean {
+  const held = agent.formerProvenWallets ?? []
+  return held.length < MAX_FORMER_PROVEN_WALLETS || held.some((w) => w.toLowerCase() === address.toLowerCase())
+}
+
+/** Add an address this record proved to its history, once. Check canRememberProvenAddress first. */
+export function rememberProvenAddress(agent: Pick<PlatformAgent, 'formerProvenWallets'>, address: string): void {
+  const held = agent.formerProvenWallets ?? []
+  if (!held.some((w) => w.toLowerCase() === address.toLowerCase())) agent.formerProvenWallets = [...held, address]
+}
+
 export function ownsAgent(agent: PlatformAgent, caller?: string): boolean {
   return Boolean(agent.owner) && agent.owner === caller
 }

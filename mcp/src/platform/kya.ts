@@ -4,7 +4,7 @@
  * Layering: L2 domain module; imports ./core.js and flat ../ modules only.
  */
 import { randomBytes } from 'node:crypto'
-import { state, save, ownsAgent, pushActivity, short, type PlatformAgent } from './core.js'
+import { state, save, ownsAgent, pushActivity, short, canRememberProvenAddress, rememberProvenAddress, MAX_FORMER_PROVEN_WALLETS, type PlatformAgent } from './core.js'
 import { recordValidationOnchain, readValidation } from '../arc-contracts.js'
 import { readAgentTokenOwner, type ExplorerAgentLink } from '../chains/explorer-agent-url.js'
 import { getChainById } from '../chains/registry.js'
@@ -71,7 +71,16 @@ export async function verifyKya(
   const verdict = await verifyWalletSignature({ address: agent.walletAddress, message, signature, chain: opts.chain }, opts.deps)
   if (!verdict.ok) return { error: 'Signature does not match the agent wallet (neither as a key signature nor as a contract account signature)' }
 
+  // The proof names one address, and this overwrites it. A record revoked at A that moves to B never
+  // put A in its history, since it was not verified when it moved, so this is what keeps A proven.
+  const priorProof = agent.kyaProof?.address
+  const forgets = priorProof && priorProof.toLowerCase() !== agent.walletAddress.toLowerCase() ? priorProof : null
+  if (forgets && !canRememberProvenAddress(agent, forgets)) {
+    return { error: `This record has already moved across ${MAX_FORMER_PROVEN_WALLETS} proven wallets, and a proven address is never forgotten, so it cannot prove another` }
+  }
+
   kyaChallenges.delete(agentId)
+  if (forgets) rememberProvenAddress(agent, forgets)
   agent.kya = 'verified'
   agent.kyaProof = {
     address: agent.walletAddress,
@@ -265,13 +274,18 @@ export async function verifyAgentClaim(
 
   claimChallenges.delete(agentId)
   const at = new Date().toISOString()
-  agent.claimProof = { address, at, method: 'wallet-signature', tokenId, chain }
+  // The importer owned this row until now, so what it did to the row is not the real owner's conduct.
+  agent.claimProof = { address, at, method: 'wallet-signature', tokenId, chain, overrideAttemptsAtClaim: state.meters[agent.id]?.overrideAttempts ?? 0 }
   // The claim IS a wallet-control proof, so the record carries it as one and the wallet it
   // proves becomes the record's wallet. Without that the two would disagree.
   agent.walletAddress = address
   agent.kyaProof = { address, at, method: 'wallet-signature' }
   agent.kya = 'verified'
+  // The record leaves the importer either way. A claim with no session leaves it with no owner: the
+  // route is open on purpose, and leaving the importer as owner would let it revoke the record it was
+  // just claimed from, which is a DENY at the wallet the real owner has just proved.
   if (caller) agent.owner = caller
+  else delete agent.owner
   pushActivity(agent, `Claimed by the on-chain owner of #${tokenId} on ${chain} (${short(address)}), and KYA proven by the same signature`)
   save(state)
   return { kya: 'verified', claimProof: agent.claimProof, ...(caller ? { owner: caller } : {}) }

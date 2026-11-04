@@ -21,7 +21,10 @@ import {
   policyHashOf,
   type PlatformAgent,
 } from '../platform.js'
-import { state } from './core.js'
+import { state, MAX_FORMER_PROVEN_WALLETS } from './core.js'
+import { startKyaChallenge, verifyKya } from './kya.js'
+import { recordAuditOutcome } from './guardrail.js'
+import { capAudits, MAX_AUDITS_PER_AGENT } from '../policy/index.js'
 import type { ContractSignatureCheck } from '../erc1271.js'
 import { adverseRecordFrom } from '../asp/risk.js'
 import { handlePublicRoutes } from '../http/public-routes.js'
@@ -267,6 +270,74 @@ test('the free read answers an address with the record that proved it, and never
   assert.equal('error' in former ? null : former.kya, 'unverified')
 })
 
+test('an owner cannot clear what a record proved by moving off an address and back', () => {
+  const a = privateKeyToAccount(generatePrivateKey()).address
+  const b = privateKeyToAccount(generatePrivateKey()).address
+  const agent = seed(a)
+  agent.kya = 'verified'
+  agent.kyaProof = { address: a, at: new Date().toISOString(), method: 'wallet-signature' }
+  recordWallet(a)
+  recordWallet(b)
+  assert.ok(!('error' in assignWallet(b, agent.id, OWNER)))
+  assert.equal(recordAtAddress(listPlatformAgents(), a).record?.id, agent.id)
+
+  // Back to A, with two unsigned calls: the record has no current proof of it and stays eligible there.
+  assert.ok(!('error' in assignWallet(a, agent.id, OWNER)))
+  assert.equal(agent.kya, 'unverified')
+  const at = recordAtAddress(listPlatformAgents(), a)
+  assert.equal(at.record?.id, agent.id, 'it reads as that record, not as a mere claim')
+  assert.equal(at.currentWallet, false, 'and it does not vouch for the wallet until it proves it again')
+  assert.equal(at.claim, null)
+  const read = reputationForQuery(a)
+  assert.equal('error' in read ? null : read.agentId, agent.id, 'the free read does not say Unknown agent')
+  assert.equal('error' in read ? null : read.provenWallet, null, 'and offers no wallet to read an identity from')
+  // B was never proved, so it is not bound by any of this.
+  assert.equal(recordAtAddress(listPlatformAgents(), b).record, null)
+})
+
+test('a revoked record that moves and proves a new wallet does not forget the one it left', async () => {
+  const first = privateKeyToAccount(generatePrivateKey())
+  const second = privateKeyToAccount(generatePrivateKey())
+  const agent = seed(first.address)
+  agent.kya = 'revoked'
+  agent.kyaProof = { address: first.address, at: new Date().toISOString(), method: 'wallet-signature' }
+  recordWallet(second.address)
+  assert.ok(!('error' in assignWallet(second.address, agent.id, OWNER)))
+  assert.deepEqual(agent.formerProvenWallets, [first.address], 'revoked or not, what it proved stays when it leaves')
+
+  // Proving the new wallet overwrites kyaProof, even when the history was not written by the move.
+  agent.formerProvenWallets = undefined
+  const challenge = startKyaChallenge(agent.id, OWNER)
+  assert.ok(!('error' in challenge))
+  const signature = await second.signMessage({ message: challenge.message })
+  const verified = await verifyKya(agent.id, challenge.message, signature, OWNER)
+  assert.ok(!('error' in verified), JSON.stringify(verified))
+  assert.equal(agent.kyaProof?.address, second.address)
+  assert.deepEqual(agent.formerProvenWallets, [first.address])
+  assert.equal(recordAtAddress(listPlatformAgents(), first.address).record?.id, agent.id)
+})
+
+test('the history of proven wallets is bounded by refusing a move, never by dropping an address', () => {
+  const first = privateKeyToAccount(generatePrivateKey()).address
+  const agent = seed(first)
+  const move = (address: string) => {
+    recordWallet(address)
+    return assignWallet(address, agent.id, OWNER)
+  }
+  agent.formerProvenWallets = Array.from({ length: MAX_FORMER_PROVEN_WALLETS }, (_, i) => `0x${String(i).padStart(40, '0')}`)
+  const kept = agent.formerProvenWallets[0]
+  agent.kya = 'verified'
+  const refused = move(privateKeyToAccount(generatePrivateKey()).address)
+  assert.ok('error' in refused, 'a further move would forget a proven address')
+  assert.equal(agent.walletAddress, first, 'nothing changed')
+  assert.equal(agent.kya, 'verified')
+  assert.equal(recordAtAddress(listPlatformAgents(), kept).record?.id, agent.id)
+  // A wallet it never proved is not added, so moving off that is not limited.
+  agent.kya = 'unverified'
+  assert.ok(!('error' in move(privateKeyToAccount(generatePrivateKey()).address)))
+  assert.equal(agent.formerProvenWallets.length, MAX_FORMER_PROVEN_WALLETS)
+})
+
 test('a clean record cannot shadow one with evidence at an address that record proved, now or before', () => {
   const wallet = privateKeyToAccount(generatePrivateKey()).address
   const bad = seed(wallet)
@@ -334,29 +405,15 @@ test('what counts as evidence on a platform record, from what the record really 
   }
   assert.equal(evidence(), false, 'a new agent with nothing on its record: nothing against it, so nothing to deny on')
 
-  // A refund the same minute, with nothing delivered and no deadline passed, is the client leaving.
-  state.tasks.push(job({}))
-  assert.equal(evidence(), false)
-  const rep = agentReputation(agent.id)
-  assert.equal('error' in rep ? null : rep.behavioral.contestedJobs, 1, 'the scorer still sees it')
-  assert.equal('error' in rep ? null : rep.behavioral.contestedEvidence, 0)
-  without()
-  // Delivered, then refused.
-  state.tasks.push(job({ deliverable: 'the work' }))
-  assert.equal(evidence(), true)
-  without()
-  // Disputed counts the same way as refunded.
-  state.tasks.push(job({ status: 'disputed', deliverable: '' }))
-  assert.equal(evidence(), true, 'an empty deliverable is still a delivery')
-  without()
-  // Refunded after the deadline passed with nothing delivered.
-  state.tasks.push(job({ deadlineAt: at(NOW - 1000) }))
-  assert.equal(evidence(), true)
-  without()
-  // Its own operator's job says nothing, delivered or not.
-  state.tasks.push(job({ client: OWNER, deliverable: 'the work' }))
-  assert.equal(evidence(), false)
-  without()
+  // A contest is free to write while the platform funds the escrow, so no shape of it is evidence: not
+  // a same-minute refund, not one after a delivery, not one after a deadline. The scorer still sees it.
+  for (const shape of [{}, { deliverable: 'the work' }, { status: 'disputed' as const, deliverable: '' }, { deadlineAt: at(NOW - 1000) }]) {
+    state.tasks.push(job(shape))
+    assert.equal(evidence(), false, JSON.stringify(shape))
+    const rep = agentReputation(agent.id)
+    assert.equal('error' in rep ? null : rep.behavioral.contestedJobs, 1, 'the scorer still sees it')
+    without()
+  }
 
   // A settlement a human rejected counts, and the velocity breaker's refusal does not.
   const ix = { id: 'ix', agentId: agent.id, type: 'payment', amountUsd: 1, count: 1, payee: 'p', memo: '', status: 'rejected', policyNote: '', createdAt: at(NOW) } as (typeof state.instructions)[number]
@@ -372,6 +429,22 @@ test('what counts as evidence on a platform record, from what the record really 
   state.audits[agent.id] = [{ id: 'a', verdict: 'DENY', outcome: 'refused', overrideAttempts: 1 } as never]
   assert.equal(evidence(), true)
   without()
+
+  // The evidence survives the audit cap, because it is read from the monotonic meter.
+  const auditId = 'aud_kept'
+  state.audits[agent.id] = [{ id: auditId, verdict: 'DENY', outcome: 'refused' } as never]
+  assert.ok('error' in recordAuditOutcome(agent.id, auditId, 'executed', OWNER))
+  assert.equal(evidence(), true)
+  const scored = agentReputation(agent.id)
+  assert.equal('error' in scored ? null : scored.discipline.overrideAttempts, 1)
+  state.audits[agent.id] = capAudits(Array.from({ length: MAX_AUDITS_PER_AGENT + 1 }, (_, i) => ({ id: `row${i}`, verdict: 'ALLOW', outcome: 'executed' }) as never))
+  assert.equal(state.audits[agent.id].length, MAX_AUDITS_PER_AGENT)
+  assert.equal(evidence(), true, '500 free checks do not erase it')
+  const after = agentReputation(agent.id)
+  assert.equal('error' in after ? null : after.discipline.overrideAttempts, 1)
+  assert.equal('error' in after ? null : after.breakdown.discipline, 'error' in scored ? null : scored.breakdown.discipline, 'the score penalty does not go with the rows')
+  without()
+  delete state.meters[agent.id]
 
   // A low star rating alone does not count.
   state.tasks.push(job({ status: 'released', settlement: 'simulated', review: { by: 'stranger@test', rating: 1, text: '', at: at(NOW) } }), job({ status: 'released', settlement: 'simulated', review: { by: 'other@test', rating: 1, text: '', at: at(NOW) } }))

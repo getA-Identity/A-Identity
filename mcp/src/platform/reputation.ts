@@ -35,30 +35,40 @@ function behavioralSignals(agent: PlatformAgent) {
   // make the score worse, not more honest. What honesty requires is that the caller can see
   // the split, so it is published in the echo below rather than folded away.
   const completedOnchain = released.filter((t) => t.settlement === 'onchain').length
-  const contested = hired.filter((t) => t.status === 'refunded' || t.status === 'disputed')
-  const disputedTasks = contested.length
-  // The contested jobs that say something about the worker; see adverseRecordFrom in asp/risk.ts.
-  const contestedEvidence = contested.filter((t) => contestCountsAgainstWorker(t, agent)).length
+  const disputedTasks = hired.filter((t) => t.status === 'refunded' || t.status === 'disputed').length
   const ratings = hired
     .map((t) => t.review?.rating)
     .filter((r): r is number => typeof r === 'number' && Number.isFinite(r))
   const ratedCount = ratings.length
   const avgRating = ratedCount ? ratings.reduce((a, r) => a + r, 0) / ratedCount : undefined
-  return { completedTasks, completedOnchain, disputedTasks, contestedEvidence, ratedCount, avgRating }
+  return { completedTasks, completedOnchain, disputedTasks, ratedCount, avgRating }
 }
 
 /**
- * A client can hire any verified agent and refund the job the same minute, with nothing delivered
- * and no deadline passed. That is the client leaving, not the worker failing, and it is free, so
- * counting it would let a stranger put evidence on a vendor's record. It counts once the worker
- * delivered and the client refused it, or the deadline passed with nothing delivered. A job hired
- * by the agent's own operator says nothing either: no independent client complained.
+ * Whether a thing written on this record at this time is its real owner's conduct. A stranger can
+ * import someone's token and own the row until the real owner claims it, and an owner can reject
+ * settlements and attempt overrides on its own row. On an unclaimed record the owner is the importer,
+ * so none of it counts. After a claim, only what came after it does. Without this, a free sign-in
+ * could write rows that a vendor inherits by following the claim flow, and that is enough to DENY the
+ * wallet the vendor just proved.
  */
-function contestCountsAgainstWorker(t: Task, agent: PlatformAgent): boolean {
-  if (agent.owner && t.client === agent.owner) return false
-  if (t.deliverable !== undefined) return true
-  const deadline = t.deadlineAt ? Date.parse(t.deadlineAt) : NaN
-  return Number.isFinite(deadline) && Date.parse(t.updatedAt) >= deadline
+function ownerConductCounts(agent: PlatformAgent, at: string): boolean {
+  if (agent.kya === 'unclaimed') return false
+  return !agent.claimProof || at >= agent.claimProof.at
+}
+
+/**
+ * Refused attempts to record a blocked action as executed. From the monotonic meter, because the audit
+ * rows are capped at 500: reading the rows would let an owner erase this evidence with 500 free checks.
+ * The rows still count where they say more, because they can predate the meter. A claim recorded before
+ * the baseline existed has no number to subtract, so only its rows after the claim count.
+ */
+function overrideAttemptsOf(agent: PlatformAgent): number {
+  if (agent.kya === 'unclaimed') return 0
+  const baseline = agent.claimProof ? agent.claimProof.overrideAttemptsAtClaim ?? Infinity : 0
+  const metered = (state.meters[agent.id]?.overrideAttempts ?? 0) - baseline
+  const rows = (state.audits[agent.id] ?? []).filter((e) => ownerConductCounts(agent, e.ts)).reduce((a, e) => a + (e.overrideAttempts ?? 0), 0)
+  return Math.max(metered, rows)
 }
 
 /**
@@ -95,7 +105,7 @@ function disciplineSignals(agent: PlatformAgent) {
   const warns = entries.filter((e) => e.verdict === 'WARN')
   return {
     policyDecisions: entries.length,
-    overrideAttempts: entries.reduce((a, e) => a + (e.overrideAttempts ?? 0), 0),
+    overrideAttempts: overrideAttemptsOf(agent),
     unverifiableDecisions: entries.filter((e) => e.unverifiable).length,
     warnDecisions: warns.length,
     danglingApprovals: warns.filter((e) => e.outcome === 'awaiting_human' || e.outcome === 'abandoned').length,
@@ -106,7 +116,7 @@ function disciplineSignals(agent: PlatformAgent) {
 export function repOf(agent: PlatformAgent) {
   const ixs = state.instructions.filter((i) => i.agentId === agent.id)
   const settled = ixs.filter((i) => i.status === 'executed_onchain')
-  const rejected = ixs.filter((i) => i.status === 'rejected').length
+  const rejected = ixs.filter((i) => i.status === 'rejected' && ownerConductCounts(agent, i.createdAt)).length
   const settledUsd = settled.reduce((s, i) => s + i.amountUsd * i.count, 0)
   return computeAgentReputation({
     settledCount: settled.length,
@@ -142,8 +152,6 @@ export function agentReputation(agentId: string) {
     completedJobsOnchain: b.completedOnchain,
     completedJobsSimulated: b.completedTasks - b.completedOnchain,
     contestedJobs: b.disputedTasks,
-    // Of those, the ones that say something about the worker: the input to risk_check's evidence.
-    contestedEvidence: b.contestedEvidence,
     disputeRate: terminalHired > 0 ? Math.round((b.disputedTasks / terminalHired) * 100) / 100 : 0,
     avgRating: b.avgRating != null ? Math.round(b.avgRating * 100) / 100 : null,
     ratedJobs: b.ratedCount,
@@ -171,7 +179,7 @@ export function agentReputation(agentId: string) {
     overrideAttempts: dsc.overrideAttempts,
     // A human refused this agent's own instruction. The velocity breaker's refusals are not in
     // here: see adverseRecordFrom in asp/risk.ts.
-    rejectedSettlements: state.instructions.filter((i) => i.agentId === agent.id && i.status === 'rejected' && i.denyCode !== 'velocity_exceeded').length,
+    rejectedSettlements: state.instructions.filter((i) => i.agentId === agent.id && i.status === 'rejected' && i.denyCode !== 'velocity_exceeded' && ownerConductCounts(agent, i.createdAt)).length,
     unverifiableDecisions: dsc.unverifiableDecisions,
     approvalsAwaited: dsc.warnDecisions,
     approvalsUnclosed: dsc.danglingApprovals,

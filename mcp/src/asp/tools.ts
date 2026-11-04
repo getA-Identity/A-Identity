@@ -18,11 +18,13 @@ import { ARC_CHAIN } from '../chains/index.js'
 import { readValidationOn } from '../validation-registry.js'
 import { readHumanProofFor, sameHumanOn, type HumanProofRead } from '../self-agent-id.js'
 import { computeAgentReputation, type ReputationResult } from '../reputation.js'
+import { addressInQuery, recordNamedBy } from '../agent-query.js'
 import {
   listPlatformAgents,
   recordAtAddress,
   recordHoldsEvidence,
   recordProvesAddress,
+  walletControlProven,
   agentReputation,
   agentGuardrailProfile,
   refreshPlatformState,
@@ -42,6 +44,11 @@ type Bundle = {
   walletClaim: PlatformAgent | null
   /** What a reader has to know about how this address relates to a record, or null. */
   addressNote: string | null
+  /**
+   * Why this verdict could not read our record, or null when it could. A DENY on this is us staying
+   * strict, not evidence, and the reasons have to say so. See assess.
+   */
+  lookupFailure: 'state-unreadable' | 'id-not-reached' | null
   /** Live on-chain ERC-8004 identity, or null if unresolved. */
   identity: Awaited<ReturnType<ReturnType<typeof createIdentityProvider>['resolve']>>
   /** ERC-8004 token id (bigint) if we know one, for on-chain KYA / reputation anchoring. */
@@ -108,14 +115,13 @@ async function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T
  *     ASP process (rosterReadable false) is the same thing.
  *   - An address is the one form that can be looked up in full: recordAtAddress has read it, so
  *     no record there is a finding.
- *   - An id that is not an address and resolved to nothing was never looked up: a made-up string,
- *     a CAIP-10 account, an upper-case 0X, or a token whose RPC read timed out. If "no record"
- *     were answered there, a bad seller could present a meaningless id and get WARN.
- *   - A CAIP or Stellar 8004 id never matches a platform agent by id, so a record can exist that
- *     the query did not reach. If the identity it resolved to is anchored on a platform agent on
- *     the same chain, or is owned by an address a record proved control of, "we hold no record"
- *     would be false. The second case is what catches an Arc Mainnet token of a record anchored
- *     on testnet, or of one with no anchor at all.
+ *   - An id that is not an address and resolved to nothing was never looked up: a made-up string
+ *     or a token whose RPC read timed out. If "no record" were answered there, a bad seller could
+ *     present a meaningless id and get WARN. A CAIP-10 account and an upper-case 0X are addresses:
+ *     gather() normalizes them before they reach this.
+ *   - A record gather() did not reach can still exist behind an identity, for a Stellar 8004 id for
+ *     one. If that identity is anchored on a platform agent on the same chain, or is owned by an
+ *     address a record proved control of, "we hold no record" would be false.
  *
  * What this cannot see, stated rather than implied: a record that only names an address without
  * proof does not count (see recordAtAddress), so the on-chain owner of an unproven record's token
@@ -150,32 +156,57 @@ export function refreshRosterBeforeScoring(on = true): void {
   refreshRosterForScoring = on
 }
 
+/** The reads behind a verdict that leave this process, replaceable so a verdict unit-tests offline. */
+export type GatherDeps = {
+  resolveIdentity?: (query: string) => Promise<Bundle['identity']>
+  refreshState?: () => Promise<boolean>
+  readValidation?: typeof readValidationOn
+  readHumanProof?: typeof readHumanProofFor
+}
+
 /** Resolve every real signal we have for an agent, from platform state + the chain. */
-async function gather(agentId: string): Promise<Bundle> {
+async function gather(agentId: string, deps: GatherDeps = {}): Promise<Bundle> {
   const q = agentId.trim()
   // Cached, shared with guardrail_check, and bounded so a paying caller never hangs on the store.
-  const rosterReadable = refreshRosterForScoring ? await withTimeout(refreshGuardrailState(), RPC_TIMEOUT_MS, false) : true
+  const refreshState = deps.refreshState ?? (refreshRosterForScoring ? refreshGuardrailState : null)
+  const rosterReadable = refreshState ? await withTimeout(refreshState(), RPC_TIMEOUT_MS, false) : true
   const agents = listPlatformAgents()
-  const named =
-    agents.find((a) => a.id === q) ??
-    agents.find((a) => a.onchainAgentId && (a.onchainAgentId === q || `#${a.onchainAgentId}` === q)) ??
-    null
-  const atAddress = !named && isAddress(q) ? recordAtAddress(agents, q, recordHoldsEvidence) : null
-  const platform = named ?? atAddress?.record ?? null
-  // A record that proved this address and has moved off it can count against the address. It
-  // cannot vouch for it: KYA attests the wallet the record uses now.
-  const movedOff = Boolean(atAddress?.record) && !atAddress?.currentWallet
-  const addressNote = movedOff
-    ? 'This address once proved control for an agent on our platform and is not its wallet now, so that record can count against it but does not vouch for it'
-    : atAddress?.claim
-      ? 'A record on our platform names this address as its wallet, but control of it was never proven, so we do not treat that record as this payee'
-      : null
+  // A CAIP-10 account or an upper-case 0X names the same address as the bare form.
+  const address = addressInQuery(q)
+  const named = address ? null : recordNamedBy(agents, q)
+  let atAddress = address ? recordAtAddress(agents, address, recordHoldsEvidence) : null
+  let platform = named ?? atAddress?.record ?? null
 
   // On-chain resolve. Prefer the platform agent's known token id; else the raw query.
   // Timeout-guarded so a slow/unavailable RPC never leaves a paying caller hanging.
-  const onchainQuery = platform?.onchainAgentId ?? q
-  const provider = createIdentityProvider()
-  const identity: Bundle['identity'] = await withTimeout(provider.resolve(onchainQuery), RPC_TIMEOUT_MS, null)
+  // A record with no token that proved its wallet is read through that wallet, so the same payee does
+  // not get ALLOW by address and WARN by platform id. A wallet it merely names is not read: a free
+  // registration could name anyone's and borrow their identity.
+  const provenWallet = platform && !platform.onchainAgentId && walletControlProven(platform) ? platform.walletAddress : null
+  const onchainQuery = platform?.onchainAgentId ?? provenWallet ?? address ?? q
+  const resolveIdentity = deps.resolveIdentity ?? ((id: string) => createIdentityProvider().resolve(id))
+  const identity: Bundle['identity'] = await withTimeout(resolveIdentity(onchainQuery), RPC_TIMEOUT_MS, null)
+
+  // A token no record is anchored at can still be held by an address a record proved control of, which
+  // is what catches an Arc Mainnet token of a record anchored on testnet, or with no anchor at all. So
+  // the token gets that record's verdict, and a token of a bad record does not read as unknown.
+  if (!platform && !address && identity && !identity.partial && identity.owner) {
+    const atOwner = recordAtAddress(agents, identity.owner, recordHoldsEvidence)
+    if (atOwner.record) {
+      atAddress = atOwner
+      platform = atOwner.record
+    }
+  }
+
+  // A record that proved this address and has no current proof for it can count against it. It cannot
+  // vouch for it: KYA attests the wallet the record has proved now.
+  const movedOff = Boolean(atAddress?.record) && !atAddress?.currentWallet
+  const subject = address ? 'This address' : 'The address holding this token'
+  const addressNote = movedOff
+    ? `${subject} once proved control for an agent on our platform and that proof is not current, so that record can count against it but does not vouch for it`
+    : address && atAddress?.claim
+      ? 'A record on our platform names this address as its wallet, but control of it was never proven, so we do not treat that record as this payee'
+      : null
 
   // An ERC-8004 token id is only meaningful on the chain that minted it: the same numeric
   // id on X Layer (OKX.AI) belongs to a different agent, so a read must be scoped to the
@@ -195,7 +226,7 @@ async function gather(agentId: string): Promise<Bundle> {
   // with a reason rather than `kyaCount: 0`, because "not anchorable here" and "anchored
   // zero times" are different facts and a buyer must not read one as the other.
   const validation: Bundle['validation'] =
-    tokenId !== null ? await withTimeout(readValidationOn(anchorChain, tokenId), RPC_TIMEOUT_MS, null) : null
+    tokenId !== null ? await withTimeout((deps.readValidation ?? readValidationOn)(anchorChain, tokenId), RPC_TIMEOUT_MS, null) : null
 
   // Proof-of-human, from Self Agent ID: a different question from KYA (a unique human
   // vouched for this agent, versus the agent controls its wallet), read from a third-party
@@ -204,7 +235,7 @@ async function gather(agentId: string): Promise<Bundle> {
   // agent that never went through Self cannot flip a verdict on its own. counterparty_check
   // is the one place it becomes a signal, through sameHuman.
   const humanProof: Bundle['humanProof'] = await withTimeout(
-    readHumanProofFor(anchorChain, selfLookupCandidates(platform, identity, q)),
+    (deps.readHumanProof ?? readHumanProofFor)(anchorChain, selfLookupCandidates(platform, identity, q)),
     RPC_TIMEOUT_MS,
     null,
   )
@@ -241,10 +272,11 @@ async function gather(agentId: string): Promise<Bundle> {
   // Reputation: platform scorer when we have platform state (real settlement history);
   // else compute from the on-chain signals we can actually see (identity + tenure).
   let reputation: Bundle['reputation']
-  // Read here with the rest of the platform state. Its inputs are contested jobs, rejected
-  // settlements and guardrail override attempts, and a low star rating is left out; why each one
-  // counts or does not is at adverseRecordFrom. A record that cannot be read leaves this undefined,
-  // which is the strict rule.
+  // Read here with the rest of the platform state. Its inputs are rejected settlements and guardrail
+  // override attempts; contested jobs and a low star rating are left out. Why each one counts or does
+  // not is at adverseRecordFrom. A record that cannot be read leaves this undefined, which is the
+  // strict rule, and so does a copy we failed to refresh: "holds nothing against it" would be a
+  // statement about a store we could not read, and a real DENY would read as a WARN for the whole outage.
   let adverseRecord: boolean | undefined
   if (platform) {
     const r = agentReputation(platform.id)
@@ -252,7 +284,7 @@ async function gather(agentId: string): Promise<Bundle> {
       reputation = { ...computeAgentReputation({ settledCount: 0, rejected: 0, onchainRegistered: onchainVerified, createdAt: createdAt ?? new Date() }), basis: 'onchain-identity+tenure', behavioral: null, sybil: null }
     } else {
       reputation = { score: r.score, breakdown: r.breakdown, settledOnchain: r.settledOnchain, settledEffective: r.settledEffective, settledUsd: r.settledUsd, basis: 'platform-settlements+identity+tenure+behavior', behavioral: r.behavioral, sybil: r.sybil }
-      adverseRecord = adverseRecordFrom(r) ?? undefined
+      adverseRecord = rosterReadable ? adverseRecordFrom(r) ?? undefined : undefined
     }
   } else {
     reputation = {
@@ -263,7 +295,19 @@ async function gather(agentId: string): Promise<Bundle> {
     }
   }
 
-  return { agentId: q, platform, walletClaim: atAddress?.claim ?? null, addressNote, identity, tokenId, validation, humanProof, reputation, onchainVerified, kyaVerified, kyaStatus, revoked: kyaStatus === 'revoked', tenureDays, onPlatform: onPlatformSignal(platform, agents, q, identity, rosterReadable), adverseRecord }
+  const onPlatform = onPlatformSignal(platform, agents, address ?? q, identity, rosterReadable)
+  // Which one it is decides the words. An empty roster means this process cannot see platform state.
+  const stateUnreadable = !rosterReadable || agents.length === 0
+  const lookupFailure: Bundle['lookupFailure'] = stateUnreadable ? 'state-unreadable' : onPlatform === undefined ? 'id-not-reached' : null
+
+  return { agentId: q, platform, walletClaim: atAddress?.claim ?? null, addressNote, lookupFailure, identity, tokenId, validation, humanProof, reputation, onchainVerified, kyaVerified, kyaStatus, revoked: kyaStatus === 'revoked', tenureDays, onPlatform, adverseRecord }
+}
+
+const STALE_RECORD_NOTE = 'Our platform records could not be refreshed for this read, so what this record holds could not be confirmed, and a low score is treated strictly. That part is us being unable to look, not evidence against it.'
+
+const LOOKUP_FAILURE_REASON: Record<NonNullable<Bundle['lookupFailure']>, string> = {
+  'state-unreadable': 'We could not read our platform records just now, so we do not know what we hold on this payee. We hold no evidence against it from this read: we stayed strict because we could not look. Ask again shortly.',
+  'id-not-reached': "This id did not reach a platform record we could read, so we could not look: the id may be made up, or its on-chain read may have failed. We hold no evidence against it from this read, and we stayed strict because we could not look. Ask again with the payee's 0x address.",
 }
 
 /** The signals every verdict in this file is scored from. */
@@ -276,12 +320,17 @@ const riskSignals = (b: Bundle): RiskSignals => ({
   sybil: b.reputation.sybil?.level,
   onPlatform: b.onPlatform,
   adverseRecord: b.adverseRecord,
+  ...(b.reputation.behavioral?.contestedJobs ? { contestedJobs: b.reputation.behavioral.contestedJobs } : {}),
 })
 
 /** The verdict of a bundle, with what the address itself adds to its reasons. */
 function assess(b: Bundle, txContext: TxContext | null) {
   const r = assessRisk(riskSignals(b), txContext)
-  return b.addressNote ? { ...r, reasons: [...r.reasons, b.addressNote] } : r
+  // Failing closed is right. Presenting it as a finding is not: with no record reached, the score is a
+  // chain-only number and 'New agent' and 'below the safe threshold' are not about this payee.
+  if (b.lookupFailure && !b.platform) return { ...r, reasons: [LOOKUP_FAILURE_REASON[b.lookupFailure]] }
+  const notes = [...(b.lookupFailure ? [STALE_RECORD_NOTE] : []), ...(b.addressNote ? [b.addressNote] : [])]
+  return notes.length ? { ...r, reasons: [...r.reasons, ...notes] } : r
 }
 
 /**
@@ -426,8 +475,8 @@ export async function reputationScore(agentId: string) {
 }
 
 /** risk_check - pre-transaction ALLOW/WARN/DENY over an agent's trust signals. */
-export async function riskCheck(agentId: string, txContext: TxContext | null = null) {
-  const b = await gather(agentId)
+export async function riskCheck(agentId: string, txContext: TxContext | null = null, deps: GatherDeps = {}) {
+  const b = await gather(agentId, deps)
   const r = assess(b, txContext)
   return {
     tool: 'risk_check',

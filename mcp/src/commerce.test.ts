@@ -104,6 +104,22 @@ test('a low score on a record is DENY with evidence, WARN with nothing against i
   // Revoked and Sybil high stay DENY, and nothing against it is never ALLOW.
   assert.equal(computeMerchantVerdict({ ...low, adverseRecord: false, kya: 'revoked' }).verdict, 'DENY')
   assert.equal(computeMerchantVerdict({ ...low, adverseRecord: false, sybil: 'high' }).verdict, 'DENY')
+  // And neither one also tells the reader our record holds nothing against it.
+  for (const denied of [computeMerchantVerdict({ ...low, adverseRecord: false, kya: 'revoked' }), computeMerchantVerdict({ ...low, adverseRecord: false, sybil: 'high' })]) {
+    assert.ok(!denied.reasons.some((x) => /holds (nothing|no evidence) against it/.test(x.detail)), denied.reasons.map((x) => x.detail).join(' | '))
+  }
+  // Evidence that did not reach a DENY is named, with the amount line under 400.
+  const moderate = computeMerchantVerdict({ ...healthy, reputationScore: 424, adverseRecord: true })
+  assert.equal(moderate.verdict, 'WARN')
+  assert.match(moderate.reasons.find((x) => x.code === 'adverse_record')?.detail ?? '', /holds evidence against it/)
+  assert.ok(!moderate.reasons.some((x) => /proceed with caution/.test(x.detail)), 'WARN is not a go-ahead')
+  assert.doesNotMatch(moderate.reasons.find((x) => x.code === 'adverse_record')?.detail ?? '', /would be refused/)
+  assert.match(computeMerchantVerdict({ ...healthy, reputationScore: 390, adverseRecord: true }).reasons.find((x) => x.code === 'adverse_record')?.detail ?? '', /over \$100 to it would be refused/)
+  // A contest is listed and decides nothing.
+  const contested = computeMerchantVerdict({ ...healthy, adverseRecord: false, contestedJobs: 2 })
+  assert.equal(contested.verdict, 'ALLOW')
+  assert.equal(contested.reasons[0].code, 'verified_merchant')
+  assert.equal(contested.reasons.find((x) => x.code === 'contested_jobs')?.severity, 'info')
   assert.notEqual(computeMerchantVerdict({ ...healthy, reputationScore: 499, adverseRecord: false }).verdict, 'ALLOW')
 })
 
@@ -120,9 +136,9 @@ test('the whole check reads the evidence from the platform view, and a view with
     assert.ok(!('error' in r))
     return (r as Exclude<typeof r, { error: string }>).verdict
   }
-  const clean = { behavioral: { contestedEvidence: 0 }, discipline: { rejectedSettlements: 0, overrideAttempts: 0 } }
+  const clean = { behavioral: { contestedJobs: 0 }, discipline: { rejectedSettlements: 0, overrideAttempts: 0 } }
   assert.equal(await check(clean), 'WARN')
-  assert.equal(await check({ ...clean, behavioral: { contestedEvidence: 1 } }), 'DENY')
+  assert.equal(await check({ ...clean, behavioral: { contestedJobs: 3 } }), 'WARN', 'a contest costs the client nothing, so it is not evidence')
   assert.equal(await check({ ...clean, discipline: { rejectedSettlements: 1, overrideAttempts: 0 } }), 'DENY')
   assert.equal(await check({ ...clean, discipline: { rejectedSettlements: 0, overrideAttempts: 1 } }), 'DENY')
   assert.equal(await check({}), 'DENY', 'a view that does not carry the inputs stays strict')

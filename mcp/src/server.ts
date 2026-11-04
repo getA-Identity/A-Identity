@@ -16,6 +16,7 @@ import {
 import { PRICES } from './asp/payment.js'
 import { createIdentityProvider } from './erc8004.js'
 import { computeAgentReputation } from './reputation.js'
+import { readReputationAnswer } from './agent-query.js'
 import { getArcStatus } from './arc.js'
 import { getCircleStatus } from './circle.js'
 import { merchantCheck } from './commerce.js'
@@ -163,19 +164,16 @@ export function buildServer(data: ServerData = {}): McpServer {
       inputSchema: getReputationInput,
     },
     async ({ agentId }) => {
-      const rep = data.getReputation?.(agentId)
-      if (rep && !(typeof rep === 'object' && 'error' in (rep as object))) {
-        return json({ found: true, reputation: rep })
-      }
+      // The same reading as /api/reputation and risk_check: see readReputationAnswer. An id that
+      // reached no record and no identity says lookedUp false, because "no record" would be false there.
+      const answer = await readReputationAnswer(agentId, (q) => data.getReputation?.(q) ?? null, (q) => identity.resolve(q))
+      if (answer.kind === 'record') return json({ found: true, reputation: answer.reputation })
       // No platform history: fall back to the SAME identity-only basis the paid
       // reputation_score uses, so the free surface and the paid tool never disagree
       // on the number. A live on-chain identity earns exactly the identity credit;
       // tenure is 0 because we cannot vouch for a self-reported registration date.
-      const id = await identity.resolve(agentId).catch(() => null)
-      if (id) {
-        return json({ found: true, reputation: identityOnlyReputation(agentId, id.partial === true) })
-      }
-      return json({ found: false, agentId, reason: 'Unknown agent or no activity yet' })
+      if (answer.kind === 'identity-only') return json({ found: true, reputation: identityOnlyReputation(agentId, answer.partial) })
+      return json({ found: false, agentId, reason: 'Unknown agent or no activity yet', lookedUp: answer.lookedUp })
     },
   )
 
