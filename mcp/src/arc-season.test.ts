@@ -1018,6 +1018,43 @@ test('the report says which vault the flows ran through, and that they are our o
   assert.match(own.milestone1.checks.note, /separate measures: none of these payments came from an owner's vault/)
   // No flow, no claim about flows.
   assert.doesNotMatch((await arcSeasonReport(deps({ gateway: [c1] }))).milestone1.checks.note, /Circle's intro/)
+
+  // "None came from an owner's vault" is a claim about every flow, so one the report cannot place
+  // takes the sentence away, whether or not the list of admitted vaults answered.
+  const stranger = '0x' + 'e7'.repeat(20)
+  const listDown = async () => {
+    throw new Error('db down')
+  }
+  const unplaced = await arcSeasonReport(deps({ gateway: [c1], flows: [flow({ checkNonce: c1.authNonce, vault: stranger })], admittedVaults: listDown }))
+  assert.deepEqual(unplaced.milestone1.checks.byVault, { 'launch-day': 0, 'owner-held': 0, other: 1, 'not-recorded': 0 })
+  assert.equal(unplaced.logs.admittedVaults?.readable, false)
+  assert.doesNotMatch(unplaced.milestone1.checks.note, /none of these payments/)
+  assert.match(unplaced.milestone1.checks.note, /list of admitted vaults could not be read on this request, so a flow through another vault could still be through an owner's/)
+
+  const notYetAdmitted = await arcSeasonReport(deps({ gateway: [c1], flows: [flow({ checkNonce: c1.authNonce, vault: stranger })], admittedVaults: async () => [] }))
+  assert.doesNotMatch(notYetAdmitted.milestone1.checks.note, /none of these payments/)
+  assert.doesNotMatch(notYetAdmitted.milestone1.checks.note, /could still be through an owner's/)
+
+  const noVaultOnRecord = await arcSeasonReport(deps({ gateway: [c1], flows: [flow({ checkNonce: c1.authNonce })] }))
+  assert.equal(noVaultOnRecord.milestone1.checks.byVault['not-recorded'], 1)
+  assert.doesNotMatch(noVaultOnRecord.milestone1.checks.note, /none of these payments/)
+
+  const someOwn = await arcSeasonReport(deps({ gateway: [c1, c2], flows: [flow({ checkNonce: c1.authNonce, vault: launch }), flow({ checkNonce: c2.authNonce, vault: stranger })] }))
+  assert.equal(someOwn.milestone1.checks.byVault['launch-day'], 1)
+  assert.doesNotMatch(someOwn.milestone1.checks.note, /none of these payments/)
+
+  // With the list down the row it compares against is short, so the sentence waits for the list.
+  const ownListDown = await arcSeasonReport(deps({ gateway: [c1], flows: [flow({ checkNonce: c1.authNonce, vault: launch })], admittedVaults: listDown }))
+  assert.doesNotMatch(ownListDown.milestone1.checks.note, /none of these payments/)
+  assert.doesNotMatch(ownListDown.milestone1.checks.note, /could still be through an owner's/)
+})
+
+test('the page keeps the note on external checks, so a paying wallet that also owns an unidentified vault is said at any count', async () => {
+  const page = readFileSync(new URL('../../src/components/proof/ArcSeasonProgress.tsx', import.meta.url), 'utf8')
+  assert.match(page, /metric=\{m2\.externalChecks\} keepNote/)
+  const r = await arcSeasonReport(deps({ gateway: [gw({ payer: EXT_A })], admittedVaults: async () => [vaultEntry(EXT_C, { owner: EXT_A })] }))
+  assert.equal(r.milestone2.externalChecks.count, 1)
+  assert.match(r.milestone2.externalChecks.note, /1 of these wallet\(s\) also own a vault admitted with the owner not identified/)
 })
 
 test("a check paid by the owner of a vault labeled team is ours, not a wallet A-Identity does not control", async () => {
@@ -1072,6 +1109,9 @@ test('with a settlement log unreadable nothing says that no outside wallet has p
   }
   assert.equal(r.afterProgram.activeExternalWallets.incomplete, true)
   assert.equal(r.afterProgram.weekly.incomplete, true)
+  assert.match(r.afterProgram.weekly.note, /Circle Gateway settlement log could not be read on this request, so this is a lower limit/)
+  assert.doesNotMatch(r.afterProgram.weekly.note, /No external check to report/)
+  assert.match(r.afterProgram.weekly.note, /Each UTC week will list its external checks/)
   assert.doesNotMatch(m2.unattributed.note, /Every external wallet/)
   assert.equal(r.milestone1.checks.incomplete, true)
   assert.equal(r.milestone1.checks.unlinked, null)

@@ -916,6 +916,10 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   const linkedList = [...linkedFlows.values()]
   const flowsByVault: Record<ArcFlowVaultKind, number> = { 'launch-day': 0, 'owner-held': 0, other: 0, 'not-recorded': 0 }
   for (const f of linkedList) flowsByVault[vaultKindOf(f)] += 1
+  // A flow through a vault outside the counted list is "other", and with the list unreadable that
+  // says nothing about whose vault it is, so no sentence may rule an owner's vault out.
+  const admittedUnreadable = Boolean(admittedVaults && !admittedVaults.read.readable)
+  const everyFlowOnLaunchVault = linkedList.length > 0 && flowsByVault['launch-day'] === linkedList.length
   const flowLogUnreadable = Boolean(recordedFlows && !recordedFlows.read.readable)
   const flowsIncomplete = !gateway.read.readable || flowLogUnreadable
   const externalFlowItems = [...externalRows.values()].map(flowItem)
@@ -1014,7 +1018,8 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
               (flowsIncomplete ? '' : ` ${gatewayInternal - linkedInLog} internal check(s) have nothing linked and are not counted. The ${gatewayExternal} external Gateway check(s) count under Milestone 2, not here, so no check counts twice.`) +
               ` Circle's intro to this program asks for external use, and these ${linkedFlows.size} flows are not that: they are our own runs, from our own wallets, and they prove the mechanism works. External use is counted separately, under Milestone 2.` +
               ` ${flowsByVault['launch-day']} of the flows ran through the launch-day vault${launchVault ? ` ${launchVault}` : ''}, whose owner and agent keys are both ours, and ${flowsByVault['owner-held']} through an owner-held vault counted in the row above${flowsByVault.other + flowsByVault['not-recorded'] > 0 ? `; ${flowsByVault.other + flowsByVault['not-recorded']} through another vault or with no vault on record` : ''}.` +
-              (flowsByVault['owner-held'] === 0 ? " So this count and the vault count are separate measures: none of these payments came from an owner's vault." : '') +
+              (admittedUnreadable && flowsByVault.other > 0 ? " The list of admitted vaults could not be read on this request, so a flow through another vault could still be through an owner's." : '') +
+              (everyFlowOnLaunchVault && !admittedUnreadable ? " So this count and the vault count are separate measures: none of these payments came from an owner's vault." : '') +
               ' A check\'s batch hash proves that Gateway settled a net position on chain, and a batch can carry other parties\' transfers, so it is not a one-to-one payment; a check shown as credited with no batch hash is one Circle holds, and our log has not read a batch for it yet.' +
               (agedOut > 0
                 ? ` ${agedOut} of the flows link by the settlement their own flow record holds: the Gateway log keeps its newest ${cap} rows, and their check is older than the oldest row it still has.`
@@ -1141,7 +1146,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
         note:
           settlementsCaveat +
           (weekly.weeks.length === 0
-            ? 'No external check to report by week yet. Each UTC week will list its external checks, active wallets, active days and the wallets that came back from an earlier week.'
+            ? `${settlementsIncomplete ? '' : 'No external check to report by week yet. '}Each UTC week will list its external checks, active wallets, active days and the wallets that came back from an earlier week.`
             : `External use per UTC week, Monday to Sunday, from the first external check to this read, on either rail. A wallet is a repeat wallet when it paid in two or more different weeks, and a team when its wallets did: ${weekly.repeatWallets.length} wallet(s) and ${weekly.repeatTeams.length} team(s) so far.`),
       },
       note: `After the program the reference is ${ARC_SEASON_TARGETS.activeExternalWallets} external wallets with a settled check inside the last ${ARC_SEASON_TARGETS.activeWindowDays} days, measured on a rolling window from the time of each read.`,

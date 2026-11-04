@@ -533,7 +533,8 @@ export default function ArcSeasonProgress() {
 
             <MilestoneCard id={2} title={m2.title} due={m2.due}>
               <MetricRow label="External teams live on Arc Mainnet" metric={m2.externalTeamsLive} />
-              <MetricRow label="Paid checks from wallets we do not control" metric={m2.externalChecks} />
+              {/* The note says when a paying wallet also owns an unidentified vault, so it stays past 0. */}
+              <MetricRow label="Paid checks from wallets we do not control" metric={m2.externalChecks} keepNote />
               {/* The note states the dates, because two UTC dates can be hours apart. */}
               <MetricRow label="External team active on several days" metric={m2.teamActiveOnSeveralDays} keepNote />
               <MetricRow label="External integration referenced in public" metric={m2.publicReference} />
