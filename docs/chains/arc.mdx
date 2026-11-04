@@ -65,8 +65,9 @@ primary settlement rail.
 Arc Mainnet is in the registry as `arc-mainnet` with status **live** since 2026-09-16, the
 day it opened: agent #0 on the canonical registry is ours, an AgentSpendPolicy vault
 (`0xe07819e6d28a5dfd5a9f4cd94dc6dc9aeeda4146`) holds real USDC under dust caps, and paid
-calls settled through both our EIP-3009 facilitator and Circle Gateway nanopayments. Every
-payment so far is self-funded and labeled internal; each transaction is listed at
+calls settled through both our EIP-3009 facilitator and Circle Gateway nanopayments. The first
+payments were self-funded and labeled internal, and wallets off our internal lists have paid for
+a few checks since, labeled external; the split and each transaction are at
 [/proof/arc](https://a-identity.xyz/proof/arc). It is a separate descriptor from the testnet on purpose,
 with its own signer variable (`ARC_MAINNET_SIGNER_KEY`), so a testnet key can never become
 a mainnet key by a rename.

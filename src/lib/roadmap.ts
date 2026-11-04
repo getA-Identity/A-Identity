@@ -64,7 +64,7 @@ export type RoadmapItem = {
 }
 
 /** The day this data was last revised. The page's dateline and the markdown header. */
-export const ROADMAP_UPDATED = '2026-10-22'
+export const ROADMAP_UPDATED = '2026-11-04'
 
 export const ROADMAP_SITE = 'https://a-identity.xyz'
 
@@ -736,7 +736,7 @@ export const ROADMAP_ITEMS: readonly RoadmapItem[] = [
       { label: 'Partner guide', href: 'https://a-identity.mintlify.site/chains/arc-integration' },
     ],
     details:
-      'A vault counts only when its owner key is one we never held, so the launch-day vault, owned by our operating wallet, does not. The browser deployer is live at /app/vault/arc, and no owner-held vault exists yet. Targets are the Deliverable 1 commitments as Circle revised them on 2026-10-19; the counts are read from the settlement logs on every request, and the curated lists fill only when the evidence exists.',
+      'A vault counts only when its owner key is one we never held, so the launch-day vault, owned by our operating wallet, does not. The browser deployer is live at /app/vault/arc. The 100 flows and the two refusals are done, on our own wallets and labeled so; the five vaults wait on their owners, and /proof/arc has the live count. Targets are the Deliverable 1 commitments as Circle revised them on 2026-10-19; the counts are read from the settlement logs on every request, and the curated lists fill only when the evidence exists.',
   },
   {
     id: 'arc-season-m2',
@@ -753,7 +753,7 @@ export const ROADMAP_ITEMS: readonly RoadmapItem[] = [
       { label: 'Partner guide', href: 'https://a-identity.mintlify.site/chains/arc-integration' },
     ],
     details:
-      'A wallet is external by default and attributed to a team by name only on request, and only after it has paid a check on Arc Mainnet. Deliverable 2, the progress report Circle judges, is due 2026-10-30 and is the same computed report.',
+      'A wallet is external by default and attributed to a team by name only on request, and only after it has paid a check on Arc Mainnet. Deliverable 2, the progress report Circle judges, was due 2026-10-30 and is the same computed report; /proof/arc has the live counts.',
   },
 
   // ── Next: ordered, undated ─────────────────────────────────────────────────────────
