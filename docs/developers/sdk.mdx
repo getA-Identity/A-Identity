@@ -94,8 +94,9 @@ server.addTool(
 
 If all you want is to stop a bad payment, the guard package is one line and one
 dependency-free import. It calls the live Trust Oracle and throws before your agent
-can pay a counterparty that comes back DENY. DENY means we hold evidence against the
-counterparty. One we know nothing about comes back WARN, which does not throw by default.
+can pay a counterparty that comes back DENY. DENY means a record we hold counts against the
+counterparty. One we know nothing about comes back WARN, which does not throw by default and
+means unknown, not clean, so the sample below blocks it too.
 
 ```bash
 npm install @a-identity/trust-guard
@@ -105,7 +106,7 @@ npm install @a-identity/trust-guard
 import { guard, TrustDenyError } from "@a-identity/trust-guard"
 
 try {
-  await guard(counterpartyAgentId)   // throws on DENY
+  await guard(counterpartyAgentId, { denyOn: ["DENY", "WARN"] })   // throws unless it is ALLOW
   await payTheAgent()
 } catch (e) {
   if (e instanceof TrustDenyError) console.error("Refused:", e.reasons)
@@ -114,9 +115,15 @@ try {
 
 The oracle's paid tools answer over x402. Pass an `onPaymentRequired` callback (an OKX
 Agentic Wallet, for instance) and the guard settles the challenge and retries once; leave
-it out and a 402 surfaces as `PaymentRequiredError` for you to handle. Widen the gate with
-`denyOn: ['DENY', 'WARN']` when a warn should also stop the payment. Without it, the line after
-`guard()` pays a counterparty we know nothing about.
+it out and a 402 surfaces as `PaymentRequiredError` for you to handle. Without `denyOn`, `guard()`
+throws only on DENY, and the line after it pays a counterparty we know nothing about.
+
+<Warning>
+  **If you installed 0.3.0 or earlier.** The verdict's rule lives on the server, so it reaches every
+  installed version with no change on your side. Until 2026-11-04 a counterparty with no on-chain
+  identity or no record on our platform got DENY, and `guard()` threw. Now it gets WARN, and a
+  default `guard()` returns. If your next line pays, add `denyOn`.
+</Warning>
 
 ### Paying On Algorand
 
@@ -137,7 +144,7 @@ const oracle = new TrustGuard({
   onPaymentRequired: algorandPayer({ mnemonic: process.env.AGENT_MNEMONIC!, maxUsdPerCall: 10 }),
 })
 
-await oracle.guard(counterpartyAgentId)                  // 5 USDC, throws on DENY
+await oracle.guard(counterpartyAgentId, { denyOn: ['DENY', 'WARN'] }) // 5 USDC, throws unless it is ALLOW
 const audit = await oracle.batchAudit(["#12", "#907"])   // 4 USDC per agent, up to 50
 ```
 

@@ -36,7 +36,7 @@ const VERDICT_TEXT: Record<Verdict, string> = {
   WARN: 'text-warn',
   DENY: 'text-danger',
 }
-/** asp/risk.ts's line, for a preview. DENY needs evidence against an agent we hold a record of, so
+/** asp/risk.ts's line, for a preview. DENY needs a record of ours that counts against the agent, so
  *  with no platform record it is WARN and never ALLOW. */
 function riskOf(score: number, kya?: string, verified = true, sybil?: string, onPlatform = true): Verdict {
   if (kya === 'revoked' || sybil === 'high') return 'DENY'

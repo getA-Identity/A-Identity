@@ -185,7 +185,7 @@ export const ARC_OUR_PAYEES: { address: string; why: string }[] = [
 
 /**
  * The day the trust verdict's rule changed: from then on, a payee we know nothing about gets WARN
- * and DENY needs evidence against a payee we hold a record of. Recorded DENYs stay as recorded.
+ * and DENY needs a record we hold that counts against the payee. Recorded DENYs stay as recorded.
  */
 const RISK_RULE_CHANGED_ON = '2026-11-04'
 

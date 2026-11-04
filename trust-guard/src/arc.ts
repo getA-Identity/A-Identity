@@ -916,7 +916,8 @@ async function signOffer(offer: Offer, payer: GatewayPayerSigner, makeScheme?: G
  * `onPaymentRequired` for `new TrustGuard({ rail: 'arc' })`: a verdict paid through Circle
  * Gateway on Arc Mainnet, with no vault involved. For risk_check, send the payee's ADDRESS as
  * the agent id: the scorer matches platform agents by address, so a CAIP id never reaches the
- * agent's platform record, and an agent that has one comes out DENY under that id.
+ * agent's platform record. If its token is anchored on a platform agent, or owned by an address a
+ * record proved, it comes out DENY under that id; any other token reads as no record, which is WARN.
  */
 export function arcGatewayPayer(payer: GatewayPayerSigner, opts: ArcGatewayPayerOptions = {}): NonNullable<TrustGuardOptions['onPaymentRequired']> {
   if (!payer || typeof payer.signTypedData !== 'function') throw new TypeError('arcGatewayPayer needs a signer with an address and signTypedData')

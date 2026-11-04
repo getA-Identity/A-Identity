@@ -332,19 +332,27 @@ gets you. `txContext` is optional and takes
 generated from the same source.
 
 **Send the payee's 0x address as `agentId`.** `risk_check` matches a platform agent by platform
-id, token id or wallet address. A CAIP id is resolved on chain but never matched to a platform
-agent, so a platform agent named that way is scored from the chain alone: at most 60, which is
-`DENY`, even for an agent that would pass under its address.
+id, token id, or an address the record proved control of. A CAIP id is resolved on chain but never
+matched to a platform agent by id. If its token is anchored on a platform agent, or is owned by an
+address a record proved control of, it is scored from the chain alone: at most 60, which is `DENY`,
+even for an agent that would pass under its address. Any other CAIP id is a token we hold no record
+of, which gets `WARN`. An id that resolves to nothing was never looked up, so it gets `DENY`.
 
-**Who gets what.** `DENY` means we hold evidence against the payee: KYA revoked, Sybil high, a reputation under
+**Who gets what.** `DENY` means a record we hold counts against the payee: KYA revoked, Sybil high, a reputation under
 200 on an agent on our platform, or a payment over 100 USD to an agent on our platform with
-reputation under 400. A payee with no on-chain identity, or with an identity and no record on
+reputation under 400. A low score is enough on its own, so a new agent on our platform with no
+history yet also gets `DENY` until it builds one. A payee with no on-chain identity, or with an identity and no record on
 our platform, is not known bad, so it gets `WARN`, with reasons that say what we do not know.
 A high-value or large payment to such a payee stays `WARN`, with the amount named. `ALLOW` needs
 a platform agent with reputation of at least 500, attested KYA and at least 7 days of tenure.
 A real seller who simply has not registered with us scores at most 60 because we have no history
 for it, and that gets `WARN`. Until 2026-11-04 it got `DENY`; anything dated before that day on
 this page or on [/proof/arc](https://a-identity.xyz/proof/arc) was answered under the older rule.
+
+**What that line cannot see.** `DENY` binds an address we hold a proven record of. A record counts
+at an address only once it proved control of it, so a registration that merely names a wallet does
+not count. A payee with a bad record can appear under a new address and get `WARN`, so `WARN` means
+unknown, not clean. Read the reasons before you pay on one.
 
 | Tool | Price | What it answers | Required input |
 | --- | --- | --- | --- |
@@ -461,12 +469,56 @@ reputations come from our own demo payments, so they show the rule path, not ind
 | Our operating wallet, `0xd305607510e0db2c95807173c7a05bea53c1ed36` (internal) | Holds Arc Mainnet agent #0, off-platform | `WARN` since 2026-11-04, reputation 60: we hold no record of it. It got `DENY` on 2026-11-02, under the older rule, and those recorded flows stand |
 | `0xA65F35B21aB90D088c1197728cDd0563c1308735` | An agent on our platform named `test`, which we are not vouching for in any way | `DENY` by the rule, from the free reads on 2026-11-04 (`/api/reputation`: reputation 90, Sybil high, both of its 2 jobs hired by its own operator). No check was bought on it, so read the live answer, and do not pay it to see |
 
-A payee that holds no agent on Arc Mainnet passes the free checks, and the check is then bought for
-0.005 USDC. Unless it is an agent on our platform, the answer is `WARN`, so it reaches
-`awaiting_human` with the owner's prepared payment. The same goes for one that holds an agent but
-has no record on our platform. An agent named in `payeeAgentId` that the payee does not own
+A payee that holds no agent on Arc Mainnet passes the free checks, within the vault's ceiling and
+allowlist, and the check is then bought for 0.005 USDC. Unless it is an agent on our platform, the
+answer is `WARN`, so it reaches `awaiting_human` with the owner's prepared payment. The same goes
+for one that holds an agent but has no record on our platform. On a vault whose owner and operator
+are one key, that `WARN` stops at `warn_no_human_gate` instead, with the check paid and nothing
+prepared. An agent named in `payeeAgentId` that the payee does not own
 (`PAYEE_AGENT_MISMATCH`) and a registry that does not answer (`REGISTRY_UNREADABLE`) are still
 refused at the free checks, with nothing bought.
+
+**The vault's own limits come first.** A payment above the vault's per-payment ceiling
+(`AboveAutoApprove`; a vault deployed at [/app/vault/arc](https://a-identity.xyz/app/vault/arc)
+starts at 0.25 USDC), or to a payee off an allowlist that is on (`PayeeNotAllowed`), is refused at
+the free checks. Nothing is bought, no verdict comes back and nothing is prepared. Only the owner
+can pay it as it stands, by calling `ownerPay` directly, with no verdict behind it. For a verdict
+and a hand-off, the owner raises the ceiling or allows the payee, and the operator asks again.
+
+### When a payment waits for its owner
+
+`awaiting_human` hands back the exact call for the owner's key, and that key has to send it. The
+vault page does not do that today: it has no action for sending `ownerPay` or posting its receipt,
+so a hand-off takes a script. Read the verdict's reasons first, and do not send it when the
+simulation failed: the vault would refuse it right now, and it would revert and cost gas.
+
+```ts
+import { createWalletClient, http } from 'viem'
+import { privateKeyToAccount } from 'viem/accounts'
+import { arcViemChain, recordFlowReceipt } from '@a-identity/trust-guard/arc'
+
+// out is what verifyThenPay returned, with out.outcome === 'awaiting_human'.
+const { ownerPay } = out
+if (!ownerPay.simulation.ok) throw new Error(`the vault would refuse this now: ${ownerPay.simulation.error}`)
+
+const owner = createWalletClient({
+  account: privateKeyToAccount(process.env.VAULT_OWNER_KEY as `0x${string}`),
+  chain: arcViemChain,
+  transport: http(),
+})
+const txHash = await owner.sendTransaction({
+  to: ownerPay.to,
+  data: ownerPay.data,
+  value: 0n,
+  ...(ownerPay.gas ? { gas: BigInt(ownerPay.gas) } : {}),
+  maxFeePerGas: BigInt(ownerPay.maxFeePerGas),
+  maxPriorityFeePerGas: 1_000_000_000n,
+})
+const record = await recordFlowReceipt({ flowId: out.flowId, txHash })
+```
+
+Over the hosted route the same call is `ownerHandoff.ownerPay`, with its fee under `fees`; send it,
+then POST the hash to `/flows/<flowId>/receipt`.
 
 ### The hosted route
 
@@ -487,13 +539,13 @@ never sent to `risk_check`) and `payOnWarn`. The body's `stage` says where the f
 
 | Status | `stage` | Meaning |
 | --- | --- | --- |
-| `400`, `422` | `refused` | Bad input, a named agent that is not the payee's, or the vault would refuse. `code` names why. Nothing charged. |
+| `400`, `422` | `refused` | Bad input, a named agent that is not the payee's, or the vault would refuse. `code` names why. Nothing charged, and no verdict comes back. |
 | `409` | `refused` | `NONCE_ALREADY_USED`: this authorization already opened a flow. This request charged nothing, but the first request with this nonce may have. Read `GET /api/x402/gateway/flows/<nonce>` or the Gateway proof log before signing a new one. |
 | `402` | `payment_required` | The free checks passed. Nothing charged yet. A payee that holds no agent passes them, with `checks.payee.agentsHeld` 0, and `next` says what to expect. |
 | `200` | `prepared` | Send `prepared` from the operator key, unless `prepared.simulation.ok` is false, which means the vault would refuse it right now. |
-| `200` | `awaiting_human` | `WARN`: send `ownerHandoff.ownerPay` from the owner key. A payee we know nothing about ends here. |
+| `200` | `awaiting_human` | `WARN`: send `ownerHandoff.ownerPay` from the owner key, unless `ownerHandoff.ownerPay.simulation.ok` is false, which means the vault would refuse it right now. A payee we know nothing about ends here. |
 | `200` | `deny`, `verdict_unusable` | Do not pay. Nothing was prepared. |
-| `200` | `warn_no_human_gate` | `WARN`, and the vault's owner and operator are one key, so there is nobody to hand it to. Do not pay. Nothing was prepared. |
+| `200` | `warn_no_human_gate` | `WARN`, and the vault's owner and operator are one key, so there is nobody to hand it to. The check was paid. Do not pay. Nothing was prepared. |
 | `409`, `500` | `deny`, `verdict_unusable` | Do not pay. The check was paid and answered, but the flow log does not hold the refusal, so it is not public. |
 | `429` | `refused` | Over the budget of 30 calls a minute per address. Nothing charged. |
 | `503` | `refused` | The chain or the flow log did not answer, so nothing could be decided. Nothing charged. Ask again shortly. |

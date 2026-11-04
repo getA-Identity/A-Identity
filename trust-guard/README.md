@@ -5,9 +5,10 @@ One line of code that stops your AI agent from paying a counterparty it should n
 Agents are starting to hire and pay other agents at machine speed. `trust-guard` puts a
 verification gate in front of that payment: it calls the live **A-Identity Trust Oracle**
 (ERC-8004 on-chain identity + KYA + a deterministic 0-1000 reputation + a Sybil check) and
-**throws if the verdict is DENY**, so a counterparty we hold evidence against (revoked KYA, a Sybil flag, or a
-low reputation on an agent on our platform) never gets paid. A counterparty we know nothing about gets WARN, not
-DENY: `guard()` returns on WARN by default, so pass `denyOn: ['DENY', 'WARN']` if your next line pays.
+**throws if the verdict is DENY**, so a counterparty with a record against it (revoked KYA, a Sybil flag, or a
+low reputation on an agent on our platform) is refused at that address. A counterparty we know nothing about gets
+WARN, not DENY, and WARN means unknown, not clean: `guard()` returns on WARN by default, so pass
+`denyOn: ['DENY', 'WARN']` if your next line pays.
 
 ```bash
 npm install @a-identity/trust-guard
@@ -17,13 +18,13 @@ npm install @a-identity/trust-guard
 import { guard, TrustDenyError } from '@a-identity/trust-guard'
 
 try {
-  // Verify before you pay. Throws if the counterparty is DENY.
-  await guard(counterpartyAgentId, { txContext: { amountUsd: 500, kind: 'payment' } })
-  await payAgent(counterpartyAgentId, 500) // only runs if the guard passed
+  // Verify before you pay. denyOn makes it throw on WARN too, because the next line pays.
+  await guard(counterpartyAgentId, { txContext: { amountUsd: 500, kind: 'payment' }, denyOn: ['DENY', 'WARN'] })
+  await payAgent(counterpartyAgentId, 500) // only runs on ALLOW
 } catch (e) {
   if (e instanceof TrustDenyError) {
     console.warn('Blocked:', e.verdict.decision, e.verdict.reasons)
-    return // do not pay
+    return // do not pay. On WARN, show the reasons to a person
   }
   throw e
 }
@@ -33,11 +34,20 @@ try {
 
 `guard()` runs `risk_check` and returns an `ALLOW` / `WARN` verdict, or throws `TrustDenyError`
 on `DENY`. A counterparty we know nothing about gets `WARN`, so the line after a default `guard()`
-pays it. Block warnings too by widening `denyOn`:
+pays it. Block warnings too by widening `denyOn`, or branch on the verdict it returns:
 
 ```ts
-await guard(id, { denyOn: ['DENY', 'WARN'] }) // stricter: throw on WARN as well
+await guard(id, { denyOn: ['DENY', 'WARN'] }) // throw on WARN as well
+
+const verdict = await guard(id) // the default: returns on WARN
+if (verdict.decision === 'WARN') return askAPerson(verdict.reasons)
 ```
+
+**If you installed 0.3.0 or earlier, read this.** The verdict's rule lives on the server, so it
+reaches every installed version with no change on your side. Until 2026-11-04 a counterparty with no
+on-chain identity or no record on our platform got `DENY`, and `guard()` threw. Now it gets `WARN`,
+and a default `guard()` returns, so code that pays on its next line pays it. If that is not what you
+want, add `denyOn: ['DENY', 'WARN']`.
 
 ## The full client
 
@@ -145,12 +155,12 @@ const wallet = createWalletClient({
 try {
   const out = await verifyThenPay({
     vault,                          // the vault whose operator this key is
-    payee,                          // the 0x address to pay, holding an ERC-8004 agent on Arc Mainnet
+    payee,                          // the 0x address to pay; one holding no ERC-8004 agent is not refused, it gets WARN
     amountUnits: usdcUnits('0.25'), // USDC base units; no floats
     signer: fromViemWallet(wallet), // the operator, and by default the payer of the check too
   })
   if (out.outcome === 'executed') console.log(out.payment.explorerUrl, out.record.recorded)
-  if (out.outcome === 'awaiting_human') await askTheOwner(out.ownerPay) // WARN: see below
+  if (out.outcome === 'awaiting_human' && out.ownerPay.simulation.ok) await askTheOwner(out.ownerPay) // WARN: see below
 } catch (e) {
   if (e instanceof TrustDenyError) console.warn('Blocked:', e.verdict.reasons, e.context?.recordUrl)
   else throw e
@@ -161,8 +171,10 @@ The order, and what each step can cost:
 
 1. **Free checks, nothing signed.** The asset is the registry's USDC and the vault's; an agent named in
    `payeeAgentId` is the payee's; the vault's policy and a simulated `pay()` accept the payment; the
-   operator can pay the gas. A refusal here costs nothing: the check is not bought. A payee that holds no
-   agent is not refused: it goes on to the check.
+   operator can pay the gas. A refusal here costs nothing: the check is not bought, and no verdict comes back.
+   That includes a payment above the vault's ceiling or to a payee off its allowlist, which only the owner
+   can pay as it stands; raise the ceiling or allow the payee to get a verdict and a hand-off. A payee that
+   holds no agent is not refused: it goes on to the check.
 2. **The verdict, 0.005 USDC.** The payer signs one Gateway authorization from its Gateway balance. It
    spends no gas. The payer needs a Gateway balance on Arc Mainnet, and may be a separate key (`payer`).
 3. **The decision.** DENY throws `TrustDenyError` and never calls the operator. WARN returns
@@ -177,7 +189,9 @@ The order, and what each step can cost:
 5. **The record.** The hash is posted to the flow, the server reads the receipt from the chain itself,
    and `record.recorded` says whether it did. Flow records are public by flow id, at
    `/api/x402/gateway/flows/<flowId>`, DENYs included. After a WARN, send `ownerPay` from the owner's key
-   and close the flow with `recordFlowReceipt({ flowId, txHash })`.
+   and close the flow with `recordFlowReceipt({ flowId, txHash })`, unless `ownerPay.simulation.ok` is
+   false: the vault would refuse it right now, so sending it would revert and cost gas. The vault page does
+   not send `ownerPay` for you today, so this takes a script; the integration guide has a working one.
 
 Anything that is not a usable verdict is never treated as ALLOW: a Gateway error, a settlement that does
 not echo what was signed, an unknown decision, a reputation that is not a finite number, an ALLOW below
@@ -201,12 +215,15 @@ independently either: it comes from the same server, so it binds the answer to y
 | `TrustDenyError` | DENY. `context` holds the flow id, the check and the record's URL. |
 | `VaultPaymentError` | The payment step failed. With a `txHash`, look that hash up: never send again with a new nonce, because a transaction reported as missing can still land. |
 
-Who gets what: `risk_check` scores the payee's address. DENY means we hold evidence against the payee: KYA
+Who gets what: `risk_check` scores the payee's address. DENY means a record we hold counts against the payee: KYA
 revoked, Sybil high, a reputation under 200 on an agent on our platform, or a payment over 100 USD to an agent
-on our platform with reputation under 400. A payee with no on-chain identity, or with an identity and no record
-on our platform, is not known bad, so it gets WARN, with reasons that say what we do not know; such an address
-scores at most 60, which only says we have no history for it. ALLOW needs a platform agent with reputation at
-least 500, attested KYA and at least 7 days of tenure. The vault cannot settle an x402 offer: its agent payment path
+on our platform with reputation under 400. A low score is enough on its own, so a new agent on our platform with
+no history yet also gets DENY until it builds one. A payee with no on-chain identity, or with an identity and no
+record on our platform, is not known bad, so it gets WARN, with reasons that say what we do not know; such an
+address scores at most 60, which only says we have no history for it. DENY binds an address we hold a proven
+record of: a record counts at an address only once it proved control of it, and a payee with a bad record can
+appear under a new address and get WARN, so WARN means unknown, not clean. ALLOW needs a platform agent with
+reputation at least 500, attested KYA and at least 7 days of tenure. The vault cannot settle an x402 offer: its agent payment path
 is `pay(to, amount)`, a direct USDC transfer to the payee you checked.
 
 For a verdict alone, with no vault, use the rail with its payer. Send the payee's address as the agent id,

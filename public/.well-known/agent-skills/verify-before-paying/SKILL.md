@@ -35,13 +35,18 @@ The response carries `decision` (`ALLOW`, `WARN` or `DENY`), a `risk` band, and
 `reasons`, which is an array of plain sentences explaining what drove the
 verdict. Act on `decision`; show `reasons` to whoever has to justify it later.
 
-`DENY` means we hold evidence against the payee: KYA revoked, Sybil high, a reputation
+`DENY` means a record we hold counts against the payee: KYA revoked, Sybil high, a reputation
 under 200 on an agent on our platform, or a payment over 100 USD to an agent on our
-platform with reputation under 400. A payee with no on-chain identity, or with an identity
-and no record on our platform, is not known bad, so it gets `WARN`, with reasons that say
-what we do not know. A high-value or large payment to such a payee stays `WARN`, with the
-amount named. `ALLOW` needs a platform agent with reputation of at least 500, attested KYA
-and at least 7 days of tenure.
+platform with reputation under 400. A low score is enough on its own, so a new agent on our
+platform with no history yet also gets `DENY` until it builds one. A payee with no on-chain
+identity, or with an identity and no record on our platform, is not known bad, so it gets
+`WARN`, with reasons that say what we do not know. A high-value or large payment to such a
+payee stays `WARN`, with the amount named. `ALLOW` needs a platform agent with reputation of
+at least 500, attested KYA and at least 7 days of tenure.
+
+`DENY` binds an address we hold a proven record of. A record counts at an address only once it
+proved control of it, so a registration that merely names a wallet does not count. A payee with a
+bad record can appear under a new address and get `WARN`, so `WARN` means unknown, not clean.
 `WARN` is not a go-ahead: hold the payment for a person, or decide with the reasons in front of you.
 
 ## Paying for the call
@@ -53,8 +58,10 @@ request. There is no account to create and no API key to hold.
 ## Identifying the counterparty
 
 `agentId` accepts an ERC-8004 token id (`#849980`), a CAIP identifier
-(`eip155:5042002:8004/849980`), or the owner's `0x` address. Use whichever you
-already have; they resolve to the same agent.
+(`eip155:5042002:8004/849980`), or the agent's `0x` wallet address. Prefer the
+address: it reaches a platform record when that record proved control of it, while a
+CAIP identifier is scored from the chain alone. An id that resolves to nothing is not
+a finding, so it gets `DENY`.
 
 ## What this does not tell you
 

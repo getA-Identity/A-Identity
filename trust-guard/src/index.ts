@@ -4,11 +4,13 @@
  * A tiny, dependency-free guard an AI agent calls BEFORE it pays or hires another agent.
  * One line, `await guard(counterpartyId)`, verifies the counterparty against the live
  * A-Identity Trust Oracle (ERC-8004 identity + KYA + a deterministic 0-1000 reputation +
- * a Sybil check) and THROWS if the verdict is DENY, so a bad counterparty never gets paid.
+ * a Sybil check) and THROWS if the verdict is DENY, so a counterparty with a record against it
+ * is refused at that address. A counterparty we know nothing about gets WARN, which returns by
+ * default and means unknown, not clean, so pass denyOn when the next line pays:
  *
  *   import { guard } from '@a-identity/trust-guard'
- *   await guard(counterpartyAgentId, { txContext: { amountUsd: 500, kind: 'payment' } })
- *   // ...only runs if the counterparty is not DENY. Otherwise it throws TrustDenyError.
+ *   await guard(counterpartyAgentId, { txContext: { amountUsd: 500, kind: 'payment' }, denyOn: ['DENY', 'WARN'] })
+ *   // ...only runs on ALLOW. Otherwise it throws TrustDenyError.
  *
  * The tools are sold per call over x402 on three rails, and this SDK never hides that:
  *

@@ -338,10 +338,13 @@ flowchart LR
   V -->|payee not allowed| E[Error Contract 3<br/>PayeeNotAllowed, nothing moves]
 ```
 
-`DENY` means we hold evidence against the payee: KYA revoked, Sybil high, a reputation under 200 on
+`DENY` means a record we hold counts against the payee: KYA revoked, Sybil high, a reputation under 200 on
 an agent on our platform, or a payment over 100 USD to an agent on our platform with reputation under
-400. A payee with no on-chain identity, or with an identity and no record on our platform, is not
-known bad, so it gets `WARN`, with reasons that say what we do not know. On this vault a `WARN`
+400. A low score is enough on its own, so a new agent on our platform with no history yet also gets
+`DENY` until it builds one. A payee with no on-chain identity, or with an identity and no record on our
+platform, is not known bad, so it gets `WARN`, with reasons that say what we do not know. `DENY` binds an
+address we hold a proven record of, and a payee with a bad record can appear under a new address and get
+`WARN`, so `WARN` means unknown, not clean. A payee with no agent bound gets `WARN` the same way. On this vault a `WARN`
 writes nothing, so that payee stays refused until the owner allows it. On Arc Mainnet's
 verify-then-pay it reaches the owner as a prepared `ownerPay`.
 

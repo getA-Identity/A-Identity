@@ -176,7 +176,7 @@ export const METHODOLOGY = {
     ],
     sybil: "Sybil/wash detection from real state: operator cluster size (agents per owner), self-deal rate (jobs hired by the agent's OWN operator), and counterparty diversity (distinct clients / jobs). HIGH = reputation mostly self-dealt -> DENY; MEDIUM -> WARN. Detects same-operator wash only; cross-operator collusion needs a funder-graph indexer (roadmap).",
     allow: 'none of the above - a platform agent with verified identity, attested KYA, strong reputation',
-    note: 'DENY overrides WARN overrides ALLOW; every triggered reason is returned. Pure and unit-tested. DENY means we hold evidence against the payee, so a payee we know nothing about gets WARN and never ALLOW. Until 2026-11-04 no identity and a low score on such a payee forced DENY; a verdict recorded before that day was answered under that rule.',
+    note: 'DENY overrides WARN overrides ALLOW; every triggered reason is returned. Pure and unit-tested. DENY means a record we hold counts against the payee, and a low score on an agent on our platform is enough on its own, including a new agent with no history yet. A payee we know nothing about gets WARN and never ALLOW. DENY binds an address we hold a proven record of: a record counts at an address only once it proved control of it, and a payee with a bad record can appear under a new address and get WARN, so WARN means unknown, not clean. Until 2026-11-04 no identity and a low score on such a payee forced DENY; a verdict recorded before that day was answered under that rule.',
   },
   // The tools (each a thin wrapper over the live engine; paid prices settle over x402 on X Layer).
   tools: {
