@@ -107,7 +107,9 @@ export function explainFailure(f: TxFailure): { title: string; body?: string; ne
         tone: 'danger',
       }
     case 'handoff_not_from_agent':
-      return { title: 'This did not come from your agent.', body: f.message, next: 'Do not send money because of it. If you expect a payment from your agent, ask it to check the payee again with its own key.', tone: 'danger' }
+      return { title: 'This page cannot show this came from your agent.', body: f.message, next: 'Do not send money because of it unless you know why. If you expect a payment from your agent, ask it to check the payee again with its own key.', tone: 'danger' }
+    case 'handoff_key_stopped':
+      return { title: 'The key that asked for this has been stopped.', body: f.message, next: 'Nothing was sent. If you still mean to pay this, give your agent a working key and ask it for a new check.', tone: 'danger' }
     case 'handoff_changed':
       return { title: 'What would be signed is not what was shown.', body: f.message, next: 'Nothing was sent. Read this page again, and look over whatever it shows then.', tone: 'danger' }
     case 'handoff_stale':
@@ -115,7 +117,7 @@ export function explainFailure(f: TxFailure): { title: string; body?: string; ne
     case 'handoff_ended':
       return { title: 'This payment is not waiting for you any more.', body: f.message, next: 'Nothing was sent. Read this page again to see where it stands.', tone: 'warn' }
     case 'handoff_no_balance':
-      return { title: 'The vault does not hold enough USDC for this.', body: f.message, next: 'Nothing was sent. Add USDC to the vault below, or take less out, then try again.', tone: 'warn' }
+      return { title: 'The vault does not hold enough USDC for this.', body: f.message, next: 'Nothing was sent. Add USDC to the vault below, then try again. The amount cannot be changed here. For a different amount, ask your agent for a new check.', tone: 'warn' }
     case 'handoff_held':
       return { title: 'A payment for this is already on its way.', body: f.message, next: 'Nothing was sent. Wait for that one to have an answer: two sends pay twice, and the contract cannot tell them apart.', tone: 'warn' }
     case 'handoff_already_paid':

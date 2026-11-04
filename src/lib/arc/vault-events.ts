@@ -65,22 +65,38 @@ async function readHeads(chain: Chain): Promise<HostHead[]> {
   )
 }
 
+const paidOf = (h: EventHistory): PaidEvent[] => h.events.flatMap((e) => (e.kind === 'Paid' ? [{ to: e.to, amount: e.amount, byOwner: e.byOwner, block: e.block, txHash: e.txHash }] : []))
+
 /**
- * The vault's Paid events from `from` up to the chain's head, or that this could not be read. A window
- * no host answered is not "no payment": the caller gets nothing but the failure.
+ * The vault's Paid events from `from` up to the chain's head, as far down as the read got. The range is
+ * contiguous from the head, and `from` in the answer is where it really starts: a window no host answered
+ * is not "no payment", so whoever asks has to compare that with the block they need, and `short` says why
+ * it stopped. A check inside the range is answered, and one below it is not. Nothing was read at all: a
+ * failure. `onProgress` gets what is known so far, so a fresh flow does not wait for an old one's read.
  */
-export async function readPaidSince(chain: Chain, vault: string, from: bigint): Promise<{ ok: true; paid: PaidEvent[]; through: bigint } | { ok: false; reason: string }> {
+export async function readPaidSince(
+  chain: Chain,
+  vault: string,
+  from: bigint,
+  o: { onProgress?: (read: { from: bigint; through: bigint; paid: PaidEvent[] }) => void } = {},
+): Promise<{ ok: true; paid: PaidEvent[]; from: bigint; through: bigint; short: string | null } | { ok: false; reason: string }> {
   const address = getAddress(vault)
   const picked = pickHosts(await readHeads(chain), chain.chainId as number)
   if (picked.top === null) return { ok: false, reason: 'no network node answered for this chain' }
-  if (picked.top < from) return { ok: true, paid: [], through: picked.top }
+  if (picked.top < from) return { ok: true, paid: [], from, through: picked.top, short: null }
   const urls = rpcUrls(chain).filter((u) => picked.usable.includes(hostOf(u)))
-  const h = await readDownTo(emptyHistory(address, picked.top), from, { readers: urls.map((u) => readerFor(chain, u, address)), pause })
+  const h = await readDownTo(emptyHistory(address, picked.top), from, {
+    readers: urls.map((u) => readerFor(chain, u, address)),
+    pause,
+    onProgress: (now) => {
+      const range = covered(now)
+      if (range) o.onProgress?.({ from: range.from, through: range.to, paid: paidOf(now) })
+    },
+  })
   const range = covered(h)
-  if (h.failed || !range || range.from > from) return { ok: false, reason: h.failed?.reason ?? 'the read stopped before it reached the block it needed' }
-  const paid: PaidEvent[] = []
-  for (const e of h.events) if (e.kind === 'Paid') paid.push({ to: e.to, amount: e.amount, byOwner: e.byOwner, block: e.block, txHash: e.txHash })
-  return { ok: true, paid, through: range.to }
+  if (!range) return { ok: false, reason: h.failed?.reason ?? 'no window could be read' }
+  const short = h.failed?.reason ?? (range.from > from ? 'the read stopped before it reached the block it needed' : null)
+  return { ok: true, paid: paidOf(h), from: range.from, through: range.to, short }
 }
 
 /**

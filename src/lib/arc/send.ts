@@ -41,6 +41,7 @@ export type TxFailureCode =
   | 'wallet_error'
   /** An owner's approval that this page will not send, each for its own reason. */
   | 'handoff_not_from_agent'
+  | 'handoff_key_stopped'
   | 'handoff_changed'
   | 'handoff_stale'
   | 'handoff_ended'

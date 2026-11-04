@@ -151,7 +151,7 @@ function ReceiptOf({ record, onUpdate, onSettled, serverJudges }: ReceiptProps) 
     settled
       ? `${record.what}: settled in block ${block}.`
       : record.outcome === 'settled'
-      ? `${record.what}: landed in block ${block}. Our server is reading it from the chain, and it is not settled until the server says so.`
+      ? `${record.what}: landed in block ${block}. Our server has not read it yet, and it is not settled until the server says so.`
       : record.outcome === 'reverted'
         ? `${record.what}: landed in block ${block} and REVERTED. Nothing in the vault changed; the network fee was still charged.`
         : record.outcome === 'unexpected'

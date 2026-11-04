@@ -14,7 +14,14 @@
  * chain, and was its operator when checked, read from the record. A key that was replaced because it
  * leaked does not keep its requests. Anything else gets no action, on the list or from a direct link.
  * The list shows only a count of them. A direct link shows a plain warning and neither payee nor amount,
- * because the amount and the address are what a phisher wants on screen beside an owner's wallet.
+ * because the amount and the address are what a phisher wants on screen beside an owner's wallet. What
+ * this page knows is who paid, not who asked, so that warning says the page cannot show it came from the
+ * agent. A real request from a separate payer key reads that way too, and still gets no action.
+ *
+ * A key that was revoked or ran out does not keep its requests either. The server refuses a new request
+ * from one, because the owner has stopped that agent, and one made just before must not go on asking.
+ * Freezing is not the same act: ownerPay works on a frozen vault by design, so a request stays open and
+ * the card says who it came from.
  *
  * What that does not do. A payer that is the operator proves that key paid for a check, not that the
  * payment is a good idea: an agent whose key was stolen can ask its owner for anything, and this page
@@ -36,6 +43,8 @@
  * hash has a final answer. A speed-up gives the same payment a new hash, so a hash that was replaced is
  * not an answer until the vault's own Paid events have been read: see holdOf and paidAfter. And paidAfter
  * also stops a send on a flow some other browser or wallet already paid, whatever this browser remembers.
+ * A payment BEFORE the check is no bar, because a new check is how a second payment is meant to happen,
+ * but the card says so (paidBefore), since an agent that asks again can be asking for the same invoice.
  *
  * STALENESS. A verdict ages: a record can be revoked, or a Sybil cluster found, the moment after it. See
  * HANDOFF_MAX_AGE_SECONDS. A vault's state ages faster, so it is read again and the call simulated right
@@ -66,6 +75,15 @@ const UINT = /^[0-9]{1,78}$/
 /** A record's reasons are the server's words, kept to what a person reads. */
 const MAX_REASONS = 12
 const MAX_REASON_CHARS = 600
+
+/**
+ * How far before a check the vault's payments are read, for the line that says it already paid this: six
+ * hours, about five log windows. An agent that asks again for one invoice does so in the same working
+ * session, and this read happens every time the page opens, so a day of it would be eighteen windows
+ * from two hosts each, before an owner sees a button. At about two blocks a second.
+ */
+export const PAID_LOOKBACK_BLOCKS = 43_200n
+export const PAID_LOOKBACK_WORDS = '6 hours'
 
 const pad32 = (hex: string) => hex.padStart(64, '0')
 
@@ -193,6 +211,8 @@ export type LiveVault = {
   decimals: number
   knownBuild: boolean
   usdcMatches: boolean
+  /** The agent key has an end date and the chain's clock is past it: revoked, or ran out. */
+  expired: boolean
 }
 
 export type HandoffStanding =
@@ -208,6 +228,8 @@ export type HandoffStanding =
   | { kind: 'not_this_vault'; why: string }
   /** A stranger's check, or one a key paid for that is not the operator now. */
   | { kind: 'not_from_agent'; payer: string; operator: string }
+  /** The agent key that asked has since been revoked, or ran out. */
+  | { kind: 'key_stopped'; payer: string }
   | { kind: 'record_differs'; what: string }
   | { kind: 'no_human' }
   | { kind: 'pays_agent' }
@@ -228,6 +250,7 @@ export function standingOf(f: HandoffFlow, live: LiveVault): HandoffStanding {
   const e = f.verdict?.effective
   if (f.verdict === null || f.verdict.overridden || (e !== 'ALLOW' && e !== 'WARN') || f.verdict.decision !== e) return { kind: 'refused', why: 'The check did not answer ALLOW or WARN.' }
   if (!f.settled || !sameAddress(f.payer, live.operator) || !sameAddress(f.operator, live.operator)) return { kind: 'not_from_agent', payer: f.payer, operator: live.operator }
+  if (live.expired) return { kind: 'key_stopped', payer: f.payer }
   const differs = recordDiffers(f, live)
   if (differs) return { kind: 'record_differs', what: differs }
   if (sameAddress(live.owner, live.operator)) return { kind: 'no_human' }
@@ -285,6 +308,8 @@ export function sendStop(f: HandoffFlow, live: LiveVault, w: { account: string |
       return { code: 'handoff_ended', message: s.why }
     case 'not_from_agent':
       return { code: 'handoff_not_from_agent', message: `The check was paid for by ${s.payer}, and this vault's agent key is ${s.operator}.` }
+    case 'key_stopped':
+      return { code: 'handoff_key_stopped', message: `The check was paid for by ${s.payer}, and that key has since been revoked or has run out.` }
     case 'record_differs':
       return { code: 'handoff_changed', message: `The record does not match: ${s.what}.` }
     case 'no_human':
@@ -319,6 +344,91 @@ export function paidAfter(f: Pick<HandoffFlow, 'payee' | 'amount' | 'verdictBloc
   const after = f.verdictBlock
   const hits = events.filter((e) => e.block > after && e.amount === f.amount && sameAddress(e.to, f.payee))
   return hits.find((e) => e.byOwner) ?? hits[0] ?? null
+}
+
+/**
+ * The newest payment of this amount to this payee in the hours before this check, whoever sent it. It does
+ * not stop anything: paying a payee the same amount twice can be meant, and a new check is how that is
+ * done. It is what a person wants to see beside a button if it is the same invoice.
+ */
+export function paidBefore(f: Pick<HandoffFlow, 'payee' | 'amount' | 'verdictBlock'>, events: readonly PaidEvent[]): PaidEvent | null {
+  if (f.verdictBlock === null) return null
+  const floor = f.verdictBlock - PAID_LOOKBACK_BLOCKS
+  let newest: PaidEvent | null = null
+  for (const e of events) {
+    if (e.block > f.verdictBlock || e.block <= floor || e.amount !== f.amount || !sameAddress(e.to, f.payee)) continue
+    if (!newest || e.block > newest.block) newest = e
+  }
+  return newest
+}
+
+/**
+ * What a read of the vault's Paid events covers, one contiguous range. `short` is why a read stopped before
+ * the block it was asked for. What is in the range is still known, so a check inside it is still answered.
+ */
+export type PaidScan = { from: bigint; through: bigint; paid: PaidEvent[]; short: string | null }
+
+/** Two reads as one, or null when there is a gap between them: nothing may be claimed about a gap. */
+export function joinScans(held: PaidScan, fresh: PaidScan): PaidScan | null {
+  if (fresh.from > held.through + 1n || held.from > fresh.through + 1n) return null
+  const seen = new Set<string>()
+  const paid: PaidEvent[] = []
+  for (const e of [...held.paid, ...fresh.paid]) {
+    const key = `${e.txHash.toLowerCase()}:${e.to.toLowerCase()}:${e.amount}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    paid.push(e)
+  }
+  return { from: fresh.from < held.from ? fresh.from : held.from, through: fresh.through > held.through ? fresh.through : held.through, paid, short: fresh.short }
+}
+
+/**
+ * This browser still has to look for this send's payment: it has no final answer, or the person said
+ * nothing was sent a short while ago. A person can press that with a slow wallet's prompt still open.
+ */
+export const RELEASE_WATCH_MS = 10 * 60_000
+
+export function stillWatched(r: HandoffSend | null | undefined, now: number): boolean {
+  if (!r || r.server) return false
+  const h = holdOf(r)
+  if (h.held) return true
+  return typeof r.releasedAt === 'string' && now - Date.parse(r.releasedAt) < RELEASE_WATCH_MS
+}
+
+/**
+ * The lowest block the page reads the vault's payments from: only for flows it could offer, and for what
+ * this browser is still following. Nothing else may reach this read. A flow has no way to close, so an old
+ * one stays on the list, and anyone can send a link naming any old flow on any vault, and neither gets to
+ * make the owner's browser read a week of logs. It reads back past the check for an offered flow, and only
+ * from the check for a followed one, whose question is whether its own payment landed.
+ */
+export function scanStart(rows: readonly { f: HandoffFlow; s: HandoffStanding }[], records: readonly HandoffSend[], declined: readonly string[], now: number): bigint | null {
+  let from: bigint | null = null
+  for (const { f, s } of rows) {
+    if (f.verdictBlock === null || s.kind === 'not_this_vault') continue
+    const after = f.verdictBlock + 1n
+    let wanted: bigint | null = null
+    if (stillWatched(records.find((r) => holdsFlow(r, f.flowId)), now)) wanted = after
+    else if (s.kind === 'approvable' && !declined.includes(f.flowId)) wanted = after > PAID_LOOKBACK_BLOCKS ? after - PAID_LOOKBACK_BLOCKS : 0n
+    if (wanted !== null && (from === null || wanted < from)) from = wanted
+  }
+  return from
+}
+
+/**
+ * Whether the read answered for this one flow, whatever it managed for any other, so one old flow cannot
+ * stop the page offering a fresh one. 'ok': it read from the check up, and the hours before it.
+ * 'no_lookback': from the check up, and not the hours before. 'failed': it did not reach this check, and
+ * nothing is offered. A read in flight is 'reading' until it answers or stops.
+ */
+export function paymentsRead(f: Pick<HandoffFlow, 'verdictBlock'>, scan: Pick<PaidScan, 'from' | 'short'> | null, failed: string | null): 'reading' | 'failed' | 'ok' | 'no_lookback' {
+  if (f.verdictBlock === null) return 'failed'
+  const stopped = failed !== null || (scan?.short ?? null) !== null
+  if (!scan || scan.from > f.verdictBlock + 1n) return stopped ? 'failed' : 'reading'
+  const after = f.verdictBlock + 1n
+  const lookback = after > PAID_LOOKBACK_BLOCKS ? after - PAID_LOOKBACK_BLOCKS : 0n
+  if (scan.from <= lookback) return 'ok'
+  return stopped ? 'no_lookback' : 'reading'
 }
 
 // --- what this browser sent ---
@@ -382,6 +492,34 @@ export function holdFor(f: Pick<HandoffFlow, 'flowId' | 'payee' | 'amount'>, rec
   return { held: false }
 }
 
+/**
+ * This send holds the rest of the page's controls: it may still move money. A transaction that landed is
+ * final on chain and only our server's record of it is outstanding, so the owner's own controls do not
+ * wait for our backend. A second send of this payment still does: see holdFor.
+ */
+export function holdsPage(r: HandoffSend): boolean {
+  const h = holdOf(r)
+  return h.held && h.why !== 'answered' && h.why !== 'landed'
+}
+
+/** How long a final answer is shown for a record whose flow did not read back. */
+export const ANSWER_SHOWN_MS = 10 * 60_000
+
+/**
+ * What this browser sent whose flow could not be read just now, and still has something to say: no final
+ * answer yet, or one given in the last few minutes. An old answer has nothing to add, and only a few flows
+ * are read back, so without this every older approval would stay on the page as a card with nothing in it.
+ */
+export function unreadRecords(records: readonly HandoffSend[], flowIds: readonly string[], now: number): HandoffSend[] {
+  return records.filter((r) => {
+    if (flowIds.some((id) => holdsFlow(r, id))) return false
+    const h = holdOf(r)
+    if (!h.held) return false
+    if (h.why !== 'answered') return true
+    return now - Date.parse(r.server?.at ?? '') < ANSWER_SHOWN_MS
+  })
+}
+
 /** A host is read if it is within 100 blocks of the best, about 50 seconds, so a read this long after a replacement has seen it. */
 export const REPLACED_WATCH_MS = 60_000
 
@@ -389,15 +527,17 @@ export const REPLACED_WATCH_MS = 60_000
  * What a read of the vault's Paid events says about a send with no answer. A payment of this amount to
  * this payee from the owner, after this check, is this send's whatever hash it has: that is how a
  * wallet's speed-up shows up, and a wallet asked with no hash back. A replacement that shows no payment
- * is a cancel, but only a read well after it can say so.
+ * is a cancel, but only a read well after it can say so. A person's "nothing was sent", and a quiet
+ * replacement, free the flow and prove nothing: a slow wallet can still send it. If the payment shows up
+ * after that it is this send's too, and what the page says and does goes back to following it.
  */
 export function afterScan(s: HandoffSend, f: Pick<HandoffFlow, 'payee' | 'amount' | 'verdictBlock'>, paid: readonly PaidEvent[], now: number): HandoffSend {
-  if (s.server || s.paidBy || s.replacedClear) return s
+  if (s.server || s.paidBy) return s
   const h = holdOf(s)
-  if (!h.held || (h.why !== 'asked' && h.why !== 'maybe')) return s
+  if (h.held ? h.why !== 'asked' && h.why !== 'maybe' : !s.released && !s.replacedClear) return s
   const hit = paidAfter(f, paid)
   if (hit?.byOwner) return { ...s, paidBy: hit.txHash.toLowerCase() }
-  if (s.tx?.outcome !== 'replaced') return s
+  if (!h.held || s.tx?.outcome !== 'replaced') return s
   if (!s.replacedSeenAt) return { ...s, replacedSeenAt: new Date(now).toISOString() }
   return now - Date.parse(s.replacedSeenAt) >= REPLACED_WATCH_MS ? { ...s, replacedClear: true } : s
 }
@@ -430,7 +570,7 @@ const RATE_WINDOW_MS = 61_000
 /** The status and body of POST .../receipt as what the page does next. Anything unrecognized is a retry, never settled. */
 export function receiptStep(status: number, body: unknown): ReceiptStep {
   const b = isObject(body) ? body : {}
-  const reason = str(b.reason) ?? str(b.next) ?? `the server answered ${status}`
+  const reason = str(b.reason) ?? str(b.next) ?? (status === 0 ? 'our server could not be reached' : `the server answered ${status}`)
   if (status === 429) return { step: 'retry', waitMs: RATE_WINDOW_MS, reason }
   if (b.verified === true && b.outcome === 'executed' && isObject(b.payment) && b.payment.status === 'success') return { step: 'settled' }
   if (b.verified === true && (b.outcome === 'failed' || b.outcome === 'blocked')) return { step: 'ended', outcome: b.outcome, detail: str(b.detail), reason: str(b.reason) ?? str(b.next) }
@@ -466,20 +606,44 @@ export function budgetLine(amount: bigint, live: { spentToday: bigint; dailyCap:
 }
 
 /** Said when the vault is frozen, because ownerPay still works then, by design. */
-export const FROZEN_LINE = 'This vault is frozen, so your agent cannot pay anything. You still can: approving this sends the money even while the vault is frozen, and it stays frozen afterwards.'
+export const FROZEN_LINE = "This vault is frozen, so your agent cannot pay anything. You still can: approving this sends the money even while the vault is frozen, and it stays frozen afterwards. If you froze it because you do not trust this agent's key, this request came from that key."
 
-/** What a verdict means, in words, ahead of the server's own reasons. */
-export function verdictMeaning(effective: string | null): string {
-  if (effective === 'ALLOW') return 'ALLOW: the check holds a strong record of this payee.'
-  if (effective === 'WARN') return 'WARN: we do not know enough about this payee to vouch for it. That does not mean it is bad, and it does not mean it is clean.'
-  return 'This check did not answer ALLOW or WARN.'
+/**
+ * What a verdict means, in words, ahead of the server's own reasons. A flow record carries the reasons and
+ * not the signals behind them, so a WARN is told apart by those. The test feeds this the real scorer's
+ * reasons, so a change in mcp/src/asp/risk.ts cannot quietly change which sentence an owner reads. The
+ * lead must not say a payee is not bad directly above a reason that says we hold evidence against it.
+ */
+export function verdictMeaning(effective: string | null, reasons: readonly string[] = []): string {
+  const evidence = reasons.some((r) => r.includes('holds evidence against it'))
+  if (effective === 'ALLOW') return evidence ? 'ALLOW: the check holds a strong record of this payee, and that record also holds evidence against it. Read the reasons below before you approve.' : 'ALLOW: the check holds a strong record of this payee.'
+  if (effective !== 'WARN') return 'This check did not answer ALLOW or WARN.'
+  if (evidence) return 'WARN: our record holds evidence against this payee, though not enough for us to refuse it. Read the reasons below before you approve.'
+  if (reasons.some((r) => r.includes('Possible Sybil signals'))) return 'WARN: our record shows signs that this payee may be building its reputation with itself. Read the reasons below before you approve.'
+  if (reasons.some((r) => r.includes('we hold no record of it'))) return 'WARN: we do not know enough about this payee to vouch for it. That does not mean it is bad, and it does not mean it is clean.'
+  return 'WARN: we do not vouch for this payment. Read the reasons below before you approve.'
 }
 
-/** Why it is the owner's to pay, when the verdict alone did not decide that. */
-export function ownerOnlyLine(code: HandoffFlow['ownerOnly'], live: { autoApproveMax: bigint; decimals: number }): string | null {
+/** The gate that made this the owner's still stands, as far as this page can read it. An allowlist entry is not read here. */
+export function ownerOnlyStands(code: HandoffFlow['ownerOnly'], amount: bigint, live: { autoApproveMax: bigint; allowlistEnabled: boolean }): boolean {
+  if (code === 'AboveAutoApprove') return live.autoApproveMax !== 0n && amount > live.autoApproveMax
+  if (code === 'PayeeNotAllowed') return live.allowlistEnabled
+  return false
+}
+
+/** Why it is the owner's to pay, when the verdict alone did not decide that, against the vault's limits now and not at the check. */
+export function ownerOnlyLine(code: HandoffFlow['ownerOnly'], amount: bigint, live: { autoApproveMax: bigint; allowlistEnabled: boolean; decimals: number }): string | null {
+  if (code === null) return null
+  if (!ownerOnlyStands(code, amount, live)) return "When your agent checked this, it could not pay it itself. The vault's limits have changed since, so its key may be able to pay this by itself now."
   if (code === 'AboveAutoApprove') return `Your agent cannot pay this itself: it is above the ${formatUnitsExact(live.autoApproveMax, live.decimals)} USDC limit on a single payment. Only you can.`
-  if (code === 'PayeeNotAllowed') return "Your agent cannot pay this itself: this payee is not on the vault's allowlist. Only you can."
-  return null
+  return "When your agent checked this, the payee was not on the vault's allowlist, so its key could not pay it. If that is still so, only you can."
+}
+
+/** The card's heading. It asks only while it can be approved, and not once something was sent. */
+export function cardHeading(s: HandoffStanding, o: { sent: boolean; held: boolean; paid: boolean }): { heading: string; asks: boolean } {
+  const asks = (s.kind === 'approvable' || s.kind === 'no_balance') && !o.held && !o.paid
+  if (asks) return { heading: 'Your agent asks you to pay this', asks }
+  return { heading: o.sent ? 'What this browser sent for this request' : 'A payment your agent asked for', asks }
 }
 
 /** A plain length of time, for how old a check is. */
@@ -490,7 +654,16 @@ export function agePhrase(seconds: bigint): string {
   return `${seconds / 86_400n} days`
 }
 
-/** Said on a direct link to a flow whose check was not paid by this vault's operator. */
+/**
+ * Said on a direct link to a flow whose check was not paid by this vault's operator. This page knows who
+ * paid, not who asked: a real request can come this way, from a separate payer key or from before a key
+ * was replaced. So it says what is known, and refuses either way.
+ */
 export function notFromAgentLine(s: { payer: string; operator: string }): string {
-  return `The check behind this link was paid for by ${s.payer}, and this vault's agent key is ${s.operator}. Anyone can buy a check that names any vault, so this did not come from your agent. Do not send money because of it. If someone sent you this link and asked you to approve a payment, treat it as an attempt to trick you. Nothing here can be approved.`
+  return `The check behind this link was paid for by ${s.payer}, and this vault's agent key is ${s.operator}, so this page cannot show that it came from your agent. Anyone can buy a check that names any vault. Do not send money because of it unless you know why. If someone you do not know sent you this link and asked you to approve a payment, treat it as an attempt to trick you. Nothing here can be approved.`
+}
+
+/** Said on a request from a key the owner has since stopped, or that ran out. */
+export function keyStoppedLine(s: { payer: string }): string {
+  return `The key ${s.payer} paid for this check, and it has since been revoked or has run out. A stopped key does not get to ask, so this is not offered. If you still mean to pay it, give your agent a working key and ask it for a new check.`
 }

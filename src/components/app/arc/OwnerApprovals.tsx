@@ -7,10 +7,11 @@
  * What this component adds is the order things happen in:
  *
  *   - Nothing is offered until the vault's own Paid events were read, so a payment made from another
- *     browser or wallet is not made twice.
- *   - Review reads and simulates everything, and shows what would be sent. Confirm does it all over again,
- *     then writes down that the wallet was asked, then asks it. The hash goes into that record the moment
- *     it comes back, and the record is shared by every tab and survives a reload.
+ *     browser or wallet is not made twice. That read answers for each card by itself, and only what could
+ *     be offered or is still being followed reaches it: see scanStart.
+ *   - Review reads and simulates everything, and shows what would be sent. Confirm does it all over again
+ *     against what was reviewed, then writes down that the wallet was asked, then asks it. The hash goes
+ *     into that record the moment it comes back, and the record is shared by every tab and survives a reload.
  *   - Saying no records nothing, because a flow has no such state, and the card says so. It hides the
  *     payment in this browser and that is all it does.
  *   - Nothing reads as paid until our server read the receipt from the chain itself. TxReceipt reads as
@@ -25,16 +26,26 @@ import { track } from '../../../lib/analytics'
 import type { Chain } from '../../../lib/chains'
 import {
   FROZEN_LINE,
+  PAID_LOOKBACK_WORDS,
   afterScan,
   agePhrase,
   budgetLine,
+  cardHeading,
   hashToPost,
   holdFor,
   holdOf,
+  holdsPage,
+  keyStoppedLine,
   notFromAgentLine,
   ownerOnlyLine,
+  ownerOnlyStands,
   paidAfter,
+  paidBefore,
+  paymentsRead,
+  scanStart,
   standingOf,
+  stillWatched,
+  unreadRecords,
   verdictMeaning,
   walletBlock,
   type HandoffFlow,
@@ -43,7 +54,7 @@ import {
 } from '../../../lib/arc/handoff-rules'
 import { postHandoffReceipt, readFlow, readWaitingFlows, recheckHandoff, scanPaid, type PaidScan, type WaitingRead } from '../../../lib/arc/handoff-send'
 import { claimHandoff, clearHandoff, holdsFlow, loadDeclined, loadHandoffs, saveDeclined, saveHandoff, type HandoffSend, type TxRecord } from '../../../lib/arc/pending'
-import { addressUrl, localTime, networkName, networkWord, txUrl, type VaultSnapshot } from '../../../lib/arc/vault-read'
+import { addressUrl, localTime, networkName, networkWord, readVault, txUrl, type VaultSnapshot } from '../../../lib/arc/vault-read'
 import { aboveSoftWarn, formatUnitsExact, sameAddress } from '../../../lib/arc/vault-rules'
 import { STEP_LABEL, failureOf, sendPrepared, TxStop, type PreparedTx } from '../../../lib/arc/vault-write'
 import { Button } from '../../ui/button'
@@ -58,6 +69,10 @@ import type { ArcWalletState } from './useArcWallet'
 const SCAN_AGAIN_MS = 15_000
 /** How many of this browser's own sends have their flow read back when the page opens. */
 const LOCAL_FLOWS_READ = 5
+/** How long this tab says "confirm this in your wallet" before it says it has not heard back, since a phone wallet's prompt can simply never answer. */
+const WALLET_ANSWER_MS = 120_000
+/** A tab coming back reads the vault and the flows again, and a wallet's popup closing should not make it read twice. */
+const FOCUS_READ_EVERY_MS = 15_000
 
 type Props = {
   chain: Chain
@@ -67,6 +82,8 @@ type Props = {
   canAct: boolean
   /** Why not, when it cannot. */
   whyNot?: string
+  /** The vault or its owner is a key of ours, so the page does not say we hold none. */
+  oursKey: boolean
   /** The flow a link named. */
   flowParam: string | null
   /** Something else from this page is on its way, so nothing new is signed. */
@@ -79,9 +96,12 @@ type Props = {
 
 const FLOW_ID = /^0x[0-9a-fA-F]{64}$/
 
-export default function OwnerApprovals({ chain, vault, wallet, canAct, whyNot, flowParam, held, onHoldChange, onLanded }: Props) {
+export default function OwnerApprovals({ chain, vault: pageVault, wallet, canAct, whyNot, oursKey, flowParam, held, onHoldChange, onLanded }: Props) {
   const network = chain.caip2
-  const address = vault.address
+  // The newest read of the vault there is, the page's or one from here. A tab left open reads old otherwise.
+  const [readHere, setReadHere] = useState<VaultSnapshot | null>(null)
+  const vault = readHere && readHere.block > pageVault.block ? readHere : pageVault
+  const address = pageVault.address
   const direct = flowParam && FLOW_ID.test(flowParam) ? flowParam.toLowerCase() : null
   const [list, setList] = useState<WaitingRead | null>(null)
   const [named, setNamed] = useState<{ flow: HandoffFlow | null; failed: string | null } | null>(null)
@@ -135,40 +155,55 @@ export default function OwnerApprovals({ chain, vault, wallet, canAct, whyNot, f
     return [...byId.values()]
   }, [list, named, own])
 
-  // The earliest block anything here needs the vault's payments from.
-  const scanFrom = useMemo(() => {
-    let from: bigint | null = null
-    for (const f of flows) {
-      if (f.outcome !== 'awaiting_human' || f.verdictBlock === null) continue
-      const after = f.verdictBlock + 1n
-      if (from === null || after < from) from = after
-    }
-    return from
-  }, [flows])
+  // The earliest block anything here needs the vault's payments from: only what can be offered or is still followed.
+  const scanFrom = useMemo(() => scanStart(flows.map((f) => ({ f, s: standingOf(f, vault) })), records, declined, Date.now()), [flows, vault, records, declined])
 
   const unresolved = records.some((r) => {
+    if (!stillWatched(r, Date.now())) return false
     const h = holdOf(r)
-    return h.held && (h.why === 'asked' || h.why === 'maybe')
+    return !h.held || h.why === 'asked' || h.why === 'maybe'
   })
 
-  const readPayments = useCallback(async () => {
-    if (scanFrom === null) return
-    const got = await scanPaid(chain, address, scanFrom, scanRef.current)
-    if ('failed' in got) {
-      setScanFailed(got.failed)
-      return
-    }
-    setScanFailed(null)
-    setScan(got)
-    // What the read says about anything this browser sent and has no answer for.
-    for (const r of loadHandoffs(network, address)) {
-      const f = flows.find((x) => holdsFlow(r, x.flowId))
-      if (!f) continue
-      const next = afterScan(r, f, got.paid, Date.now())
-      if (next !== r) saveHandoff(next)
-    }
-    refreshRecords()
-  }, [chain, address, network, scanFrom, flows, refreshRecords])
+  // One read at a time: a read a timer started must not pile up behind one that has a long way to go.
+  const scanBusy = useRef(false)
+  const scanQueued = useRef(false)
+  const readPayments = useCallback(
+    async (topUpOnly = false) => {
+      if (scanFrom === null) return
+      if (scanBusy.current) {
+        if (!topUpOnly) scanQueued.current = true
+        return
+      }
+      scanBusy.current = true
+      if (!topUpOnly) setScanFailed(null)
+      try {
+        const got = await scanPaid(chain, address, scanFrom, scanRef.current, { topUpOnly, onProgress: setScan })
+        if ('failed' in got) {
+          setScanFailed(got.failed)
+          return
+        }
+        setScanFailed(null)
+        setScan(got)
+        // What the read says about anything this browser sent and has no answer for.
+        for (const r of loadHandoffs(network, address)) {
+          const f = flows.find((x) => holdsFlow(r, x.flowId))
+          if (!f) continue
+          const next = afterScan(r, f, got.paid, Date.now())
+          if (next !== r) saveHandoff(next)
+        }
+        refreshRecords()
+      } finally {
+        scanBusy.current = false
+        if (scanQueued.current) {
+          scanQueued.current = false
+          void readLatest.current()
+        }
+      }
+    },
+    [chain, address, network, scanFrom, flows, refreshRecords],
+  )
+  const readLatest = useRef(readPayments)
+  readLatest.current = readPayments
 
   useEffect(() => {
     void readPayments()
@@ -176,14 +211,30 @@ export default function OwnerApprovals({ chain, vault, wallet, canAct, whyNot, f
 
   useEffect(() => {
     if (!unresolved) return
-    const t = setInterval(() => void readPayments(), SCAN_AGAIN_MS)
+    const t = setInterval(() => void readPayments(true), SCAN_AGAIN_MS)
     return () => clearInterval(t)
   }, [unresolved, readPayments])
 
-  const pendingHere = records.some((r) => {
-    const h = holdOf(r)
-    return h.held && h.why !== 'answered'
-  })
+  // A tab somebody comes back to: the balance, the budget, the check's age and the flows, read again.
+  const lastFocusRead = useRef(0)
+  useEffect(() => {
+    const again = () => {
+      if (document.visibilityState !== 'visible' || Date.now() - lastFocusRead.current < FOCUS_READ_EVERY_MS) return
+      lastFocusRead.current = Date.now()
+      void readVault(chain, address).then((r) => {
+        if (r.ok) setReadHere(r.data)
+      })
+      void load()
+    }
+    window.addEventListener('focus', again)
+    document.addEventListener('visibilitychange', again)
+    return () => {
+      window.removeEventListener('focus', again)
+      document.removeEventListener('visibilitychange', again)
+    }
+  }, [chain, address, load])
+
+  const pendingHere = records.some(holdsPage)
   useEffect(() => {
     onHoldChange(pendingHere)
     return () => onHoldChange(false)
@@ -197,19 +248,23 @@ export default function OwnerApprovals({ chain, vault, wallet, canAct, whyNot, f
 
   // Sorted out by what the chain says now, so a key that changed since the record moves a row at once.
   const standing = flows.map((f) => ({ f, s: standingOf(f, vault) }))
-  const fromLink = direct ? standing.find((x) => x.f.flowId === direct) : undefined
+  const linked = direct ? standing.find((x) => x.f.flowId === direct) : undefined
   const rest = standing.filter((x) => x.f.flowId !== direct)
   // Something this browser sent is followed to its answer, whatever has happened to the flow since.
   const following = (f: HandoffFlow) => holdOf(records.find((r) => holdsFlow(r, f.flowId))).held
   // A request from the agent, whether or not it can be approved right now.
   const isRequest = ({ s, f }: { s: HandoffStanding; f: HandoffFlow }) =>
-    s.kind === 'approvable' || s.kind === 'no_balance' || s.kind === 'record_differs' || s.kind === 'pays_agent' || s.kind === 'no_human' || ((s.kind === 'stale' || s.kind === 'not_from_agent') && following(f))
+    s.kind === 'approvable' || s.kind === 'no_balance' || s.kind === 'record_differs' || s.kind === 'pays_agent' || s.kind === 'no_human' || ((s.kind === 'stale' || s.kind === 'not_from_agent' || s.kind === 'key_stopped') && following(f))
+  // Hidden from the link too, or Hide does nothing on the path most owners come by. Something on its way stays.
+  const hiddenHere = (x: { s: HandoffStanding; f: HandoffFlow }) => isRequest(x) && declined.includes(x.f.flowId) && !following(x.f)
+  const fromLink = linked && !hiddenHere(linked) ? linked : undefined
   const requests = rest.filter(isRequest)
   const aged = rest.filter((x) => x.s.kind === 'stale' && !following(x.f))
+  const stopped = rest.filter((x) => x.s.kind === 'key_stopped' && !following(x.f))
   const notAgents = rest.filter((x) => x.s.kind === 'not_from_agent' && !following(x.f))
   const done = rest.filter(({ s, f }) => (s.kind === 'settled' || s.kind === 'reverted') && records.some((r) => holdsFlow(r, f.flowId)))
-  const shownRequests = requests.filter(({ f }) => !declined.includes(f.flowId))
-  const saidNo = requests.filter(({ f }) => declined.includes(f.flowId))
+  const shownRequests = requests.filter((x) => !hiddenHere(x))
+  const saidNo = [...(linked && hiddenHere(linked) ? [linked] : []), ...requests.filter(hiddenHere)]
   const others = (list?.ok ? list.others.count : 0) + notAgents.length
   const capped = list?.ok ? list.others.capped : false
   const isOwner = sameAddress(wallet.account, vault.owner)
@@ -229,6 +284,8 @@ export default function OwnerApprovals({ chain, vault, wallet, canAct, whyNot, f
       scanFailed={scanFailed}
       onRecords={refreshRecords}
       onLanded={landed}
+      onVaultRead={setReadHere}
+      onReadAgain={load}
       onDecline={() => {
         saveDeclined(network, address, f.flowId, true)
         setDeclined(loadDeclined(network, address))
@@ -237,8 +294,8 @@ export default function OwnerApprovals({ chain, vault, wallet, canAct, whyNot, f
   )
 
   // A send whose flow could not be read has nothing to hang off, and it still has to be followed.
-  const unread = records.filter((r) => holdOf(r).held && !flows.some((f) => holdsFlow(r, f.flowId)))
-  const nothing = list?.ok && !fromLink && !named?.failed && shownRequests.length === 0 && saidNo.length === 0 && aged.length === 0 && done.length === 0 && others === 0 && unread.length === 0
+  const unread = unreadRecords(records, flows.map((f) => f.flowId), Date.now())
+  const nothing = list?.ok && !fromLink && !named?.failed && shownRequests.length === 0 && saidNo.length === 0 && aged.length === 0 && stopped.length === 0 && done.length === 0 && others === 0 && unread.length === 0
 
   return (
     <section aria-label="Payments waiting" className="rounded-2xl border border-border bg-card p-4 sm:p-5">
@@ -249,8 +306,8 @@ export default function OwnerApprovals({ chain, vault, wallet, canAct, whyNot, f
         </button>
       </div>
       <p className="mt-1 text-xs text-foreground/65">
-        When your agent's check does not clear a payment for it to make itself, the payment waits here for you to decide. It leaves the vault only if you approve it from your own
-        wallet. A-Identity holds no key and signs nothing.
+        When your agent's check does not clear a payment for it to make itself, the payment waits here for you to decide. This page sends nothing without your own wallet. One marked as
+        only you can pay is one your agent's key cannot send, and one within its limits is one its key could still send by itself.{oursKey ? '' : ' A-Identity holds no key and signs nothing.'}
       </p>
       {!canAct && whyNot && <p className="mt-2 text-xs text-foreground/75">{whyNot}</p>}
 
@@ -283,6 +340,11 @@ export default function OwnerApprovals({ chain, vault, wallet, canAct, whyNot, f
         {nothing && <p className="text-sm text-foreground/70">Nothing is waiting for this vault's owner right now.</p>}
         {list?.ok && list.unreadable > 0 && <p className="text-xs text-foreground/70">{list.unreadable} more could not be read, so nothing is offered for them.</p>}
         {list?.ok && list.truncated && <p className="text-xs text-foreground/70">Only the newest are listed here. If your agent has more waiting, deal with these first.</p>}
+        {stopped.length > 0 && (
+          <p className="text-xs text-foreground/70">
+            {stopped.length} {stopped.length === 1 ? 'request came' : 'requests came'} from an agent key that has since been revoked or run out, so {stopped.length === 1 ? 'it is' : 'they are'} not offered. If one still needs paying, give your agent a working key and ask it for a new check.
+          </p>
+        )}
         {aged.length > 0 && (
           <p className="text-xs text-foreground/70">
             {aged.length} older {aged.length === 1 ? 'one was' : 'ones were'} checked more than 24 hours ago, so {aged.length === 1 ? 'it is' : 'they are'} not offered. If one still needs paying, ask your agent to check the payee
@@ -306,8 +368,8 @@ export default function OwnerApprovals({ chain, vault, wallet, canAct, whyNot, f
         )}
         {others > 0 && (
           <p className="rounded-xl border border-border bg-background/60 px-3 py-2 text-xs text-foreground/75">
-            {capped ? 'Many' : others} other {others === 1 ? 'check names' : 'checks name'} this vault, paid for by a key that is not your agent's. Anyone can buy a check that names any vault, so {others === 1 ? 'it is' : 'they are'} not a request from your
-            agent and nothing about {others === 1 ? 'it' : 'them'} is listed. If someone sends you a link to one, do not act on it.
+            {capped ? 'Many' : others} other {others === 1 ? 'check names' : 'checks name'} this vault, paid for by a key that is not your agent's key now. Anyone can buy a check that names any vault, so this page cannot show {others === 1 ? 'it' : 'they'} came from your agent, and nothing about{' '}
+            {others === 1 ? 'it' : 'them'} is listed. If someone you do not know sends you a link to one, do not act on it.
           </p>
         )}
       </div>
@@ -338,6 +400,10 @@ type CardProps = {
   scanFailed: string | null
   onRecords: () => void
   onLanded: () => void
+  /** A read of the vault from here: the card's figures come from the newest there is. */
+  onVaultRead: (v: VaultSnapshot) => void
+  /** Read the flows again, because the record said something other than what is on screen. */
+  onReadAgain: () => void
   onDecline: () => void
 }
 
@@ -353,8 +419,20 @@ function FlowCard(props: CardProps) {
         <div className="flex items-start gap-2">
           <ShieldAlert size={16} className="mt-0.5 shrink-0 text-danger" aria-hidden="true" />
           <div className="min-w-0">
-            <div className="font-semibold">This is not a request from your agent.</div>
+            <div className="font-semibold">This page cannot show this came from your agent.</div>
             <p className="mt-1 break-words text-foreground/85">{notFromAgentLine(standing)}</p>
+          </div>
+        </div>
+      </div>
+    )
+  if (standing.kind === 'key_stopped')
+    return (
+      <div role="alert" data-flow={flow.flowId} className="rounded-xl border border-danger/30 bg-danger/[0.08] p-4 text-sm text-foreground">
+        <div className="flex items-start gap-2">
+          <ShieldAlert size={16} className="mt-0.5 shrink-0 text-danger" aria-hidden="true" />
+          <div className="min-w-0">
+            <div className="font-semibold">This came from a key that has since been stopped.</div>
+            <p className="mt-1 break-words text-foreground/85">{keyStoppedLine(standing)}</p>
           </div>
         </div>
       </div>
@@ -413,60 +491,95 @@ function SettledCard({ chain, vault, flow }: { chain: Chain; vault: VaultSnapsho
   )
 }
 
-function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, records, scan, scanFailed, onRecords, onLanded, onDecline, record }: CardProps & { record: HandoffSend | null }) {
-  const [prepared, setPrepared] = useState<PreparedTx | null>(null)
+/** What Review showed the person, with the call it came to: what Confirm is held to. */
+type Reviewed = { tx: PreparedTx; payee: string; amount: bigint; data: string }
+
+function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, records, scan, scanFailed, onRecords, onLanded, onVaultRead, onReadAgain, onDecline, record }: CardProps & { record: HandoffSend | null }) {
+  const [reviewed, setReviewed] = useState<Reviewed | null>(null)
   const [saying, setSaying] = useState(false)
-  const { busy, step, failure, setFailure, run } = useArcTx()
+  const { busy, step, failure, setFailure, run, release } = useArcTx()
   const scanNow = useRef<PaidScan | null>(null)
   scanNow.current = scan
+  // A review of something the record no longer says is gone at once: the row above it now reads otherwise.
+  const reviewStands = reviewed !== null && sameAddress(reviewed.payee, flow.payee) && reviewed.amount === flow.amount && flow.prepared?.data.toLowerCase() === reviewed.data
+  useEffect(() => {
+    if (reviewed === null || reviewStands) return
+    setReviewed(null)
+    setFailure({ code: 'handoff_changed', message: 'The record of this payment changed after you reviewed it, so that review is gone. Look over what it says now.' })
+  }, [reviewed, reviewStands, setFailure])
 
   const age = flow.checkedAtSec !== null && vault.chainTime > flow.checkedAtSec ? vault.chainTime - flow.checkedAtSec : 0n
   const payeeUrl = addressUrl(chain, flow.payee)
   const hold = holdFor(flow, records)
+  const sentHere = holdOf(record).held
   const paid = scan && flow.verdictBlock !== null ? paidAfter(flow, scan.paid) : null
   const blocked = walletBlock(wallet, vault, chain.chainId)
-  const checked = scan !== null && flow.verdictBlock !== null && scan.from <= flow.verdictBlock + 1n
+  const read = paymentsRead(flow, scan, scanFailed)
+  const checked = read === 'ok' || read === 'no_lookback'
   const offer = canAct && standing.kind === 'approvable' && !hold.held && !paid
   const ready = offer && blocked === null && checked && !held
+  const earlier = scan && checked ? paidBefore(flow, scan.paid) : null
   const big = aboveSoftWarn(flow.amount, vault.decimals)
-  const onlyLine = ownerOnlyLine(flow.ownerOnly, vault)
+  const onlyLine = ownerOnlyLine(flow.ownerOnly, flow.amount, vault)
   const account = { account: wallet.account, chainId: wallet.chainId }
+  const { heading, asks } = cardHeading(standing, { sent: record !== null && sentHere, held: hold.held, paid: paid !== null })
+  // This tab is the one waiting on the wallet right now: its prompt may be open, unsigned.
+  const asking = busy === 'confirm'
+  const waitingOnWallet = asking && record !== null && !record.tx
+
+  useEffect(() => {
+    if (!waitingOnWallet) return
+    const t = setTimeout(() => release('confirm'), WALLET_ANSWER_MS)
+    return () => clearTimeout(t)
+  }, [waitingOnWallet, release])
 
   // A payment went out after this check, and it was the owner's: the receipt can close the flow. The route
   // only records what the chain proves, so posting it costs nothing and needs no person.
   const closedBy = useRef<string | null>(null)
   useEffect(() => {
-    if (record || !paid?.byOwner || closedBy.current === paid.txHash) return
+    if (sentHere || !paid?.byOwner || closedBy.current === paid.txHash) return
     closedBy.current = paid.txHash
     void postHandoffReceipt(flow.flowId, paid.txHash).then((s) => {
       if (s.step === 'settled') onLanded()
     })
-  }, [record, paid, flow.flowId, onLanded])
+  }, [sentHere, paid, flow.flowId, onLanded])
 
   const review = () => {
     setFailure(null)
     void run('review', async (onStep) => {
       onStep('simulating')
-      const r = await recheckHandoff(chain, vault.address, flow.flowId, account, { shown: { payee: flow.payee, amount: flow.amount }, scan: scanNow.current })
-      setPrepared(r.prepared)
+      const r = await recheckHandoff(chain, vault.address, flow.flowId, account, { shown: { payee: flow.payee, amount: flow.amount }, scan: scanNow.current }).catch((e: unknown) => {
+        if (failureOf(e).code === 'handoff_changed') onReadAgain()
+        throw e
+      })
+      onVaultRead(r.live)
+      setReviewed({ tx: r.prepared, payee: r.flow.payee, amount: r.flow.amount, data: r.prepared.data.toLowerCase() })
       return r
     })
   }
 
   const confirm = () => {
-    if (!wallet.wallet) return
+    if (!wallet.wallet || !reviewed) return
     const provider = wallet.wallet.provider
+    const shown = { payee: reviewed.payee, amount: reviewed.amount, data: reviewed.data }
     void run('confirm', async (onStep) => {
       onStep('simulating')
       // Everything again: the review may be minutes old, and it is what the person read that must still hold.
-      const r = await recheckHandoff(chain, vault.address, flow.flowId, account, { shown: { payee: flow.payee, amount: flow.amount }, scan: scanNow.current })
+      const r = await recheckHandoff(chain, vault.address, flow.flowId, account, { shown, scan: scanNow.current }).catch((e: unknown) => {
+        if (failureOf(e).code === 'handoff_changed') {
+          setReviewed(null)
+          onReadAgain()
+        }
+        throw e
+      })
+      onVaultRead(r.live)
       const claim: HandoffSend = {
         v: 1,
         network: chain.caip2,
         vault: vault.address,
         flowId: flow.flowId,
-        payee: flow.payee,
-        amount: flow.amount,
+        payee: shown.payee,
+        amount: shown.amount,
         from: r.prepared.from,
         askedAt: new Date().toISOString(),
         token: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -491,7 +604,7 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
       const tx = recordOf(r.prepared, hash, vault.address)
       saveHandoff({ ...claim, tx })
       onRecords()
-      setPrepared(null)
+      setReviewed(null)
       track('arc_vault_owner_action', { network: networkWord(chain), action: 'ownerPay', outcome: 'submitted' })
       return hash
     })
@@ -502,7 +615,7 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
   return (
     <article aria-label="A payment waiting for approval" data-flow={flow.flowId} className="rounded-xl border border-border bg-background/60 p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <h4 className="text-sm font-semibold text-foreground">Your agent asks you to pay this</h4>
+        <h4 className="text-sm font-semibold text-foreground">{heading}</h4>
         <Chip tone={flow.verdict?.effective === 'ALLOW' ? 'ok' : 'warn'}>{flow.verdict?.effective ?? 'No verdict'}</Chip>
         {!chain.testnet && <Chip tone="warn">{networkName(chain)}: real USDC</Chip>}
       </div>
@@ -522,7 +635,7 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
           <span className="text-xs text-foreground/65">, from the vault, not from your wallet. The vault holds {formatUnitsExact(vault.balance, vault.decimals)} USDC. Your wallet pays the network fee.</span>
         </Row>
         <Row label="What the check said">
-          <p className="text-sm">{verdictMeaning(flow.verdict?.effective ?? null)}</p>
+          <p className="text-sm">{verdictMeaning(flow.verdict?.effective ?? null, flow.verdict?.reasons ?? [])}</p>
           {flow.verdict && flow.verdict.reasons.length > 0 && (
             <>
               <p className="mt-1 text-xs text-foreground/65">Its reasons, as our server gave them:</p>
@@ -536,13 +649,14 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
         </Row>
         <Row label="When it was checked">
           {flow.checkedAtSec !== null ? `${agePhrase(age)} ago, at ${localTime(flow.checkedAt)} your time. ` : 'The record gives no time we can read. '}
-          <span className="text-xs text-foreground/65">It can be approved for 24 hours after the check.</span>
+          {asks && <span className="text-xs text-foreground/65">It can be approved for 24 hours after the check.</span>}
         </Row>
         <Row label="Who asked">
           <span className="text-xs text-foreground/85">
             {sameAddress(flow.payer, vault.operator) ? (
               <>
-                Your agent's key <span className="break-all font-mono">{flow.payer}</span> paid for this check, and it is this vault's agent key now. If that key has been stolen, whoever holds it could ask you for anything, so check this is a payment you expect.
+                Your agent's key <span className="break-all font-mono">{flow.payer}</span> paid for this check
+                {vault.expired ? ", and that key has since been revoked or has run out." : ", and it is this vault's agent key now. If that key has been stolen, whoever holds it could ask you for anything, so check this is a payment you expect."}
               </>
             ) : (
               <>
@@ -553,12 +667,14 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
         </Row>
       </dl>
 
-      <div className="mt-3 space-y-2 text-xs text-foreground/85">
-        {onlyLine && <p className="rounded-lg border border-border bg-card px-3 py-2">{onlyLine}</p>}
-        <p className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2">{budgetLine(flow.amount, vault)}</p>
-        {vault.frozen && <p className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2">{FROZEN_LINE}</p>}
-        {big && <p className="font-semibold text-warn">This is more than 10 USDC. Check the address character by character.</p>}
-      </div>
+      {asks && (
+        <div className="mt-3 space-y-2 text-xs text-foreground/85">
+          {onlyLine && <p className="rounded-lg border border-border bg-card px-3 py-2">{onlyLine}</p>}
+          <p className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2">{budgetLine(flow.amount, vault)}</p>
+          {vault.frozen && <p className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2">{FROZEN_LINE}</p>}
+          {big && <p className="font-semibold text-warn">This is more than 10 USDC. Check the address character by character.</p>}
+        </div>
+      )}
 
       {standing.kind === 'stale' && (
         <p className="mt-3 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
@@ -587,14 +703,20 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
         </p>
       )}
 
-      {record && <SendTracker record={record} chain={chain} onRecords={onRecords} onLanded={onLanded} />}
+      {waitingOnWallet && (
+        <p role="status" className="mt-3 inline-flex items-center gap-2 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs font-semibold text-foreground">
+          <Loader2 size={12} className="animate-spin" aria-hidden="true" />
+          {step === 'wallet' ? 'Confirm this in your wallet now. If your wallet is an app on your phone, open it there: the request is waiting for you.' : `${step ? STEP_LABEL[step] : 'Working'}...`}
+        </p>
+      )}
+      {record && <SendTracker record={record} chain={chain} asking={asking} onRecords={onRecords} onLanded={onLanded} />}
       {hold.held && !record && (
         <p className="mt-3 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
           This browser has already sent a payment of this amount to this payee, for another request, and has no final answer for it yet. This is not offered until it has one: two sends pay twice.
         </p>
       )}
 
-      {paid && !record && (
+      {paid && !sentHere && (
         <div role="status" className="mt-3 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
           <div className="font-semibold">A payment of this amount to this payee already left this vault after this check.</div>
           <p className="mt-1">{paid.byOwner ? 'It came from the owner key.' : "It came from your agent's key."} It is not offered again. If you really mean to pay it twice, ask your agent for a new check.</p>
@@ -602,15 +724,25 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
         </div>
       )}
 
-      {canAct && offer && !checked && !scanFailed && (
+      {canAct && offer && read === 'reading' && (
         <p className="mt-3 inline-flex items-center gap-2 text-xs text-foreground/70">
           <Loader2 size={12} className="animate-spin" aria-hidden="true" /> Reading the vault's recent payments, so this cannot be paid twice...
         </p>
       )}
-      {canAct && offer && !checked && scanFailed && (
+      {canAct && offer && read === 'failed' && (
         <div className="mt-3">
-          <FailureNotice failure={{ code: 'handoff_unreadable', message: `This page reads the vault's recent payments before it offers this, and that read did not finish: ${scanFailed}.` }} />
+          <FailureNotice failure={{ code: 'handoff_unreadable', message: `This page reads the vault's recent payments before it offers this, and that read did not finish: ${scanFailed ?? scan?.short ?? 'it stopped short'}.` }} />
         </div>
+      )}
+      {offer && earlier && (
+        <div role="status" className="mt-3 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
+          <div className="font-semibold">This vault paid this same amount to this payee in the {PAID_LOOKBACK_WORDS} before this check.</div>
+          <p className="mt-1">{earlier.byOwner ? 'It came from the owner key.' : "It came from your agent's key."} If this is the same invoice, approving pays it a second time.</p>
+          <TxLink chain={chain} hash={earlier.txHash} />
+        </div>
+      )}
+      {offer && read === 'no_lookback' && (
+        <p className="mt-3 text-xs text-foreground/70">This page could not read the {PAID_LOOKBACK_WORDS} before this check, so it cannot say whether the vault already paid this then.</p>
       )}
       {offer && blocked === 'connect' && <p className="mt-3 text-xs text-foreground/70">Connect the wallet that owns this vault, at the top of this page, to approve this.</p>}
       {offer && blocked === 'not_owner' && (
@@ -624,20 +756,27 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
           <Button size="sm" onClick={() => void wallet.switchTo(chain)} disabled={wallet.busy}>
             Switch to {networkName(chain)}
           </Button>
+          {wallet.error && (
+            <p role="alert" className="w-full font-semibold text-danger">
+              {wallet.error}
+            </p>
+          )}
         </div>
       )}
       {offer && held && <p className="mt-3 text-xs text-foreground/70">Another transaction from this page is still pending. This comes back once that one lands, so nothing is signed twice.</p>}
 
-      {prepared && ready ? (
+      {reviewed && reviewStands && ready ? (
         <div className="mt-3 space-y-3">
-          <PreparedView p={prepared} decimals={vault.decimals} title="Review: what your wallet will be asked to send" />
-          <p className="text-xs text-foreground/70">Everything above is read and tried again when you press Confirm, and if any of it has changed, nothing is sent.</p>
+          <PreparedView p={reviewed.tx} decimals={vault.decimals} title="Review: what your wallet will be asked to send" />
+          <p className="text-xs text-foreground/70">
+            When you press Confirm, this page reads the payee, the amount, the vault's owner, agent key and balance again, looks for a payment made since the check, and tries the call again. If any of that no longer holds, nothing is sent. The network fee can move a little in that time, and your wallet shows the one it will charge.
+          </p>
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" onClick={confirm} disabled={busy !== null}>
               {busy && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
               {working ?? 'Confirm in wallet'}
             </Button>
-            <Button size="sm" variant="outline" onClick={() => setPrepared(null)} disabled={busy !== null}>
+            <Button size="sm" variant="outline" onClick={() => setReviewed(null)} disabled={busy !== null}>
               Back
             </Button>
           </div>
@@ -662,8 +801,8 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
             Nothing is sent, and nothing records your answer: this page has nowhere to write a no. The request stays open on its public record, your agent is not told, and it can ask you again. This only hides it in this browser. It stops being offered on its own 24 hours after the check.
           </p>
           <p className="mt-1">
-            Saying no does not stop your agent. If you do not trust it, use Freeze or Revoke below.
-            {flow.ownerOnly ? '' : ' A payment within its limits is one its key could send by itself.'}
+            Saying no does not stop your agent. If you do not trust it, use Revoke below, which also stops this page offering what that key already asked. Freeze stops the agent paying, and what it already asked stays here.
+            {ownerOnlyStands(flow.ownerOnly, flow.amount, vault) ? '' : ' A payment within its limits is one its key could send by itself.'}
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
             <Button size="sm" variant="outline" onClick={onDecline}>
@@ -689,7 +828,7 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
  * What was sent for a flow, until the server gave its final word on it: the receipt while the chain has
  * no answer, then the post, retried for as long as the server does not decide anything.
  */
-function SendTracker({ record, chain, onRecords, onLanded }: { record: HandoffSend; chain: Chain; onRecords: () => void; onLanded: () => void }) {
+function SendTracker({ record, chain, asking = false, onRecords, onLanded }: { record: HandoffSend; chain: Chain; asking?: boolean; onRecords: () => void; onLanded: () => void }) {
   const [waitingOn, setWaitingOn] = useState<string | null>(null)
   const hash = hashToPost(record)
   const latest = useRef(record)
@@ -741,17 +880,17 @@ function SendTracker({ record, chain, onRecords, onLanded }: { record: HandoffSe
   const h = holdOf(record)
   const server = record.server
   const release = () => {
-    saveHandoff({ ...latest.current, released: true })
+    saveHandoff({ ...latest.current, released: true, releasedAt: new Date().toISOString() })
     onRecords()
   }
 
   return (
     <div className="mt-3 space-y-2">
       {record.tx && !server && <TxReceipt record={record.tx} onUpdate={update} onSettled={() => onLanded()} serverJudges />}
-      {!record.tx && !record.paidBy && !record.released && (
+      {!asking && !record.tx && !record.paidBy && !record.released && !server && (
         <div role="status" className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
           <div className="font-semibold">Your wallet was asked to send this, and this page has not heard back.</div>
-          <p className="mt-1">If your wallet sent it, this page sees the payment land and carries on. Do not sign it again.</p>
+          <p className="mt-1">If a prompt is still open in your wallet, you can answer it there. If your wallet sent it, this page sees the payment land and carries on. Do not start another one from here.</p>
           <button type="button" onClick={release} className="mt-1 font-semibold text-accent underline underline-offset-2">
             I checked: my wallet shows nothing was sent
           </button>
@@ -781,6 +920,21 @@ function SendTracker({ record, chain, onRecords, onLanded }: { record: HandoffSe
         <p role="status" className="inline-flex items-center gap-2 text-xs text-foreground/75">
           <Loader2 size={12} className="animate-spin" aria-hidden="true" /> This has landed, and it is not settled until our server reads it. It has not answered yet ({waitingOn}). This page keeps asking, and you do not need to sign anything.
         </p>
+      )}
+      {server?.state === 'settled' && (
+        <div role="status" className="rounded-lg border border-ok/30 bg-ok/[0.07] px-3 py-2 text-xs text-foreground">
+          <div className="font-semibold">Paid. Our server read this payment from the chain itself.</div>
+          <TxLink chain={chain} hash={server.txHash} />
+        </div>
+      )}
+      {server?.state === 'ended' && (
+        <div role="alert" className="rounded-lg border border-danger/25 bg-danger/[0.07] px-3 py-2 text-xs text-foreground">
+          <div className="font-semibold">This payment was sent and reverted. Nothing moved, and the network fee was still charged.</div>
+          <p className="mt-1 break-words">
+            {server.reason ? `${server.reason}. ` : ''}This request is over. If you still mean to pay, ask your agent to check the payee again.
+          </p>
+          <TxLink chain={chain} hash={server.txHash} />
+        </div>
       )}
       {server?.state === 'moved' && (
         <div role="status" className="rounded-lg border border-ok/30 bg-ok/[0.07] px-3 py-2 text-xs text-foreground">

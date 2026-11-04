@@ -99,6 +99,8 @@ export type HandoffSend = {
   replacedClear?: boolean
   /** The person said they checked their wallet and nothing is on its way. */
   released?: boolean
+  /** When they said so (ISO). A slow wallet can still send it, so the page keeps looking for a while. */
+  releasedAt?: string
   /** The server's final answer on a hash. Absent until it gave one. */
   server?: { state: 'settled' | 'ended' | 'moved' | 'refused'; txHash: string; flowId: string; code?: string; reason?: string; at: string }
 }

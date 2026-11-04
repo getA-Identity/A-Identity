@@ -279,7 +279,7 @@ export async function readOlder(
 export async function readDownTo(
   h: EventHistory,
   downTo: bigint,
-  x: { readers: readonly HostReader[]; pause?: () => Promise<void>; aborted?: () => boolean },
+  x: { readers: readonly HostReader[]; pause?: () => Promise<void>; aborted?: () => boolean; onProgress?: (h: EventHistory) => void },
 ): Promise<EventHistory> {
   let out = h
   for (;;) {
