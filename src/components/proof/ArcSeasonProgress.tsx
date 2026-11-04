@@ -254,7 +254,7 @@ function FlowLine({ f }: { f: FlowItem }) {
       {check?.batchExplorerUrl ? (
         <OutLink href={check.batchExplorerUrl}>Gateway batch</OutLink>
       ) : (
-        check && <span className="text-foreground/50">check {check.outcome}{check.outcome === 'credited' ? ', batch not landed yet' : ''}</span>
+        check && <span className="text-foreground/50">check {check.outcome}{check.outcome === 'credited' ? ', no batch hash read yet' : ''}</span>
       )}{' '}
       {f.explorerUrl && <OutLink href={f.explorerUrl}>transaction</OutLink>}
     </li>
@@ -340,7 +340,8 @@ const utcMinute = (ts: string) => {
 }
 
 /** The flow row's small print, leaving out whatever a log that could not be read would make false. */
-function flowDetail(c: SeasonReport['milestone1']['checks']): string {
+function flowDetail(c: SeasonReport['milestone1']['checks']): string | undefined {
+  if (c.incomplete && c.count === 0) return undefined
   const linked = c.linked as { paid: number; refused: number }
   const payees = c.internalPayee
     ? ` (${c.internalPayee} pay or name a payee that is ours: our own wallet, our own agent or the vault's own key; refused flows name ${plural(c.refusedPayees ?? 0, 'distinct payee', 'distinct payees')})`
@@ -495,7 +496,7 @@ export default function ArcSeasonProgress() {
               <MetricRow
                 label="Refusals anyone can inspect, one of each kind"
                 metric={m1.refusals}
-                detail={m1.refusals.byKind ? `${m1.refusals.byKind['vault-policy-on-chain'] ?? 0} reverted on chain, ${m1.refusals.byKind['deny-before-signing'] ?? 0} DENY stopped before signing` : undefined}
+                detail={m1.refusals.byKind && !m1.refusals.incomplete ? `${m1.refusals.byKind['vault-policy-on-chain'] ?? 0} reverted on chain, ${m1.refusals.byKind['deny-before-signing'] ?? 0} DENY stopped before signing` : undefined}
               />
               {m1.vaults.items.length > 0 && (
                 <ul className="mt-3 flex flex-col gap-1.5">
