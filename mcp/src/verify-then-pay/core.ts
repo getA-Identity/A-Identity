@@ -460,6 +460,27 @@ export function vtpRateLimited(windowMs: number): VtpResponse {
 
 type Closed = Awaited<ReturnType<VtpStore['update']>>
 
+const CLOSE_FLOW_RETRY_MS = [200, 800]
+
+/**
+ * Close a flow whose check was paid. A write that fails here costs the buyer a second check, since
+ * the nonce is spent and nothing can be handed back, so a transient database error is tried again
+ * while the answer can still wait. A tx conflict is no database error and is not. When an earlier
+ * try committed and only its answer was lost, the row reads as this very record, which counts.
+ */
+async function closePaidFlow(store: VtpStore, flowId: string, rec: VtpFlowRecord): Promise<Closed> {
+  let closed = await store.update(flowId, rec, ['opening'])
+  for (const wait of CLOSE_FLOW_RETRY_MS) {
+    if (closed.ok || closed.conflict) return closed
+    await new Promise((r) => setTimeout(r, wait))
+    closed = await store.update(flowId, rec, ['opening'])
+    if (closed.ok && !closed.updated && closed.row?.outcome === rec.outcome && closed.row.detail === rec.detail && closed.row.updatedAt === rec.updatedAt) {
+      return { ok: true, updated: true, row: closed.row }
+    }
+  }
+  return closed
+}
+
 /** What the answer may say about its record. A record that was not written has no url: the
  *  url would 404, or open a reservation that never became this answer. */
 function recordView(closed: Closed, url: string, outcome: VtpFlowOutcome, detail: VtpFlowDetail): NonNullable<VerifyThenPayToolResult['record']> {
@@ -698,7 +719,7 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
       // Paid, and the tool failed after settlement: the record says what was bought and that
       // no verdict came back, so the flow is blocked, never pending.
       const rec = flowRecord({ chain, flowId, now: ts, p, payOnWarn: parsed.payOnWarn, owner: pre.owner, operator: pre.operator, settlement: paid500, block: pre.block, verdictBlock: null, verdict: null, prepared: null, outcome: 'blocked', detail: 'verdict_unavailable' })
-      const record = recordView(await store.update(flowId, rec, ['opening']), flowUrl(flowId, origin), rec.outcome, rec.detail)
+      const record = recordView(await closePaidFlow(store, flowId, rec), flowUrl(flowId, origin), rec.outcome, rec.detail)
       return {
         httpStatus: 500,
         body: result(chain, {
@@ -845,7 +866,7 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
     outcome,
     detail,
   })
-  const closed = await store.update(flowId, rec, ['opening'])
+  const closed = await closePaidFlow(store, flowId, rec)
   const record = recordView(closed, flowUrl(flowId, origin), outcome, detail)
   const answered = {
     charged: true as const,

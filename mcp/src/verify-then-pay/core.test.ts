@@ -683,6 +683,64 @@ test('a DENY or an unusable answer whose record was not written says the refusal
   }
 })
 
+test('a flow close that fails once is tried again, so the buyer keeps the check they paid for', async () => {
+  let tries = 0
+  const rows = new Map<string, VtpFlowRecord>()
+  const once = setup({ store: {
+    insert: async (rec) => { rows.set(rec.flowId, rec); return { ok: true, inserted: true } },
+    update: async (id, patch) => {
+      tries += 1
+      if (tries === 1) return { ok: false, reason: 'connection reset' }
+      const next = { ...rows.get(id.toLowerCase())!, ...patch } as VtpFlowRecord
+      rows.set(id.toLowerCase(), next)
+      return { ok: true, updated: true, row: next }
+    },
+  } })
+  const out = await runVerifyThenPay(request(), header(), once.deps)
+  assert.equal(tries, 2)
+  assert.equal(out.httpStatus, 200)
+  assert.equal(out.body.stage, 'prepared')
+  assert.equal(out.body.record?.recorded, true)
+  assert.ok(out.body.prepared)
+})
+
+test('a flow close that committed with its answer lost counts as recorded, and a stranger\'s close does not', async () => {
+  const rows = new Map<string, VtpFlowRecord>()
+  const insert: VtpStore['insert'] = async (rec) => { rows.set(rec.flowId, rec); return { ok: true, inserted: true } }
+  const mine = setup({ store: { insert, update: async (id, patch) => {
+    const cur = rows.get(id.toLowerCase())!
+    if (cur.outcome !== 'opening') return { ok: true, updated: false, row: cur }
+    rows.set(id.toLowerCase(), { ...cur, ...patch } as VtpFlowRecord)
+    return { ok: false, reason: 'connection lost after the commit' }
+  } } })
+  const out = await runVerifyThenPay(request(), header(), mine.deps)
+  assert.equal(out.body.stage, 'prepared')
+  assert.equal(out.body.record?.recorded, true)
+
+  // The row moved, but not to this answer's record, so this answer is not on record.
+  rows.clear()
+  let tries = 0
+  const other = setup({ store: { insert, update: async (id) => {
+    tries += 1
+    if (tries === 1) return { ok: false, reason: 'connection lost' }
+    return { ok: true, updated: false, row: { ...rows.get(id.toLowerCase())!, outcome: 'abandoned' } as VtpFlowRecord }
+  } } })
+  const raced = await runVerifyThenPay(request(), header(), other.deps)
+  assert.equal(raced.httpStatus, 409)
+  assert.equal(raced.body.code, 'FLOW_NOT_RECORDED')
+})
+
+test('a transaction conflict is not tried again, because it is no database error', async () => {
+  let tries = 0
+  const conflict = setup({ store: { update: async () => {
+    tries += 1
+    return { ok: false, reason: 'that transaction is already linked to another flow', conflict: 'tx_linked' }
+  } } })
+  const out = await runVerifyThenPay(request(), header(), conflict.deps)
+  assert.equal(tries, 1)
+  assert.equal(out.body.code, 'FLOW_NOT_RECORDED')
+})
+
 test('an answer whose reservation was no longer open hands back nothing to send, and links no record', async () => {
   for (const decision of ['ALLOW', 'WARN', 'DENY'] as const) {
     const raced = setup({ gw: { scored: verdict(decision) }, store: { update: async () => ({ ok: true, updated: false, row: null }) } })
