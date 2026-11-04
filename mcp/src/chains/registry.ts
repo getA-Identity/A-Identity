@@ -88,10 +88,9 @@ export const CHAINS: ChainDescriptor[] = [
     // A Blockscout instance. On 2026-09-16 the page shell answered 200 and its public API
     // 403; by 2026-09-25 its pages opened to anyone in a browser without signing in, and only
     // the JSON API still turned non-browser clients away with a bot challenge, as it still
-    // did on 2026-10-11 and on 2026-11-04 (403 on /api/v2/addresses and on getcontractcreation,
-    // so POST /api/arc/vaults cannot derive a deploy hash from a vault address). Derived links
-    // are for people; a script reads the same facts from the RPCs above, except Blockdaemon
-    // for anything but recent blocks.
+    // did on 2026-10-11 and on 2026-11-04 (403 on /api/v2/addresses and on getcontractcreation).
+    // Derived links are for people; a script reads the same facts from the RPCs above, except
+    // Blockdaemon for anything but recent blocks, and the sweep finds a deploy hash from them.
     explorer: 'https://explorer.arc.io',
     contracts: {
       // The canonical MAINNET ERC-8004 pair (the Base / Arbitrum One / X Layer / Celo

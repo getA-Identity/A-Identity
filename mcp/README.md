@@ -245,9 +245,9 @@ what the list says, and that the server is looking for it only while `GET /api/a
 deploy hash from the chain alone, and it calls the route's own `admitVaultDeploy`, so nothing is decided
 there and a vault from any browser can count. It reads a capped number of blocks every 5 minutes from a
 fixed start block, and `GET /api/arc/vaults` says what it last did under `sweep`. `ARC_VAULT_SWEEP=off`
-turns it off, and `ARC_VAULT_SWEEP_EVERY_SECONDS` changes how often. The route takes no vault address on purpose: the one public source of a contract's
-creation transaction is the explorer's JSON API, which answered this kind of client with a Cloudflare
-challenge (403) when last read on 2026-11-04, so the server cannot get it reliably.
+turns it off, and `ARC_VAULT_SWEEP_EVERY_SECONDS` changes how often. The route takes no vault address on purpose: finding a hash from an address costs a bisect of about 25
+reads plus a block read. The sweep spends those under its own caps, and a public unauthenticated route
+should not run that for any caller.
 `GET /api/arc/vaults` lists them and says under `admission` whether the server can admit at all: it
 admits nothing, and answers unavailable, until at least one of our EVM key env vars is set and all of them are readable.
 That does not compare a key set only somewhere else: `admission.keysNotCompared` names every key the

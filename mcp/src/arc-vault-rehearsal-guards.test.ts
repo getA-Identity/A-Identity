@@ -435,9 +435,14 @@ test('on the last screen a read from before the end date, or of another network,
 
 test('admission is what it was: only the deploy hash goes in, and the same checks stand', () => {
   const live = readSource('mcp/src/arc-owner-vault-live.ts')
-  assert.match(live, /const b = \(body \?\? \{\}\) as \{ deployTx\?: unknown; chain\?: unknown \}/, 'the route takes no vault address: the explorer gives this server no creation transaction')
+  assert.match(live, /const b = \(body \?\? \{\}\) as \{ deployTx\?: unknown; chain\?: unknown \}/, 'the route takes no vault address: finding a hash from one costs a bisect, which a public route should not run for any caller')
   assert.match(live, /ownerKind: 'unstated'/)
   assert.doesNotMatch(live, /explorer\.[a-z]+\/api|\/api\/v2\//, 'nothing here reads an explorer')
+  // The sweep finds a hash from the chain alone, so the explorer is not why, and the docs give the real reason.
+  const readme = readSource('mcp/README.md')
+  assert.match(readme, /The route takes no vault address on purpose: finding a hash from an address costs a bisect of about 25\s+reads plus a block read/)
+  assert.doesNotMatch(readme, /one public source of a contract's|the server cannot get it reliably/)
+  assert.doesNotMatch(readSource('mcp/src/chains/registry.ts'), /cannot derive a deploy hash/)
 })
 
 test('the rehearsal refuses an output folder git would publish, before any key exists', () => {
