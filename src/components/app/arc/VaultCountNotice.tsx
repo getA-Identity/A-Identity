@@ -16,11 +16,14 @@ export default function VaultCountNotice({
   networkName,
   count,
   onRetry,
+  hasEndDate = true,
 }: {
   testnet: boolean
   networkName: string
   count: VaultCount
   onRetry: () => void
+  /** Whether the vault read back an end date, which is what the server's own search on the chain looks for. */
+  hasEndDate?: boolean
 }) {
   const retry = (
     <button type="button" onClick={onRetry} className="font-semibold text-accent underline underline-offset-2">
@@ -36,9 +39,13 @@ export default function VaultCountNotice({
     return <div className={box}>This vault can count on {PROOF_LINK} once its agent key has an end date. When this page reads one it asks by itself, and you do not have to send anything to anyone.</div>
   }
   if (count.state === 'no-hash') {
-    return (
+    return hasEndDate ? (
       <div className={box}>
-        This vault is not counted on {PROOF_LINK} yet. This browser does not hold the transaction that created it, so it cannot ask by itself. If you deployed it from another browser or device, open this page there and it asks for you. Otherwise, find that transaction in your wallet's activity and send its hash to the A-Identity team.
+        This vault is not counted on {PROOF_LINK} yet. You do not have to send anything to anyone: our server looks for vaults on the chain by itself, and this one has the agent key end date it looks for. Look again here in a little while. If it still says this tomorrow, tell the A-Identity team, because the check may have refused it.
+      </div>
+    ) : (
+      <div className={box}>
+        This vault is not counted on {PROOF_LINK} yet, because its agent key has no end date. Set one from this page. You do not have to send anything to anyone: our server looks for vaults on the chain by itself, and it finds this one once it has an end date.
       </div>
     )
   }

@@ -276,8 +276,10 @@ test('the vault page reuses the hook and the notice, asks with no wallet, and th
 test('the notice says what it cannot know as that', () => {
   const notice = readSource('src/components/app/arc/VaultCountNotice.tsx')
   assert.match(notice, /once its agent key has an end date/)
-  assert.match(notice, /This browser does not hold the transaction that created it, so it cannot ask by itself/)
-  assert.match(notice, /If you deployed it from another browser or device, open this page there/)
+  // With no hash in this browser the server finds a vault by itself, so nobody is sent to a person first.
+  assert.match(notice, /You do not have to send anything to anyone: our server looks for vaults on the chain by itself/)
+  assert.match(notice, /because its agent key has no end date/)
+  assert.doesNotMatch(notice, /send its hash|open this page there/)
   assert.match(notice, /We could not find out whether this vault counts on/)
 })
 

@@ -9,7 +9,8 @@
 /**
  * What the page shows. 'failed' is about the question and never about the vault. 'needs-end-date'
  * and 'no-hash' are why the page is not asking, and each says so without claiming what the server
- * would answer.
+ * would answer. With no hash the server can still find the vault on the chain by itself
+ * (mcp/src/arc-vault-sweep.ts), so the page does not send anyone to a person for that.
  */
 export type VaultCount =
   | { state: 'checking' }

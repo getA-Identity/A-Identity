@@ -200,7 +200,7 @@ Flat files by group: entries (`index.ts` stdio MCP, `http.ts` REST+MCP, `asp-gat
 `build-stamp.ts`) - Circle rails (`gateway.ts`, `cctp.ts`, `nanopay.ts`, `appkit.ts`,
 `circle.ts`, `circle-agent.ts`, `circle-cli.ts`, `paymaster.ts`) - Arc binding (`arc.ts`,
 `arc-contracts.ts`) - Arc Acceleration Season (`arc-season.ts` the milestone report,
-`arc-owner-vault.ts` the owner-held vault admission rules, `arc-owner-vault-live.ts` its chain reads and the route's core, `arc-vault-actions.ts` the owner freezes and withdrawals read from the chain, `arc-vtp-run.ts` the Milestone 1 flow runner's rules) - auth (`auth.ts`, `oauth.ts`, `magic.ts`, `bot-auth.ts`) - domain
+`arc-owner-vault.ts` the owner-held vault admission rules, `arc-owner-vault-live.ts` its chain reads and the route's core, `arc-vault-sweep.ts` the server's own search for countable vaults on the chain, `arc-vault-actions.ts` the owner freezes and withdrawals read from the chain, `arc-vtp-run.ts` the Milestone 1 flow runner's rules) - auth (`auth.ts`, `oauth.ts`, `magic.ts`, `bot-auth.ts`) - domain
 (`erc8004.ts`, `reputation.ts`, `marketplace.ts`, `data.ts`) - x402/autonomy (`x402.ts`,
 `autopilot.ts`, `trust-oracle.ts`) - treasury (`treasury.ts`, `treasury-safe.ts`,
 `airdrop.ts`) - AA (`aa-wallet.ts`).
@@ -239,7 +239,12 @@ A vault deployed from `/app/vault/arc` on Arc Mainnet needs nothing from anyone:
 deploy hash to `POST /api/arc/vaults` once the agent key has an end date, from the setup or from the
 vault's own page, and a vault that passes every check is stored and counted by `GET /api/arc/season`
 with its owner not identified. A browser that never saw the deploy holds no hash, so its page only says
-what the list says. The route takes no vault address on purpose: the one public source of a contract's
+what the list says. The server also looks for countable vaults on the chain by itself
+(`src/arc-vault-sweep.ts`): setting the agent key's end date logs `SessionKeyExpirySet`, it finds the
+deploy hash from the chain alone, and it calls the route's own `admitVaultDeploy`, so nothing is decided
+there and a vault from any browser can count. It reads a capped number of blocks every 5 minutes from a
+fixed start block, and `GET /api/arc/vaults` says what it last did under `sweep`. `ARC_VAULT_SWEEP=off`
+turns it off, and `ARC_VAULT_SWEEP_EVERY_SECONDS` changes how often. The route takes no vault address on purpose: the one public source of a contract's
 creation transaction is the explorer's JSON API, which answered this kind of client with a Cloudflare
 challenge (403) when last read on 2026-11-04, so the server cannot get it reliably.
 `GET /api/arc/vaults` lists them and says under `admission` whether the server can admit at all: it
@@ -288,6 +293,16 @@ cd .. && node scripts/rehearse-arc-vault.mjs https://a-identity.xyz _internal/ar
 
 The first run prints the owner address to send about 0.25 test USDC to, from faucet.circle.com. Exit
 0 all checks passed, 1 a check failed, 2 usage, 3 the owner needs test USDC.
+
+`scripts/rehearse-arc-vault-fork.mjs` runs the admission's yes on Arc Mainnet forked into a local anvil,
+against the real backend and, with `--browser`, the real page, with no real money. It needs Foundry on
+PATH, and the page's run needs Playwright's chromium. It ends by blocking every post from a page, and
+the server's own sweep counts that vault. Exit 0 all checks passed, 1 a check failed, 2 usage.
+
+```bash
+npm run build
+cd .. && node scripts/rehearse-arc-vault-fork.mjs --browser
+```
 
 ### Run the Milestone 1 flows
 

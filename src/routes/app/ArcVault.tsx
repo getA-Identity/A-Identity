@@ -594,7 +594,7 @@ function DeployLinkRefused({ networkParam }: { networkParam: string }) {
 /** Whether this vault counts on /proof/arc, asked for and said here too: an owner may never go back to the setup. Inside the owner box, and nothing in it depends on the answer. */
 function VaultCountLine({ chain, expiry, hash, listing, onReadListAgain }: { chain: Chain; expiry: bigint; hash: string | null; listing: Listing; onReadListAgain: () => void }) {
   const { count, retry } = useVaultCount({ hash, stage: vaultPageStage(hash, expiry), listing, onReadListAgain })
-  return <VaultCountNotice testnet={chain.testnet} networkName={networkName(chain)} count={count} onRetry={retry} />
+  return <VaultCountNotice testnet={chain.testnet} networkName={networkName(chain)} count={count} onRetry={retry} hasEndDate={expiry !== 0n} />
 }
 
 function FailureLine({ title, next }: { title: string; next: string }) {
