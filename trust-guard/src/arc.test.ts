@@ -2077,6 +2077,8 @@ test('the package says one version, and the README says what that version change
   assert.match(changed, /On a vault with a human, a payment above the vault's ceiling or to a payee off its allowlist used to throw `VaultPolicyError` before the check, for free/)
   assert.match(changed, /It now buys a check, 0\.005 USDC per attempt, and `verifyThenPay` returns `awaiting_human`/)
   assert.match(changed, /`preflightVault` returns `ownerOnly` instead of throwing/)
+  assert.match(changed, /a nonce the server has already seen reads as `UNCONFIRMED` with `paid` null, not `REFUSED` with `paid` false/)
+  assert.match(changed, /`recordFlowReceipt` goes again after a 429, so it can take up to two minutes/)
   // The status line is what someone following the install line reads: which version gets them what.
   const status = readme.slice(readme.indexOf('**Status: an earlier build of this code ran our own 100 flows'), readme.indexOf('**Changed in 0.5.0.**')).replace(/\s+/g, ' ')
   assert.match(status, /on its `pay\(\)` path/)
@@ -2084,7 +2086,7 @@ test('the package says one version, and the README says what that version change
   assert.match(status, /`ownerOnly`, `approvalUrl` and the hand-off of a payment above the vault's ceiling or off its allowlist need 0\.5\.0 or later/)
   assert.match(status, /0\.4\.0 has none of them/)
   assert.doesNotMatch(status, /It needs version 0\.4\.0 or later/)
-  // This file ships in the tarball and cannot change after a publish, so it states versions and never what npm
-  // serves today: that went false once already, in the README of 0.4.0. The guide can change on the day, so it says it.
-  assert.doesNotMatch(readme.replace(/\s+/g, ' '), /on npm yet|not on npm|for now|when it is published/)
+  // This file ships in the tarball and cannot change after a publish, so it states versions and dated facts, and never
+  // what npm serves today: that went false once already, in the README of 0.4.0. The guide can change on the day, so it says it.
+  assert.doesNotMatch(readme.replace(/\s+/g, ' '), /on npm yet|not on npm|for now|when it is published|published package yet/)
 })

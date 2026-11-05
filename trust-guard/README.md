@@ -151,8 +151,8 @@ claude mcp add a-identity-trust -e A_IDENTITY_ALGORAND_MNEMONIC="..." -- npx -y 
 0.3.0 has no `/arc` entry point. `ownerOnly`, `approvalUrl` and the hand-off of a payment above the vault's
 ceiling or off its allowlist need 0.5.0 or later. 0.4.0 has none of them: there `out.approvalUrl` is
 undefined, and such a payment throws `VaultPolicyError` before anything is signed.
-`npm ls @a-identity/trust-guard` says which version you have. No outside team has run the published package
-yet.**
+`npm ls @a-identity/trust-guard` says which version you have. As of 2026-11-05 no outside team has run a
+published version of it.**
 
 **Changed in 0.5.0.** On a vault with a human, a payment above the vault's ceiling or to a payee off its
 allowlist used to throw `VaultPolicyError` before the check, for free. It now buys a check, 0.005 USDC per
@@ -161,7 +161,8 @@ because the owner can pay it. `preflightVault` returns `ownerOnly` instead of th
 preflight no longer means the operator can pay. A caller who wants the free refusal reads `ownerOnly` from
 `preflightVault` first. A range such as `^0.4.0` does not take this version, so moving to it is your own
 step. Every `awaiting_human` result also has `approvalUrl`, the link to send the owner, or null. 0.4.0 has
-neither field.
+neither field. Two smaller moves: a nonce the server has already seen reads as `UNCONFIRMED` with `paid` null,
+not `REFUSED` with `paid` false, and `recordFlowReceipt` goes again after a 429, so it can take up to two minutes.
 
 `verifyThenPay` buys a `risk_check` through Circle Gateway and then pays the payee from an
 [AgentSpendPolicy](https://a-identity.xyz) vault, with keys only you hold. It needs Node and two
