@@ -572,7 +572,7 @@ for (const [label, reply, code, paid] of [
 }
 
 test('a WARN with no human to hand it to is a typed error: paid, with its record and the server\'s words', async () => {
-  const next = "WARN, and this vault's owner and operator are the same key, so there is no human to hand the payment to: do not pay. Give the vault an owner key the agent does not hold."
+  const next = "WARN, and this vault's owner and operator are the same key, so there is no human to hand the payment to: do not pay. A vault's owner cannot be changed, so give your agent a new key of its own with setOperator, and keep this key from it."
   const { signer, opts } = setup({
     paid: (p) => ({ status: 200, body: answerBody(p, 'warn_no_human_gate', { charged: true, next, record: { recorded: true, url: 'https://anywhere.example/x' } }) }),
   })

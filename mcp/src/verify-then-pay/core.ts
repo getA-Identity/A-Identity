@@ -459,6 +459,13 @@ function result(chain: ChainDescriptor, over: Partial<VerifyThenPayToolResult> &
   }
 }
 
+/**
+ * What gets a vault with one key a person to hand a payment to. `owner` is immutable in AgentSpendPolicy, so
+ * no call gives the vault another owner key. setOperator moves the agent to a new key and leaves the owner key
+ * behind, which is worth nothing if the agent has ever held that key, and then only a new vault separates them.
+ */
+const ONE_KEY_WAY_OUT = "A vault's owner cannot be changed, so give your agent a new key of its own with setOperator, and keep this key from it. That helps only if the agent no longer has this key: if its process or logs have held it, deploy a new vault with an owner key the agent never holds."
+
 function refused(chain: ChainDescriptor, httpStatus: number, code: VtpRefusalCode, reason: string, checks: VtpChecks | null): VtpResponse {
   return {
     httpStatus,
@@ -470,8 +477,8 @@ function refused(chain: ChainDescriptor, httpStatus: number, code: VtpRefusalCod
       next:
         httpStatus === 503
           ? `Nothing was charged: ${chain.name} or the flow log did not answer, so nothing could be decided. Ask again shortly.`
-          : code === 'AboveAutoApprove' || code === 'PayeeNotAllowed'
-            ? `Nothing was charged and no check was bought, so there is no verdict on this payee and nothing was prepared: ${reason}. This vault's owner and operator are one key, so there is no person to hand this to. Raising the ceiling or allowing the payee gets a verdict, where ALLOW prepares pay() and WARN stops with the check paid. For a hand-off, give the vault an owner key the agent does not hold.`
+          : (code === 'AboveAutoApprove' || code === 'PayeeNotAllowed') && checks?.vault.ownerIsOperator === true
+            ? `Nothing was charged and no check was bought, so there is no verdict on this payee and nothing was prepared: ${reason}. This vault's owner and operator are one key, so there is no person to hand this to. Raising the ceiling or allowing the payee gets a verdict, where ALLOW prepares pay() and WARN stops with the check paid, or prepares pay() as the agent's own decision if the request sets payOnWarn. For a hand-off: ${ONE_KEY_WAY_OUT}`
             : `Nothing was charged and no check was bought: ${reason}.`,
     }),
   }
@@ -560,6 +567,7 @@ async function paymentRequired(
   status: GatewayRailStatus,
   railDeps: RailDeps,
   checks: VtpChecks | null,
+  asked: { payOnWarn: boolean; payee: string },
   verifyError?: string,
 ): Promise<VtpResponse> {
   const c = await railChallenge('risk_check', status, railDeps, verifyError)
@@ -573,6 +581,10 @@ async function paymentRequired(
   }
   const offer = (challenge.accepts as Record<string, unknown>[])[0]
   const usd = toolPriceUsd('risk_check')
+  const operator = checks?.vault.operator
+  // The paid answer gets no link for a payment to the operator key, whoever pays the check: see whyNoApproval.
+  const notToOperator = `The vault page does not offer a payment to the vault's operator key ${operator}, so the owner sends ownerPay from their own key.`
+  const paysOperator = asked.payee.toLowerCase() === operator?.toLowerCase()
   return {
     httpStatus: 402,
     headers: challengeHeaders(challenge),
@@ -584,11 +596,15 @@ async function paymentRequired(
       ...(verifyError ? { reason: verifyError } : {}),
       next: `Nothing is charged yet, and the free checks passed.${checks?.payee.agentsHeld === 0 ? ` This payee holds no ERC-8004 agent on ${chain.name}. That is not a refusal, and unless it is an agent on our platform the check will answer WARN.` : ''}${
         checks?.vault.ownerOnly
-          ? ` The agent cannot pay this and only the owner can settle it: ${checks.vault.ownerOnly.reason} (${checks.vault.ownerOnly.code}). Signing this offer still charges ${usd} USDC for the check. A usable ALLOW or WARN then hands ownerPay to the owner, payOnWarn cannot make the operator pay it, and a DENY stops it. The vault page offers the owner this approval only if the check is paid from the vault's operator key ${checks.vault.operator}; from any other key, the owner sends ownerPay from their own key.`
+          ? ` The agent cannot pay this and only the owner can settle it: ${checks.vault.ownerOnly.reason} (${checks.vault.ownerOnly.code}). Signing this offer still charges ${usd} USDC for the check. A usable ALLOW or WARN then hands ownerPay to the owner, payOnWarn cannot make the operator pay it, and a DENY stops it. ${paysOperator ? notToOperator : `The vault page offers the owner this approval only if the check is paid from the vault's operator key ${operator}; from any other key, the owner sends ownerPay from their own key.`}`
           : checks?.vault.ownerIsOperator === true
-          ? " On this vault the owner and the operator are one key, so a WARN stops with nothing prepared: there is nobody to hand the payment to, and the check is still paid. Give the vault an owner key the agent does not hold first if you need that hand-off."
+          ? asked.payOnWarn
+            ? " On this vault the owner and the operator are one key, so there is nobody to hand a payment to. You set payOnWarn, so a WARN prepares pay() as the agent's own decision, and the check is still paid."
+            : ` On this vault the owner and the operator are one key, so a WARN stops with nothing prepared: there is nobody to hand the payment to, and the check is still paid. If you need that hand-off, do this first. ${ONE_KEY_WAY_OUT}`
           : checks?.payee.agentsHeld === 0
-            ? ` A WARN hands the payment to the owner. The vault page offers the owner that approval only if the check is paid from the vault's operator key ${checks.vault.operator}.`
+            ? asked.payOnWarn
+              ? " You set payOnWarn, so a WARN prepares pay() for the operator key as the agent's own decision, and the owner is not asked."
+              : ` A WARN hands the payment to the owner. ${paysOperator ? notToOperator : `The vault page offers the owner that approval only if the check is paid from the vault's operator key ${operator}.`}`
             : ''
       } Sign the ${chain.name} offer in challenge.accepts from your Circle Gateway balance (x402 v2, GatewayWalletBatched, ${usd} USDC for risk_check), then send the same request again with the base64 PAYMENT-SIGNATURE: as that header on POST /api/x402/gateway/verify-then-pay, or as the payment argument of the verify_then_pay MCP tool.`,
     }),
@@ -734,9 +750,10 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
   if (!pre.ok) return refused(chain, pre.httpStatus, pre.code, pre.reason, pre.checks)
 
   // 5. no usable payment yet: the challenge
-  if (!payment || !payment.ok) return paymentRequired(chain, status, railDeps, pre.checks, payment && !payment.ok ? payment.reason : undefined)
+  const asked = { payOnWarn: parsed.payOnWarn, payee: p.payee }
+  if (!payment || !payment.ok) return paymentRequired(chain, status, railDeps, pre.checks, asked, payment && !payment.ok ? payment.reason : undefined)
   const shapeError = paymentShapeError(chain, payment, status.payTo)
-  if (shapeError) return paymentRequired(chain, status, railDeps, pre.checks, shapeError)
+  if (shapeError) return paymentRequired(chain, status, railDeps, pre.checks, asked, shapeError)
 
   // 6. the nonce reserved, so one signed payment reaches Gateway once; then the check, through the rail, in process
   const flowId = payment.nonce
@@ -1003,11 +1020,11 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
               : `There is no link for the vault page, because it will not offer this: ${whyNoApproval({ payer: settlement.payer, operator: pre.operator, payee: p.payee })}. The owner can settle it by sending`
           } ownerHandoff.ownerPay from the owner key ${pre.owner}${ownerHandoff ? `, with ${sendInstruction(ownerHandoff.ownerPay, 'ownerHandoff.ownerPay')}` : ''}; then POST {"txHash": "0x..."} to ${receiptUrl} and the server reads the receipt itself. This payment counts toward the agent's day on the vault: if it uses up today's room, the agent cannot pay until 00:00 UTC unless the owner raises the cap.`
     })(),
-    warn_no_human_gate: `WARN, and this vault's owner and operator are the same key (${pre.owner}), so there is no human to hand the payment to: do not pay. Nothing was prepared and no approval was recorded. Give the vault an owner key the agent does not hold${
+    warn_no_human_gate: `WARN, and this vault's owner and operator are the same key (${pre.owner}), so there is no human to hand the payment to: do not pay. Nothing was prepared and no approval was recorded. ${ONE_KEY_WAY_OUT}${
       // A payee we know nothing about, on a vault with no human by construction: pointing an
       // autonomous agent at payOnWarn here would walk it into paying a stranger with no one asked.
-      v.signals?.onPlatform === false ? '' : ", or ask again with payOnWarn to pay on the WARN as the agent's own decision"
-    }. The block is public at ${record.url}.`,
+      v.signals?.onPlatform === false ? '' : " Or ask again with payOnWarn to pay on the WARN as the agent's own decision."
+    } The block is public at ${record.url}.`,
     prepared:
       prepared?.simulation.ok === false
         ? `${v.effective === 'WARN' ? 'payOnWarn prepared this payment on a WARN' : 'The verdict allows this payment'}, but the vault would refuse it right now (${prepared.simulation.error}): do not send it. Ask again once the vault can pay.`
