@@ -25,7 +25,8 @@ import { provenKind, clearKindCache, readBackTransfer, settleWithDeadline, type 
 import { getChainById, CHAINS } from '../chains/index.js'
 import { PRICES } from '../asp/payment.js'
 import { RAIL_BASE_PRICES_USD } from '../x402-3009/rail.js'
-import { loadGatewaySettlementsResult, type GatewaySettlementRecord } from '../storage.js'
+import { loadGatewaySettlementsResult, persistGatewaySettlement, updateGatewaySettlement, type GatewaySettlementRecord } from '../storage.js'
+import { arcSeasonReport } from '../arc-season.js'
 
 const base = getChainById('base')!
 const PAY_TO = '0x000000000000000000000000000000000000dEaD'
@@ -52,7 +53,7 @@ function liveKind(over: Partial<GatewayKind['extra']> = {}): GatewayKind {
   }
 }
 
-type Spy = { settleCalls: unknown[]; searchCalls: unknown[]; persisted: GatewaySettlementRecord[]; updates: [string, unknown][] }
+type Spy = { settleCalls: unknown[]; searchCalls: unknown[]; persisted: GatewaySettlementRecord[]; updates: [string, unknown, string][] }
 
 function deps(
   over: {
@@ -86,8 +87,8 @@ function deps(
     persist: async (r: GatewaySettlementRecord) => {
       spy.persisted.push(r)
     },
-    update: async (n: string, patch: unknown) => {
-      spy.updates.push([n, patch])
+    update: async (n: string, payer: string, patch: unknown) => {
+      spy.updates.push([n, patch, payer])
     },
   }
   return { d, spy }
@@ -477,6 +478,137 @@ test('the refresh upgrades a credited row to completed once Gateway reports the 
   const moved = spy.updates.find(([n]) => n === still.authNonce)![1] as { outcome: string; gatewayStatus: string }
   assert.equal(moved.outcome, 'credited')
   assert.equal(moved.gatewayStatus, 'batched')
+  for (const [, , payer] of spy.updates) assert.equal(payer, PAYER, 'each update names the payer of the row it is for')
+})
+
+// ── one paid check counts once ────────────────────────────────────────────────────
+
+const arc = getChainById('arc-mainnet')!
+const onArc = { X402_GATEWAY_NETWORKS: arc.caip2, X402_GATEWAY_PAYTO: PAY_TO } as NodeJS.ProcessEnv
+const arcKind: GatewayKind = {
+  x402Version: 2,
+  scheme: 'exact',
+  network: arc.caip2,
+  extra: { name: 'GatewayWalletBatched', version: '1', verifyingContract: arc.gateway!.wallet.toLowerCase(), minValiditySeconds: 604800, assets: [{ symbol: 'USDC', address: (arc.contracts.usdc as string).toLowerCase(), decimals: 6 }] },
+}
+const arcHeader = (from: string = PAYER) => header({ accepted: { scheme: 'exact', network: arc.caip2, payTo: PAY_TO, amount: '1000' } }, { from })
+const arcTransfer = (over: Partial<GatewayTransfer> = {}) => transfer({ sendingNetwork: arc.caip2, recipientNetwork: arc.caip2, ...over })
+
+/** The rail on Arc Mainnet against the real file store, in a folder of its own, with Gateway stubbed. */
+function arcRail() {
+  clearKindCache()
+  const io = { getPool: async () => null, file: join(mkdtempSync(join(tmpdir(), 'gateway-retry-')), 'gateway-settlements.json') }
+  const rows = async () => {
+    const read = await loadGatewaySettlementsResult(io)
+    assert.ok(read.ok)
+    return read.rows
+  }
+  const gateway: { settle: () => Promise<GatewaySettleResponse>; transfers: GatewayTransfer[] } = {
+    settle: async () => ({ success: true, transaction: 'tr-1', network: arc.caip2, payer: PAYER }),
+    transfers: [arcTransfer()],
+  }
+  const { d } = deps({ kinds: [arcKind], env: onArc })
+  Object.assign(d, {
+    settle: () => gateway.settle(),
+    searchTransfers: async () => gateway.transfers,
+    load: rows,
+    persist: (rec: GatewaySettlementRecord) => persistGatewaySettlement(rec, io),
+    update: (nonce: string, payer: string, patch: Parameters<typeof updateGatewaySettlement>[2]) => updateGatewaySettlement(nonce, payer, patch, io),
+  })
+  const status = railStatus(onArc, arc.caip2)
+  /** What the public numbers say of the log as it stands. */
+  const counted = async () => {
+    const r = await arcSeasonReport({ gatewayRows: rows, facilitatorRows: async () => [], internalPayers: { gateway: [], facilitator: [] }, now: () => Date.parse('2026-09-11T12:00:00Z'), partners: [], vaults: [], refusals: [], flows: [] })
+    const proof = await railProof(status, { env: onArc, load: rows })
+    return { checks: r.milestone2.externalChecks.count, usd: r.usage.external.usd, wallets: r.usage.external.wallets, credited: proof.credited, externalOnProof: proof.externalSettlements, unconfirmed: proof.unconfirmed }
+  }
+  return { d, gateway, rows, counted, status, serve: (from?: string) => railServeTool('verify_agent', { agentId: '#1' }, arcHeader(from), status, d) }
+}
+
+test('a settle call with no answer, then the same header paid: one check on every number, before and after the refresh', async () => {
+  const rail = arcRail()
+  rail.gateway.settle = async () => {
+    throw new Error('socket hang up')
+  }
+  assert.equal((await rail.serve()).httpStatus, 502)
+  rail.gateway.settle = async () => ({ success: true, transaction: 'tr-1', network: arc.caip2, payer: PAYER })
+  assert.equal((await rail.serve()).httpStatus, 200)
+  assert.deepEqual((await rail.rows()).map((r) => r.outcome), ['unconfirmed', 'credited'])
+  const once = { checks: 1, usd: 0.001, wallets: [PAYER], credited: 1, externalOnProof: 1, unconfirmed: 1 }
+  assert.deepEqual(await rail.counted(), once)
+
+  // A new status word moves the credited row and leaves the other as it was.
+  rail.gateway.transfers = [arcTransfer({ status: 'batched' })]
+  assert.deepEqual(await refreshCreditedRows(rail.d), { checked: 1, upgraded: 0 })
+  assert.deepEqual((await rail.rows()).map((r) => [r.outcome, r.gatewayStatus]), [['unconfirmed', undefined], ['credited', 'batched']])
+  assert.deepEqual(await rail.counted(), once)
+
+  // The batch lands: the same.
+  rail.gateway.transfers = [arcTransfer({ status: 'completed', txHash: BATCH_TX })]
+  assert.deepEqual(await refreshCreditedRows(rail.d), { checked: 1, upgraded: 1 })
+  const rows = await rail.rows()
+  assert.deepEqual(rows.map((r) => r.outcome), ['unconfirmed', 'completed'])
+  assert.equal(rows[0].tx, undefined, 'the attempt with no answer takes no batch hash')
+  assert.equal(rows[1].tx, BATCH_TX)
+  assert.deepEqual(await rail.counted(), once)
+})
+
+test('rows anyone wrote under a nonce while settle had no answer stay unconfirmed when one real payment settles it', async () => {
+  const rail = arcRail()
+  const strangers = ['0x' + '21'.repeat(20), '0x' + '22'.repeat(20), '0x' + '23'.repeat(20)]
+  rail.gateway.settle = async () => {
+    throw new Error('socket hang up')
+  }
+  for (const from of strangers) assert.equal((await rail.serve(from)).httpStatus, 502)
+  rail.gateway.settle = async () => ({ success: true, transaction: 'tr-1', network: arc.caip2, payer: PAYER })
+  assert.equal((await rail.serve()).httpStatus, 200)
+  rail.gateway.transfers = [arcTransfer({ status: 'completed', txHash: BATCH_TX })]
+  assert.deepEqual(await refreshCreditedRows(rail.d), { checked: 1, upgraded: 1 })
+  assert.deepEqual((await rail.rows()).map((r) => [r.payer, r.outcome]), [[strangers[0], 'unconfirmed'], [strangers[1], 'unconfirmed'], [strangers[2], 'unconfirmed'], [PAYER, 'completed']])
+  assert.deepEqual(await rail.counted(), { checks: 1, usd: 0.001, wallets: [PAYER], credited: 1, externalOnProof: 1, unconfirmed: 3 })
+})
+
+test('two payers on one nonce: each credited row reads its own transfer and moves alone', async () => {
+  const rail = arcRail()
+  const other = '0x' + '31'.repeat(20)
+  const otherBatch = '0x' + 'ef'.repeat(32)
+  rail.gateway.transfers = [arcTransfer({ fromAddress: other, id: 'tr-other' }), arcTransfer({ id: 'tr-1' })]
+  assert.equal((await rail.serve(other)).httpStatus, 200)
+  assert.equal((await rail.serve()).httpStatus, 200)
+  assert.deepEqual((await rail.rows()).map((r) => [r.payer, r.outcome]), [[other, 'credited'], [PAYER, 'credited']])
+
+  // Gateway lists the other payer's landed transfer first: this payer's row does not take it.
+  rail.gateway.transfers = [arcTransfer({ fromAddress: other, id: 'tr-other', status: 'completed', txHash: otherBatch }), arcTransfer({ id: 'tr-1', status: 'batched' })]
+  assert.deepEqual(await refreshCreditedRows(rail.d), { checked: 2, upgraded: 1 })
+  const [theirs, ours] = await rail.rows()
+  assert.deepEqual([theirs.outcome, theirs.tx, theirs.transferId], ['completed', otherBatch, 'tr-other'])
+  assert.deepEqual([ours.outcome, ours.tx, ours.gatewayStatus, ours.transferId], ['credited', undefined, 'batched', 'tr-1'])
+})
+
+test('the update names the same rows in Postgres as in the file: a credited row of that nonce and that payer, whatever the case', async () => {
+  const seen: { text: string; params: unknown[] }[] = []
+  const pool = {
+    query: async (text: string, params: unknown[] = []) => {
+      seen.push({ text, params })
+      return { rows: [] }
+    },
+  }
+  const patch = { outcome: 'completed' as const, tx: BATCH_TX }
+  await updateGatewaySettlement(NONCE, '0x' + 'AB'.repeat(20), patch, { getPool: async () => pool })
+  const writes = seen.filter((q) => q.text.startsWith('UPDATE'))
+  assert.equal(writes.length, 1)
+  assert.equal(writes[0].text, "UPDATE gateway_settlements SET data = data || $2::jsonb WHERE data->>'authNonce' = $1 AND data->>'outcome' = 'credited' AND lower(data->>'payer') = $3")
+  assert.deepEqual(writes[0].params, [NONCE, JSON.stringify(patch), '0x' + 'ab'.repeat(20)])
+
+  // The file path, against the same three rows the WHERE tells apart.
+  const file = join(mkdtempSync(join(tmpdir(), 'gateway-update-')), 'gateway-settlements.json')
+  const io = { getPool: async () => null, file }
+  const row = (over: Partial<GatewaySettlementRecord>) => ({ outcome: 'credited', authNonce: NONCE, payer: '0x' + 'ab'.repeat(20), ...over }) as GatewaySettlementRecord
+  writeFileSync(file, JSON.stringify([row({ payer: '0x' + 'AB'.repeat(20) }), row({ outcome: 'unconfirmed' }), row({ payer: '0x' + 'cd'.repeat(20) }), row({ authNonce: '0x' + 'ee'.repeat(32) })]))
+  await updateGatewaySettlement(NONCE, '0x' + 'ab'.repeat(20), patch, io)
+  const read = await loadGatewaySettlementsResult(io)
+  assert.ok(read.ok)
+  assert.deepEqual(read.rows.map((r) => r.outcome), ['completed', 'unconfirmed', 'credited', 'credited'])
 })
 
 test('the OpenAPI document names every paid path with its price, the free tool, and the listing contact', () => {

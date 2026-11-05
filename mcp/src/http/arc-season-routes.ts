@@ -11,7 +11,7 @@
  * signs and sends nothing: it reads a deploy from the chain and records it if every check holds.
  */
 import { admitVaultDeploy, listAdmittedVaults, liveVaultAdmissionDeps } from '../arc-owner-vault-live.js'
-import { arcSeasonReport, liveArcSeasonDeps } from '../arc-season.js'
+import { arcSeasonReport, labelOwners, liveArcSeasonDeps } from '../arc-season.js'
 import { vaultSweepStatus } from '../arc-vault-sweep.js'
 import { readBody, sendJson, type RouteCtx } from './shared.js'
 
@@ -47,7 +47,7 @@ export async function handleArcSeasonRoutes(ctx: RouteCtx): Promise<boolean> {
   // ── GET /api/arc/vaults: the vaults admitted, whether it can admit right now, and what the sweep last did ──
   if (req.method === 'GET' && url.pathname === '/api/arc/vaults') {
     res.setHeader('Cache-Control', 'no-store')
-    const { httpStatus, body } = await listAdmittedVaults()
+    const { httpStatus, body } = await listAdmittedVaults(process.env, {}, labelOwners)
     sendJson(res, httpStatus, { ...body, sweep: vaultSweepStatus() })
     return true
   }

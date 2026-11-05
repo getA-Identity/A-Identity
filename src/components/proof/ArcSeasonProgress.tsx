@@ -19,7 +19,8 @@ import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
 import { Skeleton } from '../ui/skeleton'
 
 // incomplete: a log this number reads could not be read, so the count is a lower limit.
-type Metric = { count: number; target: number; note?: string; incomplete?: boolean }
+// mayIncludeTeamKeys: the flow log could not be read, so the agent key of a vault labeled team could be in it: an upper limit.
+type Metric = { count: number; target: number; note?: string; incomplete?: boolean; mayIncludeTeamKeys?: boolean }
 type RailTotals = { checks: number; usd: number }
 type UsageSide = {
   checks: number
@@ -94,7 +95,7 @@ type SeasonReport = {
   program: { name: string; deliverable2Due: string; milestone1Due: string; milestone2Due: string }
   // flows is the verify-then-pay flow log; a backend from before it sends no such field.
   logs: { gateway: LogRead; facilitator: LogRead; flows?: LogRead }
-  usage: { basis: string; internal: UsageSide; external: UsageSide & { byWallet: WalletRow[] } }
+  usage: { basis: string; internal: UsageSide; external: UsageSide & { byWallet: WalletRow[]; mayIncludeTeamKeys?: boolean } }
   milestone1: {
     title: string
     due: string
@@ -136,13 +137,17 @@ const REFRESH_MS = 60_000
 const usd = (n: number) => `$${n}`
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
-/** What a count reads as when a log behind it could not be read: never a plain 0. */
-const countLabel = (m: Metric) => (m.incomplete ? (m.count === 0 ? 'not readable' : `at least ${m.count}`) : String(m.count))
+/** What a count reads as when a log behind it could not be read: never a plain number it cannot stand behind. */
+const countLabel = (m: Metric) => {
+  if (m.incomplete && m.mayIncludeTeamKeys) return `about ${m.count}`
+  if (m.incomplete) return m.count === 0 ? 'not readable' : `at least ${m.count}`
+  return m.mayIncludeTeamKeys ? `at most ${m.count}` : String(m.count)
+}
 
 /** One metric: label, count over target, a thin bar, and the reason while the count is 0 or cannot be trusted (with keepNote, always). */
 function MetricRow({ label, metric, detail, keepNote }: { label: string; metric: Metric; detail?: string; keepNote?: boolean }) {
   const pct = metric.target > 0 ? Math.min(100, Math.round((metric.count / metric.target) * 100)) : 0
-  const met = metric.count >= metric.target
+  const met = metric.count >= metric.target && !metric.mayIncludeTeamKeys
   return (
     <div className="border-b border-border/60 py-3 last:border-0">
       <div className="flex items-baseline justify-between gap-x-4">
@@ -183,9 +188,9 @@ function MilestoneCard({ id, title, due, children }: { id: number; title: string
   )
 }
 
-/** The sum over the vaults, beside the count. A backend from before it sends none, and the row then adds nothing. */
-function ownerActionsLine(a?: { freezes: number; withdrawals: number }): string | undefined {
-  return a ? `${plural(a.freezes, 'freeze', 'freezes')} and ${plural(a.withdrawals, 'withdrawal', 'withdrawals')} signed by an owner wallet` : undefined
+/** The sum over the vaults, beside the count. A backend from before it sends none, and the row then adds nothing. While a vault is still being read it is a lower limit, and says so. */
+function ownerActionsLine(a?: { freezes: number; withdrawals: number; vaultsNotFullyRead?: number }): string | undefined {
+  return a ? `${plural(a.freezes, 'freeze', 'freezes')} and ${plural(a.withdrawals, 'withdrawal', 'withdrawals')} signed by an owner wallet${a.vaultsNotFullyRead ? ' so far' : ''}` : undefined
 }
 
 /** One kind of owner action on one vault: its hashes, or that none was found, said only when the whole chain was read. */
@@ -399,12 +404,9 @@ export default function ArcSeasonProgress() {
   const weekly = report?.afterProgram.weekly
   const skippedFlows = report?.logs.flows?.skipped ?? []
   const settlementsUnreadable = report ? !report.logs.gateway.readable || !report.logs.facilitator.readable : false
-  const unreadable = report
-    ? [
-        ...(['gateway', 'facilitator'] as const).filter((l) => !report.logs[l].readable),
-        ...(report.logs.flows && !report.logs.flows.readable ? ['verify-then-pay flow'] : []),
-      ]
-    : []
+  const settlementLogsDown = report ? (['gateway', 'facilitator'] as const).filter((l) => !report.logs[l].readable) : []
+  // The flow log is not a settlement log: what it holds is flows, and its being down can make the external numbers too high.
+  const flowLogDown = Boolean(report?.logs.flows && !report.logs.flows.readable)
 
   return (
     <section className="rounded-3xl border border-border bg-card p-6 sm:p-8" aria-labelledby="arc-season">
@@ -465,10 +467,18 @@ export default function ArcSeasonProgress() {
             As of {report.asOf}. Deliverable 2 was due {report.program.deliverable2Due}. {report.note}
           </p>
 
-          {unreadable.length > 0 && (
+          {settlementLogsDown.length > 0 && (
             <p className="mt-3 rounded-xl bg-warn/10 px-4 py-2.5 text-xs leading-relaxed text-warn">
-              The {unreadable.join(' and ')} log could not be read on this request, so what it holds is missing from every
+              The {settlementLogsDown.join(' and ')} log could not be read on this request, so what it holds is missing from every
               number below until it answers.
+            </p>
+          )}
+
+          {flowLogDown && (
+            <p className="mt-3 rounded-xl bg-warn/10 px-4 py-2.5 text-xs leading-relaxed text-warn">
+              The verify-then-pay flow log could not be read on this request, so the flows it holds are missing from the flow and
+              refusal counts below until it answers.
+              {external.mayIncludeTeamKeys && ' The agent key of a vault labeled team is known from that log, so it could be counted as external, and the external numbers below could be too high.'}
             </p>
           )}
 
@@ -552,7 +562,11 @@ export default function ArcSeasonProgress() {
           <p className="mt-1 max-w-[80ch] text-xs leading-relaxed text-foreground/55">{report.usage.basis}</p>
           <div className="mt-3 grid gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-2">
             <UsageCell title="Internal" caption="Our own buyer wallets, labeled, never hidden." side={report.usage.internal} />
-            <UsageCell title="External" caption="Wallets A-Identity does not control." side={external} />
+            <UsageCell
+              title="External"
+              caption={external.mayIncludeTeamKeys ? 'Wallets A-Identity does not control, and possibly the agent key of a vault labeled team until the flow log answers.' : 'Wallets A-Identity does not control.'}
+              side={external}
+            />
           </div>
 
           <div className="mt-4">

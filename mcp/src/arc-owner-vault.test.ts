@@ -5,6 +5,7 @@ import { getAddress, getCreateAddress, zeroAddress, type Hex } from 'viem'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import {
   ADMISSION_CHAIN,
+  ARC_OUR_PAYEES,
   PAGE_MAX_SESSION_SECONDS,
   REHEARSAL_CHAIN,
   OUR_KEY_ENV_VARS,
@@ -13,6 +14,7 @@ import {
   agreeAcrossHosts,
   blockFingerprint,
   collectOurAddresses,
+  committedOurKeys,
   constructorInputs,
   deployChecks,
   encodeCreationInput,
@@ -354,6 +356,7 @@ test('ours: agent owners, both rails, the validator, env receiving wallets, and 
     gatewayInternalPayers: ['0x4444444444444444444444444444444444444444'],
     facilitatorInternalPayers: ['0x4444444444444444444444444444444444444444'],
     attestationValidators: ['0x5555555555555555555555555555555555555555'],
+    ourPayees: [{ address: '0x7777777777777777777777777777777777777777', why: 'the payee is a test agent' }],
     committedKeyAddresses: { X402_3009_BUYER_KEY: '0x6666666666666666666666666666666666666666', CELO_BUYER_KEY: null },
     keyEnvVars: ourKeyEnvVars(),
     addressEnvVars: ['X402_GATEWAY_PAYTO'],
@@ -365,6 +368,7 @@ test('ours: agent owners, both rails, the validator, env receiving wallets, and 
   assert.deepEqual(of(OWNER), [], 'an owner the ledger labels as not ours is not ours')
   assert.deepEqual(of('0x4444444444444444444444444444444444444444'), ['x402-gateway internal payer', 'x402-3009 internal payer'])
   assert.equal(of('0x5555555555555555555555555555555555555555').length, 1)
+  assert.deepEqual(of('0x7777777777777777777777777777777777777777'), ['one of our own agents: the payee is a test agent'])
   assert.deepEqual(of(OTHER), ['env X402_GATEWAY_PAYTO'])
   assert.deepEqual(of(privateKeyToAccount(key).address), ['the address of env ARC_MAINNET_SIGNER_KEY'])
   assert.deepEqual(of(privateKeyToAccount(bare).address), ['the address of env CCTP_EVM_SIGNER_KEY'])
@@ -388,6 +392,11 @@ test('the live sources name the launch-day vault owner, both rails\' buyers and 
   assert.ok(arc.signerEnvVar && vars.includes(arc.signerEnvVar))
   for (const { name } of OUR_KEY_ENV_VARS) assert.ok(vars.includes(name))
   assert.equal(new Set(vars).size, vars.length)
+  // Our own agents are ours here too, and a vault one of them owns is refused, with no env at all.
+  for (const { address } of ARC_OUR_PAYEES) {
+    assert.ok(OURS.byAddress.has(address.toLowerCase()), address)
+    assert.ok(committedOurKeys().includes(address.toLowerCase()), `${address} is on the list the page is generated from`)
+  }
   // The env lists the rails read are honored too, so a wallet added there is refused here.
   const extra = '0x6666666666666666666666666666666666666666'
   const withEnv = collectOurAddresses(liveOurAddressSources({ X402_GATEWAY_INTERNAL_PAYERS: extra } as NodeJS.ProcessEnv))

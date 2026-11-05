@@ -1,6 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { privateKeyToAccount } from 'viem/accounts'
 import {
   ARC_OUR_PAYEES,
   arcSeasonReport,
@@ -13,12 +16,16 @@ import {
   mergeFlows,
   mergeVaults,
   flowKeysFromRows,
+  labelOwners,
+  liveFlowRows,
   seasonFlowsFromRows,
+  type ArcFlowKeys,
   type ArcSeasonDeps,
+  type ArcSeasonSkippedRow,
   type ArcOwnerHeldVault,
   type ArcVerifyThenPayFlow,
 } from './arc-season.js'
-import { REVOKED_KEY_EXPIRY, stateChecks, stateNotes, type VaultState } from './arc-owner-vault.js'
+import { REVOKED_KEY_EXPIRY, committedOurKeys, stateChecks, stateNotes, type VaultState } from './arc-owner-vault.js'
 import { getChainById } from './chains/index.js'
 import { PROVENANCE } from './chains/provenance.js'
 import { addressUrl, txUrl } from './chains/explorer.js'
@@ -377,6 +384,32 @@ test('an external wallet nobody attributed is reported as unattributed, never fo
   assert.equal(b.team, undefined)
 })
 
+test('a wallet nobody attributed counts as an external check, wallet and flow and toward no team metric, and the note says exactly that', async () => {
+  const first = gw({ payer: EXT_B, ts: '2026-10-05T10:00:00Z' })
+  const r = await arcSeasonReport(
+    deps({
+      partners: [{ wallet: EXT_A, team: 'Team A', publicReference: true }],
+      gateway: [gw({ payer: EXT_A, ts: '2026-10-05T11:00:00Z' }), first, gw({ payer: EXT_B, ts: '2026-10-12T10:00:00Z' })],
+      flows: [flow({ checkNonce: first.authNonce, payer: EXT_B, at: '2026-10-05T10:00:09Z' })],
+    }),
+  )
+  const unattributed = lower(EXT_B)
+  const m2 = r.milestone2
+  assert.match(m2.unattributed.note, /^1 external wallet\(s\) paid 2 check\(s\) without being attributed to a team\. They count as external checks, external wallets and external flows, and toward no team metric\.$/)
+  // The first half of the sentence, on every number it names.
+  assert.equal(m2.externalChecks.count, 3)
+  assert.ok(r.usage.external.wallets.includes(unattributed))
+  assert.ok(r.afterProgram.activeExternalWallets.wallets.includes(unattributed))
+  assert.ok(r.afterProgram.weekly.weeks.some((w) => w.activeWallets.includes(unattributed)))
+  assert.equal(m2.externalFlows.count, 1)
+  // And the second: paying in two weeks, on two days, makes no team of it.
+  assert.deepEqual(r.afterProgram.weekly.repeatWallets, [unattributed])
+  assert.deepEqual(r.afterProgram.weekly.repeatTeams, [])
+  assert.deepEqual(m2.externalTeamsLive.teams.map((t) => t.team), ['Team A'])
+  assert.deepEqual(m2.teamActiveOnSeveralDays.teams, [])
+  assert.deepEqual(m2.publicReference.names, ['Team A'])
+})
+
 // ── recorded DENYs and whose wallet they name ────────────────────────────────────────
 
 const OUR_VAULT_OWNER = '0x' + 'b7'.repeat(20)
@@ -416,18 +449,65 @@ test('the old-rule note is only about DENYs answered under the old rule', async 
   assert.doesNotMatch(own.milestone1.refusals.note, /rule of its day|sees WARN/)
 })
 
-test('only a linked DENY with a record counts: not a paid flow, an on-chain revert, or a nonce that names nothing', async () => {
+test('only a linked refusal counts: not a paid flow, and not a revert or a DENY on a nonce that names nothing', async () => {
   const paid = gw({ payer: OURS_GATEWAY })
-  const reverted = gw({ payer: OURS_GATEWAY })
   const r = await arcSeasonReport(
     deps({
-      gateway: [paid, reverted],
+      gateway: [paid],
       refusals: [],
-      flows: [flow({ checkNonce: paid.authNonce }), flow({ checkNonce: reverted.authNonce, outcome: 'refused', txHash: '0x' + '44'.repeat(32) }), denyFlow(nextNonce())],
+      flows: [flow({ checkNonce: paid.authNonce }), flow({ checkNonce: nextNonce(), outcome: 'refused', txHash: '0x' + '44'.repeat(32) }), denyFlow(nextNonce())],
     }),
   )
-  assert.equal(r.milestone1.checks.count, 2)
+  assert.equal(r.milestone1.checks.count, 1)
   assert.equal(r.milestone1.refusals.count, 0)
+  assert.match(r.milestone1.refusals.note, /^No inspectable refusal yet/)
+})
+
+test('a recorded policy revert is an inspectable refusal of the on-chain kind, once, beside a curated entry for the same hash', async () => {
+  const reverted = gw({ payer: OURS_GATEWAY })
+  const tx = '0x' + '4a'.repeat(32)
+  const revert = flow({ checkNonce: reverted.authNonce, outcome: 'refused', txHash: tx, note: "the vault's policy reverted the prepared pay on chain (AboveAutoApprove)" })
+  const r = await arcSeasonReport(deps({ gateway: [reverted], refusals: [], flows: [revert] }))
+  assert.deepEqual(r.milestone1.checks.linked, { paid: 0, refused: 1 })
+  assert.equal(r.milestone1.refusals.count, 1)
+  assert.deepEqual(r.milestone1.refusals.byKind, { 'vault-policy-on-chain': 1, 'deny-before-signing': 0 })
+  const [item] = r.milestone1.refusals.items
+  assert.deepEqual([item.kind, item.txHash, item.explorerUrl, item.note], ['vault-policy-on-chain', tx, txUrl(arc, tx), revert.note])
+  assert.match(r.milestone1.refusals.note, /^1 of the 2 kinds committed to: 1 vault-policy refusal\(s\) on chain and 0 DENY/)
+  assert.doesNotMatch(r.milestone1.refusals.note, /No inspectable refusal yet/)
+
+  // The same hash curated by hand, whatever its case, is the same refusal.
+  const curated = { kind: 'vault-policy-on-chain' as const, txHash: '0x' + '4A'.repeat(32), at: '2026-11-01T10:00:00Z', note: 'curated' }
+  const same = await arcSeasonReport(deps({ gateway: [reverted], refusals: [curated], flows: [revert] }))
+  assert.equal(same.milestone1.refusals.byKind['vault-policy-on-chain'], 1)
+  assert.deepEqual(same.milestone1.refusals.items.map((i) => i.note), ['curated'])
+
+  // Another hash is another refusal, and it is still one kind of two.
+  const other = await arcSeasonReport(deps({ gateway: [reverted], refusals: [{ ...curated, txHash: '0x' + '4b'.repeat(32) }], flows: [revert] }))
+  assert.equal(other.milestone1.refusals.byKind['vault-policy-on-chain'], 2)
+  assert.equal(other.milestone1.refusals.count, 1)
+
+  // With a recorded DENY beside it both kinds are shown, from the log alone.
+  const denied = gw({ payer: OURS_GATEWAY })
+  const both = await arcSeasonReport(deps({ gateway: [reverted, denied], refusals: [], flows: [revert, denyFlow(denied.authNonce)] }))
+  assert.equal(both.milestone1.refusals.count, 2)
+
+  // A reference that is not a hash gives a reviewer nothing to open on chain, so it is not this kind.
+  const notAHash = await arcSeasonReport(deps({ gateway: [reverted], refusals: [], flows: [{ ...revert, txHash: 'not-a-hash', evidenceUrl: 'https://a-identity.xyz/flows/x' }] }))
+  assert.equal(notAHash.milestone1.refusals.byKind['vault-policy-on-chain'], 0)
+
+  // On a payer that is not ours it is Milestone 2's.
+  const external = gw({ payer: EXT_A })
+  const theirs = await arcSeasonReport(deps({ gateway: [external], refusals: [], flows: [flow({ checkNonce: external.authNonce, outcome: 'refused', txHash: tx })] }))
+  assert.equal(theirs.milestone1.refusals.count, 0)
+  assert.equal(theirs.milestone2.externalFlows.linked.refused, 1)
+
+  // A long run is counted and not all listed, as the DENYs are.
+  const many = Array.from({ length: 7 }, () => gw({ payer: OURS_GATEWAY }))
+  const run = await arcSeasonReport(deps({ gateway: many, refusals: [], flows: many.map((c) => flow({ checkNonce: c.authNonce, outcome: 'refused' })) }))
+  assert.equal(run.milestone1.refusals.byKind['vault-policy-on-chain'], 7)
+  assert.equal(run.milestone1.refusals.items.length, 5)
+  assert.match(run.milestone1.refusals.note, /2 more recorded revert\(s\) are on checks\.items/)
 })
 
 test('a curated entry for the same record does not count twice, and a long run is counted and not all listed', async () => {
@@ -653,6 +733,14 @@ test("each vault carries its owner's actions with registry links, and how far th
   assert.match(r.milestone1.vaults.note, /1 vault\(s\) are not fully read yet/)
 })
 
+test('the line beside the vault count says so far while a vault is not fully read, and only then', async () => {
+  const reading = await arcSeasonReport(deps({ vaults: [vaultEntry(EXT_A)], ownerActions: async () => new Map([[lower(EXT_A), { freezeTxs: [], withdrawTxs: [], read: { state: 'reading' as const, scannedToBlock: '150' } }]]) }))
+  assert.deepEqual(reading.milestone1.vaults.ownerActions, { freezes: 0, withdrawals: 0, vaultsNotFullyRead: 1 })
+  const page = readFileSync(new URL('../../src/components/proof/ArcSeasonProgress.tsx', import.meta.url), 'utf8')
+  assert.match(page, /signed by an owner wallet\$\{a\.vaultsNotFullyRead \? ' so far' : ''\}`/)
+  assert.match(page, /detail=\{ownerActionsLine\(m1\.vaults\.ownerActions\)\}/, 'the payload carries it, and the row hands it over')
+})
+
 test('owner actions that cannot be read are said plainly on every vault and publish nothing; the vaults still count', async () => {
   const failing = await arcSeasonReport(
     deps({
@@ -784,6 +872,50 @@ test("the live deps read both rails' own internal-payer lists, so neither rail's
   // The hardcoded wallets of both rails are in, with or without the env additions.
   const bare = liveArcSeasonDeps({} as NodeJS.ProcessEnv)
   assert.ok(bare.internalPayers.gateway.length >= 1 && bare.internalPayers.facilitator.length >= 1)
+})
+
+test("what the repo calls ours is ours here too: its own agents, the committed list, and a key the launch-day vault rotated to", async () => {
+  // Our own agents, whatever a caller wires.
+  for (const { address } of ARC_OUR_PAYEES) {
+    const r = await arcSeasonReport(deps({ gateway: [gw({ payer: address })] }))
+    assert.deepEqual([r.milestone2.externalChecks.count, r.usage.internal.checks], [0, 1], address)
+  }
+  // An address the repo commits as ours that no rail lists as a buyer, such as the oracle validator.
+  const validator = '0xee602A161232Aac1436E812676b6626382FC84a9'
+  const before = await arcSeasonReport(deps({ gateway: [gw({ payer: validator })] }))
+  assert.equal(before.milestone2.externalChecks.count, 1, 'not by itself: the list is what says so')
+  const after = await arcSeasonReport(deps({ gateway: [gw({ payer: validator })], committedOurs: committedOurKeys() }))
+  assert.deepEqual([after.milestone2.externalChecks.count, after.usage.internal.checks], [0, 1])
+
+  // The launch-day vault gets a new agent key and that key pays: our own run, as the note on that vault says.
+  const launch = PROVENANCE.find((p) => p.chain === 'arc-mainnet')!.contracts.find((c) => c.name.startsWith('AgentSpendPolicy'))!.address
+  const rotated = '0x' + 'f7'.repeat(20)
+  const check = gw({ payer: rotated })
+  const paid = flow({ checkNonce: check.authNonce, payer: rotated, vault: launch, vaultKeys: { owner: OUR_VAULT_OWNER, operator: rotated } })
+  const own = await arcSeasonReport(deps({ gateway: [check], flows: [paid] }))
+  assert.deepEqual([own.milestone2.externalChecks.count, own.milestone2.externalFlows.count, own.milestone1.checks.count], [0, 0, 1])
+  assert.equal(own.milestone1.checks.byVault['launch-day'], 1)
+  // Through the row feed as well, on a row that maps to no flow.
+  const waiting = { flowId: check.authNonce, vault: launch.toLowerCase(), owner: OUR_VAULT_OWNER, operator: rotated, payee: EXT_B, amount: '1000', outcome: 'awaiting_human', detail: 'warn_handoff', check: { payer: rotated } } as unknown as VtpFlowRecord
+  const viaRow = await arcSeasonReport(deps({ gateway: [check], flowRows: async (onSkip, onKeys) => { for (const k of flowKeysFromRows([waiting])) onKeys?.(k); return seasonFlowsFromRows([waiting], onSkip) } }))
+  assert.equal(viaRow.milestone2.externalChecks.count, 0)
+  // A key on any other vault is not ours for it: only that vault's address says so.
+  const elsewhere = await arcSeasonReport(deps({ gateway: [check], flows: [{ ...paid, vault: EXT_C }] }))
+  assert.equal(elsewhere.milestone2.externalChecks.count, 1)
+
+  assert.match(after.usage.basis, /is an address this repo commits as ours \(admission refuses a vault owner from the same addresses, and our own agents are among them\), owns a vault labeled team/)
+  assert.match(after.usage.basis, /through such a vault or through the launch-day vault/)
+  assert.match(after.usage.basis, /Everything after the rails' lists counts as internal in this report only: the rails' own proof reads the lists alone/)
+  assert.doesNotMatch(after.usage.basis, /X402_3009_INTERNAL_PAYERS\) owns/, 'the comma that was missing')
+})
+
+test('the live deps read the committed list with no env: a key only the env knows is not on it', () => {
+  const key = '0x' + '77'.repeat(32)
+  const d = liveArcSeasonDeps({ X402_3009_FUNDER_KEY: key, X402_PAY_TO: EXT_A } as NodeJS.ProcessEnv)
+  assert.deepEqual(d.committedOurs, committedOurKeys())
+  assert.ok(!d.committedOurs!.includes(lower(EXT_A)), 'an env receiving wallet is not a committed address')
+  assert.ok(!d.committedOurs!.includes(lower(privateKeyToAccount(key as `0x${string}`).address)), 'and neither is the address of an env key')
+  for (const { address } of ARC_OUR_PAYEES) assert.ok(d.committedOurs!.includes(lower(address)), address)
 })
 
 test('flows the server recorded count like curated ones, once per check nonce, with the curated entry first', async () => {
@@ -1152,6 +1284,26 @@ test('a row that holds no flow names no key, and a row an old key wrote keeps na
   assert.deepEqual(flowKeysFromRows([row({ operator: EXT_B }), row({ operator: EXT_C })]).map((k) => k.operator), [EXT_B, EXT_C], 'both keys, after a setOperator')
 })
 
+test('the live loader passes on the key of every row that holds a flow, so a team vault\'s key reads as ours in production and not only in a stub', async () => {
+  const io = { getPool: async () => null, file: join(mkdtempSync(join(tmpdir(), 'season-flows-')), 'vtp-flows.json') }
+  const teamVault = '0x' + 'e3'.repeat(20)
+  const key = shouty(EXT_C)
+  // A WARN still waiting for its owner: a paid check whose row maps to no season flow, which is the case the keys exist for.
+  const waiting = { flowId: '0x' + 'ab'.repeat(32), network: arc.caip2, vault: teamVault, owner: EXT_A, operator: key, payee: EXT_B, amount: '1000', createdAt: '2026-10-18T10:00:01.000Z', outcome: 'awaiting_human', detail: 'warn_handoff', check: { payer: key } }
+  const reserved = { ...waiting, flowId: '0x' + 'cd'.repeat(32), operator: EXT_B, outcome: 'opening', detail: 'opening' }
+  writeFileSync(io.file, JSON.stringify([waiting, reserved]))
+
+  const seen: ArcFlowKeys[] = []
+  assert.deepEqual(await liveFlowRows(undefined, (k) => seen.push(k), io), [])
+  assert.deepEqual(seen, [{ vault: teamVault, operator: key, payer: key }])
+
+  const r = await arcSeasonReport(deps({ vaults: [vaultEntry(teamVault, { ownerKind: 'team', owner: EXT_A })], gateway: [gw({ payer: EXT_C })], flowRows: (onSkip, onKeys) => liveFlowRows(onSkip, onKeys, io) }))
+  assert.deepEqual(r.usage.internal.wallets, [lower(EXT_C)])
+  assert.equal(r.milestone2.externalChecks.count, 0)
+  // And it is this loader the route is given.
+  assert.equal(liveArcSeasonDeps({} as NodeJS.ProcessEnv).flowRows, liveFlowRows)
+})
+
 test('a curated flow through a vault labeled team names its key as a recorded one does', async () => {
   const teamVault = '0x' + 'e3'.repeat(20)
   const check = gw({ payer: EXT_C })
@@ -1166,7 +1318,7 @@ test('with the flow log down, the note on external checks says an agent key of a
   const down = async () => {
     throw new Error('db down')
   }
-  const said = /flow log could not be read on this request, so the agent key of a vault labeled team could be counted here/
+  const said = /flow log could not be read on this request, so the agent key of a vault labeled team could be counted as external until it answers/
   const withTeam = await arcSeasonReport(deps({ vaults: [vaultEntry(teamVault, { ownerKind: 'team', owner: EXT_A })], gateway: [gw({ payer: EXT_C })], flowRows: down }))
   assert.equal(withTeam.milestone2.externalChecks.count, 1)
   assert.match(withTeam.milestone2.externalChecks.note, said)
@@ -1175,10 +1327,63 @@ test('with the flow log down, the note on external checks says an agent key of a
   assert.doesNotMatch((await arcSeasonReport(deps({ vaults: [vaultEntry(teamVault, { ownerKind: 'team', owner: EXT_A })], gateway: [gw({ payer: EXT_C })], flowRows: async () => [] }))).milestone2.externalChecks.note, said)
 })
 
+test('with the flow log down, every number that overcount reaches says so, by a flag the page reads and in its own words', async () => {
+  const teamVault = vaultEntry('0x' + 'e3'.repeat(20), { ownerKind: 'team', owner: EXT_A })
+  const down = async () => {
+    throw new Error('db down')
+  }
+  const said = /The verify-then-pay flow log could not be read on this request, so the agent key of a vault labeled team could be counted as external until it answers\./
+  const r = await arcSeasonReport(deps({ vaults: [teamVault], gateway: [gw({ payer: EXT_C })], flowRows: down }))
+  // The key is on no list, so it reads as an outside wallet everywhere: this is the overcount itself.
+  assert.deepEqual(r.usage.external.wallets, [lower(EXT_C)])
+  assert.deepEqual([r.milestone1.checks.external, r.milestone2.externalChecks.count, r.milestone2.unattributed.wallets, r.afterProgram.activeExternalWallets.count, r.afterProgram.weekly.weeks.filter((w) => w.checks > 0).length], [1, 1, 1, 1, 1])
+  for (const number of [r.usage.external, r.milestone2.externalChecks, r.milestone2.unattributed, r.afterProgram.activeExternalWallets, r.afterProgram.weekly]) assert.equal(number.mayIncludeTeamKeys, true)
+  assert.equal(r.milestone1.checks.externalMayIncludeTeamKeys, true)
+  for (const words of [r.usage.basis, r.milestone2.externalChecks.note, r.milestone2.unattributed.note, r.afterProgram.weekly.note, r.afterProgram.note]) assert.match(words, said)
+  // That is a number too high, not too low, so it is not the incomplete flag, and the settlement logs did answer.
+  assert.equal(r.milestone2.externalChecks.incomplete, undefined)
+  assert.equal(r.afterProgram.activeExternalWallets.incomplete, undefined)
+  // The count of flows is not a number of external checks, so the page must not read this as its limit.
+  assert.equal((r.milestone1.checks as { mayIncludeTeamKeys?: true }).mayIncludeTeamKeys, undefined)
+
+  // Where it cannot be so, nothing is said: the log answered, no vault is labeled team, or nothing external is there to be too high.
+  const quiet = [
+    await arcSeasonReport(deps({ vaults: [teamVault], gateway: [gw({ payer: EXT_C })], flowRows: async () => [] })),
+    await arcSeasonReport(deps({ gateway: [gw({ payer: EXT_C })], flowRows: down })),
+    await arcSeasonReport(deps({ vaults: [teamVault], gateway: [gw({ payer: OURS_GATEWAY })], flowRows: down })),
+  ]
+  for (const q of quiet) {
+    assert.doesNotMatch(JSON.stringify(q), /[mM]ayIncludeTeamKeys/)
+    assert.doesNotMatch(JSON.stringify(q), /agent key of a vault labeled team could be/)
+  }
+
+  // A week or a wallet outside the window has no number of its own to flag.
+  const old = await arcSeasonReport(deps({ vaults: [teamVault], gateway: [gw({ payer: EXT_C, ts: new Date(NOW - 40 * DAY).toISOString() })], flowRows: down }))
+  assert.equal(old.afterProgram.activeExternalWallets.count, 0)
+  assert.equal(old.afterProgram.activeExternalWallets.mayIncludeTeamKeys, undefined)
+  assert.doesNotMatch(old.afterProgram.note, said)
+  assert.equal(old.milestone2.externalChecks.mayIncludeTeamKeys, true)
+
+  const page = readFileSync(new URL('../../src/components/proof/ArcSeasonProgress.tsx', import.meta.url), 'utf8').replace(/\s+/g, ' ')
+  // A limit in the right direction on every row that shows one of these counts, and never the green of a target met.
+  assert.match(page, /if \(m\.incomplete && m\.mayIncludeTeamKeys\) return `about \$\{m\.count\}`/)
+  assert.match(page, /return m\.mayIncludeTeamKeys \? `at most \$\{m\.count\}` : String\(m\.count\)/)
+  assert.match(page, /const met = metric\.count >= metric\.target && !metric\.mayIncludeTeamKeys/)
+  assert.match(page, /After the program: \{countLabel\(after\)\}/)
+  // The cell that has no count label says it in its caption.
+  assert.match(page, /caption=\{external\.mayIncludeTeamKeys \? 'Wallets A-Identity does not control, and possibly the agent key of a vault labeled team until the flow log answers\.'/)
+  // The banner: what a settlement log holds is missing from every number, and what the flow log holds is flows.
+  assert.match(page, /The \{settlementLogsDown\.join\(' and '\)\} log could not be read on this request, so what it holds is missing from every number below until it answers\./)
+  assert.match(page, /The verify-then-pay flow log could not be read on this request, so the flows it holds are missing from the flow and refusal counts below until it answers\./)
+  assert.match(page, /\{external\.mayIncludeTeamKeys && ' The agent key of a vault labeled team is known from that log, so it could be counted as external, and the external numbers below could be too high\.'\}/)
+  assert.doesNotMatch(page, /'verify-then-pay flow'/, 'the flow log is no longer one of the logs that banner speaks for')
+})
+
 test('a paying agent key of a vault nobody identified stays external, and the note says it could be ours', async () => {
   const unstated = '0x' + 'e5'.repeat(20)
-  const key = (operator: string) => async (_onSkip?: unknown, onKeys?: (k: { vault: string; operator: string }) => void) => {
-    onKeys?.({ vault: unstated, operator })
+  // The key paid that flow's check itself, which is the only way this sentence can be said of it.
+  const key = (operator: string) => async (_onSkip?: unknown, onKeys?: (k: ArcFlowKeys) => void) => {
+    onKeys?.({ vault: unstated, operator, payer: operator })
     return []
   }
   const said = /1 of these wallet\(s\) are the agent key on a flow through a vault admitted with the owner not identified, so one could be a team member's/
@@ -1193,6 +1398,109 @@ test('a paying agent key of a vault nobody identified stays external, and the no
   // A key on no such vault is not said to be anything.
   const elsewhere = await arcSeasonReport(deps({ vaults: [vaultEntry('0x' + 'e6'.repeat(20), { owner: EXT_B })], gateway: [gw({ payer: EXT_C })], flowRows: key(EXT_C) }))
   assert.doesNotMatch(elsewhere.milestone2.externalChecks.note, said)
+})
+
+test('naming a wallet as a vault\'s operator plants nothing on it: a key is doubted only on a flow it paid for itself, at both feeds', async () => {
+  const planted = '0x' + 'e8'.repeat(20)
+  const vault = vaultEntry(planted, { owner: EXT_B })
+  const said = /are the agent key on a flow through a vault admitted with the owner not identified/
+  const target = gw({ payer: EXT_C })
+
+  // A row that holds a flow, as the log feeds it: the stranger paid, the target is only named.
+  const row = (payer: string) => ({ flowId: '0x' + 'ab'.repeat(32), vault: planted, owner: EXT_B, operator: EXT_C, payee: EXT_A, amount: '1000', outcome: 'awaiting_human', detail: 'warn_handoff', check: { payer } }) as unknown as VtpFlowRecord
+  const fromRows = (r: VtpFlowRecord) => async (onSkip?: (x: ArcSeasonSkippedRow) => void, onKeys?: (k: ArcFlowKeys) => void) => {
+    for (const k of flowKeysFromRows([r])) onKeys?.(k)
+    return seasonFlowsFromRows([r], onSkip)
+  }
+  assert.deepEqual(flowKeysFromRows([row(EXT_A)]), [{ vault: planted, operator: EXT_C, payer: EXT_A }])
+  const byRow = await arcSeasonReport(deps({ vaults: [vault], gateway: [target], flowRows: fromRows(row(EXT_A)) }))
+  assert.doesNotMatch(byRow.milestone2.externalChecks.note, said)
+  const selfByRow = await arcSeasonReport(deps({ vaults: [vault], gateway: [target], flowRows: fromRows(row(shouty(EXT_C))) }))
+  assert.match(selfByRow.milestone2.externalChecks.note, said)
+
+  // The same through a flow the report mapped or a curated one, with no row feeding keys at all.
+  const denied = gw({ payer: EXT_A })
+  const byFlow = (payer: string) => flow({ checkNonce: denied.authNonce, outcome: 'refused', txHash: undefined, evidenceUrl: 'https://a-identity.xyz/flows/x', vault: planted, vaultKeys: { owner: EXT_B, operator: EXT_C }, payer })
+  const planting = await arcSeasonReport(deps({ vaults: [vault], gateway: [denied, target], flows: [byFlow(EXT_A)] }))
+  assert.doesNotMatch(planting.milestone2.externalChecks.note, said)
+  const paying = gw({ payer: EXT_C })
+  const selfByFlow = await arcSeasonReport(deps({ vaults: [vault], gateway: [paying], flows: [{ ...byFlow(EXT_C), checkNonce: paying.authNonce }] }))
+  assert.match(selfByFlow.milestone2.externalChecks.note, said)
+
+  // Counts move in none of these: only the sentence.
+  for (const r of [byRow, selfByRow]) assert.equal(r.milestone2.externalChecks.count, 1)
+})
+
+test('a vault labeled team needs no such thing: its key is ours whoever paid the row that names it', async () => {
+  const teamVault = '0x' + 'e9'.repeat(20)
+  const r = await arcSeasonReport(
+    deps({
+      vaults: [vaultEntry(teamVault, { ownerKind: 'team', owner: EXT_A })],
+      gateway: [gw({ payer: EXT_C })],
+      flowRows: async (_onSkip, onKeys) => {
+        onKeys?.({ vault: teamVault, operator: EXT_C, payer: EXT_B })
+        return []
+      },
+    }),
+  )
+  assert.deepEqual(r.usage.internal.wallets, [lower(EXT_C)])
+  assert.equal(r.milestone2.externalChecks.count, 0)
+})
+
+test('a wallet the partner list names is not said to be possibly ours, as an owner or as a key', async () => {
+  const partner = { wallet: shouty(EXT_C), team: 'Team C', publicReference: true }
+  const stated = /could be a team member's/
+  const held = '0x' + 'ea'.repeat(20)
+
+  // Its key pays through a vault someone else owns: the wallet is named, and the owner stays not identified.
+  const asKey = await arcSeasonReport(
+    deps({
+      partners: [partner],
+      vaults: [vaultEntry(held, { owner: EXT_B })],
+      gateway: [gw({ payer: EXT_C })],
+      flowRows: async (_onSkip, onKeys) => {
+        onKeys?.({ vault: held, operator: EXT_C, payer: EXT_C })
+        return []
+      },
+    }),
+  )
+  assert.deepEqual(asKey.milestone2.externalTeamsLive.teams.map((t) => t.team), ['Team C'])
+  assert.doesNotMatch(asKey.milestone2.externalChecks.note, stated)
+  assert.deepEqual(asKey.milestone1.vaults.byKind, { team: 0, external: 0, unstated: 1 })
+
+  // It deployed the vault from the wallet it pays with: admitted automatically, the vault row says outside the team.
+  const asOwner = await arcSeasonReport(deps({ partners: [partner], admittedVaults: async () => [vaultEntry(held, { owner: EXT_C, note: 'the chain cannot say whose wallet this is, so the owner is not identified' })], gateway: [gw({ payer: EXT_C })] }))
+  assert.doesNotMatch(asOwner.milestone2.externalChecks.note, stated)
+  assert.deepEqual(asOwner.milestone1.vaults.byKind, { team: 0, external: 1, unstated: 0 })
+  assert.match(asOwner.milestone1.vaults.note, /0 of them someone on our own team, in their own wallet; 1 someone outside the team; 0 not identified/)
+  assert.doesNotMatch(asOwner.milestone1.vaults.note, /admitted automatically after every check passed, with the owner not identified/)
+  const [item] = asOwner.milestone1.vaults.items
+  assert.equal(item.ownerKind, 'external')
+  assert.doesNotMatch(item.note, /not identified/, 'and its own note does not contradict the label')
+  assert.doesNotMatch(item.note, /Team C/, 'and it names nobody')
+
+  // A person's entry stands even where it says nobody knows, and the note still does not doubt a wallet the list names.
+  const entered = await arcSeasonReport(deps({ partners: [partner], vaults: [vaultEntry(held, { owner: EXT_C })], gateway: [gw({ payer: EXT_C })] }))
+  assert.deepEqual(entered.milestone1.vaults.byKind, { team: 0, external: 0, unstated: 1 })
+  assert.doesNotMatch(entered.milestone2.externalChecks.note, stated)
+
+  // Without the listing it is what it was.
+  const unlisted = await arcSeasonReport(deps({ admittedVaults: async () => [vaultEntry(held, { owner: EXT_C })], gateway: [gw({ payer: EXT_C })] }))
+  assert.deepEqual(unlisted.milestone1.vaults.byKind, { team: 0, external: 0, unstated: 1 })
+  assert.match(unlisted.milestone2.externalChecks.note, /1 of these wallet\(s\) also own a vault admitted with the owner not identified/)
+})
+
+test('labelOwners: a person\'s entry wins, a partner\'s wallet is external, and nothing else moves a label', () => {
+  const a = vaultEntry(EXT_A)
+  const b = vaultEntry(EXT_B, { owner: EXT_C })
+  const c = vaultEntry(EXT_C, { owner: EXT_A })
+  const curated = [vaultEntry(shouty(EXT_A), { ownerKind: 'team', note: 'a person said so' })]
+  const partners = [{ wallet: EXT_C, team: 'Team C', publicReference: false }, { wallet: EXT_B, team: 'Team B', publicReference: false }]
+  assert.deepEqual(labelOwners([a, b, c], curated, partners).map((v) => [v.address, v.ownerKind]), [[EXT_A, 'team'], [EXT_B, 'external'], [EXT_C, 'unstated']])
+  assert.equal(labelOwners([a], curated, partners)[0].note, 'a person said so')
+  assert.deepEqual(labelOwners([a, b, c], [], []), [a, b, c], 'with nobody having said anything, nothing changes')
+  // A person's word stands over the partner list too.
+  assert.equal(labelOwners([vaultEntry(EXT_A, { owner: EXT_C })], curated, partners)[0].ownerKind, 'team')
 })
 
 test('the guide says who else the season report reads as internal, and where that stops', () => {
@@ -1268,7 +1576,7 @@ test('with the flow log unreadable nobody is told how many checks have nothing l
   assert.equal(r.milestone1.checks.incomplete, true)
   assert.doesNotMatch(r.milestone1.checks.note, /No verify-then-pay flow yet|nothing linked/)
   assert.equal(r.milestone1.refusals.incomplete, true)
-  assert.match(r.milestone1.refusals.note, /any DENY it holds is missing from this count/)
+  assert.match(r.milestone1.refusals.note, /any refusal it holds is missing from this count/)
   assert.equal(r.milestone2.externalFlows.incomplete, true)
   assert.doesNotMatch(r.milestone2.externalFlows.note, /No external verify-then-pay flow has reached/)
   assert.equal(r.milestone2.externalChecks.incomplete, undefined, 'the settlement logs answered')
@@ -1293,7 +1601,7 @@ test("an external team's verify-then-pay flow is listed under Milestone 2, by th
   const quiet = await arcSeasonReport(deps({ gateway: [ours], flows: [paid] }))
   assert.equal(quiet.milestone2.externalFlows.count, 0)
   assert.match(quiet.milestone2.externalFlows.note, /^No external verify-then-pay flow has reached a vault payment or a refusal yet/)
-  assert.match(quiet.milestone2.externalFlows.note, /A WARN waiting for its owner has a public record/)
+  assert.match(quiet.milestone2.externalFlows.note, /A payment waiting for its owner has a public record/)
   const early = await arcSeasonReport(deps({ gateway: [theirs], flows: [flow({ checkNonce: theirs.authNonce, at: '2026-11-03T09:00:00.000Z' })] }))
   assert.equal(early.milestone2.externalFlows.count, 0)
   const reused = await arcSeasonReport(deps({ gateway: [theirs, ours], flows: [flow({ checkNonce: ours.authNonce, txHash: tx }), { ...paid }] }))
