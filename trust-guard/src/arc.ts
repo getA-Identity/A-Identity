@@ -28,8 +28,8 @@
  *      `awaiting_human` with a prepared ownerPay for the owner, unless payOnWarn is set. On a
  *      payment only the owner can make, ALLOW and WARN both return `awaiting_human`, and payOnWarn
  *      cannot change that. Either way `approvalUrl` is the link to send the owner, when the check
- *      was paid by the operator key: the vault page offers no other, and it is null then. A
- *      Gateway error, a settlement echo that does not match what was signed, an unknown
+ *      was paid by the operator key and the payee is another: the vault page offers no other, and
+ *      it is null then. A Gateway error, a settlement echo that does not match what was signed, an unknown
  *      decision, a reputation that is not a finite number, an ALLOW below the reputation ALLOW
  *      needs, a WARN carrying signals that force DENY and a verdict about another agent or
  *      amount are never ALLOW: each throws.
