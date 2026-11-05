@@ -42,6 +42,7 @@ import {
   moreThanOneSend,
   noAnswerLine,
   notFromAgentLine,
+  notHereLine,
   otherSends,
   ownerOnlyLine,
   ownerOnlyStands,
@@ -348,7 +349,7 @@ export default function OwnerApprovals({ chain, vault: pageVault, wallet, canAct
         ))}
         {nothing && <p className="text-sm text-foreground/70">Nothing is waiting for this vault's owner right now.</p>}
         {list?.ok && list.unreadable > 0 && <p className="text-xs text-foreground/70">{list.unreadable} more could not be read, so nothing is offered for them.</p>}
-        {list?.ok && list.truncated && <p className="text-xs text-foreground/70">Only the newest are listed here. If your agent has more waiting, deal with these first.</p>}
+        {list?.ok && list.truncated && <p className="text-xs text-foreground/70">Only the newest 20 are listed, and saying no does not make room. If one you expect is missing, ask your agent to check that payee again.</p>}
         {stopped.length > 0 && (
           <p className="text-xs text-foreground/70">
             {stopped.length} {stopped.length === 1 ? 'request came' : 'requests came'} from an agent key that has since been revoked or run out, so {stopped.length === 1 ? 'it is' : 'they are'} not offered. If one still needs paying, give your agent a working key and ask it for a new check.
@@ -378,7 +379,7 @@ export default function OwnerApprovals({ chain, vault: pageVault, wallet, canAct
         {others > 0 && (
           <p className="rounded-xl border border-border bg-background/60 px-3 py-2 text-xs text-foreground/75">
             {capped ? 'Many' : others} other {others === 1 ? 'check names' : 'checks name'} this vault, paid for by a key that is not your agent's key now. Anyone can buy a check that names any vault, so this page cannot show {others === 1 ? 'it' : 'they'} came from your agent, and nothing about{' '}
-            {others === 1 ? 'it' : 'them'} is listed. If someone you do not know sends you a link to one, do not act on it.
+            {others === 1 ? 'it' : 'them'} is listed. If someone you do not know sends you a link to one, do not act on it. A check your agent paid for from a separate key reads this way too, and this page offers nothing for it.
           </p>
         )}
       </div>
@@ -451,6 +452,7 @@ function FlowCard(props: CardProps) {
       <div role="status" data-flow={flow.flowId} className="rounded-xl border border-warn/30 bg-warn/10 p-4 text-sm text-foreground">
         <div className="font-semibold">Nothing to approve here.</div>
         <p className="mt-1 break-words text-foreground/85">{standing.why}</p>
+        {standing.kind === 'refused' && <VerdictReasons reasons={flow.verdict?.reasons ?? []} />}
       </div>
     )
   const replaced = record ? replacedSendLine(record) : null
@@ -482,6 +484,21 @@ function TxLink({ chain, hash }: { chain: Chain; hash: string | null }) {
         </a>
       )}
     </div>
+  )
+}
+
+/** A check's reasons, in the server's own words. */
+function VerdictReasons({ reasons }: { reasons: readonly string[] }) {
+  if (reasons.length === 0) return null
+  return (
+    <>
+      <p className="mt-1 text-xs text-foreground/65">Its reasons, as our server gave them:</p>
+      <ul className="mt-1 list-disc space-y-0.5 break-words pl-4 text-xs text-foreground/85">
+        {reasons.map((r, i) => (
+          <li key={i}>{r}</li>
+        ))}
+      </ul>
+    </>
   )
 }
 
@@ -548,7 +565,9 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
   const big = aboveSoftWarn(flow.amount, vault.decimals)
   const onlyLine = ownerOnlyLine(flow.ownerOnly, flow.amount, vault)
   const account = { account: wallet.account, chainId: wallet.chainId }
-  const { heading, asks } = cardHeading(standing, { sent: record !== null && sentHere, held: hold.held, paid: paid !== null })
+  const cardState = { sent: record !== null && sentHere, held: hold.held, paid: paid !== null, canAct }
+  const { heading, asks } = cardHeading(standing, cardState)
+  const offHere = notHereLine(standing, cardState)
   // This tab is the one waiting on the wallet right now: its prompt may be open, unsigned.
   const asking = busy === 'confirm'
   const promptOpen = asking && record !== null && !record.tx
@@ -665,16 +684,7 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
         </Row>
         <Row label="What the check said">
           <p className="text-sm">{verdictMeaning(flow.verdict?.effective ?? null, flow.verdict?.reasons ?? [])}</p>
-          {flow.verdict && flow.verdict.reasons.length > 0 && (
-            <>
-              <p className="mt-1 text-xs text-foreground/65">Its reasons, as our server gave them:</p>
-              <ul className="mt-1 list-disc space-y-0.5 break-words pl-4 text-xs text-foreground/85">
-                {flow.verdict.reasons.map((r, i) => (
-                  <li key={i}>{r}</li>
-                ))}
-              </ul>
-            </>
-          )}
+          <VerdictReasons reasons={flow.verdict?.reasons ?? []} />
         </Row>
         <Row label="When it was checked">
           {flow.checkedAtSec !== null ? `${agePhrase(age)} ago, at ${localTime(flow.checkedAt)} your time. ` : 'The record gives no time we can read. '}
@@ -704,6 +714,8 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
           {big && <p className="font-semibold text-warn">This is more than 10 USDC. Check the address character by character.</p>}
         </div>
       )}
+
+      {offHere && <p className="mt-3 rounded-lg border border-border bg-card px-3 py-2 text-xs text-foreground/85">{offHere}</p>}
 
       {standing.kind === 'stale' && (
         <p className="mt-3 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
@@ -755,7 +767,7 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
 
       {canAct && offer && read === 'reading' && (
         <p className="mt-3 inline-flex items-center gap-2 text-xs text-foreground/70">
-          <Loader2 size={12} className="animate-spin" aria-hidden="true" /> Reading the vault's recent payments, so this cannot be paid twice...
+          <Loader2 size={12} className="animate-spin" aria-hidden="true" /> Reading the vault's recent payments, so a payment already made is not offered again...
         </p>
       )}
       {canAct && offer && read === 'failed' && (

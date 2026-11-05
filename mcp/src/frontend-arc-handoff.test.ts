@@ -59,7 +59,8 @@ type Rules = {
   followedHere: (r: Send | null, s: Standing) => boolean
   flowIsOver: (s: Standing) => boolean
   otherSends: (s: Send) => Record<string, unknown>[]
-  cardHeading: (s: Standing, o: { sent: boolean; held: boolean; paid: boolean }) => { heading: string; asks: boolean }
+  cardHeading: (s: Standing, o: { sent: boolean; held: boolean; paid: boolean; canAct: boolean }) => { heading: string; asks: boolean }
+  notHereLine: (s: Standing, o: { sent: boolean; held: boolean; paid: boolean; canAct: boolean }) => string | null
   moreThanOneSend: (s: Send) => boolean
   replacedSendLine: (s: Send) => string | null
   readOrder: (records: Send[]) => Send[]
@@ -354,15 +355,37 @@ test('a request from a key that was revoked or ran out gets no action, and does 
 
 test('the card asks only while it can be approved, and not once something was sent', async () => {
   const r = await rules()
-  const none = { sent: false, held: false, paid: false }
+  const none = { sent: false, held: false, paid: false, canAct: true }
   assert.deepEqual(r.cardHeading({ kind: 'approvable' }, none), { heading: 'Your agent asks you to pay this', asks: true })
   assert.equal(r.cardHeading({ kind: 'no_balance', have: 0n }, none).asks, true)
-  assert.deepEqual(r.cardHeading({ kind: 'approvable' }, { sent: true, held: true, paid: false }), { heading: 'What this browser sent for this request', asks: false })
-  assert.equal(r.cardHeading({ kind: 'approvable' }, { sent: false, held: false, paid: true }).asks, false)
+  assert.deepEqual(r.cardHeading({ kind: 'approvable' }, { sent: true, held: true, paid: false, canAct: true }), { heading: 'What this browser sent for this request', asks: false })
+  assert.equal(r.cardHeading({ kind: 'approvable' }, { sent: false, held: false, paid: true, canAct: true }).asks, false)
   assert.equal(r.cardHeading({ kind: 'stale', ageSeconds: 90_000n }, none).asks, false)
   // The budget line, what it would leave and the rest sit behind that.
   const page = repo('src/components/app/arc/OwnerApprovals.tsx')
   assert.ok(page.indexOf('{asks && (') < page.indexOf('{budgetLine(flow.amount, vault)}'))
+})
+
+test('on a vault this page builds no calls for, the card does not ask or talk of approving, and it gives the next step', async () => {
+  const r = await rules()
+  const off = { sent: false, held: false, paid: false, canAct: false }
+  assert.deepEqual(r.cardHeading({ kind: 'approvable' }, off), { heading: 'A payment your agent asked for', asks: false })
+  assert.equal(r.cardHeading({ kind: 'no_balance', have: 0n }, off).asks, false)
+  assert.match(String(r.notHereLine({ kind: 'approvable' }, off)), /send ownerPay from the owner key: the guide has a sample/)
+  assert.match(String(r.notHereLine({ kind: 'no_balance', have: 0n }, off)), /send ownerPay from the owner key/)
+  assert.doesNotMatch(String(r.notHereLine({ kind: 'approvable' }, off)), /approv/i)
+  // Where this page can act the button is the next step, and what was sent or already paid has its own lines.
+  assert.equal(r.notHereLine({ kind: 'approvable' }, { ...off, canAct: true }), null)
+  assert.equal(r.notHereLine({ kind: 'approvable' }, { ...off, held: true }), null)
+  assert.equal(r.notHereLine({ kind: 'approvable' }, { ...off, paid: true }), null)
+  assert.equal(r.notHereLine({ kind: 'stale', ageSeconds: 90_000n }, off), null)
+  // The page hands it canAct, and both lines about approving and the budget line sit behind what that returns.
+  const page = repo('src/components/app/arc/OwnerApprovals.tsx')
+  assert.match(page, /const cardState = \{ sent: record !== null && sentHere, held: hold\.held, paid: paid !== null, canAct \}/)
+  assert.match(page, /const \{ heading, asks \} = cardHeading\(standing, cardState\)/)
+  assert.match(page, /\{asks && <span className="text-xs text-foreground\/65">It can be approved for 24 hours after the check\.<\/span>\}/)
+  assert.ok(page.indexOf('{asks && (') < page.indexOf('{FROZEN_LINE}'))
+  assert.match(page, /\{offHere && <p /)
 })
 
 // ── staleness ─────────────────────────────────────────────────────────────────────
@@ -1258,7 +1281,7 @@ test('the page says what it knows about where the money can come from, and nothi
   assert.match(page, /This page sends nothing without your own wallet/)
   assert.match(page, /one within its limits is one its key could still send by itself/)
   assert.match(page, /\{oursKey \? '' : ' A-Identity holds no key and signs nothing\.'\}/, 'and it does not say so on a vault that is ours')
-  assert.match(repo('src/routes/app/ArcVault.tsx'), /oursKey=\{ours \|\| ownerIsOurKey\}/)
+  assert.match(repo('src/routes/app/ArcVault.tsx'), /oursKey=\{ours \|\| ownerIsOurKey \|\| isOurKey\(v\.network, v\.operator, known\?\.ourKeys\)\}/, 'its agent key can be one of ours too, as the Status panel says')
   // The review promises what Confirm rechecks, and the fee is not on that list.
   assert.doesNotMatch(page, /if any of it has changed, nothing is sent/)
   assert.match(page, /The network fee can move a little in that time, and your wallet shows the one it will charge/)
@@ -1400,6 +1423,37 @@ test('the hold the card asks about is everything else from this page, whether or
   const route = repo('src/routes/app/ArcVault.tsx')
   assert.match(route, /held=\{shownTx\?\.outcome === 'pending' \|\| setupTx !== null \|\| readBehind\}/)
   assert.doesNotMatch(route, /held=\{held && !handoffHeld\}/, 'which dropped the rest exactly when an approval held the page')
+})
+
+test('what the list cannot show is said as that, and a read that failed does not contradict the card it did not stop', async () => {
+  const page = repo('src/components/app/arc/OwnerApprovals.tsx')
+  const { VAULT_FLOWS_LIMIT } = (await import('./verify-then-pay/core.js')) as typeof import('./verify-then-pay/core.js')
+  // The list is newest first with no age bound, and neither age nor a no closes a flow, so it can stay truncated for good.
+  assert.match(page, new RegExp(`Only the newest ${VAULT_FLOWS_LIMIT} are listed, and saying no does not make room\\. If one you expect is missing, ask your agent to check that payee again\\.`))
+  assert.doesNotMatch(page, /deal with these first/)
+  assert.match(repo('docs/chains/arc-integration.mdx'), /saying no on the page records nothing, so neither age nor a no\s+makes room/)
+  // The named flow's own read can fail with the list still holding it, and they have separate budgets.
+  assert.match(page, /\{direct && named\?\.failed && !linked && \(/)
+})
+
+test('a check from a separate key is said to get nothing here, with no way promised, and a refused card gives the check its reasons', () => {
+  const page = repo('src/components/app/arc/OwnerApprovals.tsx')
+  assert.match(page, /A check your agent paid for from a separate key reads this way too, and this page offers nothing for it\./)
+  assert.doesNotMatch(page.slice(page.indexOf('other {others === 1'), page.indexOf('function Row(')), /Have it pay/)
+  assert.match(page, /\{standing\.kind === 'refused' && <VerdictReasons reasons=\{flow\.verdict\?\.reasons \?\? \[\]\} \/>\}/)
+})
+
+test('the words about who can send and what a read is for say what the page does', () => {
+  const page = repo('src/components/app/arc/OwnerApprovals.tsx')
+  assert.match(page, /so a payment already made is not offered again\.\.\./)
+  assert.doesNotMatch(page, /so this cannot be paid twice/, 'a prompt answered after a later send still pays')
+  const guide = repo('docs/chains/arc-integration.mdx')
+  assert.match(guide, /On this page only your own wallet can send the payment/)
+  assert.doesNotMatch(guide, /only ever leaves from your own wallet/, 'it leaves from the vault, as the card says')
+  // What the page follows, and the one order it does not reach.
+  assert.doesNotMatch(guide, /It keeps and follows both hashes/)
+  assert.match(guide, /keeps and follows each hash your wallet hands back/)
+  assert.match(guide, /shows only in the vault's activity on the page/)
 })
 
 test('declining is kept in this browser only, and the card says nothing records it', async () => {

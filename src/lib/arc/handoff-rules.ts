@@ -730,11 +730,19 @@ export function ownerOnlyLine(code: HandoffFlow['ownerOnly'], amount: bigint, li
   return "When your agent checked this, the payee was not on the vault's allowlist, so its key could not pay it. If that is still so, only you can."
 }
 
-/** The card's heading. It asks only while it can be approved, and not once something was sent. */
-export function cardHeading(s: HandoffStanding, o: { sent: boolean; held: boolean; paid: boolean }): { heading: string; asks: boolean } {
-  const asks = (s.kind === 'approvable' || s.kind === 'no_balance') && !o.held && !o.paid
+type CardState = { sent: boolean; held: boolean; paid: boolean; canAct: boolean }
+
+/** The card's heading. It asks only while it can be approved here, and not once something was sent. */
+export function cardHeading(s: HandoffStanding, o: CardState): { heading: string; asks: boolean } {
+  const asks = o.canAct && (s.kind === 'approvable' || s.kind === 'no_balance') && !o.held && !o.paid
   if (asks) return { heading: 'Your agent asks you to pay this', asks }
   return { heading: o.sent ? 'What this browser sent for this request' : 'A payment your agent asked for', asks }
+}
+
+/** The next step on a request this page builds no call for, which it would otherwise leave with no button and nothing to do. */
+export function notHereLine(s: HandoffStanding, o: CardState): string | null {
+  if (o.canAct || (s.kind !== 'approvable' && s.kind !== 'no_balance') || o.held || o.paid) return null
+  return 'This page does not send this one. To pay it, send ownerPay from the owner key: the guide has a sample.'
 }
 
 /** The wallet was asked for this flow and no hash came back, so a prompt may still be open in it, wherever that wallet is. */
