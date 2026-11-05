@@ -49,6 +49,7 @@ import {
   paidBefore,
   paymentsRead,
   promptLine,
+  readOrder,
   refusedLead,
   replacedSendLine,
   replacedWithNoPayment,
@@ -139,12 +140,10 @@ export default function OwnerApprovals({ chain, vault: pageVault, wallet, canAct
     setReading(true)
     const sent = loadHandoffs(network, address)
     setRecords(sent)
-    // A send with no answer first: it is the one that must keep being followed.
-    const openFirst = [...sent.filter((r) => !r.server), ...sent.filter((r) => r.server)]
     const [waiting, one, mine] = await Promise.all([
       readWaitingFlows(address),
       direct ? readFlow(direct) : Promise.resolve(null),
-      Promise.all(openFirst.slice(0, LOCAL_FLOWS_READ).map((r) => readFlow(r.flowId))),
+      Promise.all(readOrder(sent).slice(0, LOCAL_FLOWS_READ).map((r) => readFlow(r.flowId))),
     ])
     setList(waiting)
     setNamed(direct ? { flow: one?.ok ? one.flow : null, failed: one && !one.ok ? one.reason : null } : null)
@@ -333,7 +332,7 @@ export default function OwnerApprovals({ chain, vault: pageVault, wallet, canAct
             The link names a payment, and what it names is not a payment id. Nothing here comes from it.
           </p>
         )}
-        {direct && named?.failed && (
+        {direct && named?.failed && !linked && (
           <p role="alert" className="rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-foreground">
             The payment this link names could not be read: {named.failed} Nothing is offered from it.
           </p>

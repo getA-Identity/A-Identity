@@ -62,6 +62,7 @@ type Rules = {
   cardHeading: (s: Standing, o: { sent: boolean; held: boolean; paid: boolean }) => { heading: string; asks: boolean }
   moreThanOneSend: (s: Send) => boolean
   replacedSendLine: (s: Send) => string | null
+  readOrder: (records: Send[]) => Send[]
   promptMayBeOpen: (r: Send) => boolean
   promptLine: (r: Send | null, o: { paid: boolean; standing?: Standing }) => string | null
   noAnswerLine: (promptEnded: boolean) => string
@@ -1307,6 +1308,7 @@ test('the server having not read a landed payment is said as that, and does not 
 
 test('an answer in this browser has a line of its own, and an old one does not stay as an empty card', async () => {
   const r = await rules()
+  const page0 = repo('src/components/app/arc/OwnerApprovals.tsx')
   const now = Date.parse('2026-11-04T12:00:00Z')
   const answered = (at: number, flowId: string) => send({ flowId, tx: txRecord('settled'), server: { state: 'settled', txHash: TX, flowId, at: new Date(at).toISOString() } })
   const old = answered(now - r.ANSWER_SHOWN_MS - 1, '0x' + '01'.repeat(32))
@@ -1316,6 +1318,15 @@ test('an answer in this browser has a line of its own, and an old one does not s
   assert.deepEqual(r.unreadRecords([old, recent, open, hasFlow], [hasFlow.flowId], now).map((x) => x.flowId), [recent.flowId, open.flowId])
   // Freed and unread: nothing to follow.
   assert.deepEqual(r.unreadRecords([send({ released: true })], [], now), [])
+  // A record of more than one send keeps saying so however old its answer, because nothing else names the other.
+  const both = send({ flowId: '0x' + '05'.repeat(32), tx: txRecord('settled'), alsoSent: [txRecord('settled', { hash: TX2 })], server: { state: 'settled', txHash: TX, flowId: FLOW, at: new Date(now - r.ANSWER_SHOWN_MS - 1).toISOString() } })
+  assert.deepEqual(r.unreadRecords([both], [], now), [both])
+  assert.deepEqual(r.unreadRecords([both], [both.flowId], now), [], 'with its flow read, the card says it')
+  // And those flows are read ahead of other answers, because only five are read back.
+  const newest = (n: number) => send({ flowId: '0x' + n.toString(16).padStart(64, '0'), tx: txRecord('settled'), server: { state: 'settled', txHash: TX, flowId: FLOW, at: CHECKED } })
+  const order = r.readOrder([newest(11), newest(12), newest(13), newest(14), newest(15), newest(16), both, open])
+  assert.deepEqual(order.slice(0, 3).map((x) => x.flowId), [open.flowId, both.flowId, newest(11).flowId], 'no answer, then more than one send, then the rest as they were')
+  assert.match(page0, /readOrder\(sent\)\.slice\(0, LOCAL_FLOWS_READ\)/)
   const page = repo('src/components/app/arc/OwnerApprovals.tsx')
   assert.match(page, /server\?\.state === 'settled'/)
   assert.match(page, /server\?\.state === 'ended'/)
@@ -1383,6 +1394,12 @@ test('ownerPay keeps the page\'s margin, and never less than the first spend of 
   assert.equal(v.ownerPayGas(74_000n), 99_000n, 'the 20% alone would be 88,800, and the rollover writes about 17,200 more')
   assert.equal(v.ownerPayGas(200_000n), v.gasWithMargin(200_000n))
   assert.ok(v.OWNER_PAY_DAY_ROLLOVER_GAS >= 17_200n)
+})
+
+test('the hold the card asks about is everything else from this page, whether or not an approval is on its way too', () => {
+  const route = repo('src/routes/app/ArcVault.tsx')
+  assert.match(route, /held=\{shownTx\?\.outcome === 'pending' \|\| setupTx !== null \|\| readBehind\}/)
+  assert.doesNotMatch(route, /held=\{held && !handoffHeld\}/, 'which dropped the rest exactly when an approval held the page')
 })
 
 test('declining is kept in this browser only, and the card says nothing records it', async () => {

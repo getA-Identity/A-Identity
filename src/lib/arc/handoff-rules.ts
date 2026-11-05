@@ -580,17 +580,24 @@ export const ANSWER_SHOWN_MS = 10 * 60_000
 
 /**
  * What this browser sent whose flow could not be read just now, and still has something to say: no final
- * answer yet, or one given in the last few minutes. An old answer has nothing to add, and only a few flows
- * are read back, so without this every older approval would stay on the page as a card with nothing in it.
+ * answer yet, one given in the last few minutes, or a transaction the answer does not speak for, which nothing
+ * else on the page names. An old answer has nothing to add, and only a few flows are read back, so without this
+ * every older approval would stay on the page as a card with nothing in it.
  */
 export function unreadRecords(records: readonly HandoffSend[], flowIds: readonly string[], now: number): HandoffSend[] {
   return records.filter((r) => {
     if (flowIds.some((id) => holdsFlow(r, id))) return false
     const h = holdOf(r)
     if (!h.held) return false
-    if (h.why !== 'answered') return true
+    if (h.why !== 'answered' || otherSends(r).length > 0) return true
     return now - Date.parse(r.server?.at ?? '') < ANSWER_SHOWN_MS
   })
+}
+
+/** The order this browser's flows are read back in, of which only the first few are read: what has no answer, what names a transaction the answer does not, then the rest. */
+export function readOrder(records: readonly HandoffSend[]): HandoffSend[] {
+  const rank = (r: HandoffSend) => (!r.server ? 0 : otherSends(r).length > 0 ? 1 : 2)
+  return [...records].sort((a, b) => rank(a) - rank(b))
 }
 
 /** A host is read if it is within 100 blocks of the best, about 50 seconds, so a read this long after a replacement has seen it. */

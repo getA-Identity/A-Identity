@@ -496,7 +496,7 @@ export default function ArcVault() {
                       : undefined
                 }
                 flowParam={flowParam}
-                held={held && !handoffHeld}
+                held={shownTx?.outcome === 'pending' || setupTx !== null || readBehind}
                 onHoldChange={setHandoffHeld}
                 onLanded={onHandoffLanded}
               />
