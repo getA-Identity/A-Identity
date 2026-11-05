@@ -605,15 +605,23 @@ export async function admittedVaultsFromStore(ours: OurAddresses, onSkip?: (row:
   })
 }
 
-/** What GET /api/arc/vaults answers: the stored vaults and whether the route can admit. */
-export async function listAdmittedVaults(env: NodeJS.ProcessEnv = process.env, io: ArcVaultStoreIo = {}): Promise<{ httpStatus: number; body: Record<string, unknown> }> {
+/**
+ * What GET /api/arc/vaults answers: the stored vaults and whether the route can admit. A stored row says its owner is not
+ * identified, and `label` says what anyone has said since (labelOwners in arc-season.ts, which the route passes: that module
+ * reads this one, so it cannot be imported here), so this list and the season report read a vault's owner the same way.
+ */
+export async function listAdmittedVaults(
+  env: NodeJS.ProcessEnv = process.env,
+  io: ArcVaultStoreIo = {},
+  label: (vaults: ArcOwnerHeldVault[]) => ArcOwnerHeldVault[] = (vaults) => vaults,
+): Promise<{ httpStatus: number; body: Record<string, unknown> }> {
   const made = admissionContext()
   if (!made.ok) return { httpStatus: 503, body: { readable: false, reason: made.reason } }
   const { chain } = made.context
   const ours = collectOurAddresses(liveOurAddressSources(env))
   const skipped: { vault: string | null; reason: string }[] = []
   try {
-    const rows = await admittedVaultsFromStore(ours, (r) => skipped.push(r), io)
+    const rows = label(await admittedVaultsFromStore(ours, (r) => skipped.push(r), io))
     return {
       httpStatus: 200,
       body: {
@@ -624,7 +632,7 @@ export async function listAdmittedVaults(env: NodeJS.ProcessEnv = process.env, i
         items: rows.map((v) => ({ ...v, explorerUrl: addressUrl(chain, v.address), deployExplorerUrl: txUrl(chain, v.deployTx) })),
         ...(skipped.length ? { skipped } : {}),
         admission: admissionReadiness(ours),
-        note: 'Vaults that passed every owner-held check, admitted by POST /api/arc/vaults or found on the chain by this server\'s own sweep, under the same checks (the sweep block says what it last read). The chain cannot say whose wallet an owner is, so each owner is not identified. An owner is compared with every address we commit and every key this server holds; a key named under admission.keysNotCompared was not compared, because this server has neither the key nor a committed address for it. The season report at GET /api/arc/season counts these with the curated list.',
+        note: 'Vaults that passed every owner-held check, admitted by POST /api/arc/vaults or found on the chain by this server\'s own sweep, under the same checks (the sweep block says what it last read). The chain cannot say whose wallet an owner is, so an owner is not identified unless ownerKind on its item says team or external: a person\'s entry, or a wallet attributed to an external team. An owner is compared with every address we commit and every key this server holds; a key named under admission.keysNotCompared was not compared, because this server has neither the key nor a committed address for it. The season report at GET /api/arc/season counts these with the curated list.',
       },
     }
   } catch (e) {

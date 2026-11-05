@@ -130,7 +130,7 @@ export const ARC_PARTNERS: ArcPartner[] = [
  * counts; a reviewer still needs to see which of the two each vault is. The chain cannot tell them
  * apart, so whoever admits the vault with the script says which, with --owner-kind. 'unstated': the
  * vault was admitted automatically by POST /api/arc/vaults, where nobody can say, and a reader is
- * told the owner is not identified.
+ * told the owner is not identified, until someone says (labelOwners).
  */
 export type ArcOwnerKind = 'team' | 'external' | 'unstated'
 

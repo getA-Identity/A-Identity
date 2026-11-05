@@ -24,6 +24,7 @@ import {
   type RpcHost,
   type VaultAdmissionDeps,
 } from './arc-owner-vault-live.js'
+import { labelOwners } from './arc-season.js'
 import { AgentSpendPolicyAbi, AgentSpendPolicyBytecode } from './contracts/AgentSpendPolicy.js'
 import { rateBudget, rateLimited } from './rate-budget.js'
 import { findAdmittedArcVaultByTx, loadAdmittedArcVaults, persistAdmittedArcVault, type ArcAdmittedVaultRecord, type ArcVaultStoreIo } from './storage.js'
@@ -392,6 +393,27 @@ test('GET /api/arc/vaults publishes a short fixed message for a store it cannot 
   assert.equal(body.reason, 'the list of admitted vaults could not be read')
   assert.ok(!JSON.stringify(body).includes('db.internal'), 'the store error does not reach the answer')
   assert.ok(JSON.stringify(logged.mock.calls.map((c) => c.arguments)).includes('db.internal'), 'it reaches the log')
+})
+
+test('GET /api/arc/vaults reads a vault\'s owner as the season report does: a person\'s label and a partner\'s wallet reach it, and the note says so', async () => {
+  const io = tmpIo()
+  const row = (address: string, owner: string): ArcAdmittedVaultRecord => ({ v: 1, address, owner, ownerKind: 'unstated', deployTx: `0x${address.slice(2).padEnd(64, '0')}`, deployBlock: '1', deployedAt: '2026-11-03', admittedAt: `2026-11-03T10:00:00.000Z`, note: 'the owner is not identified' })
+  const [team, partner, nobody] = ['0x' + 'a1'.repeat(20), '0x' + 'a2'.repeat(20), '0x' + 'a3'.repeat(20)]
+  for (const rec of [row(team, OWNER), row(partner, OPERATOR), row(nobody, '0x' + 'b3'.repeat(20))]) await persistAdmittedArcVault(rec, io)
+  const curated = [{ address: team.toUpperCase().replace('0X', '0x'), owner: OWNER, ownerKind: 'team' as const, deployTx: TX, deployedAt: '2026-11-03', note: 'a person on the team said so' }]
+  const partners = [{ wallet: OPERATOR, team: 'Team P', publicReference: false }]
+  const { body } = await listAdmittedVaults({}, io, (rows) => labelOwners(rows, curated, partners))
+  const items = body.items as { address: string; ownerKind: string; note: string }[]
+  assert.deepEqual(items.map((i) => i.ownerKind).sort(), ['external', 'team', 'unstated'])
+  assert.equal(items.find((i) => i.address === team)?.note, 'a person on the team said so')
+  assert.doesNotMatch(items.find((i) => i.address === partner)?.note ?? '', /not identified|Team P/)
+  assert.match(String(body.note), /an owner is not identified unless ownerKind on its item says team or external/)
+  assert.doesNotMatch(String(body.note), /each owner is not identified/)
+  // Asked with no label it is what the store holds, and the route is what passes the real one.
+  const bare = (await listAdmittedVaults({}, io)).body.items as { ownerKind: string }[]
+  assert.deepEqual(bare.map((i) => i.ownerKind), ['unstated', 'unstated', 'unstated'])
+  const route = readFileSync(new URL('../src/http/arc-season-routes.ts', import.meta.url), 'utf8')
+  assert.match(route, /listAdmittedVaults\(process\.env, \{\}, labelOwners\)/)
 })
 
 test('a body that is not a transaction hash on Arc Mainnet is refused before anything is read', async () => {

@@ -10,13 +10,15 @@
  * registry, how many settled payments each rail took from our own wallets and how many from
  * wallets we do not control, with the USD of each.
  *
- * The rules are the season report's (arc-season.ts), applied to every network instead of
- * Arc Mainnet alone, and settlement-networks.test.ts feeds the same rows to both documents
+ * The rules start from the season report's (arc-season.ts), applied to every network instead
+ * of Arc Mainnet alone, and settlement-networks.test.ts feeds the same rows to both documents
  * to keep them that way:
  *   - A row counts when it settled: a Gateway row credited or completed, a facilitator row
  *     settled. Failed, unconfirmed, reverted and ambiguous rows do not count.
  *   - A payer is internal when it is on either rail's published list of our own buyer
- *     wallets, compared case-insensitively. Every other payer is external.
+ *     wallets, compared case-insensitively. Every other payer is external. This is the list
+ *     alone: the season report also reads as internal the other wallets of ours its basis
+ *     names, so for such a wallet the two documents differ, and each says so.
  *   - Each rail is counted on its own and never added to the other, the rule the page
  *     prints above its tiles: one figure across two logs describes neither of them.
  *
@@ -112,7 +114,7 @@ const LOGS: Record<SettlementRail, Pick<SettlementLogState, 'label' | 'path' | '
 }
 
 const BASIS =
-  "A row counts when it settled: a Circle Gateway row credited or completed, or an EIP-3009 facilitator row settled; failed, unconfirmed, reverted and ambiguous rows do not. A payer is internal when its address is on either rail's published list of our own buyer wallets (the hardcoded KNOWN_INTERNAL_PAYERS plus X402_GATEWAY_INTERNAL_PAYERS and X402_3009_INTERNAL_PAYERS), compared case-insensitively, the rule /api/arc/season counts by; every other payer is external. " +
+  "A row counts when it settled: a Circle Gateway row credited or completed, or an EIP-3009 facilitator row settled; failed, unconfirmed, reverted and ambiguous rows do not. A payer is internal when its address is on either rail's published list of our own buyer wallets (the hardcoded KNOWN_INTERNAL_PAYERS plus X402_GATEWAY_INTERNAL_PAYERS and X402_3009_INTERNAL_PAYERS), compared case-insensitively; every other payer is external. /api/arc/season starts from the same lists and also reads as internal the other wallets of ours its own basis names, such as the owner of a vault labeled team and its agent key, so for such a wallet the two can differ. " +
   `Each network is named from the chain registry, and each rail is counted on its own, never added to the other. Counts cover the rows each log retains, the latest ${GATEWAY_SETTLEMENTS_CAP} on the Gateway log and the latest ${X402_SETTLEMENTS_CAP} on the facilitator log, not an all-time history.`
 
 const usd6 = (n: number) => Number(n.toFixed(6))
