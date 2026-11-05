@@ -375,7 +375,11 @@ rail; the 402 lists both and you pick by `network`.
 ## Where your payments show up
 
 Your wallet pays, from its own Gateway balance, and it is labeled **external** automatically:
-our own buyer wallets are on the rail's published internal list, and every other payer is external. Nothing is counted until the
+our own buyer wallets are on the rail's published internal list, and every other payer is external.
+The Arc season report below also reads as internal the owner of a vault labeled team, and the agent key
+on a recorded flow through such a vault: a person on our team is not a wallet we do not control. An
+agent key with no recorded flow through that vault stays external until it is on the list, and the
+rail's own proof reads the list alone. Nothing is counted until the
 transfer has been read back from Gateway's transfers API for the authorization's nonce,
 to our `payTo`, for the price.
 

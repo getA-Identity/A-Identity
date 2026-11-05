@@ -12,6 +12,7 @@ import {
   ARC_SEASON_TARGETS,
   mergeFlows,
   mergeVaults,
+  flowKeysFromRows,
   seasonFlowsFromRows,
   type ArcSeasonDeps,
   type ArcOwnerHeldVault,
@@ -1090,6 +1091,114 @@ test("a check paid by the owner of a vault labeled team is ours, not a wallet A-
   assert.deepEqual(r.usage.internal.wallets, [lower(EXT_A)])
   assert.equal(r.milestone1.checks.external, 1)
   assert.match(r.usage.basis, /owns a vault labeled team/)
+})
+
+test("a check paid by the agent key of a vault labeled team is ours too, whether or not its flow counts for anything yet", async () => {
+  const teamVault = '0x' + 'e3'.repeat(20)
+  const key = shouty(EXT_C)
+  // A WARN still waiting for its owner: a paid check whose row maps to no season flow.
+  const waiting = { flowId: '0x' + 'ab'.repeat(32), vault: teamVault, owner: EXT_A, operator: key, payee: EXT_B, amount: '1000', outcome: 'awaiting_human', detail: 'warn_handoff', check: { payer: key } } as unknown as VtpFlowRecord
+  assert.deepEqual(seasonFlowsFromRows([waiting]), [], 'so a report reading only mapped flows would never see this key')
+  const r = await arcSeasonReport(
+    deps({
+      vaults: [vaultEntry(teamVault, { ownerKind: 'team', owner: EXT_A })],
+      gateway: [gw({ payer: EXT_C }), gw({ payer: EXT_B })],
+      flowRows: async (onSkip, onKeys) => {
+        for (const k of flowKeysFromRows([waiting])) onKeys?.(k)
+        return seasonFlowsFromRows([waiting], onSkip)
+      },
+    }),
+  )
+  assert.equal(r.milestone2.externalChecks.count, 1)
+  assert.deepEqual(r.usage.external.wallets, [lower(EXT_B)])
+  assert.deepEqual(r.usage.internal.wallets, [lower(EXT_C)])
+  assert.equal(r.afterProgram.activeExternalWallets.wallets.includes(lower(EXT_C)), false)
+  assert.match(r.usage.basis, /is the agent key on a recorded verify-then-pay flow through such a vault/)
+  assert.match(r.usage.basis, /an agent key with no recorded flow through that vault stays external until it is on a list/)
+})
+
+test('a key is not ours for naming a team wallet as its vault\'s owner: only the vault labeled team says so', async () => {
+  const teamVault = '0x' + 'e3'.repeat(20)
+  const strangersVault = '0x' + 'e4'.repeat(20)
+  const row = (vault: string, operator: string) => ({ flowId: '0x' + 'cd'.repeat(32), vault, owner: EXT_A, operator, payee: EXT_B, amount: '1000', outcome: 'awaiting_human', detail: 'warn_handoff', check: { payer: operator } }) as unknown as VtpFlowRecord
+  const stranger = lower(EXT_C)
+  const r = await arcSeasonReport(
+    deps({
+      // The owner on the stranger's vault is the team wallet, as any constructor can say. The stranger's vault is on no list.
+      vaults: [vaultEntry(teamVault, { ownerKind: 'team', owner: EXT_A })],
+      gateway: [gw({ payer: stranger })],
+      flowRows: async (onSkip, onKeys) => {
+        for (const k of flowKeysFromRows([row(strangersVault, stranger)])) onKeys?.(k)
+        return seasonFlowsFromRows([row(strangersVault, stranger)], onSkip)
+      },
+    }),
+  )
+  assert.equal(r.milestone2.externalChecks.count, 1)
+  assert.deepEqual(r.usage.external.wallets, [stranger])
+  assert.deepEqual(r.usage.internal.wallets, [])
+})
+
+test('a row that holds no flow names no key, and a row an old key wrote keeps naming it', () => {
+  const row = (over: Record<string, unknown>) => ({ flowId: '0x' + 'ef'.repeat(32), vault: EXT_A, operator: EXT_B, outcome: 'awaiting_human', detail: 'warn_handoff', ...over }) as unknown as VtpFlowRecord
+  assert.deepEqual(flowKeysFromRows([row({})]), [{ vault: EXT_A, operator: EXT_B }])
+  // Every outcome that holds a flow, because each of them is a paid check.
+  for (const [outcome, detail] of [['pending', 'agent_will_pay'], ['executed', 'owner_paid'], ['blocked', 'deny'], ['failed', 'reverted_not_policy']]) {
+    assert.equal(flowKeysFromRows([row({ outcome, detail })]).length, 1, outcome)
+  }
+  // A reservation holds only the unverified word of whoever posted it, and so does a check the rail refused.
+  assert.deepEqual(flowKeysFromRows([row({ outcome: 'opening', detail: 'opening' }), row({ outcome: 'abandoned', detail: 'rail_failed' })]), [])
+  // A row the report cannot read is not a key, and it does not stop the others.
+  assert.deepEqual(flowKeysFromRows([null as unknown as VtpFlowRecord, row({ operator: 7 }), row({ vault: null }), row({})]), [{ vault: EXT_A, operator: EXT_B }])
+  assert.deepEqual(flowKeysFromRows([row({ operator: EXT_B }), row({ operator: EXT_C })]).map((k) => k.operator), [EXT_B, EXT_C], 'both keys, after a setOperator')
+})
+
+test('a curated flow through a vault labeled team names its key as a recorded one does', async () => {
+  const teamVault = '0x' + 'e3'.repeat(20)
+  const check = gw({ payer: EXT_C })
+  const r = await arcSeasonReport(deps({ vaults: [vaultEntry(teamVault, { ownerKind: 'team', owner: EXT_A })], gateway: [check], flows: [flow({ checkNonce: check.authNonce, vault: teamVault, vaultKeys: { owner: EXT_A, operator: EXT_C } })] }))
+  assert.deepEqual(r.usage.internal.wallets, [lower(EXT_C)])
+  assert.equal(r.milestone2.externalChecks.count, 0)
+  assert.equal(r.milestone1.checks.count, 1, 'and its flow is one of our own runs, as a team owner\'s is')
+})
+
+test('with the flow log down, the note on external checks says an agent key of a team vault could be among them', async () => {
+  const teamVault = '0x' + 'e3'.repeat(20)
+  const down = async () => {
+    throw new Error('db down')
+  }
+  const said = /flow log could not be read on this request, so the agent key of a vault labeled team could be counted here/
+  const withTeam = await arcSeasonReport(deps({ vaults: [vaultEntry(teamVault, { ownerKind: 'team', owner: EXT_A })], gateway: [gw({ payer: EXT_C })], flowRows: down }))
+  assert.equal(withTeam.milestone2.externalChecks.count, 1)
+  assert.match(withTeam.milestone2.externalChecks.note, said)
+  // Nothing to say with no team vault, or with the log read.
+  assert.doesNotMatch((await arcSeasonReport(deps({ gateway: [gw({ payer: EXT_C })], flowRows: down }))).milestone2.externalChecks.note, said)
+  assert.doesNotMatch((await arcSeasonReport(deps({ vaults: [vaultEntry(teamVault, { ownerKind: 'team', owner: EXT_A })], gateway: [gw({ payer: EXT_C })], flowRows: async () => [] }))).milestone2.externalChecks.note, said)
+})
+
+test('a paying agent key of a vault nobody identified stays external, and the note says it could be ours', async () => {
+  const unstated = '0x' + 'e5'.repeat(20)
+  const key = (operator: string) => async (_onSkip?: unknown, onKeys?: (k: { vault: string; operator: string }) => void) => {
+    onKeys?.({ vault: unstated, operator })
+    return []
+  }
+  const said = /1 of these wallet\(s\) are the agent key on a flow through a vault admitted with the owner not identified, so one could be a team member's/
+  const r = await arcSeasonReport(deps({ vaults: [vaultEntry(unstated, { owner: EXT_B })], gateway: [gw({ payer: EXT_C })], flowRows: key(shouty(EXT_C)) }))
+  assert.equal(r.milestone2.externalChecks.count, 1)
+  assert.deepEqual(r.usage.external.wallets, [lower(EXT_C)])
+  assert.match(r.milestone2.externalChecks.note, said)
+  // One wallet that is both is said once, as an owner.
+  const both = await arcSeasonReport(deps({ vaults: [vaultEntry(unstated, { owner: EXT_C })], gateway: [gw({ payer: EXT_C })], flowRows: key(EXT_C) }))
+  assert.doesNotMatch(both.milestone2.externalChecks.note, said)
+  assert.match(both.milestone2.externalChecks.note, /1 of these wallet\(s\) also own a vault/)
+  // A key on no such vault is not said to be anything.
+  const elsewhere = await arcSeasonReport(deps({ vaults: [vaultEntry('0x' + 'e6'.repeat(20), { owner: EXT_B })], gateway: [gw({ payer: EXT_C })], flowRows: key(EXT_C) }))
+  assert.doesNotMatch(elsewhere.milestone2.externalChecks.note, said)
+})
+
+test('the guide says who else the season report reads as internal, and where that stops', () => {
+  const guide = readFileSync(new URL('../../docs/chains/arc-integration.mdx', import.meta.url), 'utf8').replace(/\s+/g, ' ')
+  assert.match(guide, /the agent key on a recorded flow through such a vault/)
+  assert.match(guide, /An agent key with no recorded flow through that vault stays external until it is on the list, and the rail's own proof reads the list alone/)
 })
 
 test('a wallet that paid and owns a vault nobody identified stays external, and the note says it could be ours', async () => {
