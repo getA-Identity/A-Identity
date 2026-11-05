@@ -487,8 +487,12 @@ export type ArcSeasonDeps = {
   flowRows?: (onSkip?: (row: ArcSeasonSkippedRow) => void, onKeys?: (keys: ArcFlowKeys) => void) => Promise<ArcVerifyThenPayFlow[]>
 }
 
-/** Which key was a vault's operator when a flow was recorded. Read from the chain by the check's free half, so it is nobody's word. */
-export type ArcFlowKeys = { vault: string; operator: string }
+/**
+ * Which key was a vault's operator when a flow was recorded, read from the chain by the check's free half, so it is
+ * nobody's word, and which wallet paid that flow's check, when the row names it. The two can differ: anyone can deploy a
+ * vault naming someone else's wallet as its operator and buy a check for it.
+ */
+export type ArcFlowKeys = { vault: string; operator: string; payer?: string }
 
 // The live loaders, each through the read that tells "no rows yet" from "could not read the
 // log", so an unreadable log throws and is reported as unreadable rather than counted as zero.
@@ -519,7 +523,11 @@ async function liveFlowRows(onSkip?: (row: ArcSeasonSkippedRow) => void, onKeys?
  * wrote keeps naming it after a setOperator, which is why this reads rows and not the vault as it is now.
  */
 export function flowKeysFromRows(rows: VtpFlowRecord[]): ArcFlowKeys[] {
-  return rows.flatMap((row) => (row && !holdsNoFlow(row) && typeof row.vault === 'string' && typeof row.operator === 'string' ? [{ vault: row.vault, operator: row.operator }] : []))
+  return rows.flatMap((row) =>
+    row && !holdsNoFlow(row) && typeof row.vault === 'string' && typeof row.operator === 'string'
+      ? [{ vault: row.vault, operator: row.operator, ...(typeof row.check?.payer === 'string' ? { payer: row.check.payer } : {}) }]
+      : [],
+  )
 }
 
 /** Flow rows as season flows, one row at a time: a row that cannot be mapped is passed to onSkip,
@@ -573,6 +581,24 @@ export function mergeVaults(curated: ArcOwnerHeldVault[], admitted: ArcOwnerHeld
     out.push(v)
   }
   return out
+}
+
+const PARTNER_OWNER_NOTE = 'Passed every owner-held check and admitted automatically. The chain cannot say whose wallet an owner is; this one is a wallet attributed to an external team on this page.'
+
+/**
+ * What is known of whose wallet each vault's owner is. A stored row says 'unstated', because the chain cannot tell. A
+ * curated entry for the same vault says what a person said. A wallet on the partner list is one someone has said is
+ * outside the team, and an owner cannot be planted: admission requires that wallet to have sent the deploy. Nothing else
+ * moves a label, so both the report and GET /api/arc/vaults read a vault's owner the same way.
+ */
+export function labelOwners(vaults: ArcOwnerHeldVault[], curated: ArcOwnerHeldVault[] = ARC_OWNER_HELD_VAULTS, partners: ArcPartner[] = ARC_PARTNERS): ArcOwnerHeldVault[] {
+  const entries = new Map(curated.map((c) => [c.address.toLowerCase(), c]))
+  const partnerWallets = new Set(partners.map((p) => p.wallet.toLowerCase()))
+  return vaults.map((v) => {
+    const entry = entries.get(v.address.toLowerCase())
+    const known = entry ? { ...v, ownerKind: entry.ownerKind, note: entry.note } : v
+    return known.ownerKind === 'unstated' && partnerWallets.has(known.owner.toLowerCase()) ? { ...known, ownerKind: 'external' as const, note: PARTNER_OWNER_NOTE } : known
+  })
 }
 
 const GATEWAY_SETTLED = new Set<GatewaySettlementRecord['outcome']>(['credited', 'completed'])
@@ -787,11 +813,11 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   const flowKeys: ArcFlowKeys[] = []
   const recordedFlows = loadFlowRows ? await readLog('verify-then-pay flow log', () => loadFlowRows((row) => skippedRows.push(row), (keys) => flowKeys.push(keys))) : null
   const flows = mergeFlows(deps.flows ?? ARC_VERIFY_THEN_PAY_FLOWS, recordedFlows?.rows ?? [])
-  for (const f of flows) if (f.vault && f.vaultKeys) flowKeys.push({ vault: f.vault, operator: f.vaultKeys.operator })
+  for (const f of flows) if (f.vault && f.vaultKeys) flowKeys.push({ vault: f.vault, operator: f.vaultKeys.operator, ...(f.payer ? { payer: f.payer } : {}) })
   const skippedVaults: ArcSeasonSkippedVault[] = []
   const loadAdmitted = deps.admittedVaults
   const admittedVaults = loadAdmitted ? await readLog('list of admitted vaults', () => loadAdmitted((row) => skippedVaults.push(row))) : null
-  const vaults = mergeVaults(curatedVaults, admittedVaults?.rows ?? [])
+  const vaults = labelOwners(mergeVaults(curatedVaults, admittedVaults?.rows ?? []), curatedVaults, partners)
   const vaultsByKind: Record<ArcOwnerKind, number> = { team: 0, external: 0, unstated: 0 }
   for (const v of vaults) vaultsByKind[v.ownerKind] += 1
   const unstatedVaults = vaultsByKind.unstated
@@ -812,16 +838,16 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   ]
   // The agent keys flows recorded on vaults of this kind. Matched on the vault's own address and never on its
   // owner: anyone can deploy a vault that names a team wallet as owner and their own key as operator.
-  const agentKeysOn = (kind: ArcOwnerKind) => {
+  const flowKeysOn = (kind: ArcOwnerKind) => {
     const addresses = new Set(vaults.filter((v) => v.ownerKind === kind).map((v) => v.address.toLowerCase()))
-    return flowKeys.filter((k) => addresses.has(k.vault.toLowerCase())).map((k) => k.operator)
+    return flowKeys.filter((k) => addresses.has(k.vault.toLowerCase()))
   }
   // A vault labeled 'team' is a person on our team, in their own wallet. We never held that key,
   // which is what the vault metric counts, and the wallet is still not one "we do not control" for
   // Milestone 2, so a check it pays is ours. So is one the agent key they run pays, and the approval
   // page offers only a check that key paid for, so that is the key a team member's hand-off comes from.
   const teamWallets = vaults.filter((v) => v.ownerKind === 'team').map((v) => v.owner)
-  const mine = new Set([...deps.internalPayers.gateway, ...deps.internalPayers.facilitator, ...teamWallets, ...agentKeysOn('team')].map((a) => a.toLowerCase()))
+  const mine = new Set([...deps.internalPayers.gateway, ...deps.internalPayers.facilitator, ...teamWallets, ...flowKeysOn('team').map((k) => k.operator)].map((a) => a.toLowerCase()))
   const internalChecks = checks.filter((c) => mine.has(c.payer))
   const externalChecks = checks.filter((c) => !mine.has(c.payer))
 
@@ -967,11 +993,14 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   const externalFlowItems = [...externalRows.values()].map(flowItem)
   const weekly = weeklyUsage(externalChecks, now(), teamOf)
   // A wallet that paid and also owns a vault nobody identified, or runs as its agent key, could be
-  // one of ours, and the chain cannot say. It still counts as external, and it is said.
+  // one of ours, and the chain cannot say. It still counts as external, and it is said. Not of a wallet
+  // the partner list names, because then someone has said. And a key only on a flow it paid for itself:
+  // a vault can name anyone's wallet as its operator, and that must not plant this sentence on them. A
+  // team vault's keys above are not held to that: there the label is ours, and it is the vault that says.
   const unstatedOwners = new Set(vaults.filter((v) => v.ownerKind === 'unstated').map((v) => v.owner.toLowerCase()))
-  const unstatedAgentKeys = new Set(agentKeysOn('unstated').map((a) => a.toLowerCase()))
-  const externalVaultOwners = external.filter((w) => unstatedOwners.has(w.wallet)).length
-  const externalAgentKeys = external.filter((w) => unstatedAgentKeys.has(w.wallet) && !unstatedOwners.has(w.wallet)).length
+  const unstatedAgentKeys = new Set(flowKeysOn('unstated').filter((k) => k.payer?.toLowerCase() === k.operator.toLowerCase()).map((k) => k.operator.toLowerCase()))
+  const externalVaultOwners = external.filter((w) => !w.team && unstatedOwners.has(w.wallet)).length
+  const externalAgentKeys = external.filter((w) => !w.team && unstatedAgentKeys.has(w.wallet) && !unstatedOwners.has(w.wallet)).length
   const internalPayeeFlows = linkedList.filter((f) => payeeInternal(f) !== null).length
   const refusedPayees = new Set(linkedList.filter((f) => f.outcome === 'refused').map((f) => f.payee.toLowerCase())).size
 

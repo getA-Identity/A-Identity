@@ -13,8 +13,11 @@ import {
   mergeFlows,
   mergeVaults,
   flowKeysFromRows,
+  labelOwners,
   seasonFlowsFromRows,
+  type ArcFlowKeys,
   type ArcSeasonDeps,
+  type ArcSeasonSkippedRow,
   type ArcOwnerHeldVault,
   type ArcVerifyThenPayFlow,
 } from './arc-season.js'
@@ -1203,8 +1206,9 @@ test('with the flow log down, the note on external checks says an agent key of a
 
 test('a paying agent key of a vault nobody identified stays external, and the note says it could be ours', async () => {
   const unstated = '0x' + 'e5'.repeat(20)
-  const key = (operator: string) => async (_onSkip?: unknown, onKeys?: (k: { vault: string; operator: string }) => void) => {
-    onKeys?.({ vault: unstated, operator })
+  // The key paid that flow's check itself, which is the only way this sentence can be said of it.
+  const key = (operator: string) => async (_onSkip?: unknown, onKeys?: (k: ArcFlowKeys) => void) => {
+    onKeys?.({ vault: unstated, operator, payer: operator })
     return []
   }
   const said = /1 of these wallet\(s\) are the agent key on a flow through a vault admitted with the owner not identified, so one could be a team member's/
@@ -1219,6 +1223,104 @@ test('a paying agent key of a vault nobody identified stays external, and the no
   // A key on no such vault is not said to be anything.
   const elsewhere = await arcSeasonReport(deps({ vaults: [vaultEntry('0x' + 'e6'.repeat(20), { owner: EXT_B })], gateway: [gw({ payer: EXT_C })], flowRows: key(EXT_C) }))
   assert.doesNotMatch(elsewhere.milestone2.externalChecks.note, said)
+})
+
+test('naming a wallet as a vault\'s operator plants nothing on it: a key is doubted only on a flow it paid for itself, at both feeds', async () => {
+  const planted = '0x' + 'e8'.repeat(20)
+  const vault = vaultEntry(planted, { owner: EXT_B })
+  const said = /are the agent key on a flow through a vault admitted with the owner not identified/
+  const target = gw({ payer: EXT_C })
+
+  // A row that holds a flow, as the log feeds it: the stranger paid, the target is only named.
+  const row = (payer: string) => ({ flowId: '0x' + 'ab'.repeat(32), vault: planted, owner: EXT_B, operator: EXT_C, payee: EXT_A, amount: '1000', outcome: 'awaiting_human', detail: 'warn_handoff', check: { payer } }) as unknown as VtpFlowRecord
+  const fromRows = (r: VtpFlowRecord) => async (onSkip?: (x: ArcSeasonSkippedRow) => void, onKeys?: (k: ArcFlowKeys) => void) => {
+    for (const k of flowKeysFromRows([r])) onKeys?.(k)
+    return seasonFlowsFromRows([r], onSkip)
+  }
+  assert.deepEqual(flowKeysFromRows([row(EXT_A)]), [{ vault: planted, operator: EXT_C, payer: EXT_A }])
+  const byRow = await arcSeasonReport(deps({ vaults: [vault], gateway: [target], flowRows: fromRows(row(EXT_A)) }))
+  assert.doesNotMatch(byRow.milestone2.externalChecks.note, said)
+  const selfByRow = await arcSeasonReport(deps({ vaults: [vault], gateway: [target], flowRows: fromRows(row(shouty(EXT_C))) }))
+  assert.match(selfByRow.milestone2.externalChecks.note, said)
+
+  // The same through a flow the report mapped or a curated one, with no row feeding keys at all.
+  const denied = gw({ payer: EXT_A })
+  const byFlow = (payer: string) => flow({ checkNonce: denied.authNonce, outcome: 'refused', txHash: undefined, evidenceUrl: 'https://a-identity.xyz/flows/x', vault: planted, vaultKeys: { owner: EXT_B, operator: EXT_C }, payer })
+  const planting = await arcSeasonReport(deps({ vaults: [vault], gateway: [denied, target], flows: [byFlow(EXT_A)] }))
+  assert.doesNotMatch(planting.milestone2.externalChecks.note, said)
+  const paying = gw({ payer: EXT_C })
+  const selfByFlow = await arcSeasonReport(deps({ vaults: [vault], gateway: [paying], flows: [{ ...byFlow(EXT_C), checkNonce: paying.authNonce }] }))
+  assert.match(selfByFlow.milestone2.externalChecks.note, said)
+
+  // Counts move in none of these: only the sentence.
+  for (const r of [byRow, selfByRow]) assert.equal(r.milestone2.externalChecks.count, 1)
+})
+
+test('a vault labeled team needs no such thing: its key is ours whoever paid the row that names it', async () => {
+  const teamVault = '0x' + 'e9'.repeat(20)
+  const r = await arcSeasonReport(
+    deps({
+      vaults: [vaultEntry(teamVault, { ownerKind: 'team', owner: EXT_A })],
+      gateway: [gw({ payer: EXT_C })],
+      flowRows: async (_onSkip, onKeys) => {
+        onKeys?.({ vault: teamVault, operator: EXT_C, payer: EXT_B })
+        return []
+      },
+    }),
+  )
+  assert.deepEqual(r.usage.internal.wallets, [lower(EXT_C)])
+  assert.equal(r.milestone2.externalChecks.count, 0)
+})
+
+test('a wallet the partner list names is not said to be possibly ours, as an owner or as a key', async () => {
+  const partner = { wallet: shouty(EXT_C), team: 'Team C', publicReference: true }
+  const stated = /could be a team member's/
+  const held = '0x' + 'ea'.repeat(20)
+
+  // Its key pays through a vault someone else owns: the wallet is named, and the owner stays not identified.
+  const asKey = await arcSeasonReport(
+    deps({
+      partners: [partner],
+      vaults: [vaultEntry(held, { owner: EXT_B })],
+      gateway: [gw({ payer: EXT_C })],
+      flowRows: async (_onSkip, onKeys) => {
+        onKeys?.({ vault: held, operator: EXT_C, payer: EXT_C })
+        return []
+      },
+    }),
+  )
+  assert.deepEqual(asKey.milestone2.externalTeamsLive.teams.map((t) => t.team), ['Team C'])
+  assert.doesNotMatch(asKey.milestone2.externalChecks.note, stated)
+  assert.deepEqual(asKey.milestone1.vaults.byKind, { team: 0, external: 0, unstated: 1 })
+
+  // It deployed the vault from the wallet it pays with: admitted automatically, the vault row says outside the team.
+  const asOwner = await arcSeasonReport(deps({ partners: [partner], admittedVaults: async () => [vaultEntry(held, { owner: EXT_C, note: 'the chain cannot say whose wallet this is, so the owner is not identified' })], gateway: [gw({ payer: EXT_C })] }))
+  assert.doesNotMatch(asOwner.milestone2.externalChecks.note, stated)
+  assert.deepEqual(asOwner.milestone1.vaults.byKind, { team: 0, external: 1, unstated: 0 })
+  assert.match(asOwner.milestone1.vaults.note, /0 of them someone on our own team, in their own wallet; 1 someone outside the team; 0 not identified/)
+  assert.doesNotMatch(asOwner.milestone1.vaults.note, /admitted automatically after every check passed, with the owner not identified/)
+  const [item] = asOwner.milestone1.vaults.items
+  assert.equal(item.ownerKind, 'external')
+  assert.doesNotMatch(item.note, /not identified/, 'and its own note does not contradict the label')
+  assert.doesNotMatch(item.note, /Team C/, 'and it names nobody')
+
+  // Without the listing it is what it was.
+  const unlisted = await arcSeasonReport(deps({ admittedVaults: async () => [vaultEntry(held, { owner: EXT_C })], gateway: [gw({ payer: EXT_C })] }))
+  assert.deepEqual(unlisted.milestone1.vaults.byKind, { team: 0, external: 0, unstated: 1 })
+  assert.match(unlisted.milestone2.externalChecks.note, /1 of these wallet\(s\) also own a vault admitted with the owner not identified/)
+})
+
+test('labelOwners: a person\'s entry wins, a partner\'s wallet is external, and nothing else moves a label', () => {
+  const a = vaultEntry(EXT_A)
+  const b = vaultEntry(EXT_B, { owner: EXT_C })
+  const c = vaultEntry(EXT_C, { owner: EXT_A })
+  const curated = [vaultEntry(shouty(EXT_A), { ownerKind: 'team', note: 'a person said so' })]
+  const partners = [{ wallet: EXT_C, team: 'Team C', publicReference: false }, { wallet: EXT_B, team: 'Team B', publicReference: false }]
+  assert.deepEqual(labelOwners([a, b, c], curated, partners).map((v) => [v.address, v.ownerKind]), [[EXT_A, 'team'], [EXT_B, 'external'], [EXT_C, 'unstated']])
+  assert.equal(labelOwners([a], curated, partners)[0].note, 'a person said so')
+  assert.deepEqual(labelOwners([a, b, c], [], []), [a, b, c], 'with nobody having said anything, nothing changes')
+  // A person's word stands over the partner list too.
+  assert.equal(labelOwners([vaultEntry(EXT_A, { owner: EXT_C })], curated, partners)[0].ownerKind, 'team')
 })
 
 test('the guide says who else the season report reads as internal, and where that stops', () => {
