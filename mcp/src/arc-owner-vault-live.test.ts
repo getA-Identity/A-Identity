@@ -15,6 +15,7 @@ import {
   admittedVaultsFromStore,
   everyHost,
   listAdmittedVaults,
+  liveVaultAdmissionDeps,
   plainRefusals,
   refusalIsRetryable,
   runAdmission,
@@ -138,6 +139,7 @@ function routeDeps(facts: ChainFacts = {}, opts: { ours?: OurAddresses; io?: Arc
     persist: (rec) => persistAdmittedArcVault(rec, io),
     now: () => Date.parse('2026-11-03T10:00:00Z'),
     admit: (tx) => runAdmission({ context, hosts: opts.hosts ?? [fakeHost('one', facts, opts.calls), fakeHost('two', facts, opts.calls)], tx, ours: opts.ours ?? ours(), requireEnvKeys: true }),
+    ours: () => opts.ours ?? ours(),
   }
 }
 
@@ -345,6 +347,51 @@ test('the same deploy posted twice is a no-op: no second row and no chain read',
   const read = await loadAdmittedArcVaults(io)
   assert.ok(read.ok)
   assert.equal(read.rows.length, 1)
+})
+
+test('a stored row the report no longer counts is not called admitted: a key committed later makes the post a refusal, with no chain read', async () => {
+  const io = tmpIo()
+  const calls: string[] = []
+  const first = await admitVaultDeploy({ deployTx: TX }, routeDeps({}, { io, calls }))
+  assert.equal(first.answer.status, 'admitted')
+  const vault = first.answer.status === 'admitted' ? first.answer.vault : ''
+  const reads = calls.length
+
+  // The owner's address is committed after the row was stored, which is the way the file header gives to close that gap.
+  const nowOurs = ours([OWNER.toUpperCase().replace('0X', '0x')])
+  const later = await admitVaultDeploy({ deployTx: TX }, routeDeps({}, { io, calls, ours: nowOurs }))
+  assert.equal(later.httpStatus, 200)
+  assert.deepEqual(later.answer, { status: 'refused', vault, deployTx: TX, retryable: false, reasons: [{ id: 'owner-not-ours', reason: PLAIN_REFUSALS['owner-not-ours'] }] })
+  assert.equal(calls.length, reads, 'a known hash still answers from the store')
+
+  // It says what the report says of the same row, and the row stays stored.
+  const skipped: { vault: string | null; reason: string }[] = []
+  assert.deepEqual(await admittedVaultsFromStore(nowOurs, (r) => skipped.push(r), io), [])
+  assert.deepEqual(skipped.map((s) => s.reason), ['its owner is one of our keys'])
+  const read = await loadAdmittedArcVaults(io)
+  assert.ok(read.ok)
+  assert.equal(read.rows.length, 1)
+
+  // Nobody's key: what it was.
+  const same = await admitVaultDeploy({ deployTx: TX }, routeDeps({}, { io, calls }))
+  assert.ok(same.answer.status === 'admitted' && same.answer.alreadyAdmitted === true)
+})
+
+test('a stored row that does not read as a vault is not called admitted either, and nothing of it is published', async (t) => {
+  const logged = t.mock.method(console, 'error', () => {})
+  const row = { v: 1, address: 'nope', owner: OWNER, ownerKind: 'unstated', deployTx: TX, deployBlock: '1', deployedAt: '2026-11-03', admittedAt: 'x', note: 'n' } as ArcAdmittedVaultRecord
+  const { httpStatus, answer } = await admitVaultDeploy({ deployTx: TX }, { ...routeDeps(), findByTx: async () => ({ ok: true as const, row }) })
+  assert.equal(httpStatus, 503)
+  assert.deepEqual(answer, { status: 'unavailable', retryable: true, reason: 'the list of admitted vaults could not be read' })
+  assert.match(JSON.stringify(logged.mock.calls.map((c) => c.arguments)), /does not name a vault/)
+})
+
+test('the route compares a stored row with the same sources as the report, env included', () => {
+  const key = ('0x' + '11'.repeat(32)) as Hex
+  const env = { CELO_BUYER_KEY: key } as NodeJS.ProcessEnv
+  const { byAddress } = liveVaultAdmissionDeps(env).ours()
+  assert.deepEqual([...byAddress.keys()].sort(), [...collectOurAddresses(liveOurAddressSources(env)).byAddress.keys()].sort())
+  assert.ok(byAddress.has(privateKeyToAccount(key).address.toLowerCase()))
 })
 
 test('two posts racing past the lookup still leave one row', async () => {

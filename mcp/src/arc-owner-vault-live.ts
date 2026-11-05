@@ -433,6 +433,8 @@ export type VaultAdmissionDeps = {
   persist: (rec: ArcAdmittedVaultRecord) => Promise<ArcVaultInsert>
   /** Everything the chain says about this deploy. May throw: then nothing is decided. */
   admit: (deployTx: string) => Promise<AdmissionRun>
+  /** What a stored row's owner is compared with today, as the report does: a key can be committed after its vault was admitted. */
+  ours: () => OurAddresses
   now?: () => number
   /** Set by the server's own sweep (arc-vault-sweep.ts), so the row's note can say who found it. It changes no check. */
   foundBy?: 'sweep'
@@ -455,6 +457,8 @@ const LIST_UNREADABLE = 'the list of admitted vaults could not be read'
 const NOT_DECIDED = 'the deploy could not be checked just now, so nothing was decided'
 const NOT_RECORDED = 'every check passed but the vault could not be recorded'
 const OWN_CHECK_UNFINISHED = 'our server could not finish its own safety check, so nothing was decided'
+const ROW_NOT_A_VAULT = 'the row does not name a vault, an owner and a deploy transaction'
+const ROW_OWNER_OURS = 'its owner is one of our keys'
 const logRouteFailure = (what: string, raw: unknown) => console.error(`[arc-vaults] ${what}:`, raw instanceof Error ? raw.message : raw)
 
 const ADMITTED_CHECKS =
@@ -462,11 +466,18 @@ const ADMITTED_CHECKS =
 const ADMITTED_NOTE = `${ADMITTED_CHECKS} Admitted automatically by POST /api/arc/vaults; the chain cannot say whose wallet this is, so the owner is not identified.`
 const SWEPT_NOTE = `${ADMITTED_CHECKS} Found on the chain by this server's own sweep and admitted automatically under the same checks as POST /api/arc/vaults; the chain cannot say whose wallet this is, so the owner is not identified.`
 
+/** Why a stored row is not counted, or null when it is. The report and the route's answer read this one rule. */
+function storedRowNotCounted(row: ArcAdmittedVaultRecord | null, ours: OurAddresses): string | null {
+  if (!row || !ADDRESS.test(String(row.address)) || !ADDRESS.test(String(row.owner)) || !TX_HASH.test(String(row.deployTx))) return ROW_NOT_A_VAULT
+  return ours.byAddress.has(row.owner.toLowerCase()) ? ROW_OWNER_OURS : null
+}
+
 /**
  * POST /api/arc/vaults. A hash already admitted answers from the store with no chain read, so the
- * same post twice is a no-op. A vault is stored only when every check passed, and it is called
- * admitted only when the store took it: a store that failed is an answer of its own, never a claim
- * that the vault counts.
+ * same post twice is a no-op, and says what the report says of that row: one whose owner is by now
+ * one of our keys is not counted, so it is refused for that reason and for good. A vault is stored
+ * only when every check passed, and it is called admitted only when the store took it: a store
+ * that failed is an answer of its own, never a claim that the vault counts.
  */
 export async function admitVaultDeploy(body: unknown, deps: VaultAdmissionDeps): Promise<{ httpStatus: number; answer: VaultAdmissionAnswer }> {
   const b = (body ?? {}) as { deployTx?: unknown; chain?: unknown }
@@ -483,7 +494,17 @@ export async function admitVaultDeploy(body: unknown, deps: VaultAdmissionDeps):
     logRouteFailure(LIST_UNREADABLE, known.reason)
     return { httpStatus: 503, answer: { status: 'unavailable', retryable: true, reason: LIST_UNREADABLE } }
   }
-  if (known.row) return { httpStatus: 200, answer: admittedAnswer(known.row, true) }
+  if (known.row) {
+    const notCounted = storedRowNotCounted(known.row, deps.ours())
+    if (notCounted === ROW_OWNER_OURS) {
+      return { httpStatus: 200, answer: { status: 'refused', vault: known.row.address, deployTx, retryable: false, reasons: [{ id: 'owner-not-ours', reason: PLAIN_REFUSALS['owner-not-ours'] }] } }
+    }
+    if (notCounted) {
+      logRouteFailure(LIST_UNREADABLE, notCounted)
+      return { httpStatus: 503, answer: { status: 'unavailable', retryable: true, reason: LIST_UNREADABLE } }
+    }
+    return { httpStatus: 200, answer: admittedAnswer(known.row, true) }
+  }
 
   let run: AdmissionRun
   try {
@@ -561,6 +582,7 @@ export function liveVaultAdmissionDeps(env: NodeJS.ProcessEnv = process.env): Va
   return {
     findByTx: (deployTx) => findAdmittedArcVaultByTx(deployTx),
     persist: (rec) => persistAdmittedArcVault(rec),
+    ours: () => collectOurAddresses(liveOurAddressSources(env)),
     admit: (deployTx) =>
       liveAdmissionSlot(async () => {
         const made = admissionContext()
@@ -593,12 +615,9 @@ export async function admittedVaultsFromStore(ours: OurAddresses, onSkip?: (row:
   return read.rows.flatMap((row): ArcOwnerHeldVault[] => {
     const address = (row as { address?: unknown } | null)?.address
     const named = typeof address === 'string' ? address : null
-    if (!row || !ADDRESS.test(String(row.address)) || !ADDRESS.test(String(row.owner)) || !TX_HASH.test(String(row.deployTx))) {
-      onSkip?.({ vault: named, reason: 'the row does not name a vault, an owner and a deploy transaction' })
-      return []
-    }
-    if (ours.byAddress.has(row.owner.toLowerCase())) {
-      onSkip?.({ vault: named, reason: 'its owner is one of our keys' })
+    const notCounted = storedRowNotCounted(row, ours)
+    if (notCounted) {
+      onSkip?.({ vault: named, reason: notCounted })
       return []
     }
     return [{ address: row.address, owner: row.owner, ownerKind: 'unstated', deployTx: row.deployTx, deployBlock: row.deployBlock, deployedAt: row.deployedAt, note: row.note }]
