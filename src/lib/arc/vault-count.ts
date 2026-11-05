@@ -59,9 +59,9 @@ export function sweepSaysFrom(body: unknown): SweepSays {
 }
 
 const NOTHING_TO_SEND = 'You do not have to send anything to anyone: our server looks for vaults on the chain by itself'
-const LOOK_AGAIN = 'Look again here in a little while. If it still says this tomorrow, tell the A-Identity team, because the check may have refused it.'
+const LOOK_AGAIN = 'Look again here in a little while. If it still says this tomorrow, tell the A-Identity team at hello@a-identity.xyz, because the check may have refused it.'
 /** Only a browser that saw the deploy settle holds its hash, and the one reading this does not, even if it sent the deploy: a deploy replaced in the wallet or found at its address leaves none. So it can only be another one. */
-const ANOTHER_BROWSER = "if another browser of yours saw this vault's deploy land, open this vault there: it can ask by itself. If none did, tell the A-Identity team."
+const ANOTHER_BROWSER = "if another browser of yours saw this vault's deploy land, open this vault there: it can ask by itself. If none did, tell the A-Identity team at hello@a-identity.xyz."
 
 /**
  * What follows "This vault is not counted on the proof page yet" when this browser holds no hash, so
