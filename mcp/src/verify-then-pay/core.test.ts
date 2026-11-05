@@ -946,6 +946,32 @@ test("the guide's table says what a used nonce and an unconfirmed settlement ans
   assert.match(unknown, /If it reads `unconfirmed`, treat this nonce as giving no flow/)
 })
 
+test('every summary of the flow says a payment only the owner can make buys the check on a vault with a human, because on one key it stays a free refusal', async () => {
+  const said = (rel: string) => readFileSync(new URL(`../../../${rel}`, import.meta.url), 'utf8').replace(/\s+/g, ' ')
+  const server = said('mcp/src/server.ts')
+  assert.match(server, /On a vault with a human, a payment above the vault's ceiling or off its allowlist is one only the owner can settle, so it still buys the check/)
+  assert.match(said('public/.well-known/mcp/server-card.json'), /On a vault with a human, above the vault's ceiling or off its allowlist the check is still charged/)
+  const mcp = said('docs/developers/mcp-server.mdx')
+  assert.match(mcp, /On a vault with a human, above the vault's ceiling or off its allowlist the check is still charged/)
+  assert.match(mcp, /on a vault with a human that stays a hand-off/)
+  const full = said('public/llms-full.txt')
+  assert.match(full, /On a vault with a human, a payment above the vault's ceiling or off its allowlist still buys the check/)
+  assert.match(full, /On a vault whose owner is its operator both stay refusals, with nothing charged/)
+  assert.match(full, /null when the check was not paid from the vault's operator key or the payee is that key/)
+  const readme = said('mcp/README.md')
+  assert.match(readme, /so a payment that neither key could make never buys a check/)
+  assert.doesNotMatch(readme, /so a payment the vault would refuse never buys a check/)
+  assert.match(readme, /A payment only the owner can make, above the ceiling or off the allowlist on a vault with a human, goes on to the check/)
+  assert.match(readme, /25 DENY and 75 ALLOW/)
+  assert.match(readme, /The historical run's totals were `--allow 75 --deny 25`/)
+
+  // Which is what the route does: the free refusal on one key, and the charged check on two.
+  const oneKey = await runVerifyThenPay(request({ amount: '250001' }), undefined, setup({ chain: { owner: OPERATOR } }).deps)
+  assert.deepEqual([oneKey.httpStatus, oneKey.body.stage, oneKey.body.charged], [422, 'refused', false])
+  const twoKeys = await runVerifyThenPay(request({ amount: '250001' }), undefined, setup().deps)
+  assert.deepEqual([twoKeys.httpStatus, twoKeys.body.stage], [402, 'payment_required'])
+})
+
 test('the words on approvalUrl say what the server can see, and that the page can still refuse', async () => {
   const said = (rel: string) => readFileSync(new URL(`../../../${rel}`, import.meta.url), 'utf8').replace(/\s+/g, ' ')
   for (const page of ['docs/chains/arc-integration.mdx', 'docs/developers/mcp-server.mdx', 'public/llms-full.txt', 'trust-guard/README.md']) {
