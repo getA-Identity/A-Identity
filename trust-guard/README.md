@@ -150,8 +150,9 @@ claude mcp add a-identity-trust -e A_IDENTITY_ALGORAND_MNEMONIC="..." -- npx -y 
 `pay()` path, and the hosted route it calls is live. `verifyThenPay` needs version 0.4.0 or later, because
 0.3.0 has no `/arc` entry point. `ownerOnly`, `approvalUrl` and the hand-off of a payment above the vault's
 ceiling or off its allowlist need 0.5.0 or later. 0.4.0 has none of them: there `out.approvalUrl` is
-undefined, and such a payment throws `VaultPolicyError` before anything is signed. `npm ls
-@a-identity/trust-guard` says which version you have. No outside team has run the published package yet.**
+undefined, and such a payment throws `VaultPolicyError` before anything is signed.
+`npm ls @a-identity/trust-guard` says which version you have. No outside team has run the published package
+yet.**
 
 **Changed in 0.5.0.** On a vault with a human, a payment above the vault's ceiling or to a payee off its
 allowlist used to throw `VaultPolicyError` before the check, for free. It now buys a check, 0.005 USDC per
@@ -231,9 +232,9 @@ The order, and what each step can cost:
    `approvalUrl` null: send `ownerPay` from the owner key. The page reads the chain when it opens and can still
    refuse a link it is given: a vault that is ours or not the build it deploys, a key stopped or replaced since
    the check, or a check older than 24 hours. `ownerPay` is the way then too. The integration guide has a
-   sample for that, starting from the public flow record. An `ownerPay` counts toward the agent's day on the vault: if it uses
-   up today's room, the agent cannot pay until 00:00 UTC unless the owner raises the cap, so tell the owner
-   before they sign.
+   sample for that, starting from the public flow record. An `ownerPay` counts toward the agent's day on the
+   vault: if it uses up today's room, the agent cannot pay until 00:00 UTC unless the owner raises the cap, so
+   tell the owner before they sign.
 
 Anything that is not a usable verdict is never treated as ALLOW: a Gateway error, a settlement that does
 not echo what was signed, an unknown decision, a reputation that is not a finite number, an ALLOW below
