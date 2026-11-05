@@ -39,6 +39,7 @@ import {
   holdsPage,
   keyStoppedLine,
   moreThanOneSend,
+  noAnswerLine,
   notFromAgentLine,
   otherSends,
   ownerOnlyLine,
@@ -46,6 +47,7 @@ import {
   paidAfter,
   paidBefore,
   paymentsRead,
+  promptLine,
   replacedSendLine,
   scanStart,
   standingOf,
@@ -339,7 +341,7 @@ export default function OwnerApprovals({ chain, vault: pageVault, wallet, canAct
         {unread.map((r) => (
           <div key={r.flowId} className="rounded-xl border border-border bg-background/60 p-4">
             <h4 className="text-sm font-semibold text-foreground">What this browser sent, for a payment whose record could not be read just now</h4>
-            <SendTracker record={r} chain={chain} onRecords={refreshRecords} onLanded={landed} />
+            <SendTracker record={r} chain={chain} decline={promptLine(r, { paid: false })} onRecords={refreshRecords} onLanded={landed} />
           </div>
         ))}
         {nothing && <p className="text-sm text-foreground/70">Nothing is waiting for this vault's owner right now.</p>}
@@ -450,7 +452,7 @@ function FlowCard(props: CardProps) {
       </div>
     )
   const replaced = record ? replacedSendLine(record) : null
-  if (standing.kind === 'settled') return <SettledCard chain={chain} vault={vault} flow={flow} replaced={replaced} />
+  if (standing.kind === 'settled') return <SettledCard chain={chain} vault={vault} flow={flow} decline={promptLine(record, { paid: false, standing })} replaced={replaced} />
   if (standing.kind === 'reverted')
     return (
       <div role="status" data-flow={flow.flowId} className="rounded-xl border border-danger/25 bg-danger/[0.07] p-4 text-sm text-foreground">
@@ -481,7 +483,16 @@ function TxLink({ chain, hash }: { chain: Chain; hash: string | null }) {
   )
 }
 
-function SettledCard({ chain, vault, flow, replaced }: { chain: Chain; vault: VaultSnapshot; flow: HandoffFlow; replaced: string | null }) {
+/** What to do about a prompt that may still be open, wherever the card stands. */
+function PromptLine({ line }: { line: string }) {
+  return (
+    <p role="alert" className="rounded-lg border border-danger/25 bg-danger/[0.07] px-3 py-2 text-xs font-semibold text-foreground">
+      {line}
+    </p>
+  )
+}
+
+function SettledCard({ chain, vault, flow, decline, replaced }: { chain: Chain; vault: VaultSnapshot; flow: HandoffFlow; decline: string | null; replaced: string | null }) {
   return (
     <div role="status" data-flow={flow.flowId} className="rounded-xl border border-ok/30 bg-ok/[0.07] p-4 text-sm text-foreground">
       <div className="flex items-start gap-2">
@@ -492,6 +503,11 @@ function SettledCard({ chain, vault, flow, replaced }: { chain: Chain; vault: Va
             The vault paid {formatUnitsExact(flow.amount, vault.decimals)} USDC to {flow.payee} in block {flow.payment?.blockNumber}.
           </p>
           <TxLink chain={chain} hash={flow.payment?.txHash ?? null} />
+          {decline && (
+            <div className="mt-2">
+              <PromptLine line={decline} />
+            </div>
+          )}
           {replaced && <p className="mt-2 text-xs text-foreground/85">{replaced}</p>}
         </div>
       </div>
@@ -533,13 +549,16 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
   const { heading, asks } = cardHeading(standing, { sent: record !== null && sentHere, held: hold.held, paid: paid !== null })
   // This tab is the one waiting on the wallet right now: its prompt may be open, unsigned.
   const asking = busy === 'confirm'
-  const waitingOnWallet = asking && record !== null && !record.tx
+  const promptOpen = asking && record !== null && !record.tx
+  // Once the money left, or the request ended, that prompt has no reason left and the card stops asking for it.
+  const decline = promptLine(record, { paid: paid !== null, standing })
+  const waitingOnWallet = promptOpen && decline === null
 
   useEffect(() => {
-    if (!waitingOnWallet) return
+    if (!promptOpen) return
     const t = setTimeout(() => release('confirm'), WALLET_ANSWER_MS)
     return () => clearTimeout(t)
-  }, [waitingOnWallet, release])
+  }, [promptOpen, release])
 
   // A payment went out after this check, and it was the owner's: the receipt can close the flow. The route
   // only records what the chain proves, so posting it costs nothing and needs no person.
@@ -717,14 +736,14 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
           {step === 'wallet' ? 'Confirm this in your wallet now. If your wallet is an app on your phone, open it there: the request is waiting for you.' : `${step ? STEP_LABEL[step] : 'Working'}...`}
         </p>
       )}
-      {record && <SendTracker record={record} chain={chain} asking={asking} flowOver={flowIsOver(standing)} onRecords={onRecords} onLanded={onLanded} />}
+      {record && <SendTracker record={record} chain={chain} asking={asking} flowOver={flowIsOver(standing)} decline={decline} onRecords={onRecords} onLanded={onLanded} />}
       {hold.held && !record && (
         <p className="mt-3 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
           This browser has already sent a payment of this amount to this payee, for another request, and has no final answer for it yet. This is not offered until it has one: two sends pay twice.
         </p>
       )}
 
-      {paid && !sentHere && (
+      {paid && (!sentHere || !record?.tx) && (
         <div role="status" className="mt-3 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
           <div className="font-semibold">A payment of this amount to this payee already left this vault after this check.</div>
           <p className="mt-1">{paid.byOwner ? 'It came from the owner key.' : "It came from your agent's key."} It is not offered again. If you really mean to pay it twice, ask your agent for a new check.</p>
@@ -836,7 +855,7 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
  * What was sent for a flow, until the server gave its final word on it: the receipt while the chain has
  * no answer, then the post, retried for as long as the server does not decide anything.
  */
-function SendTracker({ record, chain, asking = false, flowOver = false, onRecords, onLanded }: { record: HandoffSend; chain: Chain; asking?: boolean; flowOver?: boolean; onRecords: () => void; onLanded: () => void }) {
+function SendTracker({ record, chain, asking = false, flowOver = false, decline = null, onRecords, onLanded }: { record: HandoffSend; chain: Chain; asking?: boolean; flowOver?: boolean; decline?: string | null; onRecords: () => void; onLanded: () => void }) {
   const [waitingOn, setWaitingOn] = useState<string | null>(null)
   const hash = hashToPost(record)
   const latest = useRef(record)
@@ -899,6 +918,7 @@ function SendTracker({ record, chain, asking = false, flowOver = false, onRecord
 
   return (
     <div className="mt-3 space-y-2">
+      {decline && <PromptLine line={decline} />}
       {several && (
         <div role="alert" className="rounded-lg border border-danger/25 bg-danger/[0.07] px-3 py-2 text-xs text-foreground">
           <div className="font-semibold">Your wallet sent more than one transaction for this one request. Each one that does not revert pays this amount.</div>
@@ -920,7 +940,7 @@ function SendTracker({ record, chain, asking = false, flowOver = false, onRecord
       {!asking && !record.tx && !record.paidBy && !record.released && !server && (
         <div role="status" className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
           <div className="font-semibold">Your wallet was asked to send this, and this page has not heard back.</div>
-          <p className="mt-1">If a prompt is still open in your wallet, you can answer it there. If your wallet sent it, this page sees the payment land and carries on. Do not start another one from here.</p>
+          <p className="mt-1">{noAnswerLine(decline !== null)}</p>
           <button type="button" onClick={release} className="mt-1 font-semibold text-accent underline underline-offset-2">
             I checked: my wallet shows nothing was sent
           </button>
@@ -928,7 +948,9 @@ function SendTracker({ record, chain, asking = false, flowOver = false, onRecord
       )}
       {record.paidBy && !server && (
         <div role="status" className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
-          <div className="font-semibold">This payment landed under another transaction, most likely your wallet's speed-up. It is not settled until our server reads it.</div>
+          <div className="font-semibold">
+            {record.tx ? "This payment landed under another transaction, most likely your wallet's speed-up." : 'This page found this payment in the vault\'s activity, from this wallet with no hash back to this page, or from another device.'} It is not settled until our server reads it.
+          </div>
           <TxLink chain={chain} hash={record.paidBy} />
         </div>
       )}

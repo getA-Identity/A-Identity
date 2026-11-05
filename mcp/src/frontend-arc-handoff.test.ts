@@ -17,7 +17,7 @@ const repo = (rel: string) => readFileSync(fileURLToPath(repoUrl(rel)), 'utf8')
 
 type Flow = Record<string, unknown> & { flowId: string; payee: string; amount: bigint; verdictBlock: bigint | null }
 type Live = Record<string, unknown>
-type Standing = { kind: string; what?: string; why?: string; ageSeconds?: bigint | null; have?: bigint }
+type Standing = { kind: string; what?: string; why?: string | null; ageSeconds?: bigint | null; have?: bigint }
 type Failure = { code: string; message: string }
 type Send = Record<string, unknown> & { flowId: string; payee: string; amount: bigint; tx?: Record<string, unknown>; alsoSent?: Record<string, unknown>[] }
 type Paid = { to: string; amount: bigint; byOwner: boolean; block: bigint; txHash: string }
@@ -63,6 +63,8 @@ type Rules = {
   moreThanOneSend: (s: Send) => boolean
   replacedSendLine: (s: Send) => string | null
   promptMayBeOpen: (r: Send) => boolean
+  promptLine: (r: Send | null, o: { paid: boolean; standing?: Standing }) => string | null
+  noAnswerLine: (promptEnded: boolean) => string
 }
 const rules = async () => (await import(repoUrl('src/lib/arc/handoff-rules.ts').href)) as Rules
 
@@ -880,6 +882,55 @@ test("a replaced hash's watch starts over with a second hash, so that one does n
   assert.equal(r.holdOf(after).why, 'maybe')
   assert.equal(after.replacedSeenAt, new Date(t0).toISOString())
   assert.deepEqual(r.holdOf(r.afterScan(after, f, read([]), t0 + r.REPLACED_WATCH_MS)), { held: false })
+})
+
+test('the card stops asking for a prompt once the money left or the request ended, and the two minutes run on either way', async () => {
+  const r = await rules()
+  const open: Standing = { kind: 'approvable' }
+  const landed = txRecord('settled')
+  const answer = { state: 'settled', txHash: TX, flowId: FLOW, at: CHECKED }
+  // A prompt with a reason left: nothing to say beyond asking for it.
+  assert.equal(r.promptLine(send(), { paid: false, standing: open }), null)
+  assert.equal(r.promptLine(send({ alsoSent: [txRecord('pending')] }), { paid: false, standing: open }), null)
+  assert.equal(r.promptLine(null, { paid: true }), null)
+  // The money left: from another device, from the agent's key, or under a send this claim carried.
+  for (const [what, s, paid, standing] of [
+    ['the read found it', send(), true, open],
+    ['the agent paid it', send({ released: true }), true, open],
+    ['the record found it', send({ paidBy: TX }), false, open],
+    ['the server answered about it', send({ paidBy: TX, server: answer }), false, open],
+    ['it moved to a newer check', send({ paidBy: TX, server: { ...answer, state: 'moved' } }), false, open],
+    ['the flow reads paid', send(), false, { kind: 'settled' }],
+    ['a carried send landed', send({ alsoSent: [landed] }), false, open],
+  ] as [string, Send, boolean, Standing][]) {
+    const line = String(r.promptLine(s, { paid, standing }))
+    assert.match(line, /may still be open in your wallet/, what)
+    assert.match(line, /already left the vault/, what)
+    assert.match(line, /decline it: signing it pays this amount again/, what)
+  }
+  // Closed by a revert nothing moved, and a signature would still pay.
+  assert.match(String(r.promptLine(send(), { paid: false, standing: { kind: 'reverted', why: null } })), /This request is over, so decline it: signing it still sends this amount/)
+  // An answer from the wallet ends the question, in either slot it went to.
+  assert.equal(r.promptLine(send({ tx: txRecord('pending') }), { paid: true, standing: open }), null)
+  assert.equal(r.promptLine(send({ paidBy: TX, hashBack: true, alsoSent: [txRecord('pending', { hash: TX2 })] }), { paid: true, standing: open }), null)
+  assert.equal(r.promptMayBeOpen(send()), true)
+  // The tracker's line about a prompt does not invite one then, and its way out stays.
+  assert.match(r.noAnswerLine(false), /you can answer it there/)
+  assert.doesNotMatch(r.noAnswerLine(true), /answer it there/)
+  // The page: the line, the timer and the notice, and the card that replaces this one when the flow settles.
+  const page = repo('src/components/app/arc/OwnerApprovals.tsx')
+  assert.match(page, /const promptOpen = asking && record !== null && !record\.tx/)
+  assert.match(page, /const decline = promptLine\(record, \{ paid: paid !== null, standing \}\)/)
+  assert.match(page, /const waitingOnWallet = promptOpen && decline === null/)
+  assert.match(page, /if \(!promptOpen\) return\s+const t = setTimeout\(\(\) => release\('confirm'\), WALLET_ANSWER_MS\)/, 'or its cleanup would cancel it, and busy would stick')
+  assert.match(page, /\{paid && \(!sentHere \|\| !record\?\.tx\) && \(/, 'the notice shows on a record that only says the wallet was asked')
+  assert.match(page, /<SettledCard chain=\{chain\} vault=\{vault\} flow=\{flow\} decline=\{promptLine\(record, \{ paid: false, standing \}\)\} replaced=\{replaced\} \/>/)
+  assert.match(page, /\{decline && <PromptLine line=\{decline\} \/>\}/, 'the tracker is on every card with a record, and on one whose flow was not read')
+  assert.match(page, /decline=\{decline\}/)
+  assert.match(page, /decline=\{promptLine\(r, \{ paid: false \}\)\}/)
+  assert.match(page, /\{noAnswerLine\(decline !== null\)\}/)
+  assert.match(page, /I checked: my wallet shows nothing was sent/)
+  assert.match(page, /\{record\.tx \? "This payment landed under another transaction, most likely your wallet's speed-up\."/, 'a hash that never came back is no speed-up of it')
 })
 
 test("the tracker's writes keep every send, and each one goes to the transaction it is about", async () => {

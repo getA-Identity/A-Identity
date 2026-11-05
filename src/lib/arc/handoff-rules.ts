@@ -46,7 +46,9 @@
  * A payment BEFORE the check is no bar, because a new check is how a second payment is meant to happen,
  * but the card says so (paidBefore), since an agent that asks again can be asking for the same invoice.
  * What the page cannot stop is a person answering two wallet prompts, so a second hash stays on the record
- * and is followed and named beside the first (alsoSent in pending.ts, otherSends here).
+ * and is followed and named beside the first (alsoSent in pending.ts, otherSends here). Nor can it close a
+ * prompt, and signing one pays whatever has happened since, so it says to decline one that has no reason left
+ * (promptLine).
  *
  * STALENESS. A verdict ages: a record can be revoked, or a Sybil cluster found, the moment after it. See
  * HANDOFF_MAX_AGE_SECONDS. A vault's state ages faster, so it is read again and the call simulated right
@@ -727,6 +729,25 @@ export function cardHeading(s: HandoffStanding, o: { sent: boolean; held: boolea
 /** The wallet was asked for this flow and no hash came back, so a prompt may still be open in it, wherever that wallet is. */
 export function promptMayBeOpen(r: HandoffSend): boolean {
   return !r.tx && !r.hashBack
+}
+
+/**
+ * What a prompt that may still be open has become, or null while it still stands for what it asked. ownerPay names
+ * no flow and the contract keeps no list of what it paid, so a signature pays whatever has happened since. The
+ * wallet's prompt is out of this page's reach, and this is the page's one way to stop it. `paid` is what the read
+ * of the vault found, whoever's key it was.
+ */
+export function promptLine(r: HandoffSend | null | undefined, o: { paid: boolean; standing?: HandoffStanding }): string | null {
+  if (!r || !promptMayBeOpen(r)) return null
+  if (o.paid || r.paidBy || r.server || o.standing?.kind === 'settled' || r.alsoSent?.some((t) => t.outcome === 'settled')) return 'A prompt for this may still be open in your wallet. This payment already left the vault, so decline it: signing it pays this amount again.'
+  if (o.standing?.kind === 'reverted') return 'A prompt for this may still be open in your wallet. This request is over, so decline it: signing it still sends this amount from the vault.'
+  return null
+}
+
+/** What the tracker says when the wallet was asked and nothing came back. It invites a signature only while one still has a reason. */
+export function noAnswerLine(promptEnded: boolean): string {
+  const rest = 'If your wallet sent it, this page sees the payment land and carries on. Do not start another one from here.'
+  return promptEnded ? rest : `If a prompt is still open in your wallet, you can answer it there. ${rest}`
 }
 
 /** A plain length of time, for how old a check is. */
