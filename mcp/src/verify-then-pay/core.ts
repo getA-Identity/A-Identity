@@ -466,7 +466,7 @@ function result(chain: ChainDescriptor, over: Partial<VerifyThenPayToolResult> &
  */
 const ONE_KEY_WAY_OUT = "A vault's owner cannot be changed, so give your agent a new key of its own with setOperator, and keep this key from it. That helps only if the agent no longer has this key: if its process or logs have held it, deploy a new vault with an owner key the agent never holds."
 
-function refused(chain: ChainDescriptor, httpStatus: number, code: VtpRefusalCode, reason: string, checks: VtpChecks | null): VtpResponse {
+function refused(chain: ChainDescriptor, httpStatus: number, code: VtpRefusalCode, reason: string, checks: VtpChecks | null, payOnWarn = false): VtpResponse {
   return {
     httpStatus,
     body: result(chain, {
@@ -478,7 +478,11 @@ function refused(chain: ChainDescriptor, httpStatus: number, code: VtpRefusalCod
         httpStatus === 503
           ? `Nothing was charged: ${chain.name} or the flow log did not answer, so nothing could be decided. Ask again shortly.`
           : (code === 'AboveAutoApprove' || code === 'PayeeNotAllowed') && checks?.vault.ownerIsOperator === true
-            ? `Nothing was charged and no check was bought, so there is no verdict on this payee and nothing was prepared: ${reason}. This vault's owner and operator are one key, so there is no person to hand this to. Raising the ceiling or allowing the payee gets a verdict, where ALLOW prepares pay() and WARN stops with the check paid, or prepares pay() as the agent's own decision if the request sets payOnWarn. For a hand-off: ${ONE_KEY_WAY_OUT}`
+            ? `Nothing was charged and no check was bought, so there is no verdict on this payee and nothing was prepared: ${reason}. This vault's owner and operator are one key, so there is no person to hand this to. Raising the ceiling or allowing the payee gets a verdict, where ALLOW prepares pay() and WARN ${
+                // Named only to a caller who set it: this answer has no verdict and no record of the payee, and
+                // pointing an autonomous agent at payOnWarn here could walk it into paying a stranger.
+                payOnWarn ? "prepares pay() as the agent's own decision, because you set payOnWarn" : 'stops with the check paid'
+              }. For a hand-off: ${ONE_KEY_WAY_OUT}`
             : `Nothing was charged and no check was bought: ${reason}.`,
     }),
   }
@@ -766,7 +770,7 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
   // 4. the free preflight
   const client = deps.client ?? (await vtpReadClient(chain, env))
   const pre = await preflight(client, chain, p, deps)
-  if (!pre.ok) return refused(chain, pre.httpStatus, pre.code, pre.reason, pre.checks)
+  if (!pre.ok) return refused(chain, pre.httpStatus, pre.code, pre.reason, pre.checks, parsed.payOnWarn)
 
   // 5. no usable payment yet: the challenge
   const asked = { payOnWarn: parsed.payOnWarn, payee: p.payee }

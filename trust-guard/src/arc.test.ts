@@ -831,6 +831,17 @@ for (const [label, w, code] of [
   })
 }
 
+test('a refusal to the key that is the owner does not tell it that only the owner can pay', async () => {
+  const oneKey = setup({}, { autoApproveMax: AMOUNT - 1n, owner: OPERATOR })
+  const e = await refused(verifyThenPay(oneKey.opts), VaultPolicyError)
+  assert.equal(e.code, 'AboveAutoApprove')
+  assert.match(e.message, /above the vault's per-payment ceiling/)
+  assert.doesNotMatch(e.message, /ownerPay|only the owner/)
+  const twoKeys = setup({}, { autoApproveMax: AMOUNT - 1n })
+  const p = await preflightVault({ vault: VAULT, payee: PAYEE, amountUnits: AMOUNT, operator: OPERATOR, chain: twoKeys.chain })
+  assert.match(p.ownerOnly?.reason ?? '', /only the owner can pay it \(ownerPay\)/)
+})
+
 test('the cap is the operator\'s question: above the ceiling and past the cap reaches the owner, and the cap alone is still refused', async () => {
   const past = { autoApproveMax: AMOUNT - 1n, dailyCap: AMOUNT - 1n }
   const { chain } = setup({}, past)

@@ -722,13 +722,15 @@ async function runPreflight(ctx: Ctx, p: PreflightInput): Promise<VaultPreflight
   }
   // The operator cannot pay past these two, and the owner can, so before the check they are not a
   // refusal on a vault with a human. Right before a payment they are: the operator is about to send it.
+  const oneKey = facts.owner === facts.operator
   const blocked: { code: OwnerOnlyCode; reason: string } | null =
     facts.allowlistEnabled && !facts.payeeAllowed
       ? { code: 'PayeeNotAllowed', reason: 'the vault has its allowlist on and the payee is not on it' }
       : facts.autoApproveMax !== 0n && amountUnits > facts.autoApproveMax
-        ? { code: 'AboveAutoApprove', reason: `${amountUnits} units is above the vault's per-payment ceiling of ${facts.autoApproveMax}; only the owner can pay it (ownerPay)` }
+        ? // Said to the key that is the owner, "only the owner can pay it" would point it past its own ceiling.
+          { code: 'AboveAutoApprove', reason: `${amountUnits} units is above the vault's per-payment ceiling of ${facts.autoApproveMax}${oneKey ? '' : '; only the owner can pay it (ownerPay)'}` }
         : null
-  if (blocked && (p.stage !== 'preflight' || facts.owner === facts.operator)) throw refuse(blocked.code, blocked.reason)
+  if (blocked && (p.stage !== 'preflight' || oneKey)) throw refuse(blocked.code, blocked.reason)
   // ownerPay has no cap check, so the cap is the operator's question alone.
   if (!blocked && facts.dailyCap !== 0n && facts.spentToday + amountUnits > facts.dailyCap) {
     throw refuse('DailyCapExceeded', `the vault has spent ${facts.spentToday} of its ${facts.dailyCap} units today, so ${amountUnits} more would pass the cap`)

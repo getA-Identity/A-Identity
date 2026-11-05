@@ -275,13 +275,15 @@ export function assessVaultPolicy(read: VaultRead, amount: bigint, opts: { expir
     return { ok: false, code: 'SessionKeyExpired', httpStatus: 422, reason: `the operator's session key expires at ${expiry} (unix), within ${opts.expiryMarginSec} s of the latest block or before it` }
   }
   const ceiling = f.autoApproveMax as bigint
+  const oneKey = f.owner === f.operator
   const blocked: OperatorBlock | null =
     f.allowlistEnabled && !f.payeeAllowed
       ? { code: 'PayeeNotAllowed', reason: 'the vault has its allowlist on and the payee is not on it' }
       : ceiling !== 0n && amount > ceiling
-        ? { code: 'AboveAutoApprove', reason: `the amount is above the vault's per-payment ceiling of ${ceiling} units; only the owner can pay it (ownerPay)` }
+        ? // Said to the key that is the owner, "only the owner can pay it" would point it past its own ceiling.
+          { code: 'AboveAutoApprove', reason: `the amount is above the vault's per-payment ceiling of ${ceiling} units${oneKey ? '' : '; only the owner can pay it (ownerPay)'}` }
         : null
-  if (blocked && f.owner === f.operator) return { ok: false, ...blocked, httpStatus: 422 }
+  if (blocked && oneKey) return { ok: false, ...blocked, httpStatus: 422 }
   const cap = f.dailyCap as bigint
   if (!blocked && cap !== 0n && (f.spentToday as bigint) + amount > cap) {
     return { ok: false, code: 'DailyCapExceeded', httpStatus: 422, reason: `the vault has spent ${f.spentToday} of its ${cap} units today (UTC day of the latest block), so this payment would pass the cap` }

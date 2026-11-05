@@ -1188,6 +1188,12 @@ test('a WARN with no human gate does not point the agent at payOnWarn for a paye
   // A WARN on an agent we hold a record of keeps the option: its reasons are about something we know.
   const known = setup({ chain: { owner: OPERATOR }, gw: { scored: verdict('WARN', { onPlatform: true }) } })
   assert.match((await runVerifyThenPay(request(), header(), known.deps)).body.next, /payOnWarn/)
+  // The free refusal on such a vault has no verdict at all, so it does not point there either, whoever the payee is.
+  for (const agentsHeld of [0n, 1n]) {
+    const above = await runVerifyThenPay(request({ amount: '250001' }), undefined, setup({ chain: { owner: OPERATOR, agentsHeld } }).deps)
+    assert.equal(above.body.code, 'AboveAutoApprove')
+    assert.doesNotMatch(above.body.next, /payOnWarn/, String(agentsHeld))
+  }
 })
 
 test('the way to a hand-off on a vault with one key is one the contract has', async () => {
@@ -1296,8 +1302,21 @@ test('on a vault with one key, a payment above the ceiling stays a refusal that 
   assert.match(above.body.next, /no verdict on this payee/)
   assert.match(above.body.next, /no person to hand this to/)
   assert.match(above.body.next, /ALLOW prepares pay\(\) and WARN stops with the check paid/)
-  assert.match(above.body.next, /prepares pay\(\) as the agent's own decision if the request sets payOnWarn/, 'which is what the next request would get if it did')
   assert.match(above.body.next, /owner cannot be changed/)
+  // The key that asked is the owner, so "only the owner can pay it" would point it past its own ceiling.
+  assert.doesNotMatch(above.body.next, /ownerPay|only the owner/)
+  assert.doesNotMatch(above.body.reason ?? '', /ownerPay|only the owner/)
+  // A caller who already set payOnWarn is told what it will do. One who did not is not pointed at it.
+  const set = await runVerifyThenPay(request({ amount: '250001', payOnWarn: true }), undefined, setup({ chain: { owner: OPERATOR } }).deps)
+  assert.equal(set.body.code, 'AboveAutoApprove')
+  assert.match(set.body.next, /WARN prepares pay\(\) as the agent's own decision, because you set payOnWarn/)
+  assert.doesNotMatch(set.body.next, /stops with the check paid/)
+  const offList = await runVerifyThenPay(request(), undefined, setup({ chain: { owner: OPERATOR, allowlistEnabled: true } }).deps)
+  assert.equal(offList.body.code, 'PayeeNotAllowed')
+  assert.doesNotMatch(offList.body.next, /ownerPay|only the owner|payOnWarn/)
+  // Where there is a person, the words that send it to them stay.
+  const twoKeys = await runVerifyThenPay(request({ amount: '250001' }), undefined, setup().deps)
+  assert.match(twoKeys.body.checks?.vault.ownerOnly?.reason ?? '', /only the owner can pay it \(ownerPay\)/)
   assert.doesNotMatch(above.body.next, /To get a verdict and a hand-off/)
   // Any other refusal keeps its plain answer.
   const frozen = await runVerifyThenPay(request(), undefined, setup({ chain: { frozen: true } }).deps)
