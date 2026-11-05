@@ -1841,7 +1841,7 @@ export const PROVENANCE: ChainProvenance[] = [
         label: 'The owner overrides the freeze and pays anyway',
         txHash: '77GPTVNIJVZRSGYBLYH5WEOIOPSV3EYN7EIHAQMFAOA7UBSGIQQQ',
         onChain: 'algorand',
-        note: '0.01 USDC through owner_pay while the vault was frozen: the human keeps a path the agent does not have, and the payment still counts against the day so the agent cannot ride on top of the override. spent_today read back 60000 base units, exactly 0.05 + 0.01.',
+        note: '0.01 USDC through owner_pay while the vault was frozen: the human keeps a path the agent does not have, and the payment still counts against the day, so an agent paying after it has that much less of its cap left. That holds only in that order: owner_pay has no cap check, so an agent that goes first can spend its whole cap and the owner can still pay on top of it. spent_today read back 60000 base units, exactly 0.05 + 0.01.',
       },
       {
         kind: 'deploy',

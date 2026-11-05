@@ -57,7 +57,8 @@ export function useArcTx() {
   }, [])
 
   /** Stop waiting on a run whose promise may never settle. It keeps running, and what it does
-   *  to its own records still happens, but it no longer holds the page. */
+   *  to its own records still happens, but it no longer holds the page. A later run can be on the
+   *  same record by then, so a run's late write has to allow for one: see saveSentHash in pending.ts. */
   const release = useCallback((key: string) => {
     if (current.current?.key !== key) return
     current.current = null

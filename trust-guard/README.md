@@ -147,8 +147,18 @@ claude mcp add a-identity-trust -e A_IDENTITY_ALGORAND_MNEMONIC="..." -- npx -y 
 ## Verify, then pay from a vault, on Arc Mainnet
 
 **Status: this code ran our own 100 flows on Arc Mainnet on 2026-11-02, and the hosted route it calls
-is live. It needs version 0.4.0 or later, because 0.3.0 has no `/arc` entry point. No outside team has
-run the published package yet.**
+is live. `verifyThenPay` needs version 0.4.0 or later, because 0.3.0 has no `/arc` entry point.
+`ownerOnly`, `approvalUrl` and the hand-off of a payment above the vault's ceiling or off its allowlist
+need 0.4.1, which is in the repo and not on npm yet, so `npm install` gets 0.4.0 for now: there
+`out.approvalUrl` is undefined, and such a payment throws `VaultPolicyError` before anything is signed. No
+outside team has run the published package yet.**
+
+**Changed in 0.4.1.** On a vault with a human, a payment above the vault's ceiling or to a payee off its
+allowlist used to be refused before the check, for free. It now goes on to the check, which is charged,
+because the owner can pay it: `preflightVault` says so in `ownerOnly`, and `verifyThenPay` returns
+`awaiting_human` on ALLOW or WARN with `ownerOnly` naming the gate. A caller who wants the free refusal
+reads `ownerOnly` from `preflightVault` first. Every `awaiting_human` result also has `approvalUrl`, the
+link to send the owner, or null. 0.4.0 has neither field.
 
 `verifyThenPay` buys a `risk_check` through Circle Gateway and then pays the payee from an
 [AgentSpendPolicy](https://a-identity.xyz) vault, with keys only you hold. It needs Node and two
@@ -236,7 +246,7 @@ independently either: it comes from the same server, so it binds the answer to y
 | `ArcAssetError` | Not the registry's USDC. Nothing bought. |
 | `PayeeNotRegisteredError` | An agent named in `payeeAgentId` is not the payee's, or the registry did not answer. Holding no agent is not this error. Nothing bought. |
 | `VaultPolicyError` | The vault would refuse (its own error name), or could not be read. `stage` says whether the check was already paid. |
-| `GatewayCheckError` | No usable verdict came back. `paid` is true, false, or null when the answer does not say. `code` `NO_HUMAN_GATE` is a WARN on a vault whose owner and operator are one key: the check was paid, the flow is public at `recordUrl`, nothing was prepared, and the fix is an owner key the agent does not hold. |
+| `GatewayCheckError` | No usable verdict came back. `paid` is true, false, or null when the answer does not say. `code` `NO_HUMAN_GATE` is a WARN on a vault whose owner and operator are one key: the check was paid, the flow is public at `recordUrl`, nothing was prepared, and the way out is a new agent key: a vault's owner cannot be changed, so give the agent its own key with `setOperator` and keep the owner key from it, or, if its process or logs have held that key, deploy a new vault. |
 | `UnusableVerdictError` | The check was paid and its answer cannot be acted on. |
 | `TrustDenyError` | DENY. `context` holds the flow id, the check and the record's URL. |
 | `VaultPaymentError` | The payment step failed. With a `txHash`, look that hash up: never send again with a new nonce, because a transaction reported as missing can still land. |

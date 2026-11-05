@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
+import { REVOKED_KEY_EXPIRY } from './arc-owner-vault.js'
 import { benchStalledHosts, withDeadline, type RpcHost } from './arc-owner-vault-live.js'
 import { rateBudget } from './rate-budget.js'
 
@@ -33,6 +34,7 @@ const loadRules = async () =>
     vaultCountFromAnswer: (httpStatus: number, body: unknown) => VaultCount
     listReads: <T>(deliver: (answer: T) => void) => { begin: () => (answer: T) => void; out: () => boolean; stop: () => void }
     endDateOf: (sessionKeyExpiry: bigint, expired: boolean) => string
+    endDateFromRead: (live: { sessionKeyExpiry: bigint; expired: boolean } | null, readBehind: boolean) => string
     sweepSaysFrom: (body: unknown) => string
     noHashWords: (endDate: string, sweep: string) => string
     PAST_RATE_WINDOW_MS: number
@@ -281,6 +283,9 @@ test('the notice says what it cannot know as that', () => {
   assert.match(notice, /once its agent key has an end date/)
   assert.doesNotMatch(notice, /send its hash|open this page there/)
   assert.match(notice, /We could not find out whether this vault counts on/)
+  // A vault whose end date has passed does not work as one: pay reverts. Whether it counts is what changes nothing.
+  assert.match(notice, /Being counted or not changes nothing in how it works\./)
+  assert.doesNotMatch(notice, /still works as a vault/)
 })
 
 test('with no hash the page says why from the end date, and says the server is looking only when the server says so', async () => {
@@ -288,35 +293,49 @@ test('with no hash the page says why from the end date, and says the server is l
   const LOOKS = /our server looks for vaults on the chain by itself/
   // With no hash in this browser the server finds a vault by itself, so nobody is sent to a person first.
   const none = noHashWords('none', 'looking')
-  assert.match(none, /^, because its agent key has no end date\. Set one from this page\. You do not have to send anything to anyone: our server looks/)
+  assert.match(none, /^, because its agent key has no end date\. Set one in the Session key box on this vault's page, with its Set the expiry button\. You do not have to send anything to anyone: our server looks/)
   assert.match(none, /finds this one once it has an end date/)
   const future = noHashWords('future', 'looking')
   assert.match(future, /^\. You do not have to send anything to anyone/)
   assert.match(future, /this one has the agent key end date it looks for/)
   assert.match(future, /If it still says this tomorrow, tell the A-Identity team/)
 
-  // A date that has passed, or a revoked key: the one action that fixes it is renewing, so it says so and sends nobody to a person.
+  // A date that has passed: the one action that fixes it is renewing, so it says so and sends nobody to a person.
   const passed = noHashWords('passed', 'looking')
-  assert.match(passed, /because its agent key's end date has passed\. Set a new one from this page/)
-  assert.match(passed, /within about an hour of the new end date/)
+  assert.match(passed, /because its agent key's end date has passed\. Set a new one in the Session key box on this vault's page, with its Extend or shorten button\./)
+  // A test in arc-vault-sweep.test.ts runs the sweep against these words.
+  assert.match(passed, /within about ten minutes of the new end date, later if many contracts are waiting\./)
   assert.doesNotMatch(passed, /has the agent key end date it looks for|A-Identity team/)
   assert.equal(endDateOf(0n, false), 'none')
   assert.equal(endDateOf(5000n, false), 'future')
   assert.equal(endDateOf(5000n, true), 'passed')
-  assert.equal(endDateOf(1n, true), 'passed', 'revoked is a second already past')
+
+  // Revoked: admission takes it and the sweep finds it from the revoke's own log, so the key being off is no reason, and nothing is asked of the owner.
+  assert.equal(endDateOf(REVOKED_KEY_EXPIRY, true), 'revoked', 'the very value admission takes')
+  assert.equal(endDateOf(REVOKED_KEY_EXPIRY + 1n, true), 'passed', 'and only that value: admission refuses any other date in the past')
+  const revoked = noHashWords('revoked', 'looking')
+  assert.match(revoked, /^\. Its agent key is revoked, and that does not stop a vault counting\. You do not have to send anything to anyone: our server looks/)
+  assert.match(revoked, /it finds this one with its key revoked too/)
+  assert.match(revoked, /If it still says this tomorrow, tell the A-Identity team/)
+  assert.doesNotMatch(revoked, /has passed|new one|Set |end date/, 'it never asks an owner to turn back on a key they just cut off')
+  assert.equal(noHashWords('revoked', 'reading'), '. Its agent key is revoked, and that does not stop a vault counting.', 'it says what the read showed, and claims no search')
+  assert.match(noHashWords('revoked', 'not-looking'), /that does not stop a vault counting\. Our server is not looking .* so if another browser/, 'nothing to do first, so no after that')
 
   // Off, or not able to admit: nobody is looking, and it gives the path that still works.
-  for (const endDate of ['none', 'passed', 'future', 'unknown']) {
+  for (const endDate of ['none', 'passed', 'revoked', 'future', 'unknown']) {
     for (const sweep of ['not-looking', 'unknown', 'reading']) {
       const words = noHashWords(endDate, sweep)
       assert.doesNotMatch(words, LOOKS, `${endDate} ${sweep}`)
       assert.doesNotMatch(words, /has the agent key end date it looks for/)
-      if (sweep !== 'reading') assert.match(words, /open this vault in the browser that deployed it, which can ask by itself\. If you cannot, tell the A-Identity team\./)
+      // This browser holds no hash whoever sent the deploy, and on the setup's last screen it is always the one that did, so only another one can ask.
+      if (sweep !== 'reading') assert.match(words, /if another browser of yours saw this vault's deploy land, open this vault there: it can ask by itself\. If none did, tell the A-Identity team\./)
+      assert.doesNotMatch(words, /the browser that deployed/)
     }
     assert.match(noHashWords(endDate, 'looking'), LOOKS, endDate)
   }
   assert.match(noHashWords('future', 'not-looking'), /^\. Our server is not looking for vaults on the chain right now/)
-  assert.match(noHashWords('none', 'not-looking'), /Set one from this page\. Our server is not looking .* so after that open this vault/)
+  assert.match(noHashWords('none', 'not-looking'), /with its Set the expiry button\. Our server is not looking .* so after that, if another browser/)
+  assert.match(noHashWords('passed', 'unknown'), /with its Extend or shorten button\. We could not find out .* so after that, if another browser/)
   assert.match(noHashWords('future', 'unknown'), /We could not find out whether our server is looking/)
   assert.equal(noHashWords('future', 'reading'), '.', 'nothing is claimed while it reads')
 
@@ -330,6 +349,47 @@ test('with no hash the page says why from the end date, and says the server is l
   for (const body of [null, {}, { sweep: null }, { sweep: { on: 'yes' } }]) assert.equal(sweepSaysFrom(body), 'unknown')
 })
 
+test('the words name the box and the buttons the page really has, for an owner on the vault page or on the last screen of the setup', async () => {
+  const { noHashWords } = await loadRules()
+  const controls = readSource('src/components/app/arc/OwnerControls.tsx')
+  assert.match(controls, /<Card title="Session key">/)
+  assert.match(controls, /vault\.sessionKeyExpiry === 0n \? 'Set the expiry' : 'Extend or shorten'/, 'a key with no date gets the first button, and any other the second')
+  for (const endDate of ['none', 'passed']) {
+    assert.match(noHashWords(endDate, 'reading'), /in the Session key box on this vault's page/, 'the last screen of the setup has no such box, so the words say where it is')
+    assert.doesNotMatch(noHashWords(endDate, 'reading'), /from this page/)
+  }
+  // The last screen offers the way there, right under the line.
+  const flow = readSource('src/components/app/arc/DeployFlow.tsx')
+  const done = flow.slice(flow.indexOf('<VaultCountNotice '))
+  assert.ok(done.indexOf('Open the vault') > 0 && done.indexOf('Open the vault') < 800)
+})
+
+test('the no-hash line can read the list again, because Refresh reads only the chain and the line tells the owner to look', async () => {
+  const notice = readSource('src/components/app/arc/VaultCountNotice.tsx')
+  const line = notice.slice(notice.indexOf("count.state === 'no-hash') {"), notice.indexOf("count.state === 'checking'"))
+  assert.match(line, /\{noHashWords\(endDate, sweep\)\} \{lookAgain\}/, 'whatever the words are, in every state of the search: a read of it that failed recovers through this')
+  assert.match(notice, /const lookAgain = \(\s*<button type="button" onClick=\{onRetry\}[^>]*>\s*Look again\s*<\/button>/)
+
+  // The click reaches the list: a null hash goes to the page's read of the list, from both places that show the line.
+  const hook = readSource('src/components/app/arc/useVaultCount.ts')
+  assert.match(hook, /if \(hash\) void send\(hash\)\s*else onReadListAgain\(\)/)
+  assert.match(readSource('src/routes/app/ArcVault.tsx'), /const \{ count, retry \} = useVaultCount[^\n]*\n[^\n]*onRetry=\{retry\}/)
+  assert.match(readSource('src/components/app/arc/DeployFlow.tsx'), /onRetry=\{vaultCount\.retry\}/)
+
+  // That read takes the line away and brings it back, or brings the answer.
+  const { listingOf, shownCount } = await loadRules()
+  const listing = (ownerHeldRead: boolean, address?: string) => listingOf({ vaults: address ? [{ network: 'n', address, kind: 'owner-held' }] : [], partial: null, ownerHeldRead }, 'n', '0xaa')
+  assert.equal(shownCount(null, null, null, listing(true)).state, 'no-hash')
+  assert.equal(shownCount(null, null, null, listing(false)).state, 'checking', 'the click shows at once')
+  assert.equal(shownCount(null, null, null, listing(true)).state, 'no-hash', 'the line comes back, so the search is asked about again')
+  assert.equal(shownCount(null, null, null, listing(true, '0xAA')).state, 'counted', 'or a vault the sweep has counted says so, with no reload')
+
+  // The line coming back is what asks about the search again, and the last answer went with the line.
+  assert.match(notice, /const needsSweep = !testnet && count\.state === 'no-hash'/)
+  assert.match(notice, /if \(!needsSweep\) return\n\s+let current = true\n\s+void readSweepSays\(\)/)
+  assert.match(notice, /return \(\) => \{\n\s+current = false\n\s+setSweep\('reading'\)\n\s+\}\n\s+\}, \[needsSweep\]\)/)
+})
+
 test('the words the page reads are the words the sweep can say', async () => {
   const sweep = readSource('mcp/src/arc-vault-sweep.ts')
   for (const word of ['admission-not-ready', 'list-unreadable', 'round-failed', 'round-stalled']) assert.match(sweep, new RegExp(`\\| '${word}'`), word)
@@ -340,18 +400,50 @@ test('both places that show the notice pass what the vault reads as, and the pro
   assert.match(page, /expired=\{v\.expired\}/, 'the vault page passes whether the date has passed')
   assert.match(page, /endDate=\{endDateOf\(expiry, expired\)\}/)
   const flow = readSource('src/components/app/arc/DeployFlow.tsx')
-  assert.match(flow, /endDate=\{snapshot && setup\.vault && sameAddress\(snapshot\.address, setup\.vault\) \? endDateOf\(snapshot\.sessionKeyExpiry, snapshot\.expired\) : 'unknown'\}/)
+  assert.match(flow, /endDate=\{endDateFromRead\(liveVault, expiryReadBehind\)\}/)
+  assert.match(flow, /const liveVault = setup \? liveOf\(setup, snapshot\) : null/, 'with the network check liveOf has')
+  assert.match(flow, /const expiryReadBehind = setup \? readBeforeExpiry\(setup, snapshot\) : false/)
   const notice = readSource('src/components/app/arc/VaultCountNotice.tsx')
   assert.match(notice, /^ {2}endDate: EndDate$/m, 'required')
   assert.doesNotMatch(notice, /endDate\s*=\s*'/, 'with no default')
   assert.match(notice, /readSweepSays\(\)/, 'and it asks the server whether anyone is looking')
 })
 
+test('on the last screen a read from before the end date, or of another network, says nothing about the end date', async () => {
+  const { endDateFromRead, endDateOf, noHashWords } = await loadRules()
+  const rules = (await import(repoUrl('src/lib/arc/tx-rules.ts').href)) as {
+    liveOf: (setup: unknown, snapshot: unknown) => { sessionKeyExpiry: bigint; expired: boolean } | null
+    readBeforeExpiry: (setup: unknown, snapshot: unknown) => boolean
+  }
+  const setup = { network: 'n', vault: '0xAA', expiryTx: { action: 'expiry', outcome: 'settled', hash: '0xh', block: 100n } }
+  const snap = (over: Record<string, unknown>) => ({ network: 'n', address: '0xaa', block: 100n, sessionKeyExpiry: 5000n, expired: false, ...over })
+  const onScreen = (snapshot: unknown) => endDateFromRead(rules.liveOf(setup, snapshot), rules.readBeforeExpiry(setup, snapshot))
+
+  // The deploy left 0, and this host has not reached the block of the write. The box says it is still being read.
+  const behind = snap({ block: 99n, sessionKeyExpiry: 0n })
+  assert.equal(endDateOf(0n, false), 'none', 'as a plain read it would say no end date')
+  assert.equal(onScreen(behind), 'unknown')
+  assert.doesNotMatch(noHashWords(onScreen(behind), 'looking'), /has no end date/, 'so the line does not say so beside it')
+  assert.equal(onScreen(snap({ sessionKeyExpiry: 0n })), 'none', 'a read that reached the block and reads 0 is a key with no date')
+  assert.equal(onScreen(snap({})), 'future')
+  assert.equal(onScreen(snap({ sessionKeyExpiry: 1n, expired: true })), 'revoked')
+  assert.equal(onScreen(snap({ sessionKeyExpiry: 2n, expired: true })), 'passed')
+
+  assert.equal(onScreen(snap({ network: 'm' })), 'unknown', 'the same address on another network is another vault')
+  assert.equal(onScreen(snap({ address: '0xbb' })), 'unknown', 'another vault')
+  assert.equal(onScreen(null), 'unknown', 'nothing read yet')
+})
+
 test('admission is what it was: only the deploy hash goes in, and the same checks stand', () => {
   const live = readSource('mcp/src/arc-owner-vault-live.ts')
-  assert.match(live, /const b = \(body \?\? \{\}\) as \{ deployTx\?: unknown; chain\?: unknown \}/, 'the route takes no vault address: the explorer gives this server no creation transaction')
+  assert.match(live, /const b = \(body \?\? \{\}\) as \{ deployTx\?: unknown; chain\?: unknown \}/, 'the route takes no vault address: finding a hash from one costs a bisect, which a public route should not run for any caller')
   assert.match(live, /ownerKind: 'unstated'/)
   assert.doesNotMatch(live, /explorer\.[a-z]+\/api|\/api\/v2\//, 'nothing here reads an explorer')
+  // The sweep finds a hash from the chain alone, so the explorer is not why, and the docs give the real reason.
+  const readme = readSource('mcp/README.md')
+  assert.match(readme, /The route takes no vault address on purpose: finding a hash from an address costs a bisect of about 25\s+reads plus a block read/)
+  assert.doesNotMatch(readme, /one public source of a contract's|the server cannot get it reliably/)
+  assert.doesNotMatch(readSource('mcp/src/chains/registry.ts'), /cannot derive a deploy hash/)
 })
 
 test('the rehearsal refuses an output folder git would publish, before any key exists', () => {

@@ -375,7 +375,11 @@ rail; the 402 lists both and you pick by `network`.
 ## Where your payments show up
 
 Your wallet pays, from its own Gateway balance, and it is labeled **external** automatically:
-our own buyer wallets are on the rail's published internal list, and every other payer is external. Nothing is counted until the
+our own buyer wallets are on the rail's published internal list, and every other payer is external.
+The Arc season report below also reads as internal the owner of a vault labeled team, and the agent key
+on a recorded flow through such a vault: a person on our team is not a wallet we do not control. An
+agent key with no recorded flow through that vault stays external until it is on the list, and the
+rail's own proof reads the list alone. Nothing is counted until the
 transfer has been read back from Gateway's transfers API for the authorization's nonce,
 to our `payTo`, for the price.
 
@@ -417,7 +421,7 @@ first, for 0.005 USDC, from a Gateway balance. Checked on 2026-11-04:
 | --- | --- |
 | Hosted routes | **Live.** They validate input and serve flow records. 100 flows have run on Arc Mainnet, all through our own launch-day vault to payees of ours and labeled so: 75 `ALLOW` flows that the vault paid, and 25 `DENY` flows stopped before signing, answered on 2026-11-01 and 2026-11-02 UTC under the rule of that day. Each is listed on [/proof/arc](https://a-identity.xyz/proof/arc). |
 | MCP tools | **Live** on `https://a-identity.xyz/mcp`, which lists both. The stdio server does not carry them. |
-| SDK, `@a-identity/trust-guard` 0.4.0 | **On npm**, with the `/arc` entry point. This code ran our own 100 flows. No outside team has run the published package yet. `ownerOnly` and `approvalUrl` come with 0.4.1, which is in the repo and not on npm yet; the hosted route already answers with both. |
+| SDK, `@a-identity/trust-guard` 0.4.0 | **On npm**, with the `/arc` entry point. This code ran our own 100 flows. No outside team has run the published package yet. `ownerOnly`, `approvalUrl` and the hand-off of a payment above the ceiling or off the allowlist come with 0.4.1, which is in the repo and not on npm yet; the hosted route already answers with all of them. |
 
 <Note>
 A vault payment is a direct USDC transfer to the checked payee, not an x402 settlement. The vault
@@ -546,7 +550,7 @@ deployed from the vault page your wallet is the owner, so the vault page is wher
 
 Open your vault at [/app/vault/arc](https://a-identity.xyz/app/vault/arc) with the owner wallet
 connected, and it lists the payments waiting for you. Or follow the link your agent sends you:
-`ownerHandoff.approvalUrl` from the hosted route, `out.approvalUrl` from `verifyThenPay`, always on
+`ownerHandoff.approvalUrl` from the hosted route, `out.approvalUrl` from `verifyThenPay` 0.4.1, always on
 `https://a-identity.xyz`. That link is `null` on a hand-off the page would refuse: a check the operator
 key did not pay for, or a payment to the operator key itself. Then `next` says why, and `ownerPay` from
 the owner key is the way. For each payment the page says who gets paid, how much, what the check said
@@ -583,7 +587,9 @@ What the page refuses, each for a reason:
   names no check, so an owner's payment answers the latest check the operator paid for, ahead of any other
   key's, and a stranger's identical check cannot take it. A check that comes after a payment is a new
   request, because that is how a second payment is meant to happen, so the page offers it, and says
-  plainly when the vault paid the same amount to the same payee in the 6 hours before that check.
+  plainly when the vault paid the same amount to the same payee in the 6 hours before that check. What the
+  page cannot stop is a wallet prompt answered after you told it nothing was sent and sent again: sign both,
+  and both pay. It keeps and follows both hashes and says so, and the flow's public record holds one of them.
 - **A check older than 24 hours**, by the chain's clock. An owner has to be able to find a request in a
   working day, and past that our answer may be wrong without anyone having seen it change. A new check
   costs your agent 0.005 USDC.
@@ -667,7 +673,7 @@ never sent to `risk_check`) and `payOnWarn`. The body's `stage` says where the f
 | Status | `stage` | Meaning |
 | --- | --- | --- |
 | `400`, `422` | `refused` | Bad input, a named agent that is not the payee's, or the vault would refuse and this flow hands nothing to its owner, whose `ownerPay` is a separate act. `code` names why. Nothing charged, and no verdict comes back. |
-| `409` | `refused` | `NONCE_ALREADY_USED`: this authorization already opened a flow. This request charged nothing, but the first request with this nonce may have. Read `GET /api/x402/gateway/flows/<nonce>` or the Gateway proof log before signing a new one. |
+| `409` | `refused` | `NONCE_ALREADY_USED`: this authorization already opened a flow. This request charged nothing, but the first request with this nonce may have been charged and may hold a verdict, or may still be running. Read `GET /api/x402/gateway/flows/<nonce>`. If that answers `404`, look the nonce up on the Gateway proof log and read both again in a minute, because a request still running shows in neither. Sign a new authorization only if neither shows the nonce by then, or the proof log says it failed. |
 | `402` | `payment_required` | The free checks passed. Nothing charged yet. A payee that holds no agent passes them, with `checks.payee.agentsHeld` 0, and `next` says what to expect. So does a payment only the owner can settle, with `checks.vault.ownerOnly` set, and `next` says the check is still charged. |
 | `200` | `prepared` | Send `prepared` from the operator key, unless `prepared.simulation.ok` is false, which means the vault would refuse it right now. |
 | `200` | `awaiting_human` | `WARN`, or a usable verdict on a payment only the owner can settle: send the owner `ownerHandoff.approvalUrl`, which is `null` when the vault page would refuse this, or send `ownerHandoff.ownerPay` from the owner key, unless `ownerHandoff.ownerPay.simulation.ok` is false, which means the vault would refuse it right now. A payee we know nothing about ends here. |
@@ -718,10 +724,13 @@ payment from your own inputs, compares it byte for byte with what the server pre
 posts the receipt. A compromised server cannot redirect the payment. The verdict itself is not
 signed, so you still trust our server and the TLS connection for what it says.
 
-Install it with `npm install @a-identity/trust-guard viem @circle-fin/x402-batching`, version 0.4.0
-or later. Its [README](https://github.com/getA-Identity/A-Identity/blob/main/trust-guard/README.md)
-has the code and every error it throws. For Milestone 2, the direct check at the top of this page is
-the shortest path.
+Install it with `npm install @a-identity/trust-guard viem @circle-fin/x402-batching`. `verifyThenPay`
+needs version 0.4.0 or later. `ownerOnly`, `out.approvalUrl` and the hand-off of a payment above the
+ceiling or off the allowlist need 0.4.1, which is in the repo and not on npm yet, so that command gets
+0.4.0 for now: there `out.approvalUrl` is undefined, and such a payment throws `VaultPolicyError` before
+anything is signed. The [README](https://github.com/getA-Identity/A-Identity/blob/main/trust-guard/README.md)
+describes 0.4.1, with the code and every error it throws. For Milestone 2, the direct check at the top
+of this page is the shortest path.
 
 ## Free reads
 

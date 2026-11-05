@@ -45,6 +45,8 @@
  * also stops a send on a flow some other browser or wallet already paid, whatever this browser remembers.
  * A payment BEFORE the check is no bar, because a new check is how a second payment is meant to happen,
  * but the card says so (paidBefore), since an agent that asks again can be asking for the same invoice.
+ * What the page cannot stop is a person answering two wallet prompts, so a second hash stays on the record
+ * and is followed and named beside the first (alsoSent in pending.ts, otherSends here).
  *
  * STALENESS. A verdict ages: a record can be revoked, or a Sybil cluster found, the moment after it. See
  * HANDOFF_MAX_AGE_SECONDS. A vault's state ages faster, so it is read again and the call simulated right
@@ -454,6 +456,33 @@ export type Hold =
  */
 export function holdOf(s: HandoffSend | null | undefined): Hold {
   if (!s) return { held: false }
+  const own = holdOfRecord(s)
+  const others = otherSends(s)
+  if (others.length === 0) return own
+  // With more than one send, the one that can still move money speaks for the record.
+  const holds = [own, ...others.map((t) => holdOfTx(s, t))]
+  for (const why of HOLD_ORDER) {
+    const h = holds.find((x) => x.held && x.why === why)
+    if (h) return h
+  }
+  return { held: false }
+}
+
+/** Strongest first. An answer outranks a landed hash, because the answer is what that hash was waiting for. */
+const HOLD_ORDER = ['pending', 'maybe', 'asked', 'answered', 'landed'] as const
+
+/**
+ * The transactions on a record of more than one send that its own lines do not speak for: every one beside
+ * the first, and once the server has answered, every one but the hash it answered about.
+ */
+export function otherSends(s: HandoffSend): TxRecord[] {
+  if (!s.alsoSent?.length) return []
+  if (!s.server) return s.alsoSent
+  const answered = s.server.txHash.toLowerCase()
+  return [...(s.tx ? [s.tx] : []), ...s.alsoSent].filter((t) => t.hash.toLowerCase() !== answered)
+}
+
+function holdOfRecord(s: HandoffSend): Hold {
   const hash = s.paidBy ?? s.tx?.hash
   if (s.server) return { held: true, why: 'answered', hash: hash ?? '' }
   if (s.paidBy) return { held: true, why: 'landed', hash: s.paidBy }
@@ -502,6 +531,25 @@ export function holdsPage(r: HandoffSend): boolean {
   return h.held && h.why !== 'answered' && h.why !== 'landed'
 }
 
+/**
+ * Whether this flow's card is what this browser sent, with its tracker, rather than what the flow's record
+ * says. Only that tracker finishes a record: it follows the hash, posts it, and writes the server's answer.
+ * So a record with no answer keeps it on a flow another browser or a phone already closed. The post gets the
+ * recorded answer or a refusal, and either one is the answer the record was waiting for. Without it a pending
+ * hash holds the page's controls, and a landed one every later check of the same payee and amount, with
+ * nothing on screen to finish or stop. A record of more than one send stays there for good, because the flow's
+ * own card names one transaction, and the other may have paid too.
+ */
+export function followedHere(r: HandoffSend | null | undefined, s: HandoffStanding): boolean {
+  if (!r || !holdOf(r).held) return false
+  return !r.server || !flowIsOver(s) || otherSends(r).length > 0
+}
+
+/** The flow's record says it is finished, one way or the other: nothing more can happen to it. */
+export function flowIsOver(s: HandoffStanding): boolean {
+  return s.kind === 'settled' || s.kind === 'reverted'
+}
+
 /** How long a final answer is shown for a record whose flow did not read back. */
 export const ANSWER_SHOWN_MS = 10 * 60_000
 
@@ -527,27 +575,37 @@ export const REPLACED_WATCH_MS = 60_000
  * What a read of the vault's Paid events says about a send with no answer. A payment of this amount to
  * this payee from the owner, after this check, is this send's whatever hash it has: that is how a
  * wallet's speed-up shows up, and a wallet asked with no hash back. A replacement that shows no payment
- * is a cancel, but only a read well after it can say so. A person's "nothing was sent", and a quiet
- * replacement, free the flow and prove nothing: a slow wallet can still send it. If the payment shows up
- * after that it is this send's too, and what the page says and does goes back to following it.
+ * is a cancel, but only a read well after it can say so, and only one that came down to this check: a
+ * read that stopped short is answered, not failed, and what it did not reach holds no news either way.
+ * A person's "nothing was sent", and a quiet replacement, free the flow and prove nothing: a slow wallet
+ * can still send it. If the payment shows up after that it is this send's too, and what the page says and
+ * does goes back to following it.
  */
-export function afterScan(s: HandoffSend, f: Pick<HandoffFlow, 'payee' | 'amount' | 'verdictBlock'>, paid: readonly PaidEvent[], now: number): HandoffSend {
+export function afterScan(s: HandoffSend, f: Pick<HandoffFlow, 'payee' | 'amount' | 'verdictBlock'>, scan: Pick<PaidScan, 'from' | 'paid'>, now: number): HandoffSend {
   if (s.server || s.paidBy) return s
   const h = holdOf(s)
   if (h.held ? h.why !== 'asked' && h.why !== 'maybe' : !s.released && !s.replacedClear) return s
-  const hit = paidAfter(f, paid)
+  const hit = paidAfter(f, scan.paid)
   if (hit?.byOwner) return { ...s, paidBy: hit.txHash.toLowerCase() }
   if (!h.held || s.tx?.outcome !== 'replaced') return s
+  if (f.verdictBlock === null || scan.from > f.verdictBlock + 1n) return s
   if (!s.replacedSeenAt) return { ...s, replacedSeenAt: new Date(now).toISOString() }
   return now - Date.parse(s.replacedSeenAt) >= REPLACED_WATCH_MS ? { ...s, replacedClear: true } : s
 }
 
-/** The hash to post for this send, once there is one the chain has an answer about. */
+/**
+ * The hash to post for this send, once there is one the chain has an answer about. Of two, the one that paid.
+ * A revert waits while another is still on its way, because the post would end the flow, and that one can
+ * still pay it.
+ */
 export function hashToPost(s: HandoffSend): string | null {
   if (s.server) return null
   if (s.paidBy) return s.paidBy
-  const t = s.tx
-  return t && (t.outcome === 'settled' || t.outcome === 'unexpected' || t.outcome === 'reverted') ? t.hash : null
+  const sends = [...(s.tx ? [s.tx] : []), ...(s.alsoSent ?? [])]
+  const paid = sends.find((t) => t.outcome === 'settled')
+  if (paid) return paid.hash
+  if (sends.some((t) => t.outcome === 'pending')) return null
+  return sends.find((t) => t.outcome === 'unexpected' || t.outcome === 'reverted')?.hash ?? null
 }
 
 // --- what the server said ---

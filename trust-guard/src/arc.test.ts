@@ -572,7 +572,7 @@ for (const [label, reply, code, paid] of [
 }
 
 test('a WARN with no human to hand it to is a typed error: paid, with its record and the server\'s words', async () => {
-  const next = "WARN, and this vault's owner and operator are the same key, so there is no human to hand the payment to: do not pay. Give the vault an owner key the agent does not hold."
+  const next = "WARN, and this vault's owner and operator are the same key, so there is no human to hand the payment to: do not pay. A vault's owner cannot be changed, so give your agent a new key of its own with setOperator, and keep this key from it."
   const { signer, opts } = setup({
     paid: (p) => ({ status: 200, body: answerBody(p, 'warn_no_human_gate', { charged: true, next, record: { recorded: true, url: 'https://anywhere.example/x' } }) }),
   })
@@ -1974,3 +1974,24 @@ for (const [label, value] of [
     assert.equal((api.calls[0].body as { payOnWarn: unknown }).payOnWarn, false)
   })
 }
+
+test('the package says one version, and the README says what that version changed', () => {
+  const read = (rel: string) => readFileSync(new URL(`../${rel}`, import.meta.url), 'utf8')
+  const pkg = JSON.parse(read('package.json')) as { version: string }
+  const lock = JSON.parse(read('package-lock.json')) as { version: string; packages: Record<string, { version?: string }> }
+  assert.equal(lock.version, pkg.version)
+  assert.equal(lock.packages[''].version, pkg.version)
+  // ownerOnly and approvalUrl came after 0.4.0 went to npm, so a version that has them is past it.
+  const [major, minor, patch] = pkg.version.split('.').map(Number)
+  assert.ok(major > 0 || minor > 4 || (minor === 4 && patch >= 1), pkg.version)
+  const readme = read('README.md')
+  assert.match(readme, /\*\*Changed in 0\.4\.1\.\*\*/)
+  assert.match(readme, /`ownerOnly`/)
+  assert.match(readme, /`approvalUrl`/)
+  // The status line is what someone following the install line reads: which version gets them what.
+  const status = readme.slice(readme.indexOf('**Status: this code ran our own 100 flows'), readme.indexOf('**Changed in 0.4.1.**')).replace(/\s+/g, ' ')
+  assert.match(status, /`verifyThenPay` needs version 0\.4\.0 or later/)
+  assert.match(status, /`ownerOnly`, `approvalUrl` and the hand-off of a payment above the vault's ceiling or off its allowlist need 0\.4\.1/)
+  assert.match(status, /not on npm yet, so `npm install` gets 0\.4\.0 for now/)
+  assert.doesNotMatch(status, /It needs version 0\.4\.0 or later/)
+})

@@ -83,6 +83,19 @@ test('every hash and address is well formed, and every artifact lands on a known
   }
 })
 
+test('counting an owner payment is said to bind the agent only in the order it does', () => {
+  // pay() compares the day's total with the cap and owner_pay() does not, on every implementation. So an
+  // owner who pays first leaves the agent less, and an agent that goes first leaves the owner free to pay on top.
+  const notes = PROVENANCE.flatMap((p) => p.artifacts.map((a) => a.note ?? ''))
+  for (const note of notes) assert.doesNotMatch(note, /cannot ride on top|ride on top of the override/, note)
+  const override = PROVENANCE.find((p) => p.chain === 'algorand')?.artifacts.find((a) => a.label === 'The owner overrides the freeze and pays anyway')
+  assert.match(override?.note ?? '', /holds only in that order: owner_pay has no cap check, so an agent that goes first can spend its whole cap and the owner can still pay on top of it/)
+  const contract = readFileSync(repoFile('algorand/contracts/agent-spend-policy/contract.py'), 'utf8')
+  const ownerPay = contract.slice(contract.indexOf('def owner_pay'), contract.indexOf('def withdraw'))
+  assert.doesNotMatch(ownerPay, /DAILY_CAP_EXCEEDED|daily_cap/, 'the note is about this: the override has no cap check')
+  assert.match(contract.slice(contract.indexOf('def pay'), contract.indexOf('def owner_pay')), /self\.spent_today \+ amount <= self\.daily_cap/, 'and the agent has')
+})
+
 test('no explorer URL is hand written in the ledger', () => {
   // Links must derive from the descriptor of the chain a transaction landed on. A typed
   // URL is how a proof page ends up pointing at the wrong chain's explorer, which is

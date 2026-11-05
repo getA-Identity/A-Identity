@@ -31,12 +31,15 @@ import {
   agePhrase,
   budgetLine,
   cardHeading,
+  flowIsOver,
+  followedHere,
   hashToPost,
   holdFor,
   holdOf,
   holdsPage,
   keyStoppedLine,
   notFromAgentLine,
+  otherSends,
   ownerOnlyLine,
   ownerOnlyStands,
   paidAfter,
@@ -53,7 +56,7 @@ import {
   type ReceiptStep,
 } from '../../../lib/arc/handoff-rules'
 import { postHandoffReceipt, readFlow, readWaitingFlows, recheckHandoff, scanPaid, type PaidScan, type WaitingRead } from '../../../lib/arc/handoff-send'
-import { claimHandoff, clearHandoff, holdsFlow, loadDeclined, loadHandoffs, saveDeclined, saveHandoff, type HandoffSend, type TxRecord } from '../../../lib/arc/pending'
+import { claimHandoff, dropClaim, holdsFlow, loadDeclined, loadHandoffs, saveDeclined, saveHandoff, saveSentHash, withTx, type HandoffSend, type TxRecord } from '../../../lib/arc/pending'
 import { addressUrl, localTime, networkName, networkWord, readVault, txUrl, type VaultSnapshot } from '../../../lib/arc/vault-read'
 import { aboveSoftWarn, formatUnitsExact, sameAddress } from '../../../lib/arc/vault-rules'
 import { STEP_LABEL, failureOf, sendPrepared, TxStop, type PreparedTx } from '../../../lib/arc/vault-write'
@@ -188,7 +191,7 @@ export default function OwnerApprovals({ chain, vault: pageVault, wallet, canAct
         for (const r of loadHandoffs(network, address)) {
           const f = flows.find((x) => holdsFlow(r, x.flowId))
           if (!f) continue
-          const next = afterScan(r, f, got.paid, Date.now())
+          const next = afterScan(r, f, got, Date.now())
           if (next !== r) saveHandoff(next)
         }
         refreshRecords()
@@ -412,7 +415,7 @@ function FlowCard(props: CardProps) {
   const record = records.find((r) => holdsFlow(r, flow.flowId)) ?? null
 
   // Whatever the flow says now, what this browser sent is followed until it has its answer.
-  if (holdOf(record).held && standing.kind !== 'settled' && standing.kind !== 'reverted') return <RequestCard {...props} record={record} />
+  if (followedHere(record, standing)) return <RequestCard {...props} record={record} />
   if (standing.kind === 'not_from_agent')
     return (
       <div role="alert" data-flow={flow.flowId} className="rounded-xl border border-danger/30 bg-danger/[0.08] p-4 text-sm text-foreground">
@@ -596,13 +599,13 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
       } catch (e) {
         // Declined, or never asked: nothing was sent. Any other stop may have left the wallet sending it.
         if (!asked || failureOf(e).code === 'rejected') {
-          clearHandoff(claim.network, claim.vault, claim.flowId)
+          dropClaim(claim)
           onRecords()
         }
         throw e
       }
-      const tx = recordOf(r.prepared, hash, vault.address)
-      saveHandoff({ ...claim, tx })
+      // This run may have been let go of, with a later one on the record by now: both of these allow for that.
+      saveSentHash(claim, recordOf(r.prepared, hash, vault.address))
       onRecords()
       setReviewed(null)
       track('arc_vault_owner_action', { network: networkWord(chain), action: 'ownerPay', outcome: 'submitted' })
@@ -709,7 +712,7 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
           {step === 'wallet' ? 'Confirm this in your wallet now. If your wallet is an app on your phone, open it there: the request is waiting for you.' : `${step ? STEP_LABEL[step] : 'Working'}...`}
         </p>
       )}
-      {record && <SendTracker record={record} chain={chain} asking={asking} onRecords={onRecords} onLanded={onLanded} />}
+      {record && <SendTracker record={record} chain={chain} asking={asking} flowOver={flowIsOver(standing)} onRecords={onRecords} onLanded={onLanded} />}
       {hold.held && !record && (
         <p className="mt-3 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
           This browser has already sent a payment of this amount to this payee, for another request, and has no final answer for it yet. This is not offered until it has one: two sends pay twice.
@@ -828,13 +831,13 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
  * What was sent for a flow, until the server gave its final word on it: the receipt while the chain has
  * no answer, then the post, retried for as long as the server does not decide anything.
  */
-function SendTracker({ record, chain, asking = false, onRecords, onLanded }: { record: HandoffSend; chain: Chain; asking?: boolean; onRecords: () => void; onLanded: () => void }) {
+function SendTracker({ record, chain, asking = false, flowOver = false, onRecords, onLanded }: { record: HandoffSend; chain: Chain; asking?: boolean; flowOver?: boolean; onRecords: () => void; onLanded: () => void }) {
   const [waitingOn, setWaitingOn] = useState<string | null>(null)
   const hash = hashToPost(record)
   const latest = useRef(record)
   latest.current = record
-  const told = useRef({ onRecords, onLanded })
-  told.current = { onRecords, onLanded }
+  const told = useRef({ onRecords, onLanded, flowOver })
+  told.current = { onRecords, onLanded, flowOver }
 
   useEffect(() => {
     if (!hash) return
@@ -843,7 +846,9 @@ function SendTracker({ record, chain, asking = false, onRecords, onLanded }: { r
     const answer = (server: NonNullable<HandoffSend['server']>) => {
       saveHandoff({ ...latest.current, server })
       told.current.onRecords()
-      told.current.onLanded()
+      // On a flow already read as over this says nothing new about the flow or the vault, and reading both
+      // again for each such record would spend what an owner's next Review needs from the same budget.
+      if (!told.current.flowOver) told.current.onLanded()
     }
     const at = () => new Date().toISOString()
     const decide = (s: ReceiptStep, flowId: string): boolean => {
@@ -874,11 +879,12 @@ function SendTracker({ record, chain, asking = false, onRecords, onLanded }: { r
   }, [hash])
 
   const update = (tx: TxRecord) => {
-    saveHandoff({ ...latest.current, tx })
+    saveHandoff(withTx(latest.current, tx))
     onRecords()
   }
   const h = holdOf(record)
   const server = record.server
+  const others = otherSends(record)
   const release = () => {
     saveHandoff({ ...latest.current, released: true, releasedAt: new Date().toISOString() })
     onRecords()
@@ -886,7 +892,18 @@ function SendTracker({ record, chain, asking = false, onRecords, onLanded }: { r
 
   return (
     <div className="mt-3 space-y-2">
+      {others.length > 0 && (
+        <div role="alert" className="rounded-lg border border-danger/25 bg-danger/[0.07] px-3 py-2 text-xs text-foreground">
+          <div className="font-semibold">Your wallet sent more than one transaction for this one request. Each one that lands pays this amount.</div>
+          <p className="mt-1">
+            It answered a prompt this page had stopped waiting on, as well as a later one. Our server's record of this request holds one transaction, so the others show only here and in the vault's recent activity on this page. If one is still waiting in your wallet, you can cancel it there.
+          </p>
+        </div>
+      )}
       {record.tx && !server && <TxReceipt record={record.tx} onUpdate={update} onSettled={() => onLanded()} serverJudges />}
+      {others.map((t) => (
+        <TxReceipt key={t.hash} record={t} onUpdate={update} onSettled={() => onLanded()} serverJudges oneOfSeveral />
+      ))}
       {!asking && !record.tx && !record.paidBy && !record.released && !server && (
         <div role="status" className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
           <div className="font-semibold">Your wallet was asked to send this, and this page has not heard back.</div>
@@ -902,7 +919,7 @@ function SendTracker({ record, chain, asking = false, onRecords, onLanded }: { r
           <TxLink chain={chain} hash={record.paidBy} />
         </div>
       )}
-      {h.held && h.why === 'maybe' && !record.paidBy && (
+      {h.held && h.why === 'maybe' && (
         <div role="status" className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
           <div className="font-semibold">This may still land, so it is not offered again.</div>
           <p className="mt-1">This page keeps looking for the payment in the vault's activity. Look in your wallet's activity list. If it is still waiting there, or your wallet sent a replacement, it can still pay, and a second send would pay twice.</p>
@@ -945,7 +962,7 @@ function SendTracker({ record, chain, asking = false, onRecords, onLanded }: { r
       )}
       {server?.state === 'refused' && (
         <div role="alert" className="rounded-lg border border-danger/25 bg-danger/[0.07] px-3 py-2 text-xs text-foreground">
-          <div className="font-semibold">Our server read this transaction, and it does not prove this payment, so nothing is marked as settled.</div>
+          <div className="font-semibold">Our server does not take this transaction as proof of this payment, so nothing is marked as settled.</div>
           <p className="mt-1 break-words">{server.reason}</p>
           <p className="mt-1">It is not offered again. Look at the transaction before you do anything else: if it paid someone, a second send would pay twice.</p>
           <TxLink chain={chain} hash={server.txHash} />

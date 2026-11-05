@@ -21,12 +21,29 @@ export type VaultCount =
   | { state: 'needs-end-date' }
   | { state: 'no-hash' }
 
-/** What the vault's agent key end date read as. A date that has passed includes a revoked key: admission needs one in the future. */
-export type EndDate = 'none' | 'future' | 'passed' | 'unknown'
+/**
+ * What the vault's agent key end date read as. Revoked is not a date that has passed: admission takes a
+ * revoked key and refuses any other date in the past (keyIsRevoked in mcp/src/arc-owner-vault.ts), and
+ * the sweep finds the vault from the revoke's own log, so the page asks nothing of a revoked key's owner.
+ */
+export type EndDate = 'none' | 'future' | 'passed' | 'revoked' | 'unknown'
+
+/** What "Revoke now" writes. A test holds it to REVOKED_KEY_EXPIRY in mcp/src/arc-owner-vault.ts, because this module imports nothing. */
+const REVOKED = 1n
 
 export function endDateOf(sessionKeyExpiry: bigint, expired: boolean): EndDate {
   if (sessionKeyExpiry === 0n) return 'none'
+  if (sessionKeyExpiry === REVOKED) return 'revoked'
   return expired ? 'passed' : 'future'
+}
+
+/**
+ * The end date the setup's last screen may speak from: only a read of this setup's own vault (liveOf
+ * in tx-rules.ts), and not one from before the expiry's own block, which can still show the 0 the
+ * deploy left while the same box says the date is still being read.
+ */
+export function endDateFromRead(live: { sessionKeyExpiry: bigint; expired: boolean } | null, readBehind: boolean): EndDate {
+  return live && !readBehind ? endDateOf(live.sessionKeyExpiry, live.expired) : 'unknown'
 }
 
 /** Whether the server's own search is running, as GET /api/arc/vaults said. Only that answer can say it is. */
@@ -42,7 +59,9 @@ export function sweepSaysFrom(body: unknown): SweepSays {
 }
 
 const NOTHING_TO_SEND = 'You do not have to send anything to anyone: our server looks for vaults on the chain by itself'
-const THE_BROWSER_THAT_DEPLOYED = 'open this vault in the browser that deployed it, which can ask by itself. If you cannot, tell the A-Identity team.'
+const LOOK_AGAIN = 'Look again here in a little while. If it still says this tomorrow, tell the A-Identity team, because the check may have refused it.'
+/** Only a browser that saw the deploy settle holds its hash, and the one reading this does not, even if it sent the deploy: a deploy replaced in the wallet or found at its address leaves none. So it can only be another one. */
+const ANOTHER_BROWSER = "if another browser of yours saw this vault's deploy land, open this vault there: it can ask by itself. If none did, tell the A-Identity team."
 
 /**
  * What follows "This vault is not counted on the proof page yet" when this browser holds no hash, so
@@ -51,8 +70,9 @@ const THE_BROWSER_THAT_DEPLOYED = 'open this vault in the browser that deployed 
  */
 export function noHashWords(endDate: EndDate, sweep: SweepSays): string {
   const reason = {
-    none: ', because its agent key has no end date. Set one from this page.',
-    passed: ", because its agent key's end date has passed. Set a new one from this page.",
+    none: ", because its agent key has no end date. Set one in the Session key box on this vault's page, with its Set the expiry button.",
+    passed: ", because its agent key's end date has passed. Set a new one in the Session key box on this vault's page, with its Extend or shorten button.",
+    revoked: '. Its agent key is revoked, and that does not stop a vault counting.',
     future: '.',
     unknown: '.',
   }[endDate]
@@ -60,14 +80,15 @@ export function noHashWords(endDate: EndDate, sweep: SweepSays): string {
   if (sweep === 'looking') {
     const then = {
       none: `${NOTHING_TO_SEND}, and it finds this one once it has an end date.`,
-      passed: `${NOTHING_TO_SEND}, and it finds this one again within about an hour of the new end date.`,
-      future: `${NOTHING_TO_SEND}, and this one has the agent key end date it looks for. Look again here in a little while. If it still says this tomorrow, tell the A-Identity team, because the check may have refused it.`,
-      unknown: `${NOTHING_TO_SEND}, and it finds this one while its agent key has an end date in the future.`,
+      passed: `${NOTHING_TO_SEND}, and it finds this one again within about ten minutes of the new end date, later if many contracts are waiting.`,
+      revoked: `${NOTHING_TO_SEND}, and it finds this one with its key revoked too. ${LOOK_AGAIN}`,
+      future: `${NOTHING_TO_SEND}, and this one has the agent key end date it looks for. ${LOOK_AGAIN}`,
+      unknown: `${NOTHING_TO_SEND}, and it finds this one while its agent key has an end date in the future, or is revoked.`,
     }[endDate]
     return `${reason} ${then}`
   }
   const opening = sweep === 'not-looking' ? 'Our server is not looking for vaults on the chain right now, so' : 'We could not find out whether our server is looking for vaults on the chain right now, so'
-  return `${reason} ${opening} ${endDate === 'future' || endDate === 'unknown' ? '' : 'after that '}${THE_BROWSER_THAT_DEPLOYED}`
+  return `${reason} ${opening} ${endDate === 'none' || endDate === 'passed' ? 'after that, ' : ''}${ANOTHER_BROWSER}`
 }
 
 /** What the server's own list said of a vault when the page last read it. Only an answer can say a vault is not on it. */
@@ -186,7 +207,7 @@ export function shouldAsk(stage: string, count: VaultCount | null, asked: Readon
   return !sending && count?.state !== 'counted' && !asked.has(stage)
 }
 
-/** Whether time alone could change the answer, so the page may ask once more by itself. A refusal that is a fact about the vault stays. */
+/** Whether the answer could still change, with time or with what the owner can change on chain, so the page may ask once more by itself. A refusal that is a fact about the vault stays. */
 export function askAgainByItself(count: VaultCount | null): boolean {
   return count?.state === 'failed' || (count?.state === 'not-counted' && count.retryable)
 }

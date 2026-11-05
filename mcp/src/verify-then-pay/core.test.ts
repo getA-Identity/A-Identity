@@ -1,6 +1,6 @@
 import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ContractFunctionRevertedError, decodeFunctionData, encodeErrorResult } from 'viem'
@@ -835,6 +835,60 @@ test('two concurrent requests with one signed payment reach Gateway once, on eve
   }
 })
 
+test('a used nonce says this request charged nothing, and sends the caller to the first one before it signs again', async () => {
+  const said = (next: string, reason: string | undefined) => {
+    assert.match(next, /This request charged nothing/)
+    assert.match(next, /may have been charged and may hold a verdict, or may still be running/)
+    assert.ok(next.includes(`GET /api/x402/gateway/flows/${NONCE.toLowerCase()}`), next)
+    assert.match(next, /GET \/api\/x402\/gateway\/proof/)
+    assert.match(next, /Sign a new authorization only if neither shows this nonce by then, or the proof log says it failed/)
+    assert.doesNotMatch(next, /no check was bought/)
+    assert.doesNotMatch(reason ?? '', /sign a new authorization/i)
+  }
+  // The first request settled and holds a verdict, and its answer was lost on the way back.
+  const lostAnswer = setup({ gw: { scored: verdict('WARN') } })
+  const first = await runVerifyThenPay(request(), header(), lostAnswer.deps)
+  assert.equal(first.body.stage, 'awaiting_human')
+  const again = await runVerifyThenPay(request(), header(), lostAnswer.deps)
+  assert.deepEqual([again.httpStatus, again.body.stage, again.body.code, again.body.charged, lostAnswer.g.spy.settles], [409, 'refused', 'NONCE_ALREADY_USED', false, 1])
+  said(again.body.next, again.body.reason)
+  // The read it points to has the verdict and the owner's link, so nothing has to be bought twice.
+  const read = await readVtpFlow(NONCE, { store: lostAnswer.s.store })
+  assert.deepEqual([read.httpStatus, read.body.flow?.outcome, read.body.flow?.verdict?.effective], [200, 'awaiting_human', 'WARN'])
+
+  // A first request still running: its row is a reservation, no reader can see it, and the words have to cover that.
+  let letItFinish = () => {}
+  const gate = new Promise<void>((r) => (letItFinish = r))
+  const running = setup()
+  const settle = running.g.rail.settle
+  running.g.rail.settle = async () => {
+    await gate
+    return settle()
+  }
+  const slow = runVerifyThenPay(request(), header(), running.deps)
+  while (!running.s.inserted.length) await new Promise((r) => setTimeout(r, 1))
+  const meanwhile = await runVerifyThenPay(request(), header(), running.deps)
+  assert.equal(meanwhile.body.code, 'NONCE_ALREADY_USED')
+  said(meanwhile.body.next, meanwhile.body.reason)
+  assert.equal((await readVtpFlow(NONCE, { store: running.s.store })).httpStatus, 404, 'a read says nothing yet, so reading once is not the end of it')
+  letItFinish()
+  await slow
+
+  // Passed the read and lost the insert: the same answer from the second place it is given.
+  const lost = setup({ store: { insert: async () => ({ ok: true, inserted: false }) } })
+  const raced = await runVerifyThenPay(request(), header(), lost.deps)
+  assert.equal(raced.body.code, 'NONCE_ALREADY_USED')
+  said(raced.body.next, raced.body.reason)
+
+  // After the server said it does not know whether this settled, the same header does not contradict that.
+  const stalled = setup({ gw: { settle: { success: false, unknown: true, errorReason: 'Gateway settle did not answer within 8000 ms' } } })
+  const unknown = await runVerifyThenPay(request(), header(), stalled.deps)
+  assert.equal(unknown.body.code, 'SETTLEMENT_UNKNOWN')
+  const resent = await runVerifyThenPay(request(), header(), stalled.deps)
+  assert.equal(resent.body.code, 'NONCE_ALREADY_USED')
+  said(resent.body.next, resent.body.reason)
+})
+
 test('the reservation goes in before the rail is asked, and to a reader it is nothing yet', async () => {
   const { g, s, deps } = setup()
   const seen: unknown[] = []
@@ -1030,10 +1084,102 @@ test('a WARN with no human gate does not point the agent at payOnWarn for a paye
   const out = await runVerifyThenPay(request(), header(), unknown.deps)
   assert.equal(out.body.stage, 'warn_no_human_gate')
   assert.doesNotMatch(out.body.next, /payOnWarn/)
-  assert.match(out.body.next, /owner key the agent does not hold/)
+  assert.match(out.body.next, /owner cannot be changed/)
+  assert.match(out.body.next, /with setOperator/)
   // A WARN on an agent we hold a record of keeps the option: its reasons are about something we know.
   const known = setup({ chain: { owner: OPERATOR }, gw: { scored: verdict('WARN', { onPlatform: true }) } })
   assert.match((await runVerifyThenPay(request(), header(), known.deps)).body.next, /payOnWarn/)
+})
+
+test('the way to a hand-off on a vault with one key is one the contract has', async () => {
+  // The words below are about this contract, so they are held to it: no call sets a new owner, and setOperator is there.
+  const sol = readFileSync(new URL('../../contracts/AgentSpendPolicy.sol', import.meta.url), 'utf8')
+  assert.match(sol, /address public immutable owner;/)
+  assert.doesNotMatch(sol, /function (?:setOwner|transferOwnership|changeOwner)\b/)
+  assert.match(sol, /function setOperator\(address _operator\) external onlyOwner/)
+
+  const oneKey = { owner: OPERATOR }
+  const answers = [
+    (await runVerifyThenPay(request({ amount: '250001' }), undefined, setup({ chain: oneKey }).deps)).body.next,
+    (await runVerifyThenPay(request(), undefined, setup({ chain: { ...oneKey, agentsHeld: 0n } }).deps)).body.next,
+    (await runVerifyThenPay(request(), header(), setup({ chain: oneKey, gw: { scored: verdict('WARN') } }).deps)).body.next,
+  ]
+  for (const next of answers) {
+    assert.doesNotMatch(next, /owner key the agent does not hold/, next)
+    assert.match(next, /A vault's owner cannot be changed/, next)
+    assert.match(next, /give your agent a new key of its own with setOperator, and keep this key from it/, next)
+    // A key the agent has held is not made safe by a new operator, and the answer does not pretend it is.
+    assert.match(next, /if its process or logs have held it, deploy a new vault/, next)
+  }
+})
+
+test('what the 402 says a WARN will do follows payOnWarn, so it agrees with what the paid answer does', async () => {
+  const warned = { gw: { scored: verdict('WARN', { onPlatform: true }) } }
+  const both = async (o: { chain: Partial<Chain>; payOnWarn: boolean }) => {
+    const input = { payOnWarn: o.payOnWarn }
+    const asked = await runVerifyThenPay(request(input), undefined, setup({ chain: o.chain }).deps)
+    const paid = await runVerifyThenPay(request(input), header(), setup({ chain: o.chain, ...warned }).deps)
+    return { next: asked.body.next, stage: paid.body.stage }
+  }
+
+  // One key.
+  const oneKey = await both({ chain: { owner: OPERATOR }, payOnWarn: true })
+  assert.equal(oneKey.stage, 'prepared')
+  assert.match(oneKey.next, /You set payOnWarn, so a WARN prepares pay\(\) as the agent's own decision/)
+  assert.doesNotMatch(oneKey.next, /stops with nothing prepared/)
+  const oneKeyNot = await both({ chain: { owner: OPERATOR }, payOnWarn: false })
+  assert.equal(oneKeyNot.stage, 'warn_no_human_gate')
+  assert.match(oneKeyNot.next, /stops with nothing prepared/)
+  assert.doesNotMatch(oneKeyNot.next, /prepares pay\(\)/)
+
+  // Two keys, and a payee with no agent, which is where the 402 says what a WARN will do.
+  const twoKeys = await both({ chain: { agentsHeld: 0n }, payOnWarn: true })
+  assert.equal(twoKeys.stage, 'prepared')
+  assert.match(twoKeys.next, /You set payOnWarn, so a WARN prepares pay\(\) for the operator key/)
+  assert.doesNotMatch(twoKeys.next, /hands the payment to the owner|offers the owner/)
+  const twoKeysNot = await both({ chain: { agentsHeld: 0n }, payOnWarn: false })
+  assert.equal(twoKeysNot.stage, 'awaiting_human')
+  assert.match(twoKeysNot.next, /A WARN hands the payment to the owner/)
+
+  // And a payment only the owner can make: payOnWarn cannot change that, and the 402 says so either way.
+  const ownerOnly = await both({ chain: { allowlistEnabled: true, allowed: false }, payOnWarn: true })
+  assert.equal(ownerOnly.stage, 'awaiting_human')
+  assert.match(ownerOnly.next, /payOnWarn cannot make the operator pay it/)
+})
+
+test('a refusal of the ceiling or the allowlist says one key only on a vault that has one', async () => {
+  // The getters passed and the simulation reverted: the vault's limits moved between the two reads, or two hosts disagreed.
+  for (const code of ['AboveAutoApprove', 'PayeeNotAllowed']) {
+    const out = await runVerifyThenPay(request(), undefined, setup({ chain: { revertPay: code } }).deps)
+    assert.deepEqual([out.httpStatus, out.body.code, out.body.checks?.vault.ownerIsOperator], [422, code, false], code)
+    assert.doesNotMatch(out.body.next, /one key/, code)
+    assert.doesNotMatch(out.body.next, /setOperator|new vault/, code)
+    assert.match(out.body.next, /^Nothing was charged and no check was bought: pay\(\) from the operator reverts/, code)
+  }
+  const oneKey = await runVerifyThenPay(request({ amount: '250001' }), undefined, setup({ chain: { owner: OPERATOR } }).deps)
+  assert.match(oneKey.body.next, /owner and operator are one key/)
+})
+
+test('a payment to the operator key is not said to be one the vault page offers, before or after the check', async () => {
+  const toOperator = { payee: OPERATOR }
+  const saysNo = /The vault page does not offer a payment to the vault's operator key 0x[0-9a-f]{40}, so the owner sends ownerPay from their own key/
+  const cases: [string, Partial<VtpInput>, Partial<Chain>][] = [
+    ['above the ceiling', { ...toOperator, amount: '250001' }, {}],
+    ['a payee with no agent', toOperator, { agentsHeld: 0n }],
+  ]
+  for (const [what, input, chain] of cases) {
+    const asked = await runVerifyThenPay(request(input), undefined, setup({ chain }).deps)
+    assert.equal(asked.httpStatus, 402, what)
+    assert.match(asked.body.next, saysNo, what)
+    assert.doesNotMatch(asked.body.next, /offers the owner/, what)
+    const paid = await runVerifyThenPay(request(input), header(), setup({ chain, gw: { scored: verdict('WARN') } }).deps)
+    assert.equal(paid.body.stage, 'awaiting_human', what)
+    assert.equal(paid.body.ownerHandoff?.approvalUrl, null, what)
+    assert.match(paid.body.next, /the payee is the vault's own operator key/, what)
+  }
+  // To anyone else the line about who pays for the check still stands.
+  assert.match((await runVerifyThenPay(request({ amount: '250001' }), undefined, setup().deps)).body.next, /offers the owner this approval only if the check is paid from/)
+  assert.match((await runVerifyThenPay(request(), undefined, setup({ chain: { agentsHeld: 0n } }).deps)).body.next, /offers the owner that approval only if the check is paid from/)
 })
 
 test('a hand-off whose simulation failed tells the owner not to send it', async () => {
@@ -1051,7 +1197,8 @@ test('on a vault with one key, a payment above the ceiling stays a refusal that 
   assert.match(above.body.next, /no verdict on this payee/)
   assert.match(above.body.next, /no person to hand this to/)
   assert.match(above.body.next, /ALLOW prepares pay\(\) and WARN stops with the check paid/)
-  assert.match(above.body.next, /owner key the agent does not hold/)
+  assert.match(above.body.next, /prepares pay\(\) as the agent's own decision if the request sets payOnWarn/, 'which is what the next request would get if it did')
+  assert.match(above.body.next, /owner cannot be changed/)
   assert.doesNotMatch(above.body.next, /To get a verdict and a hand-off/)
   // Any other refusal keeps its plain answer.
   const frozen = await runVerifyThenPay(request(), undefined, setup({ chain: { frozen: true } }).deps)
