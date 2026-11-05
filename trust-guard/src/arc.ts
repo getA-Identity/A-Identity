@@ -357,9 +357,9 @@ export interface VaultPreflight {
   balance: bigint
   /**
    * Set when the operator cannot make this payment and the owner can: the gate in pay() that stops it
-   * and why. The check is still sold and still charged, and only the owner can settle it. gasEstimate,
-   * gasLimit and operatorGasWei then describe ownerPay() from the owner, and the operator's gas is
-   * not asked about. null otherwise.
+   * and why. pay() would revert and cost gas, so do not send it. The check is still sold and still
+   * charged, and only the owner can settle it. gasEstimate and gasLimit then describe ownerPay() from
+   * the owner, and the operator's gas is not asked about, so operatorGasWei is null. null otherwise.
    */
   ownerOnly: { code: OwnerOnlyCode; reason: string } | null
   /** ERC-8004 agents the payee holds on Arc Mainnet. 0 is not a refusal. null when payeeAgentId was named instead. */
@@ -368,7 +368,7 @@ export interface VaultPreflight {
   blockTimestamp: bigint
   /** Wei, 18 decimals. */
   gasPriceWei: bigint
-  /** The operator's native balance, wei, 18 decimals; null for a contract operator. */
+  /** The operator's native balance, wei, 18 decimals; null for a contract operator or when ownerOnly is set. */
   operatorGasWei: bigint | null
   gasEstimate: bigint
   gasLimit: bigint
@@ -379,7 +379,10 @@ export interface VaultPreflight {
 /** What the server's public flow record says after a hash was posted to it. */
 export interface FlowRecordReport {
   url: string
-  /** True only when the server read the receipt from the chain and wrote it down. */
+  /**
+   * After a payment: true only when the server read the receipt from the chain and wrote it down. On
+   * `awaiting_human`: true means the flow is on record, and no payment has been made, so read `outcome`.
+   */
   recorded: boolean
   outcome?: string
   detail?: string
@@ -852,7 +855,8 @@ function checkPaymentInput(o: Pick<VerifyThenPayOptions, 'vault' | 'payee' | 'am
 }
 
 /** The free checks alone: nothing is signed and nothing is bought. Throws what verifyThenPay
- *  would throw before the check; returns the vault's facts when it would pay. */
+ *  would throw before the check; returns the vault's facts, with `ownerOnly` set when only the
+ *  owner can pay. So a return does not mean pay() will pass: read `ownerOnly` first. */
 export async function preflightVault(
   o: Pick<VerifyThenPayOptions, 'vault' | 'payee' | 'amountUnits' | 'asset' | 'payeeAgentId' | 'rpcUrls' | 'chain' | 'fetch' | 'maxFeePerGasCapWei' | 'maxPriorityFeePerGasWei'> & { operator: Address },
 ): Promise<VaultPreflight> {
@@ -1480,7 +1484,7 @@ function handOff(i: Inputs, ctx: Ctx, a: Verdicted & { kind: 'awaiting_human' },
     // link it would refuse tells the owner a real request looks like a trick, so it is not passed on.
     approvalUrl: i.payerAddress.toLowerCase() === free.operator.toLowerCase() && payee.toLowerCase() !== free.operator.toLowerCase() ? approvalLinkFrom(a.handoff.approvalUrl, { baseUrl: i.baseUrl, vault, flowId }) : null,
     ownerOnly: a.ownerOnly,
-    // The owner's transaction is not sent yet; recordFlowReceipt closes this flow once it is.
+    // The flow is on record and the owner's transaction is not sent yet; recordFlowReceipt closes it once it is.
     record: { url: recordUrl, recorded: true, outcome: 'awaiting_human', detail: a.ownerOnly ? 'owner_only_handoff' : 'warn_handoff' },
   }
 }

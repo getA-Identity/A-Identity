@@ -219,7 +219,8 @@ The order, and what each step can cost:
    below which Arc drops a transaction with no error. The receipt is looked for on every RPC, because
    one RPC can answer null for a transaction that exists. Nothing is retried with a new nonce.
 5. **The record.** The hash is posted to the flow, the server reads the receipt from the chain itself,
-   and `record.recorded` says whether it did. A post the route's rate limit turned away goes again after
+   and `record.recorded` says whether it did. On `awaiting_human` it is true because the flow is on record,
+   with no payment made, so read `outcome` first. A post the route's rate limit turned away goes again after
    the wait its `Retry-After` names, up to a minute, at most 3 posts. Flow records are public by flow id, at
    `/api/x402/gateway/flows/<flowId>`, DENYs included. After a WARN, send `ownerPay` from the owner's key
    and close the flow with `recordFlowReceipt({ flowId, txHash })`, unless `ownerPay.simulation.ok` is
@@ -287,8 +288,10 @@ is not a finite number in [0, 1000], an ALLOW below 500, and an answer with no s
 signed for this call each throw `UnusableVerdictError`. A proxy's 200 page is one of those. The `xlayer` and
 `algorand` rails do not make those checks on a verdict that is returned.
 
-`preflightVault` runs the free checks alone and signs nothing. `ARC_MAINNET` holds the chain's constants,
-generated from the A-Identity chain registry rather than typed by hand.
+`preflightVault` runs the free checks alone and signs nothing. It returns the vault's facts, with `ownerOnly`
+set when only the owner can pay, so a return does not mean `pay()` will pass: read `ownerOnly` first. `operatorGasWei`
+is null for a contract operator or when `ownerOnly` is set. `ARC_MAINNET` holds the chain's constants, generated from
+the A-Identity chain registry rather than typed by hand.
 
 ## Paying on X Layer
 

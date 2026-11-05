@@ -2044,6 +2044,20 @@ for (const [label, value] of [
   })
 }
 
+test('the shipped docs say what a returned preflight and record.recorded mean, because a script reads them as promises', () => {
+  const read = (rel: string) => readFileSync(new URL(`../${rel}`, import.meta.url), 'utf8').replace(/\s*\n\s*(\*\s+)?/g, ' ')
+  const types = read('src/arc.ts')
+  assert.match(types, /returns the vault's facts, with `ownerOnly` set when only the owner can pay/)
+  assert.doesNotMatch(types, /returns the vault's facts when it would pay/)
+  assert.match(types, /null for a contract operator or when ownerOnly is set/)
+  assert.doesNotMatch(types, /gasLimit and operatorGasWei then describe ownerPay/)
+  assert.match(types, /On `awaiting_human`: true means the flow is on record, and no payment has been made/)
+  assert.doesNotMatch(types, /\/\*\* True only when the server read the receipt/)
+  const readme = read('README.md')
+  assert.match(readme, /On `awaiting_human` it is true because the flow is on record, with no payment made/)
+  assert.match(readme, /a return does not mean `pay\(\)` will pass/)
+})
+
 test('the package says one version, and the README says what that version changed', () => {
   const read = (rel: string) => readFileSync(new URL(`../${rel}`, import.meta.url), 'utf8')
   const pkg = JSON.parse(read('package.json')) as { version: string }
