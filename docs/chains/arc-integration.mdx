@@ -551,10 +551,14 @@ deployed from the vault page your wallet is the owner, so the vault page is wher
 Open your vault at [/app/vault/arc](https://a-identity.xyz/app/vault/arc) with the owner wallet
 connected, and it lists the payments waiting for you. Or follow the link your agent sends you:
 `ownerHandoff.approvalUrl` from the hosted route, `out.approvalUrl` from `verifyThenPay` 0.5.0, always on
-`https://a-identity.xyz`. That link is `null` on a hand-off the page would refuse: a check the operator
-key did not pay for, or a payment to the operator key itself. Then `next` says why, and `ownerPay` from
-the owner key is the way. For each payment the page says who gets paid, how much, what the check said
-and why, when it was checked, and that approving counts toward today's budget. `ownerPay` adds to the
+`https://a-identity.xyz`. That link is `null` where the server can already see the page would refuse: a
+check the operator key did not pay for, or a payment to the operator key itself. Then `next` says why, and
+`ownerPay` from the owner key is the way. A link is no promise that the page will act. The page reads the
+chain when it opens, and it can still refuse for what the server does not look at: a vault that is ours or
+not the build the page deploys, a key stopped or replaced since the check, or a check older than 24 hours.
+`GET /api/x402/gateway/flows/<flowId>` reads no chain, so it keeps naming the link through all of those.
+`ownerPay` from the owner key is the way then too. For each payment the page says who gets paid, how much,
+what the check said and why, when it was checked, and that approving counts toward today's budget. `ownerPay` adds to the
 day's spending with no cap check, so an approval can use up the budget and stop your agent until 00:00
 UTC. It works while the vault is frozen, by design, and the page says that too. You review it, your
 wallet signs it, the page waits for the receipt and posts it, and the server reads it from the chain.
@@ -677,7 +681,7 @@ never sent to `risk_check`) and `payOnWarn`. The body's `stage` says where the f
 | `402` | `payment_required` | The free checks passed. Nothing charged yet. A payee that holds no agent passes them, with `checks.payee.agentsHeld` 0, and `next` says what to expect. So does a payment only the owner can settle, with `checks.vault.ownerOnly` set, and `next` says the check is still charged. |
 | `402` | `check_failed` | Gateway refused the signed payment, for example for too small a balance. `charged` is false, no flow was recorded, and `reason` says why. A fresh offer comes back in `challenge`, but this nonce has had its one attempt, and sending it again answers `409`: fix what `reason` names, then sign a new authorization. Do not re-sign on any `402` without reading `stage`. |
 | `200` | `prepared` | Send `prepared` from the operator key, unless `prepared.simulation.ok` is false, which means the vault would refuse it right now. |
-| `200` | `awaiting_human` | `WARN`, or a usable verdict on a payment only the owner can settle: send the owner `ownerHandoff.approvalUrl`, which is `null` when the vault page would refuse this, or send `ownerHandoff.ownerPay` from the owner key, unless `ownerHandoff.ownerPay.simulation.ok` is false, which means the vault would refuse it right now. A payee we know nothing about ends here. |
+| `200` | `awaiting_human` | `WARN`, or a usable verdict on a payment only the owner can settle: send the owner `ownerHandoff.approvalUrl`, which is `null` where the server can see the vault page would refuse this, and which the page can still refuse for what the server does not look at, or send `ownerHandoff.ownerPay` from the owner key, unless `ownerHandoff.ownerPay.simulation.ok` is false, which means the vault would refuse it right now. A payee we know nothing about ends here. |
 | `200` | `deny`, `verdict_unusable` | Do not pay. Nothing was prepared. |
 | `200` | `warn_no_human_gate` | `WARN`, and the vault's owner and operator are one key, so there is nobody to hand it to. The check was paid. Do not pay. Nothing was prepared. |
 | `409`, `500` | `deny`, `verdict_unusable` | Do not pay. The check was paid and answered, but the flow log does not hold the refusal, so it is not public. |

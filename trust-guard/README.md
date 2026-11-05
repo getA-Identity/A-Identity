@@ -227,8 +227,10 @@ The order, and what each step can cost:
    browser wallet does it on the vault page: send them `out.approvalUrl`. That is passed on only when it is
    the vault page for this vault and this flow, and it is null otherwise. The page approves only a check the
    operator paid for, so a flow paid by a separate `payer`, or a payment to the operator key, comes back with
-   `approvalUrl` null: send `ownerPay` from the owner key. The integration guide has a sample for that,
-   starting from the public flow record. An `ownerPay` counts toward the agent's day on the vault: if it uses
+   `approvalUrl` null: send `ownerPay` from the owner key. The page reads the chain when it opens and can still
+   refuse a link it is given: a vault that is ours or not the build it deploys, a key stopped or replaced since
+   the check, or a check older than 24 hours. `ownerPay` is the way then too. The integration guide has a
+   sample for that, starting from the public flow record. An `ownerPay` counts toward the agent's day on the vault: if it uses
    up today's room, the agent cannot pay until 00:00 UTC unless the owner raises the cap, so tell the owner
    before they sign.
 

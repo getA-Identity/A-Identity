@@ -428,7 +428,7 @@ export type VerifyThenPayResult =
       verdict: RiskVerdict
       check: GatewayCheckReference
       ownerPay: OwnerPayHandoff
-      /** The link to send the owner: the vault page, where they approve this with their own wallet. null when the server named none this client would pass on, or the page would refuse it: a check a separate payer paid for, or a payment to the operator key. Then ownerPay is the way. */
+      /** The link to send the owner: the vault page, where they approve this with their own wallet. null when the server named none this client would pass on, or it can be seen here that the page would refuse it: a check a separate payer paid for, or a payment to the operator key. The page reads the chain when it opens and can still refuse a link: a vault that is ours or not the build it deploys, a key stopped or replaced since the check, or a check older than 24 hours. ownerPay is the way in all of those. */
       approvalUrl: string | null
       /** The gate in pay() that makes this the owner's to pay whatever the verdict was. null: the verdict did, a WARN. */
       ownerOnly: OwnerOnlyCode | null

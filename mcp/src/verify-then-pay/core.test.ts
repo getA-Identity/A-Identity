@@ -946,6 +946,27 @@ test("the guide's table says what a used nonce and an unconfirmed settlement ans
   assert.match(unknown, /If it reads `unconfirmed`, treat this nonce as giving no flow/)
 })
 
+test('the words on approvalUrl say what the server can see, and that the page can still refuse', async () => {
+  const said = (rel: string) => readFileSync(new URL(`../../../${rel}`, import.meta.url), 'utf8').replace(/\s+/g, ' ')
+  for (const page of ['docs/chains/arc-integration.mdx', 'docs/developers/mcp-server.mdx', 'public/llms-full.txt', 'trust-guard/README.md']) {
+    const text = said(page)
+    assert.match(text, /can still refuse/, page)
+    assert.match(text, /a vault that is ours or not the build (it|the page) deploys, a key stopped or replaced since the check,? or a check older than 24 hours/, page)
+    assert.doesNotMatch(text, /`null` on a hand-off the page would refuse|null when the vault page would refuse it/, page)
+  }
+  assert.match(said('docs/chains/arc-integration.mdx'), /`GET \/api\/x402\/gateway\/flows\/<flowId>` reads no chain, so it keeps naming the link/)
+  // The tool's own description and the published card make no promise for the page either.
+  assert.doesNotMatch(said('mcp/src/server.ts'), /null when the vault page would refuse it/)
+  assert.doesNotMatch(said('public/.well-known/mcp/server-card.json'), /approvalUrl when the vault page would offer it/)
+
+  // What the guide says of the read is what it does: the link stays on a flow of any age, because it looks at no chain.
+  const { s, deps } = setup({ gw: { scored: verdict('WARN') } })
+  await runVerifyThenPay(request(), header(), deps)
+  const row = s.rows.get(NONCE)!
+  s.rows.set(NONCE, { ...row, check: { ...row.check, checkedAt: new Date(NOW - 3 * 86_400_000).toISOString() } })
+  assert.match(String((await readVtpFlow(NONCE, { store: s.store })).body.approvalUrl), /^https:\/\/a-identity\.xyz\/app\/vault\/arc\?/)
+})
+
 test("the guide's table says what a refused payment and the rate limit answer, which is not what a client branching on stage would guess", async () => {
   const guide = readFileSync(new URL('../../../docs/chains/arc-integration.mdx', import.meta.url), 'utf8').split('\n')
   const row = (start: string) => guide.find((l) => l.startsWith(start)) ?? ''

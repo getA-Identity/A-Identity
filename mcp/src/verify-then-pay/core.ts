@@ -169,7 +169,7 @@ export type OwnerHandoff = {
   auditOutcome: 'awaiting_human'
   owner: string
   ownerPay: PreparedCall
-  /** Where the owner can approve this on the vault page, with their own wallet. Always the site's own origin. null when the page would refuse it: the check was not paid by the vault's operator key, or the payee is that key. */
+  /** Where the owner can approve this on the vault page, with their own wallet. Always the site's own origin. null where the server can see the page would refuse it: the check was not paid by the vault's operator key, or the payee is that key. A link is no promise that the page will act: see whyNoApproval. */
   approvalUrl: string | null
   /** The gate in pay() that makes this the owner's to pay, whatever the verdict was. null: the verdict did, a WARN. */
   ownerOnly: OperatorBlockCode | null
@@ -1090,7 +1090,7 @@ export type VtpFlowReadBody = {
   url: string | null
   receiptUrl: string | null
   paymentExplorerUrl: string | null
-  /** Where the owner approves this flow, while it waits for them and the vault page would offer it. */
+  /** The flow's approval link while it waits for its owner, unless its payer or payee already rule the vault page out. This read looks at no chain, so the link stays after a key is stopped or replaced and past 24 hours, and the page can still refuse it. */
   approvalUrl?: string | null
   error?: string
   note: string
