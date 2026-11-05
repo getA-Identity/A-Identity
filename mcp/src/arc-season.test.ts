@@ -733,6 +733,14 @@ test("each vault carries its owner's actions with registry links, and how far th
   assert.match(r.milestone1.vaults.note, /1 vault\(s\) are not fully read yet/)
 })
 
+test('the line beside the vault count says so far while a vault is not fully read, and only then', async () => {
+  const reading = await arcSeasonReport(deps({ vaults: [vaultEntry(EXT_A)], ownerActions: async () => new Map([[lower(EXT_A), { freezeTxs: [], withdrawTxs: [], read: { state: 'reading' as const, scannedToBlock: '150' } }]]) }))
+  assert.deepEqual(reading.milestone1.vaults.ownerActions, { freezes: 0, withdrawals: 0, vaultsNotFullyRead: 1 })
+  const page = readFileSync(new URL('../../src/components/proof/ArcSeasonProgress.tsx', import.meta.url), 'utf8')
+  assert.match(page, /signed by an owner wallet\$\{a\.vaultsNotFullyRead \? ' so far' : ''\}`/)
+  assert.match(page, /detail=\{ownerActionsLine\(m1\.vaults\.ownerActions\)\}/, 'the payload carries it, and the row hands it over')
+})
+
 test('owner actions that cannot be read are said plainly on every vault and publish nothing; the vaults still count', async () => {
   const failing = await arcSeasonReport(
     deps({

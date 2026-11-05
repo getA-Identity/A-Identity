@@ -188,9 +188,9 @@ function MilestoneCard({ id, title, due, children }: { id: number; title: string
   )
 }
 
-/** The sum over the vaults, beside the count. A backend from before it sends none, and the row then adds nothing. */
-function ownerActionsLine(a?: { freezes: number; withdrawals: number }): string | undefined {
-  return a ? `${plural(a.freezes, 'freeze', 'freezes')} and ${plural(a.withdrawals, 'withdrawal', 'withdrawals')} signed by an owner wallet` : undefined
+/** The sum over the vaults, beside the count. A backend from before it sends none, and the row then adds nothing. While a vault is still being read it is a lower limit, and says so. */
+function ownerActionsLine(a?: { freezes: number; withdrawals: number; vaultsNotFullyRead?: number }): string | undefined {
+  return a ? `${plural(a.freezes, 'freeze', 'freezes')} and ${plural(a.withdrawals, 'withdrawal', 'withdrawals')} signed by an owner wallet${a.vaultsNotFullyRead ? ' so far' : ''}` : undefined
 }
 
 /** One kind of owner action on one vault: its hashes, or that none was found, said only when the whole chain was read. */
