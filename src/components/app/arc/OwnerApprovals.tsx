@@ -39,6 +39,7 @@ import {
   holdsPage,
   keyStoppedLine,
   notFromAgentLine,
+  otherSends,
   ownerOnlyLine,
   ownerOnlyStands,
   paidAfter,
@@ -55,7 +56,7 @@ import {
   type ReceiptStep,
 } from '../../../lib/arc/handoff-rules'
 import { postHandoffReceipt, readFlow, readWaitingFlows, recheckHandoff, scanPaid, type PaidScan, type WaitingRead } from '../../../lib/arc/handoff-send'
-import { claimHandoff, clearHandoff, holdsFlow, loadDeclined, loadHandoffs, saveDeclined, saveHandoff, type HandoffSend, type TxRecord } from '../../../lib/arc/pending'
+import { claimHandoff, dropClaim, holdsFlow, loadDeclined, loadHandoffs, saveDeclined, saveHandoff, saveSentHash, withTx, type HandoffSend, type TxRecord } from '../../../lib/arc/pending'
 import { addressUrl, localTime, networkName, networkWord, readVault, txUrl, type VaultSnapshot } from '../../../lib/arc/vault-read'
 import { aboveSoftWarn, formatUnitsExact, sameAddress } from '../../../lib/arc/vault-rules'
 import { STEP_LABEL, failureOf, sendPrepared, TxStop, type PreparedTx } from '../../../lib/arc/vault-write'
@@ -598,13 +599,13 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
       } catch (e) {
         // Declined, or never asked: nothing was sent. Any other stop may have left the wallet sending it.
         if (!asked || failureOf(e).code === 'rejected') {
-          clearHandoff(claim.network, claim.vault, claim.flowId)
+          dropClaim(claim)
           onRecords()
         }
         throw e
       }
-      const tx = recordOf(r.prepared, hash, vault.address)
-      saveHandoff({ ...claim, tx })
+      // This run may have been let go of, with a later one on the record by now: both of these allow for that.
+      saveSentHash(claim, recordOf(r.prepared, hash, vault.address))
       onRecords()
       setReviewed(null)
       track('arc_vault_owner_action', { network: networkWord(chain), action: 'ownerPay', outcome: 'submitted' })
@@ -878,11 +879,12 @@ function SendTracker({ record, chain, asking = false, flowOver = false, onRecord
   }, [hash])
 
   const update = (tx: TxRecord) => {
-    saveHandoff({ ...latest.current, tx })
+    saveHandoff(withTx(latest.current, tx))
     onRecords()
   }
   const h = holdOf(record)
   const server = record.server
+  const others = otherSends(record)
   const release = () => {
     saveHandoff({ ...latest.current, released: true, releasedAt: new Date().toISOString() })
     onRecords()
@@ -890,7 +892,18 @@ function SendTracker({ record, chain, asking = false, flowOver = false, onRecord
 
   return (
     <div className="mt-3 space-y-2">
+      {others.length > 0 && (
+        <div role="alert" className="rounded-lg border border-danger/25 bg-danger/[0.07] px-3 py-2 text-xs text-foreground">
+          <div className="font-semibold">Your wallet sent more than one transaction for this one request. Each one that lands pays this amount.</div>
+          <p className="mt-1">
+            It answered a prompt this page had stopped waiting on, as well as a later one. Our server's record of this request holds one transaction, so the others show only here and in the vault's recent activity on this page. If one is still waiting in your wallet, you can cancel it there.
+          </p>
+        </div>
+      )}
       {record.tx && !server && <TxReceipt record={record.tx} onUpdate={update} onSettled={() => onLanded()} serverJudges />}
+      {others.map((t) => (
+        <TxReceipt key={t.hash} record={t} onUpdate={update} onSettled={() => onLanded()} serverJudges oneOfSeveral />
+      ))}
       {!asking && !record.tx && !record.paidBy && !record.released && !server && (
         <div role="status" className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
           <div className="font-semibold">Your wallet was asked to send this, and this page has not heard back.</div>
@@ -906,7 +919,7 @@ function SendTracker({ record, chain, asking = false, flowOver = false, onRecord
           <TxLink chain={chain} hash={record.paidBy} />
         </div>
       )}
-      {h.held && h.why === 'maybe' && !record.paidBy && (
+      {h.held && h.why === 'maybe' && (
         <div role="status" className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
           <div className="font-semibold">This may still land, so it is not offered again.</div>
           <p className="mt-1">This page keeps looking for the payment in the vault's activity. Look in your wallet's activity list. If it is still waiting there, or your wallet sent a replacement, it can still pay, and a second send would pay twice.</p>

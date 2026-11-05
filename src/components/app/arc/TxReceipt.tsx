@@ -58,13 +58,15 @@ type ReceiptProps = {
   onSettled?: (r: TxRecord) => void
   /** A write the server has the last word on: a good receipt reads as landed, and the caller says when it is settled. */
   serverJudges?: boolean
+  /** With serverJudges: one of several sends for one request. The server's record holds one, so this does not promise it will read this one. */
+  oneOfSeveral?: boolean
 }
 
 export default function TxReceipt(props: ReceiptProps) {
   return <ReceiptOf key={props.record.hash} {...props} />
 }
 
-function ReceiptOf({ record, onUpdate, onSettled, serverJudges }: ReceiptProps) {
+function ReceiptOf({ record, onUpdate, onSettled, serverJudges, oneOfSeveral }: ReceiptProps) {
   const chain = arcChainFor(record.network)
   const [gaveUp, setGaveUp] = useState(false)
   const [asked, setAsked] = useState<{ answered: number; total: number; checks: number }>({
@@ -151,7 +153,9 @@ function ReceiptOf({ record, onUpdate, onSettled, serverJudges }: ReceiptProps) 
     settled
       ? `${record.what}: settled in block ${block}.`
       : record.outcome === 'settled'
-      ? `${record.what}: landed in block ${block}. Our server has not read it yet, and it is not settled until the server says so.`
+      ? oneOfSeveral
+        ? `${record.what}: landed in block ${block}, as one of several transactions for one request.`
+        : `${record.what}: landed in block ${block}. Our server has not read it yet, and it is not settled until the server says so.`
       : record.outcome === 'reverted'
         ? `${record.what}: landed in block ${block} and REVERTED. Nothing in the vault changed; the network fee was still charged.`
         : record.outcome === 'unexpected'

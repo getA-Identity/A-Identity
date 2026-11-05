@@ -587,7 +587,9 @@ What the page refuses, each for a reason:
   names no check, so an owner's payment answers the latest check the operator paid for, ahead of any other
   key's, and a stranger's identical check cannot take it. A check that comes after a payment is a new
   request, because that is how a second payment is meant to happen, so the page offers it, and says
-  plainly when the vault paid the same amount to the same payee in the 6 hours before that check.
+  plainly when the vault paid the same amount to the same payee in the 6 hours before that check. What the
+  page cannot stop is a wallet prompt answered after you told it nothing was sent and sent again: sign both,
+  and both pay. It keeps and follows both hashes and says so, and the flow's public record holds one of them.
 - **A check older than 24 hours**, by the chain's clock. An owner has to be able to find a request in a
   working day, and past that our answer may be wrong without anyone having seen it change. A new check
   costs your agent 0.005 USDC.

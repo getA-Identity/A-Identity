@@ -89,8 +89,14 @@ export type HandoffSend = {
   askedAt: string
   /** Which tab's claim this is. A claim another tab overwrote is not this tab's to send on. */
   token: string
-  /** The transaction the wallet handed back. */
+  /** The transaction the wallet handed back, the first one if there were more. */
   tx?: TxRecord
+  /**
+   * Any other transaction a wallet handed back for this flow. The page stops waiting on a prompt after two
+   * minutes, so a person can say nothing was sent and send again with the first prompt still open, and
+   * answer both. Each one that lands pays, so each one stays on the record until it has an answer.
+   */
+  alsoSent?: TxRecord[]
   /** A payment of this flow's amount to its payee found on chain, under another hash than tx: a speed-up, usually. */
   paidBy?: string
   /** When tx was first seen replaced with no payment of it found. A host can lag, so one read is not the answer. */
@@ -246,13 +252,50 @@ export function loadHandoffs(network: string, vault: string): HandoffSend[] {
 
 export function saveHandoff(r: HandoffSend): void {
   write(`${handoffPrefix(r.network, r.vault)}${r.flowId.toLowerCase()}`, r)
-  // Only a record with a final answer is ever dropped to keep this bounded: an open one stops a second send.
+  // Only a record with a final answer is ever dropped to keep this bounded: an open one stops a second send,
+  // and one of more than one send names a transaction the server's record of it does not.
   const all = loadHandoffs(r.network, r.vault)
-  for (const old of all.filter((x) => x.server).slice(HANDOFFS_KEPT)) clearHandoff(old.network, old.vault, old.flowId)
+  for (const old of all.filter((x) => x.server && !x.alsoSent?.length).slice(HANDOFFS_KEPT)) clearHandoff(old.network, old.vault, old.flowId)
 }
 
 export function clearHandoff(network: string, vault: string, flowId: string): void {
   write(`${handoffPrefix(network, vault)}${flowId.toLowerCase()}`, null)
+}
+
+/** The record this flow has in this browser right now, whoever wrote it. */
+function storedHandoff(r: Pick<HandoffSend, 'network' | 'vault' | 'flowId'>): HandoffSend | null {
+  const now = read<HandoffSend>(`${handoffPrefix(r.network, r.vault)}${r.flowId.toLowerCase()}`)
+  return isHandoff(now) ? now : null
+}
+
+const sameHash = (a: TxRecord, b: TxRecord) => a.hash.toLowerCase() === b.hash.toLowerCase()
+
+/**
+ * The wallet said no to this claim's prompt, or was never asked. A run can outlive its claim, and its prompt
+ * can be answered long after a later claim took the record: see alsoSent. So the record goes only if it is
+ * still this claim and holds no send. Anything else it holds is another prompt's, and that one can still pay.
+ */
+export function dropClaim(claim: HandoffSend): void {
+  const now = storedHandoff(claim)
+  if (now?.token === claim.token && !now.tx && !now.paidBy && !now.server) clearHandoff(claim.network, claim.vault, claim.flowId)
+}
+
+/**
+ * The hash a wallet handed back for this claim, on the record as it stands now and not as the claim left it,
+ * whichever prompt answers first. The first hash is the record's tx, and any other goes beside it. A new hash
+ * also ends what was said about nothing being on its way, because something now is.
+ */
+export function saveSentHash(claim: HandoffSend, tx: TxRecord): void {
+  const now = storedHandoff(claim)
+  if (!now) return saveHandoff({ ...claim, tx })
+  if ((now.tx && sameHash(now.tx, tx)) || now.alsoSent?.some((t) => sameHash(t, tx))) return
+  const open = { ...now, released: undefined, releasedAt: undefined, replacedClear: undefined }
+  saveHandoff(now.tx ? { ...open, alsoSent: [...(now.alsoSent ?? []), tx] } : { ...open, tx })
+}
+
+/** This record, with one of its transactions as it stands now. */
+export function withTx(r: HandoffSend, tx: TxRecord): HandoffSend {
+  return r.alsoSent?.some((t) => sameHash(t, tx)) ? { ...r, alsoSent: r.alsoSent.map((t) => (sameHash(t, tx) ? tx : t)) } : { ...r, tx }
 }
 
 /** The flows the person said no to in this browser. Nothing else knows: a flow has no such state. */

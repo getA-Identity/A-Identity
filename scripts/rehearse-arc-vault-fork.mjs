@@ -1826,6 +1826,90 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
     await reviewOn(cardLA)
     check(!/has no final answer for it yet/.test(await cardLA.innerText()), 'and a new check of the same payee and amount is offered, with nothing left to hold it')
 
+    section('the page: a wallet prompt answered after a later one was opened')
+    /** A prompt that sits unanswered until the page stops waiting on it, two minutes in, and a person who then says nothing was sent. Confirm is live again at once. */
+    const promptLeftOpen = async (card) => {
+      const confirm = await confirmOn(card)
+      const first = {}
+      wallet.holdSend = new Promise((resolve, reject) => {
+        first.sign = resolve
+        first.decline = () => reject(Object.assign(new Error('User rejected the request.'), { code: 4001 }))
+      })
+      await confirm.click()
+      const nothingSent = card.getByRole('button', { name: /I checked: my wallet shows nothing was sent/ })
+      await nothingSent.waitFor({ timeout: 180000 })
+      await nothingSent.click()
+      wallet.holdSend = null
+      return { first, confirm }
+    }
+    const readBack = (flowId) => waitFor('the payment read back', async () => (await flowOf(flowId)).outcome === 'executed', 120000, 2500).then(() => true, () => false)
+    // The second prompt is signed, its hash is unmined, and the first prompt is then declined.
+    const payeeM = payee()
+    const m = await buyCheck(agent, payeeM, parseUnits('0.003', 6))
+    const cardM = page.locator(`[data-flow="${m.flowId}"]`)
+    await page.goto(`${vaultUrl}&flow=${m.flowId}`, { waitUntil: 'domcontentloaded' })
+    const { first: firstM, confirm: confirmM } = await promptLeftOpen(cardM)
+    await rpc('evm_setAutomine', [false])
+    const sentBeforeM = wallet.sent.length
+    await confirmM.click()
+    await waitFor('the second prompt to be signed', () => wallet.sent.length === sentBeforeM + 1, 60000)
+    const hashM = wallet.sent[sentBeforeM].hash
+    await waitFor('its hash on the record', async () => (await recordHere(m.flowId))?.tx?.hash === hashM, 30000)
+    firstM.decline()
+    await page.waitForTimeout(3000)
+    check((await recordHere(m.flowId))?.tx?.hash === hashM, "the first prompt is declined late: the record of the second send stays, because that no was about the first")
+    const shownM = await cardM.innerText()
+    check(shownM.includes(hashM) && (await cardM.getByRole('button', { name: 'Review this payment' }).count()) === 0 && !/Your agent asks you to pay this/.test(shownM), 'and the hash stays on screen, with nothing offered while it is unmined')
+    check(/still pending/.test(await text()), 'and it still holds the rest of the page')
+    await rpc('evm_mine')
+    await rpc('evm_setAutomine', [true])
+    await stopIf(await readBack(m.flowId), 'it lands, and the page posts it')
+    // Both prompts are signed, and the first one's hash comes back before the second one is answered.
+    const payeeN = payee()
+    const amountN = parseUnits('0.004', 6)
+    const n = await buyCheck(agent, payeeN, amountN)
+    const cardN = page.locator(`[data-flow="${n.flowId}"]`)
+    await page.goto(`${vaultUrl}&flow=${n.flowId}`, { waitUntil: 'domcontentloaded' })
+    const { first: firstN, confirm: confirmN } = await promptLeftOpen(cardN)
+    let signSecond
+    wallet.holdSend = new Promise((resolve) => (signSecond = resolve))
+    await confirmN.click()
+    await stopIf(await waitText(/Confirm this in your wallet now/, 60000), 'a second prompt is open')
+    const balanceBeforeN = await read(vault, 'balance')
+    const sentBeforeN = wallet.sent.length
+    firstN.sign()
+    await waitFor('the first prompt to be signed', () => wallet.sent.length === sentBeforeN + 1, 60000)
+    const lateN = wallet.sent[sentBeforeN].hash
+    await waitFor('its hash on the record', async () => (await recordHere(n.flowId))?.tx?.hash === lateN, 30000)
+    await waitFor('the card to take it', async () => (await cardN.innerText()).includes(lateN), 30000).catch(() => {})
+    check(!/Confirm this in your wallet now/.test(await cardN.innerText()), 'with a hash back from the first prompt, the page stops telling the person to confirm the other one')
+    wallet.holdSend = null
+    signSecond()
+    await waitFor('the second prompt to be signed', () => wallet.sent.length === sentBeforeN + 2, 60000)
+    const secondN = wallet.sent[sentBeforeN + 1].hash
+    const bothOn = await waitFor('both on the record', async () => {
+      const r = await recordHere(n.flowId)
+      return r?.tx?.hash === lateN && r?.alsoSent?.[0]?.hash === secondN
+    }, 30000).then(() => true, () => false)
+    await stopIf(bothOn, 'the second hash does not erase the first: the record holds both')
+    await stopIf(await waitText(/Your wallet sent more than one transaction for this one request/, 30000), 'and the card says so')
+    await stopIf(await readBack(n.flowId), 'one of them closes the flow, as the server reads it')
+    await waitFor('the second receipt', async () => /as one of several transactions for one request/.test(await cardN.innerText()), 60000).catch(() => {})
+    const shownN = await cardN.innerText()
+    check(shownN.includes(lateN) && shownN.includes(secondN), 'and it names both, each on its own line')
+    check(/as one of several transactions for one request/.test(shownN) && /Paid\. Our server read this payment/.test(shownN), 'one is the paid request, and the other is a transaction that landed beside it')
+    check((await read(vault, 'balance')) === balanceBeforeN - 2n * amountN, 'and that is what happened on the chain: the vault paid twice')
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await cardN.waitFor({ timeout: 60000 })
+    await waitFor('both after a reload', async () => {
+      const t = await cardN.innerText()
+      return t.includes(lateN) && t.includes(secondN)
+    }, 60000).then(
+      () => check(true, 'a reload still names both, though the flow reads settled'),
+      async () => check(false, `a reload still names both: the card says ${(await cardN.innerText()).slice(-400)}`),
+    )
+    check(!/still pending/.test(await text()), "and with both landed, the page's own controls are free")
+
     section('the page: an old waiting flow does not hold up a fresh one')
     const payeeJ = payee()
     const j = await buyCheck(agent, payeeJ, amountA)
