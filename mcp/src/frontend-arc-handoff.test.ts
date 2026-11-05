@@ -65,6 +65,8 @@ type Rules = {
   promptMayBeOpen: (r: Send) => boolean
   promptLine: (r: Send | null, o: { paid: boolean; standing?: Standing }) => string | null
   noAnswerLine: (promptEnded: boolean) => string
+  refusedLead: (r: Send, s?: Standing) => string
+  endedWords: (others: number) => { lead: string; next: string }
 }
 const rules = async () => (await import(repoUrl('src/lib/arc/handoff-rules.ts').href)) as Rules
 
@@ -933,6 +935,34 @@ test('the card stops asking for a prompt once the money left or the request ende
   assert.match(page, /\{record\.tx \? "This payment landed under another transaction, most likely your wallet's speed-up\."/, 'a hash that never came back is no speed-up of it')
 })
 
+test('a refusal on a flow another hash closed keeps its tracker, and its first line says what this hash did', async () => {
+  const r = await rules()
+  const refused = { state: 'refused', txHash: TX, flowId: FLOW, code: 'FLOW_ENDED', reason: 'this flow is executed', at: CHECKED }
+  const paidHere = send({ tx: txRecord('settled'), server: refused })
+  const revertedHere = send({ tx: txRecord('reverted'), server: refused })
+  const closed: Standing[] = [{ kind: 'settled' }, { kind: 'reverted', why: null }]
+  for (const s of closed) {
+    assert.equal(r.followedHere(paidHere, s), true, s.kind)
+    assert.equal(r.followedHere(revertedHere, s), true, s.kind)
+    assert.doesNotMatch(r.refusedLead(paidHere, s), /nothing is marked as settled/, `${s.kind}: this flow is marked, under another hash`)
+    assert.match(r.refusedLead(revertedHere, s), /This one reverted, so nothing moved from it/, s.kind)
+    assert.doesNotMatch(r.refusedLead(revertedHere, s), /This one paid/, `${s.kind}: this hash paid nothing`)
+    assert.match(r.refusedLead(send({ tx: txRecord('unexpected'), server: refused }), s), /Look at this one/, s.kind)
+    // A payment the read found under another hash is a payment too, and so is one beside the first.
+    assert.match(r.refusedLead(send({ paidBy: TX, server: refused }), s), /This one paid/, s.kind)
+    assert.match(r.refusedLead(send({ tx: txRecord('reverted', { hash: TX2 }), alsoSent: [txRecord('settled')], server: refused }), s), /This one paid/, s.kind)
+  }
+  // What the other hash did is in the line: paid twice over, or paid with a card that would say nothing moved.
+  assert.match(r.refusedLead(paidHere, { kind: 'settled' }), /This one paid as well: the vault paid this amount twice/)
+  assert.match(r.refusedLead(paidHere, { kind: 'reverted', why: null }), /reverted and closed this request.*This one paid: the vault moved this amount/)
+  // A flow still open, or one this page could not read, keeps the words it had.
+  for (const said of [r.refusedLead(paidHere, { kind: 'approvable' }), r.refusedLead(paidHere)]) assert.match(said, /^Our server does not take this transaction as proof/)
+  const page = repo('src/components/app/arc/OwnerApprovals.tsx')
+  assert.match(page, /\{refusedLead\(record, standing\)\}/)
+  assert.match(page, /closedBy=\{flow\.payment\?\.txHash \?\? null\}/, 'and it names the hash on the record, which the flow card would have')
+  assert.match(page, /\{flowOver \? 'This request is over, so nothing more is offered for it\.' : 'It is not offered again\./)
+})
+
 test("the tracker's writes keep every send, and each one goes to the transaction it is about", async () => {
   const p = await pending()
   const both = send({ tx: txRecord('pending'), alsoSent: [txRecord('pending', { hash: TX2 })] })
@@ -1276,7 +1306,8 @@ test('a record with no answer keeps its tracker on a flow someone else closed, b
   assert.equal(r.flowIsOver({ kind: 'settled' }), true)
   assert.equal(r.flowIsOver({ kind: 'reverted' }), true)
   assert.equal(r.flowIsOver({ kind: 'approvable' }), false)
-  assert.match(page, /flowOver=\{flowIsOver\(standing\)\}/)
+  assert.match(page, /const flowOver = standing !== undefined && flowIsOver\(standing\)/)
+  assert.match(page, /asking=\{asking\} standing=\{standing\}/)
   assert.match(page, /if \(!told\.current\.flowOver\) told\.current\.onLanded\(\)/)
 })
 

@@ -31,6 +31,7 @@ import {
   agePhrase,
   budgetLine,
   cardHeading,
+  endedWords,
   flowIsOver,
   followedHere,
   hashToPost,
@@ -48,6 +49,7 @@ import {
   paidBefore,
   paymentsRead,
   promptLine,
+  refusedLead,
   replacedSendLine,
   scanStart,
   standingOf,
@@ -736,7 +738,7 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
           {step === 'wallet' ? 'Confirm this in your wallet now. If your wallet is an app on your phone, open it there: the request is waiting for you.' : `${step ? STEP_LABEL[step] : 'Working'}...`}
         </p>
       )}
-      {record && <SendTracker record={record} chain={chain} asking={asking} flowOver={flowIsOver(standing)} decline={decline} onRecords={onRecords} onLanded={onLanded} />}
+      {record && <SendTracker record={record} chain={chain} asking={asking} standing={standing} closedBy={flow.payment?.txHash ?? null} decline={decline} onRecords={onRecords} onLanded={onLanded} />}
       {hold.held && !record && (
         <p className="mt-3 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
           This browser has already sent a payment of this amount to this payee, for another request, and has no final answer for it yet. This is not offered until it has one: two sends pay twice.
@@ -855,8 +857,9 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
  * What was sent for a flow, until the server gave its final word on it: the receipt while the chain has
  * no answer, then the post, retried for as long as the server does not decide anything.
  */
-function SendTracker({ record, chain, asking = false, flowOver = false, decline = null, onRecords, onLanded }: { record: HandoffSend; chain: Chain; asking?: boolean; flowOver?: boolean; decline?: string | null; onRecords: () => void; onLanded: () => void }) {
+function SendTracker({ record, chain, asking = false, standing, closedBy = null, decline = null, onRecords, onLanded }: { record: HandoffSend; chain: Chain; asking?: boolean; standing?: HandoffStanding; closedBy?: string | null; decline?: string | null; onRecords: () => void; onLanded: () => void }) {
   const [waitingOn, setWaitingOn] = useState<string | null>(null)
+  const flowOver = standing !== undefined && flowIsOver(standing)
   const hash = hashToPost(record)
   const latest = useRef(record)
   latest.current = record
@@ -981,9 +984,10 @@ function SendTracker({ record, chain, asking = false, flowOver = false, decline 
       )}
       {server?.state === 'ended' && (
         <div role="alert" className="rounded-lg border border-danger/25 bg-danger/[0.07] px-3 py-2 text-xs text-foreground">
-          <div className="font-semibold">This payment was sent and reverted. Nothing moved, and the network fee was still charged.</div>
+          <div className="font-semibold">{endedWords(others.length).lead}</div>
           <p className="mt-1 break-words">
-            {server.reason ? `${server.reason}. ` : ''}This request is over. If you still mean to pay, ask your agent to check the payee again.
+            {server.reason ? `${server.reason}. ` : ''}
+            {endedWords(others.length).next}
           </p>
           <TxLink chain={chain} hash={server.txHash} />
         </div>
@@ -997,10 +1001,16 @@ function SendTracker({ record, chain, asking = false, flowOver = false, decline 
       )}
       {server?.state === 'refused' && (
         <div role="alert" className="rounded-lg border border-danger/25 bg-danger/[0.07] px-3 py-2 text-xs text-foreground">
-          <div className="font-semibold">Our server does not take this transaction as proof of this payment, so nothing is marked as settled.</div>
+          <div className="font-semibold">{refusedLead(record, standing)}</div>
           <p className="mt-1 break-words">{server.reason}</p>
-          <p className="mt-1">It is not offered again. Look at the transaction before you do anything else: if it paid someone, a second send would pay twice.</p>
+          <p className="mt-1">{flowOver ? 'This request is over, so nothing more is offered for it.' : 'It is not offered again. Look at the transaction before you do anything else: if it paid someone, a second send would pay twice.'}</p>
           <TxLink chain={chain} hash={server.txHash} />
+          {flowOver && closedBy && closedBy !== server.txHash.toLowerCase() && (
+            <>
+              <p className="mt-2 font-semibold">The transaction on the request's record:</p>
+              <TxLink chain={chain} hash={closedBy} />
+            </>
+          )}
         </div>
       )}
       {!h.held && record.released && (

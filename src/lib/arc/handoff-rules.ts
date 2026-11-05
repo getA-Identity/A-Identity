@@ -556,14 +556,16 @@ export function holdsPage(r: HandoffSend): boolean {
  * Whether this flow's card is what this browser sent, with its tracker, rather than what the flow's record
  * says. Only that tracker finishes a record: it follows the hash, posts it, and writes the server's answer.
  * So a record with no answer keeps it on a flow another browser or a phone already closed. The post gets the
- * recorded answer or a refusal, and either one is the answer the record was waiting for. Without it a pending
- * hash holds the page's controls, and a landed one every later check of the same payee and amount, with
- * nothing on screen to finish or stop. A record of more than one send stays there for good, because the flow's
- * own card names one transaction, and the other may have paid too.
+ * recorded answer or a refusal. Without it a pending hash holds the page's controls, and a landed one every
+ * later check of the same payee and amount, with nothing on screen to finish or stop. A record of more than one
+ * send stays there, because the flow's own card names one transaction, and the other may have paid too. So does
+ * a refusal on a flow that is over: another hash closed it, and the flow's card says nothing of this one, which
+ * may have paid beside it, or reverted beside a card that names a payment. What keeps the records bounded
+ * still drops such a refusal in the end, past the newest fifty answers.
  */
 export function followedHere(r: HandoffSend | null | undefined, s: HandoffStanding): boolean {
   if (!r || !holdOf(r).held) return false
-  return !r.server || !flowIsOver(s) || otherSends(r).length > 0
+  return !r.server || !flowIsOver(s) || otherSends(r).length > 0 || r.server.state === 'refused'
 }
 
 /** The flow's record says it is finished, one way or the other: nothing more can happen to it. */
@@ -748,6 +750,26 @@ export function promptLine(r: HandoffSend | null | undefined, o: { paid: boolean
 export function noAnswerLine(promptEnded: boolean): string {
   const rest = 'If your wallet sent it, this page sees the payment land and carries on. Do not start another one from here.'
   return promptEnded ? rest : `If a prompt is still open in your wallet, you can answer it there. ${rest}`
+}
+
+/**
+ * The first line of a refusal. On a flow that is over, another hash closed it and this hash was refused for that
+ * alone, so what matters is what this one did: it may have paid as well, or reverted with nothing moved.
+ */
+export function refusedLead(r: HandoffSend, s?: HandoffStanding): string {
+  if (!s || !flowIsOver(s) || !r.server) return 'Our server does not take this transaction as proof of this payment, so nothing is marked as settled.'
+  const hash = r.server.txHash.toLowerCase()
+  const send = [...(r.tx ? [r.tx] : []), ...(r.alsoSent ?? [])].find((t) => t.hash.toLowerCase() === hash)
+  const closed = s.kind === 'settled' ? 'Another transaction paid this request and closed it, and this one is not on its record.' : 'Another transaction reverted and closed this request, and this one is not on its record.'
+  if (send?.outcome === 'settled' || r.paidBy?.toLowerCase() === hash) return s.kind === 'settled' ? `${closed} This one paid as well: the vault paid this amount twice.` : `${closed} This one paid: the vault moved this amount, whatever the record of this request says.`
+  if (send?.outcome === 'reverted') return `${closed} This one reverted, so nothing moved from it, and the network fee was still charged.`
+  return `${closed} Look at this one to see what it did.`
+}
+
+/** What the card says of a hash the server recorded as reverted. With another send on the record, that one is still its own question. */
+export function endedWords(others: number): { lead: string; next: string } {
+  if (others > 0) return { lead: 'This one reverted: it moved nothing, and the network fee was still charged.', next: 'This request is over. The other transaction is on its own line here, and if it landed it paid.' }
+  return { lead: 'This payment was sent and reverted. Nothing moved, and the network fee was still charged.', next: 'This request is over. If you still mean to pay, ask your agent to check the payee again.' }
 }
 
 /** A plain length of time, for how old a check is. */
