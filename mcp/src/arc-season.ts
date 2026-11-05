@@ -66,6 +66,7 @@ import {
   loadX402SettlementsResult,
   type GatewaySettlementRecord,
   type VtpFlowRecord,
+  type VtpStoreIo,
   type X402SettlementRecord,
 } from './storage.js'
 import { internalPayers as gatewayInternalPayers, railStatus as gatewayRailStatus } from './x402-gateway/rail.js'
@@ -512,8 +513,9 @@ async function liveFacilitatorRows(): Promise<X402SettlementRecord[]> {
   return read.rows
 }
 
-async function liveFlowRows(onSkip?: (row: ArcSeasonSkippedRow) => void, onKeys?: (keys: ArcFlowKeys) => void): Promise<ArcVerifyThenPayFlow[]> {
-  const read = await loadCountableVtpFlows()
+/** The store is a seam only so a test can run this very loader against a real file: the keys below reach the report through it and nothing else. */
+export async function liveFlowRows(onSkip?: (row: ArcSeasonSkippedRow) => void, onKeys?: (keys: ArcFlowKeys) => void, io: VtpStoreIo = {}): Promise<ArcVerifyThenPayFlow[]> {
+  const read = await loadCountableVtpFlows(io)
   if (!read.ok) throw new Error(read.reason)
   for (const keys of flowKeysFromRows(read.rows)) onKeys?.(keys)
   return seasonFlowsFromRows(read.rows, onSkip)

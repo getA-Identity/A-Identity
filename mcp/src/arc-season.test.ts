@@ -1,6 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { privateKeyToAccount } from 'viem/accounts'
 import {
   ARC_OUR_PAYEES,
@@ -15,6 +17,7 @@ import {
   mergeVaults,
   flowKeysFromRows,
   labelOwners,
+  liveFlowRows,
   seasonFlowsFromRows,
   type ArcFlowKeys,
   type ArcSeasonDeps,
@@ -1223,6 +1226,26 @@ test('a row that holds no flow names no key, and a row an old key wrote keeps na
   // A row the report cannot read is not a key, and it does not stop the others.
   assert.deepEqual(flowKeysFromRows([null as unknown as VtpFlowRecord, row({ operator: 7 }), row({ vault: null }), row({})]), [{ vault: EXT_A, operator: EXT_B }])
   assert.deepEqual(flowKeysFromRows([row({ operator: EXT_B }), row({ operator: EXT_C })]).map((k) => k.operator), [EXT_B, EXT_C], 'both keys, after a setOperator')
+})
+
+test('the live loader passes on the key of every row that holds a flow, so a team vault\'s key reads as ours in production and not only in a stub', async () => {
+  const io = { getPool: async () => null, file: join(mkdtempSync(join(tmpdir(), 'season-flows-')), 'vtp-flows.json') }
+  const teamVault = '0x' + 'e3'.repeat(20)
+  const key = shouty(EXT_C)
+  // A WARN still waiting for its owner: a paid check whose row maps to no season flow, which is the case the keys exist for.
+  const waiting = { flowId: '0x' + 'ab'.repeat(32), network: arc.caip2, vault: teamVault, owner: EXT_A, operator: key, payee: EXT_B, amount: '1000', createdAt: '2026-10-18T10:00:01.000Z', outcome: 'awaiting_human', detail: 'warn_handoff', check: { payer: key } }
+  const reserved = { ...waiting, flowId: '0x' + 'cd'.repeat(32), operator: EXT_B, outcome: 'opening', detail: 'opening' }
+  writeFileSync(io.file, JSON.stringify([waiting, reserved]))
+
+  const seen: ArcFlowKeys[] = []
+  assert.deepEqual(await liveFlowRows(undefined, (k) => seen.push(k), io), [])
+  assert.deepEqual(seen, [{ vault: teamVault, operator: key, payer: key }])
+
+  const r = await arcSeasonReport(deps({ vaults: [vaultEntry(teamVault, { ownerKind: 'team', owner: EXT_A })], gateway: [gw({ payer: EXT_C })], flowRows: (onSkip, onKeys) => liveFlowRows(onSkip, onKeys, io) }))
+  assert.deepEqual(r.usage.internal.wallets, [lower(EXT_C)])
+  assert.equal(r.milestone2.externalChecks.count, 0)
+  // And it is this loader the route is given.
+  assert.equal(liveArcSeasonDeps({} as NodeJS.ProcessEnv).flowRows, liveFlowRows)
 })
 
 test('a curated flow through a vault labeled team names its key as a recorded one does', async () => {
