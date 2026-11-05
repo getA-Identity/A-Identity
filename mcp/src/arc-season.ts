@@ -1029,6 +1029,14 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
     const why = payeeInternal(f)
     return [{ kind: 'deny-before-signing' as const, evidenceUrl: f.evidenceUrl, at: f.at, note: f.note, ...(why ? { payeeInternal: why } : {}) }]
   })
+  // A recorded policy revert is one by the same definition: a vault transaction that reverted on chain, with its hash, that the
+  // receipt route read back. A curated entry for the same hash is the same refusal.
+  const curatedHashes = new Set(refusals.flatMap((r) => (r.txHash ? [r.txHash.toLowerCase()] : [])))
+  const recordedReverts: ArcRefusal[] = linkedList.flatMap((f) => {
+    if (f.outcome !== 'refused' || !f.txHash || !TX_HASH.test(f.txHash) || curatedHashes.has(f.txHash.toLowerCase())) return []
+    const why = payeeInternal(f)
+    return [{ kind: 'vault-policy-on-chain' as const, txHash: f.txHash, at: f.at, note: f.note, ...(why ? { payeeInternal: why } : {}) }]
+  })
   // What a re-check today would answer differently, and only that: a DENY dated after the change,
   // or one on an agent of ours that has a platform record, was not answered under the older rule.
   const ourPlatformAgents = new Set(ARC_OUR_PAYEES.map((p) => p.address.toLowerCase()))
@@ -1036,7 +1044,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
     (f) => f.outcome === 'refused' && !f.txHash && f.evidenceUrl && !curatedEvidence.has(f.evidenceUrl) && Date.parse(f.at) < Date.parse(`${RISK_RULE_CHANGED_ON}T00:00:00.000Z`) && !ourPlatformAgents.has(f.payee.toLowerCase()),
   )
   const namedUnderOldRule = [...new Set(deniesUnderOldRule.map((f) => f.payee.toLowerCase()))]
-  const allRefusals = [...refusals, ...recordedDenials]
+  const allRefusals = [...refusals, ...recordedReverts, ...recordedDenials]
   const byKind: Record<ArcRefusalKind, number> = { 'vault-policy-on-chain': 0, 'deny-before-signing': 0 }
   for (const r of allRefusals) byKind[r.kind] += 1
   const refusalKindsShown = Object.values(byKind).filter((n) => n > 0).length
@@ -1131,13 +1139,14 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
         target: ARC_SEASON_TARGETS.inspectableRefusals,
         ...flagIncomplete(flowsIncomplete),
         // The curated entries and the first few recorded ones: every recorded one is on checks.items.
-        items: [...refusals, ...recordedDenials.slice(0, REFUSAL_ITEMS_SHOWN)].map((r) => ({ ...r, explorerUrl: r.txHash ? txUrl(chain, r.txHash) : null })),
+        items: [...refusals, ...recordedReverts.slice(0, REFUSAL_ITEMS_SHOWN), ...recordedDenials.slice(0, REFUSAL_ITEMS_SHOWN)].map((r) => ({ ...r, explorerUrl: r.txHash ? txUrl(chain, r.txHash) : null })),
         byKind,
         note:
-          (flowsIncomplete ? 'A log the DENY records are read from could not be read on this request, so any DENY it holds is missing from this count until it answers. ' : '') +
+          (flowsIncomplete ? 'A log the recorded refusals are read from could not be read on this request, so any refusal it holds is missing from this count until it answers. ' : '') +
           (allRefusals.length === 0
             ? 'No inspectable refusal yet. The launch-day refusal (a 0.50 USDC payment above autoApproveMax) was a simulation that returned the contract\'s typed AboveAutoApprove error and broadcast nothing, so it has no hash and is not counted. A refusal counts once it is a reverted vault transaction with a hash, or a DENY verdict that stopped a payment before signing with an audit entry anyone can open.'
             : `${refusalKindsShown} of the ${ARC_SEASON_TARGETS.inspectableRefusals} kinds committed to: ${byKind['vault-policy-on-chain']} vault-policy refusal(s) on chain and ${byKind['deny-before-signing']} DENY result(s) stopped before signing, read from the public flow records. The launch-day simulated refusal is not among them.` +
+              (recordedReverts.length > REFUSAL_ITEMS_SHOWN ? ` ${recordedReverts.length - REFUSAL_ITEMS_SHOWN} more recorded revert(s) are on checks.items.` : '') +
               (recordedDenials.length > REFUSAL_ITEMS_SHOWN ? ` ${recordedDenials.length - REFUSAL_ITEMS_SHOWN} more DENY record(s) are on checks.items.` : '') +
               (deniesUnderOldRule.length > 0
                 ? ` ${deniesUnderOldRule.length} recorded DENY result(s), dated before ${RISK_RULE_CHANGED_ON}, name ${namedUnderOldRule.join(' and ')}, which holds no platform record. Each stands as it was answered, and was correct under the rule of its day, when a payee with no platform record got DENY. That rule changed on ${RISK_RULE_CHANGED_ON}: such a payee now gets WARN, so a reviewer who checks ${namedUnderOldRule.length === 1 ? 'that wallet' : 'those wallets'} again today sees WARN. Nothing recorded here was changed, and no count moved.`

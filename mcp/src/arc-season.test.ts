@@ -449,18 +449,65 @@ test('the old-rule note is only about DENYs answered under the old rule', async 
   assert.doesNotMatch(own.milestone1.refusals.note, /rule of its day|sees WARN/)
 })
 
-test('only a linked DENY with a record counts: not a paid flow, an on-chain revert, or a nonce that names nothing', async () => {
+test('only a linked refusal counts: not a paid flow, and not a revert or a DENY on a nonce that names nothing', async () => {
   const paid = gw({ payer: OURS_GATEWAY })
-  const reverted = gw({ payer: OURS_GATEWAY })
   const r = await arcSeasonReport(
     deps({
-      gateway: [paid, reverted],
+      gateway: [paid],
       refusals: [],
-      flows: [flow({ checkNonce: paid.authNonce }), flow({ checkNonce: reverted.authNonce, outcome: 'refused', txHash: '0x' + '44'.repeat(32) }), denyFlow(nextNonce())],
+      flows: [flow({ checkNonce: paid.authNonce }), flow({ checkNonce: nextNonce(), outcome: 'refused', txHash: '0x' + '44'.repeat(32) }), denyFlow(nextNonce())],
     }),
   )
-  assert.equal(r.milestone1.checks.count, 2)
+  assert.equal(r.milestone1.checks.count, 1)
   assert.equal(r.milestone1.refusals.count, 0)
+  assert.match(r.milestone1.refusals.note, /^No inspectable refusal yet/)
+})
+
+test('a recorded policy revert is an inspectable refusal of the on-chain kind, once, beside a curated entry for the same hash', async () => {
+  const reverted = gw({ payer: OURS_GATEWAY })
+  const tx = '0x' + '4a'.repeat(32)
+  const revert = flow({ checkNonce: reverted.authNonce, outcome: 'refused', txHash: tx, note: "the vault's policy reverted the prepared pay on chain (AboveAutoApprove)" })
+  const r = await arcSeasonReport(deps({ gateway: [reverted], refusals: [], flows: [revert] }))
+  assert.deepEqual(r.milestone1.checks.linked, { paid: 0, refused: 1 })
+  assert.equal(r.milestone1.refusals.count, 1)
+  assert.deepEqual(r.milestone1.refusals.byKind, { 'vault-policy-on-chain': 1, 'deny-before-signing': 0 })
+  const [item] = r.milestone1.refusals.items
+  assert.deepEqual([item.kind, item.txHash, item.explorerUrl, item.note], ['vault-policy-on-chain', tx, txUrl(arc, tx), revert.note])
+  assert.match(r.milestone1.refusals.note, /^1 of the 2 kinds committed to: 1 vault-policy refusal\(s\) on chain and 0 DENY/)
+  assert.doesNotMatch(r.milestone1.refusals.note, /No inspectable refusal yet/)
+
+  // The same hash curated by hand, whatever its case, is the same refusal.
+  const curated = { kind: 'vault-policy-on-chain' as const, txHash: '0x' + '4A'.repeat(32), at: '2026-11-01T10:00:00Z', note: 'curated' }
+  const same = await arcSeasonReport(deps({ gateway: [reverted], refusals: [curated], flows: [revert] }))
+  assert.equal(same.milestone1.refusals.byKind['vault-policy-on-chain'], 1)
+  assert.deepEqual(same.milestone1.refusals.items.map((i) => i.note), ['curated'])
+
+  // Another hash is another refusal, and it is still one kind of two.
+  const other = await arcSeasonReport(deps({ gateway: [reverted], refusals: [{ ...curated, txHash: '0x' + '4b'.repeat(32) }], flows: [revert] }))
+  assert.equal(other.milestone1.refusals.byKind['vault-policy-on-chain'], 2)
+  assert.equal(other.milestone1.refusals.count, 1)
+
+  // With a recorded DENY beside it both kinds are shown, from the log alone.
+  const denied = gw({ payer: OURS_GATEWAY })
+  const both = await arcSeasonReport(deps({ gateway: [reverted, denied], refusals: [], flows: [revert, denyFlow(denied.authNonce)] }))
+  assert.equal(both.milestone1.refusals.count, 2)
+
+  // A reference that is not a hash gives a reviewer nothing to open on chain, so it is not this kind.
+  const notAHash = await arcSeasonReport(deps({ gateway: [reverted], refusals: [], flows: [{ ...revert, txHash: 'not-a-hash', evidenceUrl: 'https://a-identity.xyz/flows/x' }] }))
+  assert.equal(notAHash.milestone1.refusals.byKind['vault-policy-on-chain'], 0)
+
+  // On a payer that is not ours it is Milestone 2's.
+  const external = gw({ payer: EXT_A })
+  const theirs = await arcSeasonReport(deps({ gateway: [external], refusals: [], flows: [flow({ checkNonce: external.authNonce, outcome: 'refused', txHash: tx })] }))
+  assert.equal(theirs.milestone1.refusals.count, 0)
+  assert.equal(theirs.milestone2.externalFlows.linked.refused, 1)
+
+  // A long run is counted and not all listed, as the DENYs are.
+  const many = Array.from({ length: 7 }, () => gw({ payer: OURS_GATEWAY }))
+  const run = await arcSeasonReport(deps({ gateway: many, refusals: [], flows: many.map((c) => flow({ checkNonce: c.authNonce, outcome: 'refused' })) }))
+  assert.equal(run.milestone1.refusals.byKind['vault-policy-on-chain'], 7)
+  assert.equal(run.milestone1.refusals.items.length, 5)
+  assert.match(run.milestone1.refusals.note, /2 more recorded revert\(s\) are on checks\.items/)
 })
 
 test('a curated entry for the same record does not count twice, and a long run is counted and not all listed', async () => {
@@ -1515,7 +1562,7 @@ test('with the flow log unreadable nobody is told how many checks have nothing l
   assert.equal(r.milestone1.checks.incomplete, true)
   assert.doesNotMatch(r.milestone1.checks.note, /No verify-then-pay flow yet|nothing linked/)
   assert.equal(r.milestone1.refusals.incomplete, true)
-  assert.match(r.milestone1.refusals.note, /any DENY it holds is missing from this count/)
+  assert.match(r.milestone1.refusals.note, /any refusal it holds is missing from this count/)
   assert.equal(r.milestone2.externalFlows.incomplete, true)
   assert.doesNotMatch(r.milestone2.externalFlows.note, /No external verify-then-pay flow has reached/)
   assert.equal(r.milestone2.externalChecks.incomplete, undefined, 'the settlement logs answered')
