@@ -512,7 +512,12 @@ export function holdsPage(r: HandoffSend): boolean {
  */
 export function followedHere(r: HandoffSend | null | undefined, s: HandoffStanding): boolean {
   if (!holdOf(r).held) return false
-  return !r?.server || (s.kind !== 'settled' && s.kind !== 'reverted')
+  return !r?.server || !flowIsOver(s)
+}
+
+/** The flow's record says it is finished, one way or the other: nothing more can happen to it. */
+export function flowIsOver(s: HandoffStanding): boolean {
+  return s.kind === 'settled' || s.kind === 'reverted'
 }
 
 /** How long a final answer is shown for a record whose flow did not read back. */

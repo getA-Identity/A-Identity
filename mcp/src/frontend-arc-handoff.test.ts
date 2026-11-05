@@ -57,6 +57,7 @@ type Rules = {
   holdsPage: (r: Send) => boolean
   unreadRecords: (records: Send[], flowIds: string[], now: number) => Send[]
   followedHere: (r: Send | null, s: Standing) => boolean
+  flowIsOver: (s: Standing) => boolean
   cardHeading: (s: Standing, o: { sent: boolean; held: boolean; paid: boolean }) => { heading: string; asks: boolean }
 }
 const rules = async () => (await import(repoUrl('src/lib/arc/handoff-rules.ts').href)) as Rules
@@ -833,6 +834,12 @@ test('a record with no answer keeps its tracker on a flow someone else closed, b
   const page = repo('src/components/app/arc/OwnerApprovals.tsx')
   assert.match(page, /if \(followedHere\(record, standing\)\) return <RequestCard \{\.\.\.props\} record=\{record\} \/>/)
   assert.doesNotMatch(page, /Our server read this transaction/)
+  // An answer on a flow already read as over reads nothing again: the flows' read budget is the next Review's too.
+  assert.equal(r.flowIsOver({ kind: 'settled' }), true)
+  assert.equal(r.flowIsOver({ kind: 'reverted' }), true)
+  assert.equal(r.flowIsOver({ kind: 'approvable' }), false)
+  assert.match(page, /flowOver=\{flowIsOver\(standing\)\}/)
+  assert.match(page, /if \(!told\.current\.flowOver\) told\.current\.onLanded\(\)/)
 })
 
 test("a tab left open reads the vault again when it comes back, and after every recheck, and the card's figures come from the newest read", () => {

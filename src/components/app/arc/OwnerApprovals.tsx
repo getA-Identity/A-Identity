@@ -31,6 +31,7 @@ import {
   agePhrase,
   budgetLine,
   cardHeading,
+  flowIsOver,
   followedHere,
   hashToPost,
   holdFor,
@@ -710,7 +711,7 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
           {step === 'wallet' ? 'Confirm this in your wallet now. If your wallet is an app on your phone, open it there: the request is waiting for you.' : `${step ? STEP_LABEL[step] : 'Working'}...`}
         </p>
       )}
-      {record && <SendTracker record={record} chain={chain} asking={asking} onRecords={onRecords} onLanded={onLanded} />}
+      {record && <SendTracker record={record} chain={chain} asking={asking} flowOver={flowIsOver(standing)} onRecords={onRecords} onLanded={onLanded} />}
       {hold.held && !record && (
         <p className="mt-3 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
           This browser has already sent a payment of this amount to this payee, for another request, and has no final answer for it yet. This is not offered until it has one: two sends pay twice.
@@ -829,13 +830,13 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
  * What was sent for a flow, until the server gave its final word on it: the receipt while the chain has
  * no answer, then the post, retried for as long as the server does not decide anything.
  */
-function SendTracker({ record, chain, asking = false, onRecords, onLanded }: { record: HandoffSend; chain: Chain; asking?: boolean; onRecords: () => void; onLanded: () => void }) {
+function SendTracker({ record, chain, asking = false, flowOver = false, onRecords, onLanded }: { record: HandoffSend; chain: Chain; asking?: boolean; flowOver?: boolean; onRecords: () => void; onLanded: () => void }) {
   const [waitingOn, setWaitingOn] = useState<string | null>(null)
   const hash = hashToPost(record)
   const latest = useRef(record)
   latest.current = record
-  const told = useRef({ onRecords, onLanded })
-  told.current = { onRecords, onLanded }
+  const told = useRef({ onRecords, onLanded, flowOver })
+  told.current = { onRecords, onLanded, flowOver }
 
   useEffect(() => {
     if (!hash) return
@@ -844,7 +845,9 @@ function SendTracker({ record, chain, asking = false, onRecords, onLanded }: { r
     const answer = (server: NonNullable<HandoffSend['server']>) => {
       saveHandoff({ ...latest.current, server })
       told.current.onRecords()
-      told.current.onLanded()
+      // On a flow already read as over this says nothing new about the flow or the vault, and reading both
+      // again for each such record would spend what an owner's next Review needs from the same budget.
+      if (!told.current.flowOver) told.current.onLanded()
     }
     const at = () => new Date().toISOString()
     const decide = (s: ReceiptStep, flowId: string): boolean => {

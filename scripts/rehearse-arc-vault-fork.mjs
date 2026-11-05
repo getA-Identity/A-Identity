@@ -37,6 +37,9 @@
  *   - A record that changed after the review, and a nine-day-old row, are written by this script into what
  *     the page reads from the backend: they stand in for a server or a store that holds them. The row's block
  *     is a real one on the chain under the fork, so no block has to be mined to reach that far back.
+ *   - This script's own reads of a flow claim another address than the page's, and the page's own reads wait for
+ *     room in the route's 60 a minute, because this run presses buttons far faster than a person: see flowOf
+ *     and ownerBrowser. A 429 that still reaches the page is counted, and said at the end of the run.
  *
  * Safety: the backend gets a built-from-scratch environment (no DATABASE_URL, nothing from your
  * shell, cwd in a temp dir so no .env is found) and a copy of mcp/dist under that temp dir, so its
@@ -438,8 +441,8 @@ async function startBackend() {
 await startBackend()
 say(`backend on port ${backendPort}, store ${databaseUrl ? 'a throwaway Postgres' : storeFile}`)
 
-async function getJson(path) {
-  const res = await fetch(`${api}${path}`, { headers: { accept: 'application/json' } })
+async function getJson(path, headers = {}) {
+  const res = await fetch(`${api}${path}`, { headers: { accept: 'application/json', ...headers } })
   return { status: res.status, body: await res.json().catch(() => null) }
 }
 async function postVault(deployTx) {
@@ -907,6 +910,9 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
     // a server or store whose record changed: rewrite is given each flow the page reads, and may return another.
     const logReads = []
     const stand = { rewrite: null, extra: null, failReceipt: false, vaultsOnFork: false }
+    // What the backend's own limiter answered the page, by route: a run that stops can then say so.
+    const limited = {}
+    const reads = { flows: 0, times: [] }
     await ctx.route('**/*', async (route, request) => {
       const url = new URL(request.url())
       const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' }
@@ -954,7 +960,23 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
         if (stand.failReceipt && request.method() === 'POST' && url.pathname.endsWith('/receipt')) {
           return route.fulfill({ status: 503, headers: { 'content-type': 'application/json' }, body: '{}' })
         }
+        // That route takes 60 reads a minute from one address, this one page is all that address does, and
+        // this run presses buttons far faster than a person. So a read waits for room, and does not meet a
+        // 429 no owner would earn. A 429 that gets through anyway is counted below, and said at the end.
+        if (request.method() === 'GET' && /^\/api\/x402\/gateway\/flows\/0x/.test(url.pathname)) {
+          for (;;) {
+            reads.times = reads.times.filter((t) => Date.now() - t < 61000)
+            if (reads.times.length < 55) break
+            await new Promise((r) => setTimeout(r, 500))
+          }
+          reads.times.push(Date.now())
+          reads.flows++
+        }
         const res = await fetch(`${api}${url.pathname}${url.search}`, { method: request.method(), headers, body: request.method() === 'POST' ? request.postData() : undefined })
+        if (res.status === 429) {
+          const route = `${request.method()} ${url.pathname.replace(/0x[0-9a-f]{64}/i, ':flowId')}`
+          limited[route] = (limited[route] ?? 0) + 1
+        }
         if (request.method() === 'GET' && url.pathname.startsWith('/api/x402/gateway/flows') && (stand.rewrite || stand.extra)) {
           const body = await res.json()
           const swap = (f) => (stand.rewrite ? stand.rewrite(f) : f)
@@ -987,6 +1009,7 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
     const stopIf = async (ok, what) => {
       check(ok, what)
       if (!ok) {
+        console.log(`--- what the backend limited the page on: ${JSON.stringify(limited)}`)
         console.log('--- page text at the failure ---\n' + (await text()).slice(-1800))
         await page.screenshot({ path: join(work, `failed-${ownerIndex}.png`), fullPage: true }).catch(() => {})
         await browser.close()
@@ -1002,7 +1025,7 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
     }
     /** The notice that says whether this vault counts, by what only it says. */
     const noticeSays = async () => (await text()).split('\n').find((l) => /on a-identity\.xyz\/proof\/arc|counts? on a-identity|counted on/.test(l)) ?? '(no line about the count)'
-    return { ctx, owner, agent, wallet, posts, seasonReads, sweepReads, logReads, stand, pageErrors, text, waitText, stopIf, connect, noticeSays, page, newPage: async () => (page = await ctx.newPage()), current: () => page }
+    return { ctx, owner, agent, wallet, posts, seasonReads, sweepReads, logReads, stand, limited, reads, pageErrors, text, waitText, stopIf, connect, noticeSays, page, newPage: async () => (page = await ctx.newPage()), current: () => page }
   }
 
   /** The deploy flow from the form to the moment the deploy has landed and the end date is asked for. */
@@ -1406,7 +1429,7 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
   async function handoffRun({ ownerIndex, agentIndex, strangerIndex, otherOwnerIndex }) {
     section('verify-then-pay: an owner approves a hand-off on the vault page')
     const b = await ownerBrowser({ ownerIndex, agentIndex })
-    const { ctx, owner, agent, wallet, logReads, stand, pageErrors, text, waitText, stopIf, connect } = b
+    const { ctx, owner, agent, wallet, logReads, stand, limited, reads, pageErrors, text, waitText, stopIf, connect } = b
     const stranger = acct(strangerIndex)
     const page = b.current()
     stand.vaultsOnFork = true
@@ -1436,8 +1459,9 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
       say(`check by ${payer.address.slice(0, 10)}... on ${to.slice(0, 10)}... for ${amount} units: 402, then ${paid.status} ${paid.body.stage}${paid.body.code ? ` ${paid.body.code}` : ''}`)
       return { free, paid, flowId: paid.body.flowId }
     }
-    // Polled every 2.5 s at most: this route takes 60 reads a minute from one address, and the page it watches is that address too.
-    const flowOf = async (id) => (await getJson(`/api/x402/gateway/flows/${id}`)).body.flow
+    // Polled every 2.5 s at most. This route takes 60 reads a minute from one address, so this says it is another
+    // one, past the two proxy hops the backend counts: it is not the owner's browser, which has that budget to itself.
+    const flowOf = async (id) => (await getJson(`/api/x402/gateway/flows/${id}`, { 'x-forwarded-for': '203.0.113.9, 10.0.0.1' })).body.flow
     const seasonBefore = (await season()).milestone1.checks
 
     // The hand-off, the way an agent gets it.
@@ -1481,6 +1505,17 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
         await stopIf(false, `no Review came up: the card says ${(await card.innerText().catch(() => '(no card)')).slice(-700)}`)
       })
       return button
+    }
+
+    /** The card's Review, pressed, and its Confirm, or the run stops with what the card said instead. */
+    const confirmOn = async (card, ms = 60000) => {
+      await reviewOn(card)
+      await card.getByRole('button', { name: 'Review this payment' }).click()
+      const confirm = card.getByRole('button', { name: 'Confirm in wallet' })
+      await confirm.waitFor({ timeout: ms }).catch(async () => {
+        await stopIf(false, `no Confirm came up: the card says ${(await card.innerText().catch(() => '(no card)')).slice(-700)}`)
+      })
+      return confirm
     }
 
     section('the page: the owner opens the link from the agent')
@@ -1722,11 +1757,9 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
     const i = await buyCheck(agent, payeeI, amountI)
     await page.goto(`${vaultUrl}&flow=${i.flowId}`, { waitUntil: 'domcontentloaded' })
     const cardI = page.locator(`[data-flow="${i.flowId}"]`)
-    await reviewOn(cardI)
-    await cardI.getByRole('button', { name: 'Review this payment' }).click()
-    await cardI.getByRole('button', { name: 'Confirm in wallet' }).waitFor({ timeout: 60000 })
+    const confirmI = await confirmOn(cardI)
     stand.failReceipt = true
-    await cardI.getByRole('button', { name: 'Confirm in wallet' }).click()
+    await confirmI.click()
     await stopIf(await waitText(/Our server has not read it yet/, 90000), 'the card says our server has not read it, not that it is reading it')
     check(!/still pending/.test(await text()), "and the owner's own controls do not wait on a transaction that has landed")
     check((await flowOf(i.flowId)).outcome === 'awaiting_human', 'and nothing reads as settled')
@@ -1741,13 +1774,6 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
     const postFromElsewhere = async (flowId, txHash) => {
       const res = await fetch(`${api}/api/x402/gateway/flows/${flowId}/receipt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ txHash }) })
       return { status: res.status, body: await res.json() }
-    }
-    const confirmOn = async (card) => {
-      await reviewOn(card)
-      await card.getByRole('button', { name: 'Review this payment' }).click()
-      const confirm = card.getByRole('button', { name: 'Confirm in wallet' })
-      await confirm.waitFor({ timeout: 60000 })
-      return confirm
     }
     // The tab closes with the hash pending, and it lands while nobody has the page open.
     const payeeK = payee()
@@ -1787,9 +1813,12 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
     stand.failReceipt = false
     const closedL = await postFromElsewhere(l.flowId, hashL)
     check(closedL.status === 200 && closedL.body.outcome === 'executed', `another device closes that flow too (${closedL.status} ${closedL.body.code ?? closedL.body.outcome})`)
+    const readsBeforeL = reads.flows
     await page.goto(`${vaultUrl}&flow=${l.flowId}`, { waitUntil: 'domcontentloaded' })
     await stopIf(await answered(l.flowId), "the page reopens on it and still gets this browser's answer, though the flow reads closed before the post comes back")
     await waitText(/Paid\. Our server read this payment/, 30000)
+    await page.waitForTimeout(2000)
+    check(reads.flows - readsBeforeL <= 6, `and that answer reads no flow again, because the flows' read budget is the next Review's too (${reads.flows - readsBeforeL} reads, for the named flow and five of this browser's)`)
     // The next invoice of the same amount to the same payee is a new check, and this one no longer stands in its way.
     const lAgain = await buyCheck(agent, payeeL, amountL)
     const cardLA = page.locator(`[data-flow="${lAgain.flowId}"]`)
@@ -1887,6 +1916,7 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
     check((await cardE.getByRole('button', { name: 'Review this payment' }).count()) === 0, 'and offers no action')
 
     check(pageErrors.length === 0, `no page errors (${pageErrors.slice(0, 2).join(' | ')})`)
+    say(`what the backend limited the page on: ${JSON.stringify(limited)}`)
     await ctx.close()
   }
 
