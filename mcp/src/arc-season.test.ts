@@ -377,6 +377,32 @@ test('an external wallet nobody attributed is reported as unattributed, never fo
   assert.equal(b.team, undefined)
 })
 
+test('a wallet nobody attributed counts as an external check, wallet and flow and toward no team metric, and the note says exactly that', async () => {
+  const first = gw({ payer: EXT_B, ts: '2026-10-05T10:00:00Z' })
+  const r = await arcSeasonReport(
+    deps({
+      partners: [{ wallet: EXT_A, team: 'Team A', publicReference: true }],
+      gateway: [gw({ payer: EXT_A, ts: '2026-10-05T11:00:00Z' }), first, gw({ payer: EXT_B, ts: '2026-10-12T10:00:00Z' })],
+      flows: [flow({ checkNonce: first.authNonce, payer: EXT_B, at: '2026-10-05T10:00:09Z' })],
+    }),
+  )
+  const unattributed = lower(EXT_B)
+  const m2 = r.milestone2
+  assert.match(m2.unattributed.note, /^1 external wallet\(s\) paid 2 check\(s\) without being attributed to a team\. They count as external checks, external wallets and external flows, and toward no team metric\.$/)
+  // The first half of the sentence, on every number it names.
+  assert.equal(m2.externalChecks.count, 3)
+  assert.ok(r.usage.external.wallets.includes(unattributed))
+  assert.ok(r.afterProgram.activeExternalWallets.wallets.includes(unattributed))
+  assert.ok(r.afterProgram.weekly.weeks.some((w) => w.activeWallets.includes(unattributed)))
+  assert.equal(m2.externalFlows.count, 1)
+  // And the second: paying in two weeks, on two days, makes no team of it.
+  assert.deepEqual(r.afterProgram.weekly.repeatWallets, [unattributed])
+  assert.deepEqual(r.afterProgram.weekly.repeatTeams, [])
+  assert.deepEqual(m2.externalTeamsLive.teams.map((t) => t.team), ['Team A'])
+  assert.deepEqual(m2.teamActiveOnSeveralDays.teams, [])
+  assert.deepEqual(m2.publicReference.names, ['Team A'])
+})
+
 // ── recorded DENYs and whose wallet they name ────────────────────────────────────────
 
 const OUR_VAULT_OWNER = '0x' + 'b7'.repeat(20)
@@ -1293,7 +1319,7 @@ test("an external team's verify-then-pay flow is listed under Milestone 2, by th
   const quiet = await arcSeasonReport(deps({ gateway: [ours], flows: [paid] }))
   assert.equal(quiet.milestone2.externalFlows.count, 0)
   assert.match(quiet.milestone2.externalFlows.note, /^No external verify-then-pay flow has reached a vault payment or a refusal yet/)
-  assert.match(quiet.milestone2.externalFlows.note, /A WARN waiting for its owner has a public record/)
+  assert.match(quiet.milestone2.externalFlows.note, /A payment waiting for its owner has a public record/)
   const early = await arcSeasonReport(deps({ gateway: [theirs], flows: [flow({ checkNonce: theirs.authNonce, at: '2026-11-03T09:00:00.000Z' })] }))
   assert.equal(early.milestone2.externalFlows.count, 0)
   const reused = await arcSeasonReport(deps({ gateway: [theirs, ours], flows: [flow({ checkNonce: ours.authNonce, txHash: tx }), { ...paid }] }))
