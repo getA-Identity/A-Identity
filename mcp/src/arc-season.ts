@@ -183,6 +183,7 @@ export type ArcRefusal = {
   payeeInternal?: string
 }
 
+// Our own agents. Admission refuses an owner from this list too, so it lives in arc-owner-vault.ts.
 export { ARC_OUR_PAYEES }
 
 /**
@@ -513,7 +514,7 @@ async function liveFacilitatorRows(): Promise<X402SettlementRecord[]> {
   return read.rows
 }
 
-/** The store is a seam only so a test can run this very loader against a real file: the keys below reach the report through it and nothing else. */
+/** The store is a seam only so a test can run this very loader against a real file: a recorded row's keys reach the report through it. */
 export async function liveFlowRows(onSkip?: (row: ArcSeasonSkippedRow) => void, onKeys?: (keys: ArcFlowKeys) => void, io: VtpStoreIo = {}): Promise<ArcVerifyThenPayFlow[]> {
   const read = await loadCountableVtpFlows(io)
   if (!read.ok) throw new Error(read.reason)
@@ -601,8 +602,8 @@ export function labelOwners(vaults: ArcOwnerHeldVault[], curated: ArcOwnerHeldVa
   const partnerWallets = new Set(partners.map((p) => p.wallet.toLowerCase()))
   return vaults.map((v) => {
     const entry = entries.get(v.address.toLowerCase())
-    const known = entry ? { ...v, ownerKind: entry.ownerKind, note: entry.note } : v
-    return known.ownerKind === 'unstated' && partnerWallets.has(known.owner.toLowerCase()) ? { ...known, ownerKind: 'external' as const, note: PARTNER_OWNER_NOTE } : known
+    if (entry) return { ...v, ownerKind: entry.ownerKind, note: entry.note }
+    return v.ownerKind === 'unstated' && partnerWallets.has(v.owner.toLowerCase()) ? { ...v, ownerKind: 'external' as const, note: PARTNER_OWNER_NOTE } : v
   })
 }
 

@@ -277,8 +277,8 @@ export function liveOurAddressSources(env: NodeJS.ProcessEnv = process.env): Our
 /**
  * What admission calls ours with no environment at all: the provenance ledger, both rails'
  * hardcoded buyers, the published attestations, our own agents and the addresses committed for our keys. It is what the page's generated key list is
- * built from, so a vault the script refuses as ours is labelled as ours there too. No env, so the
- * generated file does not depend on who ran the generator.
+ * built from, so a vault the script refuses as ours is labelled as ours there too, and what the season report reads as ours on top
+ * of the rails' lists. No env, so the generated file does not depend on who ran the generator.
  */
 export function committedOurKeys(): string[] {
   const live = liveOurAddressSources({})

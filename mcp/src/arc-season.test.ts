@@ -1479,6 +1479,11 @@ test('a wallet the partner list names is not said to be possibly ours, as an own
   assert.doesNotMatch(item.note, /not identified/, 'and its own note does not contradict the label')
   assert.doesNotMatch(item.note, /Team C/, 'and it names nobody')
 
+  // A person's entry stands even where it says nobody knows, and the note still does not doubt a wallet the list names.
+  const entered = await arcSeasonReport(deps({ partners: [partner], vaults: [vaultEntry(held, { owner: EXT_C })], gateway: [gw({ payer: EXT_C })] }))
+  assert.deepEqual(entered.milestone1.vaults.byKind, { team: 0, external: 0, unstated: 1 })
+  assert.doesNotMatch(entered.milestone2.externalChecks.note, stated)
+
   // Without the listing it is what it was.
   const unlisted = await arcSeasonReport(deps({ admittedVaults: async () => [vaultEntry(held, { owner: EXT_C })], gateway: [gw({ payer: EXT_C })] }))
   assert.deepEqual(unlisted.milestone1.vaults.byKind, { team: 0, external: 0, unstated: 1 })
