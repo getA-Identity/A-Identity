@@ -550,6 +550,17 @@ test('a flow nobody can act on does not reach the read of the vault, and a read 
   // An answered send is not followed.
   assert.equal(r.scanStart(rows({ kind: 'stale', ageSeconds: 800_000n }), [send({ flowId: old, tx: txRecord('settled'), server: { state: 'settled', txHash: TX, flowId: old, at: CHECKED } })], [], 0), start)
   assert.equal(r.scanStart([], [], [], 0), null)
+  // A flow the person freed is still watched and it is on offer again, and the offer needs the hours before the
+  // check: paymentsRead says 'reading' until a read holds them, and nothing else would ever start that read.
+  const t0 = Date.parse('2026-11-04T12:00:00Z')
+  const offered = [{ f: ok, s: { kind: 'approvable' } as Standing }]
+  const freed = send({ flowId: fresh, released: true, releasedAt: new Date(t0).toISOString() })
+  assert.equal(r.stillWatched(freed, t0), true)
+  assert.equal(r.scanStart(offered, [freed], [], t0), start)
+  assert.equal(r.paymentsRead(ok, { from: start, through: head, paid: [], short: null }, null), 'ok')
+  // Held, it is not on offer, and its question is its own payment. Freed and said no to, the same.
+  assert.equal(r.scanStart(offered, [send({ flowId: fresh })], [], t0), freshBlock + 1n)
+  assert.equal(r.scanStart(offered, [freed], [fresh], t0), freshBlock + 1n)
   // So the read stopping short costs only the flow it did not reach: one card, not the page.
   const short: Scan = { from: head - 1_200_000n, through: head, paid: [], short: 'the read stopped before it reached the block it needed' }
   assert.equal(r.paymentsRead(aged, short, null), 'failed')

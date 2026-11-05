@@ -404,16 +404,18 @@ export function stillWatched(r: HandoffSend | null | undefined, now: number): bo
  * this browser is still following. Nothing else may reach this read. A flow has no way to close, so an old
  * one stays on the list, and anyone can send a link naming any old flow on any vault, and neither gets to
  * make the owner's browser read a week of logs. It reads back past the check for an offered flow, and only
- * from the check for a followed one, whose question is whether its own payment landed.
+ * from the check for a followed one, whose question is whether its own payment landed. A flow the person freed
+ * is both, and the offer is asked first: paymentsRead holds its button back for the hours before the check.
  */
 export function scanStart(rows: readonly { f: HandoffFlow; s: HandoffStanding }[], records: readonly HandoffSend[], declined: readonly string[], now: number): bigint | null {
   let from: bigint | null = null
   for (const { f, s } of rows) {
     if (f.verdictBlock === null || s.kind === 'not_this_vault') continue
     const after = f.verdictBlock + 1n
+    const record = records.find((r) => holdsFlow(r, f.flowId))
     let wanted: bigint | null = null
-    if (stillWatched(records.find((r) => holdsFlow(r, f.flowId)), now)) wanted = after
-    else if (s.kind === 'approvable' && !declined.includes(f.flowId)) wanted = after > PAID_LOOKBACK_BLOCKS ? after - PAID_LOOKBACK_BLOCKS : 0n
+    if (s.kind === 'approvable' && !declined.includes(f.flowId) && !holdOf(record).held) wanted = after > PAID_LOOKBACK_BLOCKS ? after - PAID_LOOKBACK_BLOCKS : 0n
+    else if (stillWatched(record, now)) wanted = after
     if (wanted !== null && (from === null || wanted < from)) from = wanted
   }
   return from
