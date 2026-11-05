@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ContractFunctionRevertedError, decodeFunctionData, encodeErrorResult } from 'viem'
-import { runVerifyThenPay, readVtpFlow, readVtpVaultFlows, VAULT_FLOWS_LIMIT, VAULT_FLOWS_OTHERS_CAP, type VtpInput } from './core.js'
+import { runVerifyThenPay, readVtpFlow, readVtpVaultFlows, VAULT_FLOWS_LIMIT, VAULT_FLOWS_OTHERS_CAP, vtpRateLimited, type VtpInput } from './core.js'
 import { flowUrl, storageVtpStore, type VtpStore } from './context.js'
 import { fakeVtpPool } from './fake-pg.js'
 import { recordVtpReceipt } from './receipt.js'
@@ -13,7 +13,7 @@ import type { VtpReadClient } from './reads.js'
 import { ARC_MIN_MAX_FEE_WEI } from './prepare.js'
 import { AgentSpendPolicyAbi } from '../contracts/AgentSpendPolicy.js'
 import { getChainById } from '../chains/index.js'
-import { clearKindCache, type GatewayKind, type GatewaySettleResponse, type GatewayTransfer } from '../x402-gateway/index.js'
+import { clearKindCache, railProof, railStatus, type GatewayKind, type GatewaySettleResponse, type GatewayTransfer } from '../x402-gateway/index.js'
 import type { GatewaySettlementRecord, VtpFlowRecord } from '../storage.js'
 
 /**
@@ -841,7 +841,10 @@ test('a used nonce says this request charged nothing, and sends the caller to th
     assert.match(next, /may have been charged and may hold a verdict, or may still be running/)
     assert.ok(next.includes(`GET /api/x402/gateway/flows/${NONCE.toLowerCase()}`), next)
     assert.match(next, /GET \/api\/x402\/gateway\/proof/)
-    assert.match(next, /Sign a new authorization only if neither shows this nonce by then, or the proof log says it failed/)
+    assert.match(next, /a flow there that names this vault, payee and amount is your answer, so do not sign again/)
+    assert.match(next, /One that names others does not answer this request, so sign a new authorization for it/)
+    assert.doesNotMatch(next, /a flow there is your answer/)
+    assert.match(next, /If neither shows this nonce by then, or the proof log says it failed, sign a new authorization/)
     assert.doesNotMatch(next, /no check was bought/)
     assert.doesNotMatch(reason ?? '', /sign a new authorization/i)
   }
@@ -887,6 +890,177 @@ test('a used nonce says this request charged nothing, and sends the caller to th
   const resent = await runVerifyThenPay(request(), header(), stalled.deps)
   assert.equal(resent.body.code, 'NONCE_ALREADY_USED')
   said(resent.body.next, resent.body.reason)
+})
+
+test('a signature sent again for another vault, payee or amount is told that the flow under it does not answer this request', async () => {
+  const { g, s, deps } = setup()
+  const first = await runVerifyThenPay(request(), header(), deps)
+  assert.equal(first.body.stage, 'prepared')
+  const other = '0x' + 'e5'.repeat(20)
+  for (const [what, over] of [
+    ['payee', { payee: other }],
+    ['amount', { amount: '100000' }],
+    ['vault', { vault: other }],
+    ['payee and amount', { payee: other, amount: '100000' }],
+  ] as [string, Partial<VtpInput>][]) {
+    const again = await runVerifyThenPay(request(over), header(), deps)
+    assert.deepEqual([again.httpStatus, again.body.stage, again.body.code, again.body.charged, again.body.prepared, again.body.flowId], [409, 'refused', 'NONCE_ALREADY_USED', false, null, null], what)
+    assert.match(again.body.next, /named another vault, payee or amount/, what)
+    assert.match(again.body.next, /does not answer this request/, what)
+    assert.match(again.body.next, /sign a new authorization, which costs another 0\.005 USDC/, what)
+    assert.doesNotMatch(again.body.next, /is your answer|do not sign again/, what)
+  }
+  assert.equal(g.spy.settles, 1, 'nothing was bought for any of them')
+  assert.equal(s.rows.get(NONCE)?.payee, PAYEE, 'and the first flow is as it was')
+
+  // The same request is the same request, whatever case its addresses were typed in, so it is not told to pay again.
+  const typed = await runVerifyThenPay(request({ payee: '0x' + 'D4'.repeat(20), vault: '0x' + 'A1'.repeat(20) }), header(), deps)
+  assert.equal(typed.body.code, 'NONCE_ALREADY_USED')
+  assert.match(typed.body.next, /a flow there that names this vault, payee and amount is your answer/)
+  assert.doesNotMatch(typed.body.next, /named another vault, payee or amount/)
+
+  // The race has no row to compare, so its words have to hold for another payee too.
+  const lost = setup({ store: { insert: async () => ({ ok: true, inserted: false }) } })
+  const raced = await runVerifyThenPay(request({ payee: other }), header(), lost.deps)
+  assert.equal(raced.body.code, 'NONCE_ALREADY_USED')
+  assert.match(raced.body.next, /One that names others does not answer this request/)
+  assert.equal(lost.g.spy.settles, 0)
+})
+
+test("the guide's table says what a used nonce and an unconfirmed settlement answer", () => {
+  const guide = readFileSync(new URL('../../../docs/chains/arc-integration.mdx', import.meta.url), 'utf8').split('\n')
+  const row = (start: string) => {
+    const rows = guide.filter((l) => l.startsWith(start))
+    assert.equal(rows.length, 1, start)
+    return rows[0]
+  }
+  const used = row('| `409` | `refused` |')
+  assert.match(used, /A flow there that names this vault, payee and amount is your answer, so do not sign again/)
+  assert.match(used, /One that names others does not answer this request/)
+  assert.match(used, /which lists only the newest 50 rows/)
+  assert.match(used, /`credited`, `completed` or `unconfirmed` and the flow still answers `404`, treat this nonce as giving no flow/)
+  assert.match(used, /a new authorization costs another 0\.005 USDC/)
+  assert.match(used, /may still settle until it expires/)
+  const unknown = row('| `409`, `500`, `502`, `503` | `check_failed`, `unavailable` |')
+  assert.match(unknown, /which lists only the newest 50 rows/)
+  assert.match(unknown, /If it reads `unconfirmed`, treat this nonce as giving no flow/)
+})
+
+test('every summary of the flow says a payment only the owner can make buys the check on a vault with a human, because on one key it stays a free refusal', async () => {
+  const said = (rel: string) => readFileSync(new URL(`../../../${rel}`, import.meta.url), 'utf8').replace(/\s+/g, ' ')
+  const server = said('mcp/src/server.ts')
+  assert.match(server, /On a vault with a human, a payment above the vault's ceiling or off its allowlist is one only the owner can settle, so it still buys the check/)
+  assert.match(said('public/.well-known/mcp/server-card.json'), /On a vault with a human, above the vault's ceiling or off its allowlist the check is still charged/)
+  const mcp = said('docs/developers/mcp-server.mdx')
+  assert.match(mcp, /On a vault with a human, above the vault's ceiling or off its allowlist the check is still charged/)
+  assert.match(mcp, /on a vault with a human that stays a hand-off/)
+  const full = said('public/llms-full.txt')
+  assert.match(full, /On a vault with a human, a payment above the vault's ceiling or off its allowlist still buys the check/)
+  assert.match(full, /On a vault whose owner is its operator both stay refusals, with nothing charged/)
+  assert.match(full, /null when the check was not paid from the vault's operator key or the payee is that key/)
+  const readme = said('mcp/README.md')
+  assert.match(readme, /so a payment that neither key could make never buys a check/)
+  assert.doesNotMatch(readme, /so a payment the vault would refuse never buys a check/)
+  assert.match(readme, /A payment only the owner can make, above the ceiling or off the allowlist on a vault with a human, goes on to the check/)
+  assert.match(readme, /25 DENY and 75 ALLOW/)
+  assert.match(readme, /The historical run's totals were `--allow 75 --deny 25`/)
+
+  // Which is what the route does: the free refusal on one key, and the charged check on two.
+  const oneKey = await runVerifyThenPay(request({ amount: '250001' }), undefined, setup({ chain: { owner: OPERATOR } }).deps)
+  assert.deepEqual([oneKey.httpStatus, oneKey.body.stage, oneKey.body.charged], [422, 'refused', false])
+  const twoKeys = await runVerifyThenPay(request({ amount: '250001' }), undefined, setup().deps)
+  assert.deepEqual([twoKeys.httpStatus, twoKeys.body.stage], [402, 'payment_required'])
+})
+
+test('the words on approvalUrl say what the server can see, and that the page can still refuse', async () => {
+  const said = (rel: string) => readFileSync(new URL(`../../../${rel}`, import.meta.url), 'utf8').replace(/\s+/g, ' ')
+  for (const page of ['docs/chains/arc-integration.mdx', 'docs/developers/mcp-server.mdx', 'public/llms-full.txt', 'trust-guard/README.md']) {
+    const text = said(page)
+    assert.match(text, /can still refuse/, page)
+    assert.match(text, /a vault that is ours or not the build (it|the page) deploys, a key stopped or replaced since the check,? or a check older than 24 hours/, page)
+    assert.doesNotMatch(text, /`null` on a hand-off the page would refuse|null when the vault page would refuse it/, page)
+  }
+  assert.match(said('docs/chains/arc-integration.mdx'), /`GET \/api\/x402\/gateway\/flows\/<flowId>` reads no chain, so it keeps naming the link/)
+  // The tool's own description and the published card make no promise for the page either.
+  assert.doesNotMatch(said('mcp/src/server.ts'), /null when the vault page would refuse it/)
+  assert.doesNotMatch(said('public/.well-known/mcp/server-card.json'), /approvalUrl when the vault page would offer it/)
+
+  // What the guide says of the read is what it does: the link stays on a flow of any age, because it looks at no chain.
+  const { s, deps } = setup({ gw: { scored: verdict('WARN') } })
+  await runVerifyThenPay(request(), header(), deps)
+  const row = s.rows.get(NONCE)!
+  s.rows.set(NONCE, { ...row, check: { ...row.check, checkedAt: new Date(NOW - 3 * 86_400_000).toISOString() } })
+  assert.match(String((await readVtpFlow(NONCE, { store: s.store })).body.approvalUrl), /^https:\/\/a-identity\.xyz\/app\/vault\/arc\?/)
+})
+
+test("the guide's table says what a refused payment and the rate limit answer, which is not what a client branching on stage would guess", async () => {
+  const guide = readFileSync(new URL('../../../docs/chains/arc-integration.mdx', import.meta.url), 'utf8').split('\n')
+  const row = (start: string) => guide.find((l) => l.startsWith(start)) ?? ''
+
+  // A signed payment Gateway refuses is a 402 as well, and signing again on any 402 would loop.
+  const refusedPay = setup({ gw: { settle: { success: false, errorReason: 'insufficient_balance' } } })
+  const r402 = await runVerifyThenPay(request(), header(), refusedPay.deps)
+  assert.deepEqual([r402.httpStatus, r402.body.stage, r402.body.charged, r402.body.flowId], [402, 'check_failed', false, null])
+  assert.ok(r402.body.challenge, 'with a fresh offer')
+  const failed = row('| `402` | `check_failed` |')
+  assert.match(failed, /Gateway refused the signed payment/)
+  assert.match(failed, /`charged` is false/)
+  assert.match(failed, /`reason` says why/)
+  assert.match(failed, /this nonce has had its one attempt/)
+  assert.match(row('| `402` | `payment_required` |'), /Nothing charged yet/)
+
+  // The limiter stands in front of the route over HTTP, so its body is its own: what http.ts sends, and what the row says.
+  const limiter = readFileSync(new URL('../../src/http.ts', import.meta.url), 'utf8')
+  assert.match(limiter, /res\.setHeader\('Retry-After', String\(Math\.ceil\(budget\.windowMs \/ 1000\)\)\)\s+sendJson\(res, 429, \{ error: '[^']+' \}\)/)
+  const limited = row('| `429` |')
+  assert.match(limited, /^\| `429` \| none over HTTP, `refused` over MCP \|/)
+  assert.match(limited, /Over HTTP the body is only `\{"error": "\.\.\."\}` with a `Retry-After` header, so it has no `stage`, `code` or `charged`/)
+  assert.match(limited, /`RATE_LIMITED` is the MCP tool's answer alone/)
+  assert.match(limited, /`recordFlowReceipt` waits as `Retry-After` says/)
+  const overMcp = vtpRateLimited(60_000)
+  assert.deepEqual([overMcp.httpStatus, overMcp.body.stage, overMcp.body.code, overMcp.body.charged], [429, 'refused', 'RATE_LIMITED', false])
+})
+
+test('a used nonce the proof shows and no flow came of has a way forward, and the proof is not taken for complete', async () => {
+  const noFlow = /[Tt]reat this nonce as giving no flow: a new authorization costs another 0\.005 USDC/
+  // The first request settled, its flow could not be closed, and its answer was lost.
+  const closeFails = setup({ store: { update: async () => ({ ok: false, reason: 'db down' }) } })
+  const first = await runVerifyThenPay(request(), header(), closeFails.deps)
+  assert.equal(first.body.code, 'FLOW_NOT_RECORDED')
+  const again = await runVerifyThenPay(request(), header(), closeFails.deps)
+  assert.equal(again.body.code, 'NONCE_ALREADY_USED')
+  assert.equal((await readVtpFlow(NONCE, { store: closeFails.s.store })).httpStatus, 404, 'the flow reads as nothing, and nothing will change that')
+  const shown = await railProof(railStatus(ENV, arc.caip2), { env: ENV, load: async () => closeFails.g.spy.persisted })
+  assert.deepEqual(shown.recent.map((r) => [r.authNonce, r.outcome]), [[NONCE, 'credited']], 'and the proof shows it settled')
+  // Those two facts are the case the answer has to name: neither "neither shows it" nor "it failed".
+  assert.match(again.body.next, /If the proof log reads credited, completed or unconfirmed and the flow still answers 404/)
+  assert.match(again.body.next, noFlow)
+  assert.match(again.body.next, /one that reads unconfirmed may still settle until it expires/)
+  assert.doesNotMatch(again.body.next, /no flow will come/, 'a very slow first request could still close its flow, so the words do not promise that')
+
+  // The proof has no look-up, so a settled nonce older than its newest rows reads as absent, and the answer says so.
+  const later = Array.from({ length: 50 }, (_, i) => ({ ...closeFails.g.spy.persisted[0], authNonce: '0x' + String(i).padStart(64, '0') }))
+  const crowded = await railProof(railStatus(ENV, arc.caip2), { env: ENV, load: async () => [...closeFails.g.spy.persisted, ...later] })
+  assert.equal(crowded.recent.length, 50)
+  assert.equal(crowded.recent.filter((r) => r.authNonce === NONCE).length, 0)
+  assert.equal(crowded.credited, 51)
+  assert.match(again.body.next, /GET \/api\/x402\/gateway\/proof, which lists only the newest 50 rows/)
+
+  // A settle that got no usable answer ends at unconfirmed, and its own answer already says what to do with that.
+  const stalled = setup({ gw: { settle: { success: false, unknown: true, errorReason: 'Gateway settle did not answer within 8000 ms' } } })
+  const unknown = await runVerifyThenPay(request(), header(), stalled.deps)
+  assert.equal(unknown.body.code, 'SETTLEMENT_UNKNOWN')
+  assert.equal(stalled.g.spy.persisted[0].outcome, 'unconfirmed')
+  assert.match(unknown.body.next, /GET \/api\/x402\/gateway\/proof, which lists only the newest 50 rows, before signing another/)
+  assert.match(unknown.body.next, /If it reads unconfirmed, treat this nonce as giving no flow: a new authorization costs another 0\.005 USDC/)
+  assert.match(unknown.body.next, /this one may still settle until it expires/)
+
+  // So does a success whose transfer could not be read back.
+  const unread = setup({ gw: { transfers: [] } })
+  const r502 = await runVerifyThenPay(request(), header(), unread.deps)
+  assert.deepEqual([r502.httpStatus, r502.body.charged, unread.g.spy.persisted[0].outcome], [502, null, 'unconfirmed'])
+  assert.match(r502.body.next, noFlow)
+  assert.match(r502.body.next, /this one may still settle until it expires/)
 })
 
 test('the reservation goes in before the rail is asked, and to a reader it is nothing yet', async () => {
@@ -1089,6 +1263,12 @@ test('a WARN with no human gate does not point the agent at payOnWarn for a paye
   // A WARN on an agent we hold a record of keeps the option: its reasons are about something we know.
   const known = setup({ chain: { owner: OPERATOR }, gw: { scored: verdict('WARN', { onPlatform: true }) } })
   assert.match((await runVerifyThenPay(request(), header(), known.deps)).body.next, /payOnWarn/)
+  // The free refusal on such a vault has no verdict at all, so it does not point there either, whoever the payee is.
+  for (const agentsHeld of [0n, 1n]) {
+    const above = await runVerifyThenPay(request({ amount: '250001' }), undefined, setup({ chain: { owner: OPERATOR, agentsHeld } }).deps)
+    assert.equal(above.body.code, 'AboveAutoApprove')
+    assert.doesNotMatch(above.body.next, /payOnWarn/, String(agentsHeld))
+  }
 })
 
 test('the way to a hand-off on a vault with one key is one the contract has', async () => {
@@ -1197,8 +1377,21 @@ test('on a vault with one key, a payment above the ceiling stays a refusal that 
   assert.match(above.body.next, /no verdict on this payee/)
   assert.match(above.body.next, /no person to hand this to/)
   assert.match(above.body.next, /ALLOW prepares pay\(\) and WARN stops with the check paid/)
-  assert.match(above.body.next, /prepares pay\(\) as the agent's own decision if the request sets payOnWarn/, 'which is what the next request would get if it did')
   assert.match(above.body.next, /owner cannot be changed/)
+  // The key that asked is the owner, so "only the owner can pay it" would point it past its own ceiling.
+  assert.doesNotMatch(above.body.next, /ownerPay|only the owner/)
+  assert.doesNotMatch(above.body.reason ?? '', /ownerPay|only the owner/)
+  // A caller who already set payOnWarn is told what it will do. One who did not is not pointed at it.
+  const set = await runVerifyThenPay(request({ amount: '250001', payOnWarn: true }), undefined, setup({ chain: { owner: OPERATOR } }).deps)
+  assert.equal(set.body.code, 'AboveAutoApprove')
+  assert.match(set.body.next, /WARN prepares pay\(\) as the agent's own decision, because you set payOnWarn/)
+  assert.doesNotMatch(set.body.next, /stops with the check paid/)
+  const offList = await runVerifyThenPay(request(), undefined, setup({ chain: { owner: OPERATOR, allowlistEnabled: true } }).deps)
+  assert.equal(offList.body.code, 'PayeeNotAllowed')
+  assert.doesNotMatch(offList.body.next, /ownerPay|only the owner|payOnWarn/)
+  // Where there is a person, the words that send it to them stay.
+  const twoKeys = await runVerifyThenPay(request({ amount: '250001' }), undefined, setup().deps)
+  assert.match(twoKeys.body.checks?.vault.ownerOnly?.reason ?? '', /only the owner can pay it \(ownerPay\)/)
   assert.doesNotMatch(above.body.next, /To get a verdict and a hand-off/)
   // Any other refusal keeps its plain answer.
   const frozen = await runVerifyThenPay(request(), undefined, setup({ chain: { frozen: true } }).deps)

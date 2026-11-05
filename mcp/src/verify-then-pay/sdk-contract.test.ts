@@ -170,7 +170,7 @@ const SEPARATE_PAYER = '0x' + '77'.repeat(20)
 
 const UNKNOWN_PAYEE: RiskSignals = { onchainVerified: false, kyaVerified: false, reputationScore: 0, tenureDays: 0, revoked: false, onPlatform: false }
 
-type Setup = { score?: Scored; settle?: GatewaySettleResponse; transfers?: 'none'; insertFails?: boolean; closeFails?: boolean; serverFrozen?: boolean; payOnWarn?: boolean; ownerIsOperator?: boolean; agentsHeld?: bigint; policy?: Partial<Vault>; payer?: string; payee?: string }
+type Setup = { score?: Scored; settle?: GatewaySettleResponse; transfers?: 'none'; insertFails?: boolean; closeFails?: boolean; serverFrozen?: boolean; payOnWarn?: boolean; ownerIsOperator?: boolean; agentsHeld?: bigint; policy?: Partial<Vault>; payer?: string; payee?: string; losesPaidAnswer?: boolean }
 
 function harness(o: Setup = {}) {
   const rows = new Map<string, VtpFlowRecord>()
@@ -219,7 +219,10 @@ function harness(o: Setup = {}) {
     if (url === `${FACILITATOR}/v1/balances`) return json(200, { balances: [{ balance: '1.000000' }] })
     if (url === `${ORIGIN}/api/x402/gateway/verify-then-pay`) {
       const headers = (init?.headers ?? {}) as Record<string, string>
-      const r = await runVerifyThenPay(JSON.parse(String(init?.body)) as VtpInput, headers['PAYMENT-SIGNATURE'] ?? null, deps as never)
+      const post = () => runVerifyThenPay(JSON.parse(String(init?.body)) as VtpInput, headers['PAYMENT-SIGNATURE'] ?? null, deps as never)
+      // A retrying layer under the client's fetch: the answer to the signed POST is lost, and it sends the same bytes again.
+      if (o.losesPaidAnswer && headers['PAYMENT-SIGNATURE']) await post()
+      const r = await post()
       return json(r.httpStatus, r.body, r.headers)
     }
     if (url.endsWith('/receipt')) return json(200, { verified: true, outcome: 'executed', detail: 'agent_paid' })
@@ -492,13 +495,37 @@ test('the guide says which version of the SDK has what, wherever it sends someon
   const guide = readFileSync(new URL('../../../docs/chains/arc-integration.mdx', import.meta.url), 'utf8').replace(/\s+/g, ' ')
   const pkg = JSON.parse(readFileSync(new URL('../../../trust-guard/package.json', import.meta.url), 'utf8')) as { version: string }
   // "in the repo" is a claim about this file, so the two are read together.
-  const [major, minor, patch] = pkg.version.split('.').map(Number)
-  assert.ok(major > 0 || minor > 4 || (minor === 4 && patch >= 1), pkg.version)
+  const [major, minor] = pkg.version.split('.').map(Number)
+  assert.ok(major > 0 || minor >= 5, pkg.version)
   assert.match(guide, /`verifyThenPay` needs version 0\.4\.0 or later/)
-  assert.match(guide, /`ownerOnly`, `out\.approvalUrl` and the hand-off of a payment above the ceiling or off the allowlist need 0\.4\.1, which is in the repo and not on npm yet/)
-  assert.match(guide, /`out\.approvalUrl` from `verifyThenPay` 0\.4\.1/)
+  assert.match(guide, /`ownerOnly`, `out\.approvalUrl` and the hand-off of a payment above the ceiling or off the allowlist need 0\.5\.0, which is in the repo and not on npm yet/)
+  assert.match(guide, /`out\.approvalUrl` from `verifyThenPay` 0\.5\.0/)
+  assert.match(guide, /An earlier build of this code ran our own 100 flows, on its `pay\(\)` path/)
+  assert.doesNotMatch(guide, /0\.4\.1/)
   assert.doesNotMatch(guide, /x402-batching`, version 0\.4\.0 or later/)
 })
+
+for (const [decision, outcome, detail] of [
+  ['ALLOW', 'pending', 'agent_will_pay'],
+  ['WARN', 'awaiting_human', 'warn_handoff'],
+  ['DENY', 'blocked', 'deny'],
+] as const) {
+  test(`the signed POST sent twice under the client, on a ${decision}: paid stays unknown, the server's steps are the message, and nothing is sent`, async () => {
+    const h = harness({ score: scored(decision), losesPaidAnswer: true })
+    const e = await thrown(h.run())
+    assert.equal(e.name, 'GatewayCheckError')
+    assert.equal(e.code, 'UNCONFIRMED')
+    assert.equal(e.paid, null, 'the first request was charged, and this answer cannot say so')
+    assert.equal(e.status, 409)
+    assert.equal(e.serverCode, 'NONCE_ALREADY_USED')
+    assert.match(e.message, /This request charged nothing/)
+    assert.match(e.message, /Read GET \/api\/x402\/gateway\/flows\/0x[0-9a-f]{64}: a flow there that names this vault, payee and amount is your answer/)
+    assert.equal(h.signed.length, 1)
+    assert.equal(h.sent.length, 0)
+    const row = [...h.rows.values()][0]
+    assert.deepEqual([row.outcome, row.detail], [outcome, detail], 'and the flow it points to is there')
+  })
+}
 
 test('a flow the server could not close comes out as FLOW_NOT_RECORDED with paid true, and nothing is sent', async () => {
   const h = harness({ closeFails: true })

@@ -28,8 +28,8 @@
  *      `awaiting_human` with a prepared ownerPay for the owner, unless payOnWarn is set. On a
  *      payment only the owner can make, ALLOW and WARN both return `awaiting_human`, and payOnWarn
  *      cannot change that. Either way `approvalUrl` is the link to send the owner, when the check
- *      was paid by the operator key: the vault page offers no other, and it is null then. A
- *      Gateway error, a settlement echo that does not match what was signed, an unknown
+ *      was paid by the operator key and the payee is another: the vault page offers no other, and
+ *      it is null then. A Gateway error, a settlement echo that does not match what was signed, an unknown
  *      decision, a reputation that is not a finite number, an ALLOW below the reputation ALLOW
  *      needs, a WARN carrying signals that force DENY and a verdict about another agent or
  *      amount are never ALLOW: each throws.
@@ -237,7 +237,8 @@ export class GatewayCheckError extends Error {
   readonly code: GatewayCheckCode
   readonly status?: number
   /** Was the check paid for? null: a signed authorization left this process and the answer
-   *  does not say. Look the nonce up on GET /api/x402/gateway/proof. */
+   *  does not say. Look the nonce up on GET /api/x402/gateway/proof, which lists only its
+   *  newest 50 rows, and do not sign again before that. */
   readonly paid: boolean | null
   readonly authNonce?: Hex
   /** The server's own refusal code, when it named one. */
@@ -356,9 +357,9 @@ export interface VaultPreflight {
   balance: bigint
   /**
    * Set when the operator cannot make this payment and the owner can: the gate in pay() that stops it
-   * and why. The check is still sold and still charged, and only the owner can settle it. gasEstimate,
-   * gasLimit and operatorGasWei then describe ownerPay() from the owner, and the operator's gas is
-   * not asked about. null otherwise.
+   * and why. pay() would revert and cost gas, so do not send it. The check is still sold and still
+   * charged, and only the owner can settle it. gasEstimate and gasLimit then describe ownerPay() from
+   * the owner, and the operator's gas is not asked about, so operatorGasWei is null. null otherwise.
    */
   ownerOnly: { code: OwnerOnlyCode; reason: string } | null
   /** ERC-8004 agents the payee holds on Arc Mainnet. 0 is not a refusal. null when payeeAgentId was named instead. */
@@ -367,7 +368,7 @@ export interface VaultPreflight {
   blockTimestamp: bigint
   /** Wei, 18 decimals. */
   gasPriceWei: bigint
-  /** The operator's native balance, wei, 18 decimals; null for a contract operator. */
+  /** The operator's native balance, wei, 18 decimals; null for a contract operator or when ownerOnly is set. */
   operatorGasWei: bigint | null
   gasEstimate: bigint
   gasLimit: bigint
@@ -378,7 +379,10 @@ export interface VaultPreflight {
 /** What the server's public flow record says after a hash was posted to it. */
 export interface FlowRecordReport {
   url: string
-  /** True only when the server read the receipt from the chain and wrote it down. */
+  /**
+   * After a payment: true only when the server read the receipt from the chain and wrote it down. On
+   * `awaiting_human`: true means the flow is on record, and no payment has been made, so read `outcome`.
+   */
   recorded: boolean
   outcome?: string
   detail?: string
@@ -427,7 +431,7 @@ export type VerifyThenPayResult =
       verdict: RiskVerdict
       check: GatewayCheckReference
       ownerPay: OwnerPayHandoff
-      /** The link to send the owner: the vault page, where they approve this with their own wallet. null when the server named none this client would pass on, or the page would refuse it: a check a separate payer paid for, or a payment to the operator key. Then ownerPay is the way. */
+      /** The link to send the owner: the vault page, where they approve this with their own wallet. null when the server named none this client would pass on, or it can be seen here that the page would refuse it: a check a separate payer paid for, or a payment to the operator key. The page reads the chain when it opens and can still refuse a link: a vault that is ours or not the build it deploys, a key stopped or replaced since the check, or a check older than 24 hours. ownerPay is the way in all of those. */
       approvalUrl: string | null
       /** The gate in pay() that makes this the owner's to pay whatever the verdict was. null: the verdict did, a WARN. */
       ownerOnly: OwnerOnlyCode | null
@@ -469,6 +473,8 @@ const DEFAULT_POLL_MS = 1500
 const DEFAULT_REQUEST_TIMEOUT_MS = 60_000
 const RECEIPT_POST_ATTEMPTS = 3
 const RECEIPT_POST_PAUSE_MS = 2000
+/** The most a 429's Retry-After holds a receipt post. The route's window is a minute, and a server's word does not hold this process longer. */
+const RECEIPT_LIMITED_PAUSE_MAX_MS = 60_000
 const VTP_PATH = '/api/x402/gateway/verify-then-pay'
 const FLOWS_PATH = '/api/x402/gateway/flows'
 
@@ -721,13 +727,15 @@ async function runPreflight(ctx: Ctx, p: PreflightInput): Promise<VaultPreflight
   }
   // The operator cannot pay past these two, and the owner can, so before the check they are not a
   // refusal on a vault with a human. Right before a payment they are: the operator is about to send it.
+  const oneKey = facts.owner === facts.operator
   const blocked: { code: OwnerOnlyCode; reason: string } | null =
     facts.allowlistEnabled && !facts.payeeAllowed
       ? { code: 'PayeeNotAllowed', reason: 'the vault has its allowlist on and the payee is not on it' }
       : facts.autoApproveMax !== 0n && amountUnits > facts.autoApproveMax
-        ? { code: 'AboveAutoApprove', reason: `${amountUnits} units is above the vault's per-payment ceiling of ${facts.autoApproveMax}; only the owner can pay it (ownerPay)` }
+        ? // Said to the key that is the owner, "only the owner can pay it" would point it past its own ceiling.
+          { code: 'AboveAutoApprove', reason: `${amountUnits} units is above the vault's per-payment ceiling of ${facts.autoApproveMax}${oneKey ? '' : '; only the owner can pay it (ownerPay)'}` }
         : null
-  if (blocked && (p.stage !== 'preflight' || facts.owner === facts.operator)) throw refuse(blocked.code, blocked.reason)
+  if (blocked && (p.stage !== 'preflight' || oneKey)) throw refuse(blocked.code, blocked.reason)
   // ownerPay has no cap check, so the cap is the operator's question alone.
   if (!blocked && facts.dailyCap !== 0n && facts.spentToday + amountUnits > facts.dailyCap) {
     throw refuse('DailyCapExceeded', `the vault has spent ${facts.spentToday} of its ${facts.dailyCap} units today, so ${amountUnits} more would pass the cap`)
@@ -847,7 +855,8 @@ function checkPaymentInput(o: Pick<VerifyThenPayOptions, 'vault' | 'payee' | 'am
 }
 
 /** The free checks alone: nothing is signed and nothing is bought. Throws what verifyThenPay
- *  would throw before the check; returns the vault's facts when it would pay. */
+ *  would throw before the check; returns the vault's facts, with `ownerOnly` set when only the
+ *  owner can pay. So a return does not mean pay() will pass: read `ownerOnly` first. */
 export async function preflightVault(
   o: Pick<VerifyThenPayOptions, 'vault' | 'payee' | 'amountUnits' | 'asset' | 'payeeAgentId' | 'rpcUrls' | 'chain' | 'fetch' | 'maxFeePerGasCapWei' | 'maxPriorityFeePerGasWei'> & { operator: Address },
 ): Promise<VaultPreflight> {
@@ -1081,6 +1090,12 @@ function readPaidAnswer(res: { status: number; body: unknown }, o: { vault: Addr
   const recordUrl = record?.recorded === true ? flowUrl(o.baseUrl, nonce) : undefined
   const tail = { ...(recordUrl ? { recordUrl } : {}) }
 
+  // This process signs once and posts once, so a used nonce means something under `fetch` sent that post
+  // twice. The answer's charged is about this request. The first one may have been charged and may hold a
+  // verdict, so whether the check was paid is not known here, and the server's next says where to look.
+  if (stage === 'refused' && serverCode === 'NONCE_ALREADY_USED') {
+    throw new GatewayCheckError('UNCONFIRMED', typeof body.next === 'string' ? body.next : reason, { paid: null, status, authNonce: nonce, serverCode })
+  }
   if (stage === 'refused') throw refusalError(body, status, { vault: o.vault, payee: o.payee, authNonce: nonce })
   if (stage === 'unavailable' || stage === 'payment_required') throw new GatewayCheckError('REFUSED', reason, { paid: false, status, authNonce: nonce, ...(serverCode ? { serverCode } : {}) })
   if (stage === 'check_failed') {
@@ -1212,9 +1227,16 @@ function receiptProvesPayment(v: Viem, r: ArcReceipt, p: CheckedPayment): boolea
   return paid && moved
 }
 
+/** How long a 429 asks for, in seconds, when it says. */
+function limitedPauseMs(retryAfter: string | null): number {
+  const seconds = Number(retryAfter)
+  return retryAfter !== null && Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds * 1000, RECEIPT_LIMITED_PAUSE_MAX_MS) : RECEIPT_POST_PAUSE_MS
+}
+
 /** POST a hash to a flow's receipt route. The server reads the chain itself. Posting the same
- *  hash again is safe and only happens when the server said to or did not answer, a bounded
- *  number of times. No transaction is ever sent from here. */
+ *  hash again is safe and only happens when the server said to, with retry or a 429, or did not
+ *  answer, a bounded number of times. After a 429 it first waits as Retry-After says, up to a
+ *  minute. No transaction is ever sent from here. */
 export async function recordFlowReceipt(o: { flowId: string; txHash: string; baseUrl?: string; fetch?: FetchLike; requestTimeoutMs?: number; clock?: ArcClock }): Promise<FlowRecordReport> {
   if (typeof o.flowId !== 'string' || !HASH.test(o.flowId)) throw new TypeError('flowId must be the 32-byte authorization nonce')
   if (typeof o.txHash !== 'string' || !HASH.test(o.txHash)) throw new TypeError('txHash must be a 32-byte transaction hash')
@@ -1226,6 +1248,7 @@ export async function recordFlowReceipt(o: { flowId: string; txHash: string; bas
   let last: FlowRecordReport = { url, recorded: false, reason: 'the receipt route was not reached' }
   for (let attempt = 1; attempt <= RECEIPT_POST_ATTEMPTS; attempt++) {
     let again = true
+    let pause = RECEIPT_POST_PAUSE_MS
     try {
       const res = await httpCall(doFetch, `${url}/receipt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ txHash: o.txHash }) }, o.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS)
       const b = isObject(res.body) ? res.body : {}
@@ -1238,12 +1261,15 @@ export async function recordFlowReceipt(o: { flowId: string; txHash: string; bas
         ...(typeof b.answersFlow === 'string' ? { answersFlow: b.answersFlow } : {}),
         ...(b.verified === true ? {} : { reason: typeof b.reason === 'string' ? b.reason : `the receipt route answered HTTP ${res.status}` }),
       }
-      again = b.verified !== true && b.retry === true
+      // The route's limiter answers before it reads anything, and its body is only {error}, with no retry in it.
+      const limited = res.status === 429
+      if (limited) pause = limitedPauseMs(res.headers.get('retry-after'))
+      again = b.verified !== true && (b.retry === true || limited)
     } catch (e) {
       last = { url, recorded: false, reason: `the receipt route did not answer: ${msg(e)}` }
     }
     if (!again) break
-    if (attempt < RECEIPT_POST_ATTEMPTS) await clock.sleep(RECEIPT_POST_PAUSE_MS)
+    if (attempt < RECEIPT_POST_ATTEMPTS) await clock.sleep(pause)
   }
   return last
 }
@@ -1458,7 +1484,7 @@ function handOff(i: Inputs, ctx: Ctx, a: Verdicted & { kind: 'awaiting_human' },
     // link it would refuse tells the owner a real request looks like a trick, so it is not passed on.
     approvalUrl: i.payerAddress.toLowerCase() === free.operator.toLowerCase() && payee.toLowerCase() !== free.operator.toLowerCase() ? approvalLinkFrom(a.handoff.approvalUrl, { baseUrl: i.baseUrl, vault, flowId }) : null,
     ownerOnly: a.ownerOnly,
-    // The owner's transaction is not sent yet; recordFlowReceipt closes this flow once it is.
+    // The flow is on record and the owner's transaction is not sent yet; recordFlowReceipt closes it once it is.
     record: { url: recordUrl, recorded: true, outcome: 'awaiting_human', detail: a.ownerOnly ? 'owner_only_handoff' : 'warn_handoff' },
   }
 }
