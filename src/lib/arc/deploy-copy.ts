@@ -73,8 +73,9 @@ export const DAILY_LIMIT_TWICE = 'Around that reset up to twice this can go with
 export const LOWERING_THE_CAP = 'Lowering it does not undo what was already spent today, and the new cap applies again after 00:00 UTC. To stop the agent now, freeze the vault.'
 
 /**
- * The agent's day and the owner's payments share one counter on the vault. This page has no button for
- * an owner payment, so the sentence says where one comes from. Withdrawals are outside the counter.
+ * The agent's day and the owner's payments share one counter on the vault. An owner payment comes from
+ * the approval on this page or from the owner's own tools, so the sentence names the wallet and not a
+ * button. Withdrawals are outside the counter.
  */
 export const OWNER_PAYMENT_COUNTS = "If your agent hands you a payment to approve and you send it from your wallet (the contract calls it ownerPay), it counts toward the agent's day and can stop the agent until 00:00 UTC, unless you raise the cap. A withdrawal does not count."
 
