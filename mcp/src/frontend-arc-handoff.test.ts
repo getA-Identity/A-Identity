@@ -834,6 +834,20 @@ test('the server is who says settled: anything else is a retry or a refusal, and
     const s = r.receiptStep(code === 'NO_MATCHING_PAID' || code === 'TX_BEFORE_CHECK' || code === 'AGENT_PAID_ON_HANDOFF' ? 422 : 409, { code, reason: 'because' })
     assert.deepEqual([s.step, s.code, s.reason], ['refused', code, 'because'])
   }
+  // A payment already on another check is a payment there, and the post that follows gets that record.
+  const linked = r.receiptStep(409, { code: 'TX_LINKED_ELSEWHERE', answersFlow: FLOW.toUpperCase().replace('0X', '0x'), reason: 'linked' })
+  assert.deepEqual([linked.step, linked.flowId], ['moved', FLOW])
+  assert.equal(r.receiptStep(409, { code: 'TX_LINKED_ELSEWHERE', answersFlow: 'somewhere', reason: 'x' }).step, 'refused')
+  // The write lost a race, and the post again is what names the flow.
+  assert.equal(r.receiptStep(409, { code: 'TX_LINKED_ELSEWHERE', retry: true, reason: 'x' }).step, 'retry')
+  // A field on any other code is not read: the route names no flow to follow there.
+  assert.equal(r.receiptStep(409, { code: 'FLOW_ENDED', answersFlow: FLOW }).step, 'refused')
+  // None of this reads as paid. Those replies say verified false, and only a recorded payment says settled.
+  assert.notEqual(linked.step, 'settled')
+  // A 4xx with no code of ours is not our route's word on the payment, so it is no final refusal of it.
+  for (const [status, body] of [[403, null], [404, null], [408, {}], [418, { code: 7 }], [409, { error: 'Conflict' }]] as [number, unknown][]) {
+    assert.equal(r.receiptStep(status, body).step, 'retry', `${status} ${JSON.stringify(body)}`)
+  }
 })
 
 // ── what the person reads ─────────────────────────────────────────────────────────

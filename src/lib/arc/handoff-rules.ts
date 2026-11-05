@@ -617,7 +617,7 @@ export type ReceiptStep =
   | { step: 'settled' }
   /** The chain proved the prepared call reverted, and the flow ended on it. */
   | { step: 'ended'; outcome: string; detail: string | null; reason: string | null }
-  /** The payment answers a later check on the same vault, payee and amount. Post the same hash there. */
+  /** The payment answers another check on the same vault, payee and amount, or is already linked to it. Post the same hash there. */
   | { step: 'moved'; flowId: string; reason: string }
   /** The server read it and it does not prove this flow. Final for this hash, and it is not settled. */
   | { step: 'refused'; code: string; reason: string }
@@ -633,8 +633,9 @@ export function receiptStep(status: number, body: unknown): ReceiptStep {
   if (b.verified === true && b.outcome === 'executed' && isObject(b.payment) && b.payment.status === 'success') return { step: 'settled' }
   if (b.verified === true && (b.outcome === 'failed' || b.outcome === 'blocked')) return { step: 'ended', outcome: b.outcome, detail: str(b.detail), reason: str(b.reason) ?? str(b.next) }
   if (b.retry === true || status === 202 || status >= 500 || status === 0) return { step: 'retry', waitMs: RETRY_MS, reason }
-  if (b.code === 'TX_ANSWERS_LATER_CHECK' && typeof b.answersFlow === 'string' && HASH.test(b.answersFlow)) return { step: 'moved', flowId: b.answersFlow.toLowerCase(), reason }
-  if (status >= 400) return { step: 'refused', code: str(b.code) ?? String(status), reason }
+  if ((b.code === 'TX_ANSWERS_LATER_CHECK' || b.code === 'TX_LINKED_ELSEWHERE') && typeof b.answersFlow === 'string' && HASH.test(b.answersFlow)) return { step: 'moved', flowId: b.answersFlow.toLowerCase(), reason }
+  // Our route names what it refused. A 4xx with no code is an edge or a proxy in front of it, and says nothing about the payment.
+  if (status >= 400 && typeof b.code === 'string') return { step: 'refused', code: b.code, reason }
   return { step: 'retry', waitMs: RETRY_MS, reason }
 }
 
