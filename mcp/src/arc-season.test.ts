@@ -1239,13 +1239,65 @@ test('with the flow log down, the note on external checks says an agent key of a
   const down = async () => {
     throw new Error('db down')
   }
-  const said = /flow log could not be read on this request, so the agent key of a vault labeled team could be counted here/
+  const said = /flow log could not be read on this request, so the agent key of a vault labeled team could be counted as external until it answers/
   const withTeam = await arcSeasonReport(deps({ vaults: [vaultEntry(teamVault, { ownerKind: 'team', owner: EXT_A })], gateway: [gw({ payer: EXT_C })], flowRows: down }))
   assert.equal(withTeam.milestone2.externalChecks.count, 1)
   assert.match(withTeam.milestone2.externalChecks.note, said)
   // Nothing to say with no team vault, or with the log read.
   assert.doesNotMatch((await arcSeasonReport(deps({ gateway: [gw({ payer: EXT_C })], flowRows: down }))).milestone2.externalChecks.note, said)
   assert.doesNotMatch((await arcSeasonReport(deps({ vaults: [vaultEntry(teamVault, { ownerKind: 'team', owner: EXT_A })], gateway: [gw({ payer: EXT_C })], flowRows: async () => [] }))).milestone2.externalChecks.note, said)
+})
+
+test('with the flow log down, every number that overcount reaches says so, by a flag the page reads and in its own words', async () => {
+  const teamVault = vaultEntry('0x' + 'e3'.repeat(20), { ownerKind: 'team', owner: EXT_A })
+  const down = async () => {
+    throw new Error('db down')
+  }
+  const said = /The verify-then-pay flow log could not be read on this request, so the agent key of a vault labeled team could be counted as external until it answers\./
+  const r = await arcSeasonReport(deps({ vaults: [teamVault], gateway: [gw({ payer: EXT_C })], flowRows: down }))
+  // The key is on no list, so it reads as an outside wallet everywhere: this is the overcount itself.
+  assert.deepEqual(r.usage.external.wallets, [lower(EXT_C)])
+  assert.deepEqual([r.milestone1.checks.external, r.milestone2.externalChecks.count, r.milestone2.unattributed.wallets, r.afterProgram.activeExternalWallets.count, r.afterProgram.weekly.weeks.filter((w) => w.checks > 0).length], [1, 1, 1, 1, 1])
+  for (const number of [r.usage.external, r.milestone2.externalChecks, r.milestone2.unattributed, r.afterProgram.activeExternalWallets, r.afterProgram.weekly]) assert.equal(number.mayIncludeTeamKeys, true)
+  assert.equal(r.milestone1.checks.externalMayIncludeTeamKeys, true)
+  for (const words of [r.usage.basis, r.milestone2.externalChecks.note, r.milestone2.unattributed.note, r.afterProgram.weekly.note, r.afterProgram.note]) assert.match(words, said)
+  // That is a number too high, not too low, so it is not the incomplete flag, and the settlement logs did answer.
+  assert.equal(r.milestone2.externalChecks.incomplete, undefined)
+  assert.equal(r.afterProgram.activeExternalWallets.incomplete, undefined)
+  // The count of flows is not a number of external checks, so the page must not read this as its limit.
+  assert.equal((r.milestone1.checks as { mayIncludeTeamKeys?: true }).mayIncludeTeamKeys, undefined)
+
+  // Where it cannot be so, nothing is said: the log answered, no vault is labeled team, or nothing external is there to be too high.
+  const quiet = [
+    await arcSeasonReport(deps({ vaults: [teamVault], gateway: [gw({ payer: EXT_C })], flowRows: async () => [] })),
+    await arcSeasonReport(deps({ gateway: [gw({ payer: EXT_C })], flowRows: down })),
+    await arcSeasonReport(deps({ vaults: [teamVault], gateway: [gw({ payer: OURS_GATEWAY })], flowRows: down })),
+  ]
+  for (const q of quiet) {
+    assert.doesNotMatch(JSON.stringify(q), /[mM]ayIncludeTeamKeys/)
+    assert.doesNotMatch(JSON.stringify(q), /agent key of a vault labeled team could be/)
+  }
+
+  // A week or a wallet outside the window has no number of its own to flag.
+  const old = await arcSeasonReport(deps({ vaults: [teamVault], gateway: [gw({ payer: EXT_C, ts: new Date(NOW - 40 * DAY).toISOString() })], flowRows: down }))
+  assert.equal(old.afterProgram.activeExternalWallets.count, 0)
+  assert.equal(old.afterProgram.activeExternalWallets.mayIncludeTeamKeys, undefined)
+  assert.doesNotMatch(old.afterProgram.note, said)
+  assert.equal(old.milestone2.externalChecks.mayIncludeTeamKeys, true)
+
+  const page = readFileSync(new URL('../../src/components/proof/ArcSeasonProgress.tsx', import.meta.url), 'utf8').replace(/\s+/g, ' ')
+  // A limit in the right direction on every row that shows one of these counts, and never the green of a target met.
+  assert.match(page, /if \(m\.incomplete && m\.mayIncludeTeamKeys\) return `about \$\{m\.count\}`/)
+  assert.match(page, /return m\.mayIncludeTeamKeys \? `at most \$\{m\.count\}` : String\(m\.count\)/)
+  assert.match(page, /const met = metric\.count >= metric\.target && !metric\.mayIncludeTeamKeys/)
+  assert.match(page, /After the program: \{countLabel\(after\)\}/)
+  // The cell that has no count label says it in its caption.
+  assert.match(page, /caption=\{external\.mayIncludeTeamKeys \? 'Wallets A-Identity does not control, and possibly the agent key of a vault labeled team until the flow log answers\.'/)
+  // The banner: what a settlement log holds is missing from every number, and what the flow log holds is flows.
+  assert.match(page, /The \{settlementLogsDown\.join\(' and '\)\} log could not be read on this request, so what it holds is missing from every number below until it answers\./)
+  assert.match(page, /The verify-then-pay flow log could not be read on this request, so the flows it holds are missing from the flow and refusal counts below until it answers\./)
+  assert.match(page, /\{external\.mayIncludeTeamKeys && ' The agent key of a vault labeled team is known from that log, so it could be counted as external, and the external numbers below could be too high\.'\}/)
+  assert.doesNotMatch(page, /'verify-then-pay flow'/, 'the flow log is no longer one of the logs that banner speaks for')
 })
 
 test('a paying agent key of a vault nobody identified stays external, and the note says it could be ours', async () => {

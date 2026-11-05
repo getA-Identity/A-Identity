@@ -347,7 +347,13 @@ export type ArcSeasonReport = {
   usage: {
     basis: string
     internal: ArcSeasonUsageSide
-    external: ArcSeasonUsageSide & { byWallet: ArcSeasonWallet[] }
+    external: ArcSeasonUsageSide & {
+      byWallet: ArcSeasonWallet[]
+      /** Set when the flow log could not be read and a vault is labeled team: that vault's agent key is known from that log, so
+       *  it could be counted as external. The number is then an upper limit, the opposite of incomplete. Every number that reads
+       *  external checks carries this. */
+      mayIncludeTeamKeys?: true
+    }
   }
   milestone1: {
     title: string
@@ -374,6 +380,8 @@ export type ArcSeasonReport = {
       internal: number
       /** External Gateway checks. Counted under Milestone 2, never in count. */
       external: number
+      /** external, and so internal the other way, could be off by an agent key of a vault labeled team (usage.external). */
+      externalMayIncludeTeamKeys?: true
       linked: Record<ArcFlowOutcome, number>
       /** Our own Gateway checks in the retained log with nothing linked: paid checks, not flows.
        *  null when the Gateway log or the flow log could not be read, because then nobody can say. */
@@ -408,7 +416,7 @@ export type ArcSeasonReport = {
     title: string
     due: string
     externalTeamsLive: { count: number; target: number; incomplete?: true; teams: ArcSeasonTeam[]; note: string }
-    externalChecks: { count: number; target: number; incomplete?: true; note: string }
+    externalChecks: { count: number; target: number; incomplete?: true; mayIncludeTeamKeys?: true; note: string }
     teamActiveOnSeveralDays: {
       count: number
       target: number
@@ -424,13 +432,14 @@ export type ArcSeasonReport = {
      *  an outside team can show, so they are listed. */
     externalFlows: { count: number; linked: Record<ArcFlowOutcome, number>; items: ArcSeasonFlowItem[]; incomplete?: true; note: string }
     /** External wallets that paid but are attributed to no team. Reported, never folded. */
-    unattributed: { wallets: number; checks: number; note: string }
+    unattributed: { wallets: number; checks: number; mayIncludeTeamKeys?: true; note: string }
   }
   afterProgram: {
-    activeExternalWallets: { count: number; target: number; incomplete?: true; windowDays: number; since: string; wallets: string[] }
+    activeExternalWallets: { count: number; target: number; incomplete?: true; mayIncludeTeamKeys?: true; windowDays: number; since: string; wallets: string[] }
     /** External use per UTC week, Monday first, from the first external check to this read. */
     weekly: {
       incomplete?: true
+      mayIncludeTeamKeys?: true
       weeks: ArcSeasonWeek[]
       /** External wallets that paid in two or more different weeks, ascending. */
       repeatWallets: string[]
@@ -990,6 +999,12 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   const everyFlowOnLaunchVault = linkedList.length > 0 && flowsByVault['launch-day'] === linkedList.length
   const flowLogUnreadable = Boolean(recordedFlows && !recordedFlows.read.readable)
   const flowsIncomplete = !gateway.read.readable || flowLogUnreadable
+  // The agent keys of team vaults come from the flow log, so with it down one could be counted as external. That makes a number
+  // too high, not too low, so it is not `incomplete`. Said on every number that reads external checks, wherever there is one.
+  const teamKeysUnknown = flowLogUnreadable && vaultsByKind.team > 0
+  const flagTeamKeys = (count: number) => (teamKeysUnknown && count > 0 ? { mayIncludeTeamKeys: true as const } : {})
+  const teamKeysCaveat = (count: number) =>
+    teamKeysUnknown && count > 0 ? ' The verify-then-pay flow log could not be read on this request, so the agent key of a vault labeled team could be counted as external until it answers.' : ''
   const externalFlowItems = [...externalRows.values()].map(flowItem)
   const weekly = weeklyUsage(externalChecks, now(), teamOf)
   // A wallet that paid and also owns a vault nobody identified, or runs as its agent key, could be
@@ -1046,9 +1061,9 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
     },
     usage: {
       basis:
-        'A payer is internal when its address is on either rail\'s published list of our own buyer wallets (the hardcoded KNOWN_INTERNAL_PAYERS plus X402_GATEWAY_INTERNAL_PAYERS and X402_3009_INTERNAL_PAYERS), is an address this repo commits as ours (the list admission refuses a vault owner from, our own agents among them), owns a vault labeled team, or is the agent key on a recorded verify-then-pay flow through such a vault or through the launch-day vault, compared case-insensitively; every other payer is external, and a check is a Circle Gateway row credited or completed, or a facilitator row settled, on Arc Mainnet. Everything after the rails\' lists is read in this report only: the rails\' own proof reads the lists alone, and an agent key with no recorded flow through that vault stays external until it is on a list.',
+        'A payer is internal when its address is on either rail\'s published list of our own buyer wallets (the hardcoded KNOWN_INTERNAL_PAYERS plus X402_GATEWAY_INTERNAL_PAYERS and X402_3009_INTERNAL_PAYERS), is an address this repo commits as ours (the list admission refuses a vault owner from, our own agents among them), owns a vault labeled team, or is the agent key on a recorded verify-then-pay flow through such a vault or through the launch-day vault, compared case-insensitively; every other payer is external, and a check is a Circle Gateway row credited or completed, or a facilitator row settled, on Arc Mainnet. Everything after the rails\' lists is read in this report only: the rails\' own proof reads the lists alone, and an agent key with no recorded flow through that vault stays external until it is on a list.' + teamKeysCaveat(externalChecks.length),
       internal: side(internalChecks),
-      external: { ...side(externalChecks), byWallet: external },
+      external: { ...side(externalChecks), byWallet: external, ...flagTeamKeys(externalChecks.length) },
     },
     milestone1: {
       title: 'Owner-held spend vaults and verify-then-pay on Arc Mainnet',
@@ -1078,6 +1093,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
         ...flagIncomplete(flowsIncomplete),
         internal: gatewayInternal,
         external: gatewayExternal,
+        ...(teamKeysUnknown && gatewayExternal > 0 ? { externalMayIncludeTeamKeys: true as const } : {}),
         linked,
         unlinked: flowsIncomplete ? null : gatewayInternal - linkedInLog,
         agedOut,
@@ -1145,6 +1161,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
         count: externalChecks.length,
         target: ARC_SEASON_TARGETS.externalChecks,
         ...flagIncomplete(settlementsIncomplete),
+        ...flagTeamKeys(externalChecks.length),
         note:
           settlementsCaveat +
           (externalChecks.length === 0
@@ -1158,8 +1175,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
           (externalAgentKeys > 0
             ? ` ${externalAgentKeys} of these wallet(s) are the agent key on a flow through a vault admitted with the owner not identified, so one could be a team member's: the chain cannot say, and each counts as external until someone says otherwise.`
             : '') +
-          // The agent keys of team vaults come from the flow log, so with it down one could be counted here.
-          (flowLogUnreadable && vaultsByKind.team > 0 ? ' The verify-then-pay flow log could not be read on this request, so the agent key of a vault labeled team could be counted here until it answers.' : ''),
+          teamKeysCaveat(externalChecks.length),
       },
       teamActiveOnSeveralDays: {
         count: severalDays.length,
@@ -1211,12 +1227,13 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
       unattributed: {
         wallets: unattributed.length,
         checks: unattributed.reduce((s, w) => s + w.checks, 0),
+        ...flagTeamKeys(unattributed.length),
         note:
           unattributed.length === 0
             ? settlementsIncomplete
               ? `The ${unreadableSettlementLogs.join(' and the ')} could not be read on this request, so this says nothing about wallets it holds.`
               : 'Every external wallet that paid is attributed to a team, or none has paid.'
-            : `${unattributed.length} external wallet(s) paid ${unattributed.reduce((s, w) => s + w.checks, 0)} check(s) without being attributed to a team. They count as external checks, external wallets and external flows, and toward no team metric.`,
+            : `${unattributed.length} external wallet(s) paid ${unattributed.reduce((s, w) => s + w.checks, 0)} check(s) without being attributed to a team. They count as external checks, external wallets and external flows, and toward no team metric.${teamKeysCaveat(unattributed.length)}`,
       },
     },
     afterProgram: {
@@ -1224,20 +1241,22 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
         count: activeWallets.length,
         target: ARC_SEASON_TARGETS.activeExternalWallets,
         ...flagIncomplete(settlementsIncomplete),
+        ...flagTeamKeys(activeWallets.length),
         windowDays: ARC_SEASON_TARGETS.activeWindowDays,
         since,
         wallets: activeWallets,
       },
       weekly: {
         ...flagIncomplete(settlementsIncomplete),
+        ...flagTeamKeys(weekly.weeks.length),
         ...weekly,
         note:
           settlementsCaveat +
           (weekly.weeks.length === 0
             ? `${settlementsIncomplete ? '' : 'No external check to report by week yet. '}Each UTC week will list its external checks, active wallets, active days and the wallets that came back from an earlier week.`
-            : `External use per UTC week, Monday to Sunday, from the first external check to this read, on either rail. A wallet is a repeat wallet when it paid in two or more different weeks, and a team when its wallets did: ${weekly.repeatWallets.length} wallet(s) and ${weekly.repeatTeams.length} team(s) so far.`),
+            : `External use per UTC week, Monday to Sunday, from the first external check to this read, on either rail. A wallet is a repeat wallet when it paid in two or more different weeks, and a team when its wallets did: ${weekly.repeatWallets.length} wallet(s) and ${weekly.repeatTeams.length} team(s) so far.${teamKeysCaveat(weekly.weeks.length)}`),
       },
-      note: `After the program the reference is ${ARC_SEASON_TARGETS.activeExternalWallets} external wallets with a settled check inside the last ${ARC_SEASON_TARGETS.activeWindowDays} days, measured on a rolling window from the time of each read.`,
+      note: `After the program the reference is ${ARC_SEASON_TARGETS.activeExternalWallets} external wallets with a settled check inside the last ${ARC_SEASON_TARGETS.activeWindowDays} days, measured on a rolling window from the time of each read.${teamKeysCaveat(activeWallets.length)}`,
     },
     note: `Targets are the Deliverable 1 commitments as revised by Circle on 2026-10-19; counts are read from the settlement logs and the admitted vault list on every request, and the curated lists (vaults, refusals, partners) fill only when the evidence exists. The date on each milestone is the target the team set; the program measures them through ${ARC_SEASON_PROGRAM.measuredThrough}, its last day, and traction can extend past that.`,
   }
