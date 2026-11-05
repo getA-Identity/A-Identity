@@ -196,7 +196,7 @@ test('a vault owned by any of our keys is refused and never stored: committed li
 
   // A key only the env knows: its address is derived, and the deploy from it is refused.
   const fromEnv = privateKeyToAccount(FAKE_KEY as Hex).address
-  const envOurs = collectOurAddresses({ provenance: [], gatewayInternalPayers: [], facilitatorInternalPayers: [], attestationValidators: [], committedKeyAddresses: {}, keyEnvVars: ['SOME_KEY'], addressEnvVars: [], env: { SOME_KEY: FAKE_KEY } })
+  const envOurs = collectOurAddresses({ provenance: [], gatewayInternalPayers: [], facilitatorInternalPayers: [], attestationValidators: [], ourPayees: [], committedKeyAddresses: {}, keyEnvVars: ['SOME_KEY'], addressEnvVars: [], env: { SOME_KEY: FAKE_KEY } })
   const viaEnv = await admitVaultDeploy({ deployTx: TX }, routeDeps({ owner: fromEnv }, { io, ours: envOurs }))
   assert.equal(viaEnv.answer.status, 'refused')
   const read = await loadAdmittedArcVaults(io)

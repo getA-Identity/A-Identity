@@ -28,9 +28,9 @@
  *
  * Ours means every address this repo publishes or derives as its own: the agent owners in
  * the provenance ledger (the operating wallet among them), both rails' internal payer
- * lists, the oracle validator that signs our published attestations, the receiving wallets
- * named in env, the addresses committed for our keys (OUR_KEY_PUBLIC_ADDRESSES) and the address
- * of every EVM key env var that is set. A key is read only to derive its address, inside
+ * lists, the oracle validator that signs our published attestations, the wallets of our own
+ * agents (ARC_OUR_PAYEES), the receiving wallets named in env, the addresses committed for our
+ * keys (OUR_KEY_PUBLIC_ADDRESSES) and the address of every EVM key env var that is set. A key is read only to derive its address, inside
  * collectOurAddresses, and is never returned, printed or kept. A key that is neither set in this
  * process nor committed cannot be compared, and is named as not compared (keysNotCompared): a
  * server and a laptop holding different env can therefore answer differently about such a key.
@@ -97,6 +97,20 @@ export function admissionHosts(chain: ChainDescriptor, env: Readonly<Record<stri
 // -- whose keys are ours ---------------------------------------------------------------
 
 /**
+ * Payees that are ours although they are neither a rail's wallet nor a vault key. A flow paying
+ * one is a real flow and counts, and it is labeled, because a reviewer would otherwise read it as
+ * a payment to somebody else. Meridian is our showcase agent: the ledger says so where its Arc
+ * Mainnet identity #4306 was registered and moved to this wallet (chains/provenance.ts). Here and
+ * not in arc-season.ts, which re-exports it, because admission refuses an owner from this list too.
+ */
+export const ARC_OUR_PAYEES: { address: string; why: string }[] = [
+  { address: '0x4e26Ae66840134Ac5979c56ba2509F3956b93431', why: 'the payee is Meridian, our own showcase agent' },
+  // Simon is a platform agent in our founder's own account (agent_mrnzx4znbxzh5). It took over as
+  // the Milestone 1 ALLOW payee on 2026-11-02, when Meridian's account could not be reached.
+  { address: '0x03f1fb189E461B88f3e8bA7100B29B594E5f98A9', why: 'the payee is Simon, an agent in our own account' },
+]
+
+/**
  * EVM key env vars that hold keys of ours, beyond each EVM chain's own signerEnvVar in the
  * registry (ourKeyEnvVars adds those, so a chain is covered the day it lands). Each names
  * where it is read.
@@ -160,6 +174,8 @@ export type OurAddressSources = {
   gatewayInternalPayers: readonly string[]
   facilitatorInternalPayers: readonly string[]
   attestationValidators: readonly string[]
+  /** The wallets of our own agents (ARC_OUR_PAYEES). Read with no env at all. */
+  ourPayees: readonly { address: string; why: string }[]
   /** The address committed for a key env var, by name. Read with no env at all. */
   committedKeyAddresses: Readonly<Record<string, string | null>>
   keyEnvVars: readonly string[]
@@ -210,6 +226,7 @@ export function collectOurAddresses(s: OurAddressSources): OurAddresses {
   for (const a of s.gatewayInternalPayers) add(a, 'x402-gateway internal payer')
   for (const a of s.facilitatorInternalPayers) add(a, 'x402-3009 internal payer')
   for (const a of s.attestationValidators) add(a, 'the oracle validator that signs our attestations (asp/attestations.ts)')
+  for (const p of s.ourPayees) add(p.address, `one of our own agents: ${p.why}`)
   const keysCommitted: string[] = []
   for (const [name, address] of Object.entries(s.committedKeyAddresses)) {
     if (!address) continue
@@ -249,6 +266,7 @@ export function liveOurAddressSources(env: NodeJS.ProcessEnv = process.env): Our
     gatewayInternalPayers: gatewayInternalPayers(env),
     facilitatorInternalPayers: facilitatorInternalPayers(env),
     attestationValidators: ATTESTATIONS.map((a) => a.validator),
+    ourPayees: ARC_OUR_PAYEES,
     committedKeyAddresses: OUR_KEY_PUBLIC_ADDRESSES,
     keyEnvVars: ourKeyEnvVars(),
     addressEnvVars: OUR_ADDRESS_ENV_VARS,
@@ -258,7 +276,7 @@ export function liveOurAddressSources(env: NodeJS.ProcessEnv = process.env): Our
 
 /**
  * What admission calls ours with no environment at all: the provenance ledger, both rails'
- * hardcoded buyers, the published attestations and the addresses committed for our keys. It is what the page's generated key list is
+ * hardcoded buyers, the published attestations, our own agents and the addresses committed for our keys. It is what the page's generated key list is
  * built from, so a vault the script refuses as ours is labelled as ours there too. No env, so the
  * generated file does not depend on who ran the generator.
  */

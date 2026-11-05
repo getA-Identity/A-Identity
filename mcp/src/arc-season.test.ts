@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { privateKeyToAccount } from 'viem/accounts'
 import {
   ARC_OUR_PAYEES,
   arcSeasonReport,
@@ -21,7 +22,7 @@ import {
   type ArcOwnerHeldVault,
   type ArcVerifyThenPayFlow,
 } from './arc-season.js'
-import { REVOKED_KEY_EXPIRY, stateChecks, stateNotes, type VaultState } from './arc-owner-vault.js'
+import { REVOKED_KEY_EXPIRY, committedOurKeys, stateChecks, stateNotes, type VaultState } from './arc-owner-vault.js'
 import { getChainById } from './chains/index.js'
 import { PROVENANCE } from './chains/provenance.js'
 import { addressUrl, txUrl } from './chains/explorer.js'
@@ -813,6 +814,49 @@ test("the live deps read both rails' own internal-payer lists, so neither rail's
   // The hardcoded wallets of both rails are in, with or without the env additions.
   const bare = liveArcSeasonDeps({} as NodeJS.ProcessEnv)
   assert.ok(bare.internalPayers.gateway.length >= 1 && bare.internalPayers.facilitator.length >= 1)
+})
+
+test("what the repo calls ours is ours here too: its own agents, the committed list, and a key the launch-day vault rotated to", async () => {
+  // Our own agents, whatever a caller wires.
+  for (const { address } of ARC_OUR_PAYEES) {
+    const r = await arcSeasonReport(deps({ gateway: [gw({ payer: address })] }))
+    assert.deepEqual([r.milestone2.externalChecks.count, r.usage.internal.checks], [0, 1], address)
+  }
+  // An address the repo commits as ours that no rail lists as a buyer, such as the oracle validator.
+  const validator = '0xee602A161232Aac1436E812676b6626382FC84a9'
+  const before = await arcSeasonReport(deps({ gateway: [gw({ payer: validator })] }))
+  assert.equal(before.milestone2.externalChecks.count, 1, 'not by itself: the list is what says so')
+  const after = await arcSeasonReport(deps({ gateway: [gw({ payer: validator })], committedOurs: committedOurKeys() }))
+  assert.deepEqual([after.milestone2.externalChecks.count, after.usage.internal.checks], [0, 1])
+
+  // The launch-day vault gets a new agent key and that key pays: our own run, as the note on that vault says.
+  const launch = PROVENANCE.find((p) => p.chain === 'arc-mainnet')!.contracts.find((c) => c.name.startsWith('AgentSpendPolicy'))!.address
+  const rotated = '0x' + 'f7'.repeat(20)
+  const check = gw({ payer: rotated })
+  const paid = flow({ checkNonce: check.authNonce, payer: rotated, vault: launch, vaultKeys: { owner: OUR_VAULT_OWNER, operator: rotated } })
+  const own = await arcSeasonReport(deps({ gateway: [check], flows: [paid] }))
+  assert.deepEqual([own.milestone2.externalChecks.count, own.milestone2.externalFlows.count, own.milestone1.checks.count], [0, 0, 1])
+  assert.equal(own.milestone1.checks.byVault['launch-day'], 1)
+  // Through the row feed as well, on a row that maps to no flow.
+  const waiting = { flowId: check.authNonce, vault: launch.toLowerCase(), owner: OUR_VAULT_OWNER, operator: rotated, payee: EXT_B, amount: '1000', outcome: 'awaiting_human', detail: 'warn_handoff', check: { payer: rotated } } as unknown as VtpFlowRecord
+  const viaRow = await arcSeasonReport(deps({ gateway: [check], flowRows: async (onSkip, onKeys) => { for (const k of flowKeysFromRows([waiting])) onKeys?.(k); return seasonFlowsFromRows([waiting], onSkip) } }))
+  assert.equal(viaRow.milestone2.externalChecks.count, 0)
+  // A key on any other vault is not ours for it: only that vault's address says so.
+  const elsewhere = await arcSeasonReport(deps({ gateway: [check], flows: [{ ...paid, vault: EXT_C }] }))
+  assert.equal(elsewhere.milestone2.externalChecks.count, 1)
+
+  assert.match(after.usage.basis, /is an address this repo commits as ours \(the list admission refuses a vault owner from, our own agents among them\), owns a vault labeled team/)
+  assert.match(after.usage.basis, /through such a vault or through the launch-day vault/)
+  assert.doesNotMatch(after.usage.basis, /X402_3009_INTERNAL_PAYERS\) owns/, 'the comma that was missing')
+})
+
+test('the live deps read the committed list with no env: a key only the env knows is not on it', () => {
+  const key = '0x' + '77'.repeat(32)
+  const d = liveArcSeasonDeps({ X402_3009_FUNDER_KEY: key, X402_PAY_TO: EXT_A } as NodeJS.ProcessEnv)
+  assert.deepEqual(d.committedOurs, committedOurKeys())
+  assert.ok(!d.committedOurs!.includes(lower(EXT_A)), 'an env receiving wallet is not a committed address')
+  assert.ok(!d.committedOurs!.includes(lower(privateKeyToAccount(key as `0x${string}`).address)), 'and neither is the address of an env key')
+  for (const { address } of ARC_OUR_PAYEES) assert.ok(d.committedOurs!.includes(lower(address)), address)
 })
 
 test('flows the server recorded count like curated ones, once per check nonce, with the curated entry first', async () => {

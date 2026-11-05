@@ -32,8 +32,10 @@
  *     timed by its block, which the chain gives in whole seconds, so it is compared with its check
  *     at that precision; the receipt route has already proved the block order.
  *   - A payer is internal when it is on either rail's published list of our own buyer
- *     wallets, or is the owner of a vault labeled 'team', compared case-insensitively. Everything
- *     else is external.
+ *     wallets, is an address this repo commits as ours (committedOurKeys, which admission refuses
+ *     an owner from too, and no env), is the owner of a vault labeled 'team', or is the agent key on
+ *     a recorded flow through such a vault or through the launch-day vault, compared
+ *     case-insensitively. Everything else is external.
  *   - A vault counts only when its owner key is one we never held, so the launch-day
  *     vault, owned by our operating wallet, does not. The vaults are the curated list plus the
  *     ones POST /api/arc/vaults admitted (arc-owner-vault-live.ts holds them to the same checks),
@@ -51,7 +53,7 @@
  * injected, so the aggregation is unit-tested with rows and the route adds the real
  * loaders and nothing else.
  */
-import { ADMISSION_CHAIN, ADMISSION_EVIDENCE_URL, collectOurAddresses, liveOurAddressSources } from './arc-owner-vault.js'
+import { ADMISSION_CHAIN, ADMISSION_EVIDENCE_URL, ARC_OUR_PAYEES, collectOurAddresses, committedOurKeys, liveOurAddressSources } from './arc-owner-vault.js'
 import { admittedVaultsFromStore } from './arc-owner-vault-live.js'
 import { liveOwnerActions, type ActionsReadState, type ActionTx, type ActionVault, type VaultOwnerActions } from './arc-vault-actions.js'
 import { getChainById, type ChainDescriptor } from './chains/index.js'
@@ -180,18 +182,7 @@ export type ArcRefusal = {
   payeeInternal?: string
 }
 
-/**
- * Payees that are ours although they are neither a rail's wallet nor a vault key. A flow paying
- * one is a real flow and counts, and it is labeled, because a reviewer would otherwise read it as
- * a payment to somebody else. Meridian is our showcase agent: the ledger says so where its Arc
- * Mainnet identity #4306 was registered and moved to this wallet (chains/provenance.ts).
- */
-export const ARC_OUR_PAYEES: { address: string; why: string }[] = [
-  { address: '0x4e26Ae66840134Ac5979c56ba2509F3956b93431', why: 'the payee is Meridian, our own showcase agent' },
-  // Simon is a platform agent in our founder's own account (agent_mrnzx4znbxzh5). It took over as
-  // the Milestone 1 ALLOW payee on 2026-11-02, when Meridian's account could not be reached.
-  { address: '0x03f1fb189E461B88f3e8bA7100B29B594E5f98A9', why: 'the payee is Simon, an agent in our own account' },
-]
+export { ARC_OUR_PAYEES }
 
 /**
  * The day the trust verdict's rule changed: from then on, a payee we know nothing about gets WARN
@@ -461,6 +452,8 @@ export type ArcSeasonDeps = {
   facilitatorRows: () => Promise<X402SettlementRecord[]>
   /** Our own buyer wallets, as each rail publishes them. Any case. */
   internalPayers: { gateway: string[]; facilitator: string[] }
+  /** Every other address the repo itself commits as ours, read with no env (committedOurKeys). Any case. */
+  committedOurs?: string[]
   /** The wallets our rails are paid to. A payment to one is a payment to ourselves. */
   ourPayTo?: string[]
   /** Our own agents and other payees that are ours. Default ARC_OUR_PAYEES. */
@@ -553,6 +546,7 @@ export function liveArcSeasonDeps(env: NodeJS.ProcessEnv = process.env): ArcSeas
     admittedVaults: (onSkip) => admittedVaultsFromStore(collectOurAddresses(liveOurAddressSources(env)), onSkip),
     ownerActions: liveOwnerActions(env),
     internalPayers: { gateway: gatewayInternalPayers(env), facilitator: facilitatorInternalPayers(env) },
+    committedOurs: committedOurKeys(),
     ourPayTo: [gatewayRailStatus(env, arcMainnet().caip2).payTo, facilitatorRailStatus(env, arcMainnet().caip2).payTo].filter((a): a is string => Boolean(a)),
   }
 }
@@ -847,7 +841,14 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   // Milestone 2, so a check it pays is ours. So is one the agent key they run pays, and the approval
   // page offers only a check that key paid for, so that is the key a team member's hand-off comes from.
   const teamWallets = vaults.filter((v) => v.ownerKind === 'team').map((v) => v.owner)
-  const mine = new Set([...deps.internalPayers.gateway, ...deps.internalPayers.facilitator, ...teamWallets, ...flowKeysOn('team').map((k) => k.operator)].map((a) => a.toLowerCase()))
+  // The launch-day vault is ours whoever its key is now: its owner is our operating wallet, and only that wallet can set its
+  // operator, which the row read from the chain. So a key it has rotated to is ours before anyone has committed its address.
+  const launchVault = launchDayVault()
+  const launchDayKeys = launchVault ? flowKeys.filter((k) => k.vault.toLowerCase() === launchVault.toLowerCase()).map((k) => k.operator) : []
+  const ourPayeeList = deps.ourPayees ?? ARC_OUR_PAYEES
+  const mine = new Set(
+    [...deps.internalPayers.gateway, ...deps.internalPayers.facilitator, ...(deps.committedOurs ?? []), ...ourPayeeList.map((p) => p.address), ...teamWallets, ...flowKeysOn('team').map((k) => k.operator), ...launchDayKeys].map((a) => a.toLowerCase()),
+  )
   const internalChecks = checks.filter((c) => mine.has(c.payer))
   const externalChecks = checks.filter((c) => !mine.has(c.payer))
 
@@ -950,7 +951,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   // A payee that is ours, or the vault's own key: the flow is real and counts, and a reviewer
   // should not have to work out from addresses that nobody else was going to be paid.
   const ourAddresses = new Set([...mine, ...(deps.ourPayTo ?? []).map((a) => a.toLowerCase())])
-  const ourPayees = new Map((deps.ourPayees ?? ARC_OUR_PAYEES).map((p) => [p.address.toLowerCase(), p.why]))
+  const ourPayees = new Map(ourPayeeList.map((p) => [p.address.toLowerCase(), p.why]))
   const payeeInternal = (f: ArcVerifyThenPayFlow): string | null => {
     const payee = f.payee.toLowerCase()
     if (payee === f.vaultKeys?.owner.toLowerCase()) return "the payee is this vault's owner"
@@ -958,7 +959,6 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
     if (ourPayees.has(payee)) return ourPayees.get(payee) as string
     return ourAddresses.has(payee) ? 'the payee is one of our own wallets' : null
   }
-  const launchVault = launchDayVault()
   const counted = new Set(vaults.map((v) => v.address.toLowerCase()))
   const vaultKindOf = (f: ArcVerifyThenPayFlow): ArcFlowVaultKind => {
     if (!f.vault) return 'not-recorded'
@@ -1046,7 +1046,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
     },
     usage: {
       basis:
-        'A payer is internal when its address is on either rail\'s published list of our own buyer wallets (the hardcoded KNOWN_INTERNAL_PAYERS plus X402_GATEWAY_INTERNAL_PAYERS and X402_3009_INTERNAL_PAYERS) owns a vault labeled team, or is the agent key on a recorded verify-then-pay flow through such a vault, compared case-insensitively; every other payer is external, and a check is a Circle Gateway row credited or completed, or a facilitator row settled, on Arc Mainnet. Those last two are read in this report only: the rails\' own proof reads the lists alone, and an agent key with no recorded flow through that vault stays external until it is on a list.',
+        'A payer is internal when its address is on either rail\'s published list of our own buyer wallets (the hardcoded KNOWN_INTERNAL_PAYERS plus X402_GATEWAY_INTERNAL_PAYERS and X402_3009_INTERNAL_PAYERS), is an address this repo commits as ours (the list admission refuses a vault owner from, our own agents among them), owns a vault labeled team, or is the agent key on a recorded verify-then-pay flow through such a vault or through the launch-day vault, compared case-insensitively; every other payer is external, and a check is a Circle Gateway row credited or completed, or a facilitator row settled, on Arc Mainnet. Everything after the rails\' lists is read in this report only: the rails\' own proof reads the lists alone, and an agent key with no recorded flow through that vault stays external until it is on a list.',
       internal: side(internalChecks),
       external: { ...side(externalChecks), byWallet: external },
     },
