@@ -1981,17 +1981,27 @@ test('the package says one version, and the README says what that version change
   const lock = JSON.parse(read('package-lock.json')) as { version: string; packages: Record<string, { version?: string }> }
   assert.equal(lock.version, pkg.version)
   assert.equal(lock.packages[''].version, pkg.version)
-  // ownerOnly and approvalUrl came after 0.4.0 went to npm, so a version that has them is past it.
-  const [major, minor, patch] = pkg.version.split('.').map(Number)
-  assert.ok(major > 0 || minor > 4 || (minor === 4 && patch >= 1), pkg.version)
+  // ownerOnly and approvalUrl turn a free refusal into a charged check, so a version that has them is a minor
+  // past 0.4.0: a caret range on 0.4 takes a patch without asking, and it must not take this.
+  const [major, minor] = pkg.version.split('.').map(Number)
+  assert.ok(major > 0 || minor >= 5, pkg.version)
   const readme = read('README.md')
-  assert.match(readme, /\*\*Changed in 0\.4\.1\.\*\*/)
+  assert.match(readme, /\*\*Changed in 0\.5\.0\.\*\*/)
   assert.match(readme, /`ownerOnly`/)
   assert.match(readme, /`approvalUrl`/)
+  // What moves, by name: this is what a caller on 0.4.0 has to read before taking this version.
+  const changed = readme.slice(readme.indexOf('**Changed in 0.5.0.**'), readme.indexOf('`verifyThenPay` buys a `risk_check`')).replace(/\s+/g, ' ')
+  assert.match(changed, /On a vault with a human, a payment above the vault's ceiling or to a payee off its allowlist used to throw `VaultPolicyError` before the check, for free/)
+  assert.match(changed, /It now buys a check, 0\.005 USDC per attempt, and `verifyThenPay` returns `awaiting_human`/)
+  assert.match(changed, /`preflightVault` returns `ownerOnly` instead of throwing/)
   // The status line is what someone following the install line reads: which version gets them what.
-  const status = readme.slice(readme.indexOf('**Status: this code ran our own 100 flows'), readme.indexOf('**Changed in 0.4.1.**')).replace(/\s+/g, ' ')
+  const status = readme.slice(readme.indexOf('**Status: an earlier build of this code ran our own 100 flows'), readme.indexOf('**Changed in 0.5.0.**')).replace(/\s+/g, ' ')
+  assert.match(status, /on its `pay\(\)` path/)
   assert.match(status, /`verifyThenPay` needs version 0\.4\.0 or later/)
-  assert.match(status, /`ownerOnly`, `approvalUrl` and the hand-off of a payment above the vault's ceiling or off its allowlist need 0\.4\.1/)
-  assert.match(status, /not on npm yet, so `npm install` gets 0\.4\.0 for now/)
+  assert.match(status, /`ownerOnly`, `approvalUrl` and the hand-off of a payment above the vault's ceiling or off its allowlist need 0\.5\.0 or later/)
+  assert.match(status, /0\.4\.0 has none of them/)
   assert.doesNotMatch(status, /It needs version 0\.4\.0 or later/)
+  // This file ships in the tarball and cannot change after a publish, so it states versions and never what npm
+  // serves today: that went false once already, in the README of 0.4.0. The guide can change on the day, so it says it.
+  assert.doesNotMatch(readme.replace(/\s+/g, ' '), /on npm yet|not on npm|for now|when it is published/)
 })

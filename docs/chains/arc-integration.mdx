@@ -421,7 +421,7 @@ first, for 0.005 USDC, from a Gateway balance. Checked on 2026-11-04:
 | --- | --- |
 | Hosted routes | **Live.** They validate input and serve flow records. 100 flows have run on Arc Mainnet, all through our own launch-day vault to payees of ours and labeled so: 75 `ALLOW` flows that the vault paid, and 25 `DENY` flows stopped before signing, answered on 2026-11-01 and 2026-11-02 UTC under the rule of that day. Each is listed on [/proof/arc](https://a-identity.xyz/proof/arc). |
 | MCP tools | **Live** on `https://a-identity.xyz/mcp`, which lists both. The stdio server does not carry them. |
-| SDK, `@a-identity/trust-guard` 0.4.0 | **On npm**, with the `/arc` entry point. This code ran our own 100 flows. No outside team has run the published package yet. `ownerOnly`, `approvalUrl` and the hand-off of a payment above the ceiling or off the allowlist come with 0.4.1, which is in the repo and not on npm yet; the hosted route already answers with all of them. |
+| SDK, `@a-identity/trust-guard` 0.4.0 | **On npm**, with the `/arc` entry point. An earlier build of this code ran our own 100 flows, on its `pay()` path. No outside team has run the published package yet. `ownerOnly`, `approvalUrl` and the hand-off of a payment above the ceiling or off the allowlist come with 0.5.0, which is in the repo and not on npm yet; the hosted route already answers with all of them. |
 
 <Note>
 A vault payment is a direct USDC transfer to the checked payee, not an x402 settlement. The vault
@@ -550,7 +550,7 @@ deployed from the vault page your wallet is the owner, so the vault page is wher
 
 Open your vault at [/app/vault/arc](https://a-identity.xyz/app/vault/arc) with the owner wallet
 connected, and it lists the payments waiting for you. Or follow the link your agent sends you:
-`ownerHandoff.approvalUrl` from the hosted route, `out.approvalUrl` from `verifyThenPay` 0.4.1, always on
+`ownerHandoff.approvalUrl` from the hosted route, `out.approvalUrl` from `verifyThenPay` 0.5.0, always on
 `https://a-identity.xyz`. That link is `null` on a hand-off the page would refuse: a check the operator
 key did not pay for, or a payment to the operator key itself. Then `next` says why, and `ownerPay` from
 the owner key is the way. For each payment the page says who gets paid, how much, what the check said
@@ -726,10 +726,10 @@ signed, so you still trust our server and the TLS connection for what it says.
 
 Install it with `npm install @a-identity/trust-guard viem @circle-fin/x402-batching`. `verifyThenPay`
 needs version 0.4.0 or later. `ownerOnly`, `out.approvalUrl` and the hand-off of a payment above the
-ceiling or off the allowlist need 0.4.1, which is in the repo and not on npm yet, so that command gets
+ceiling or off the allowlist need 0.5.0, which is in the repo and not on npm yet, so that command gets
 0.4.0 for now: there `out.approvalUrl` is undefined, and such a payment throws `VaultPolicyError` before
 anything is signed. The [README](https://github.com/getA-Identity/A-Identity/blob/main/trust-guard/README.md)
-describes 0.4.1, with the code and every error it throws. For Milestone 2, the direct check at the top
+describes 0.5.0, with the code and every error it throws. For Milestone 2, the direct check at the top
 of this page is the shortest path.
 
 ## Free reads

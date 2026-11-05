@@ -492,11 +492,13 @@ test('the guide says which version of the SDK has what, wherever it sends someon
   const guide = readFileSync(new URL('../../../docs/chains/arc-integration.mdx', import.meta.url), 'utf8').replace(/\s+/g, ' ')
   const pkg = JSON.parse(readFileSync(new URL('../../../trust-guard/package.json', import.meta.url), 'utf8')) as { version: string }
   // "in the repo" is a claim about this file, so the two are read together.
-  const [major, minor, patch] = pkg.version.split('.').map(Number)
-  assert.ok(major > 0 || minor > 4 || (minor === 4 && patch >= 1), pkg.version)
+  const [major, minor] = pkg.version.split('.').map(Number)
+  assert.ok(major > 0 || minor >= 5, pkg.version)
   assert.match(guide, /`verifyThenPay` needs version 0\.4\.0 or later/)
-  assert.match(guide, /`ownerOnly`, `out\.approvalUrl` and the hand-off of a payment above the ceiling or off the allowlist need 0\.4\.1, which is in the repo and not on npm yet/)
-  assert.match(guide, /`out\.approvalUrl` from `verifyThenPay` 0\.4\.1/)
+  assert.match(guide, /`ownerOnly`, `out\.approvalUrl` and the hand-off of a payment above the ceiling or off the allowlist need 0\.5\.0, which is in the repo and not on npm yet/)
+  assert.match(guide, /`out\.approvalUrl` from `verifyThenPay` 0\.5\.0/)
+  assert.match(guide, /An earlier build of this code ran our own 100 flows, on its `pay\(\)` path/)
+  assert.doesNotMatch(guide, /0\.4\.1/)
   assert.doesNotMatch(guide, /x402-batching`, version 0\.4\.0 or later/)
 })
 
