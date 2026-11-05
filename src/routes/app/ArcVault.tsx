@@ -487,7 +487,7 @@ export default function ArcVault() {
                 vault={v}
                 wallet={wallet}
                 canAct={!ours && !ownerIsOurKey && v.knownBuild && v.usdcMatches}
-                oursKey={ours || ownerIsOurKey}
+                oursKey={ours || ownerIsOurKey || isOurKey(v.network, v.operator, known?.ourKeys)}
                 whyNot={
                   ours || ownerIsOurKey
                     ? 'This vault is ours, so this page offers no approval for it, whoever is connected.'
@@ -496,7 +496,7 @@ export default function ArcVault() {
                       : undefined
                 }
                 flowParam={flowParam}
-                held={held && !handoffHeld}
+                held={shownTx?.outcome === 'pending' || setupTx !== null || readBehind}
                 onHoldChange={setHandoffHeld}
                 onLanded={onHandoffLanded}
               />

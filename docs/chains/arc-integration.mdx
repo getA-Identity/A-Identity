@@ -589,7 +589,10 @@ What the page refuses, each for a reason:
   request, because that is how a second payment is meant to happen, so the page offers it, and says
   plainly when the vault paid the same amount to the same payee in the 6 hours before that check. What the
   page cannot stop is a wallet prompt answered after you told it nothing was sent and sent again: sign both,
-  and both pay. It keeps and follows both hashes and says so, and the flow's public record holds one of them.
+  and both pay. It keeps and follows each hash your wallet hands back to it and each payment its read of the
+  vault found, says so when there are two, and tells you to decline a prompt once the payment has left. The
+  flow's public record holds one of them. A second payment whose hash never reaches the page, once it already
+  holds a hash or a payment for that request, shows only in the vault's activity on the page.
 - **A check older than 24 hours**, by the chain's clock. An owner has to be able to find a request in a
   working day, and past that our answer may be wrong without anyone having seen it change. A new check
   costs your agent 0.005 USDC.
@@ -600,9 +603,9 @@ What the page refuses, each for a reason:
 **Saying no.** A flow has no state for it, so nothing records your answer. The page hides the payment in
 your browser, and that is all: your agent is not told, the public record still says it is waiting, and the
 agent can ask again. It stops being offered 24 hours after the check. Saying no does not stop your agent:
-use Freeze or Revoke on the same page for that. The money only ever leaves from your own wallet on this
-page, but a payment within your agent's limits is one its key can still send by itself, because the contract
-knows nothing of flows. Only a payment above the ceiling or off the allowlist is one it cannot.
+use Freeze or Revoke on the same page for that. On this page only your own wallet can send the payment, but
+a payment within your agent's limits is one its key can still send by itself, because the contract knows
+nothing of flows. Only a payment above the ceiling or off the allowlist is one it cannot.
 
 What only a person with a real wallet can see is how that wallet shows the call. The page has been run
 against a real backend and a real browser on a local fork of Arc Mainnet with a stand-in wallet, and that
@@ -708,7 +711,9 @@ evidence it happened. Do not use this route for a payment you need to keep priva
 `GET https://a-identity.xyz/api/x402/gateway/flows?vault=0x...` needs no key either, and publishes
 nothing new. `waiting` holds the flows waiting for that vault's owner whose check was paid by the key
 that was its operator when checked, newest first, at most 20, and `truncated` says when there were
-more. Compare that with the vault's operator now before you treat one as a request. `notFromOperator`
+more. Only a receipt closes a flow, and saying no on the page records nothing, so neither age nor a no
+makes room: a request past the newest 20 is out of reach until your agent checks that payee again.
+Compare a row with the vault's operator now before you treat one as a request. `notFromOperator`
 only counts the rest, up to 100: anyone can buy a check naming any vault, so those are not requests,
 and they cannot crowd out the ones that are. It allows 30 reads a minute per address.
 

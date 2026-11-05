@@ -92,13 +92,17 @@ export type HandoffSend = {
   /** The transaction the wallet handed back, the first one if there were more. */
   tx?: TxRecord
   /**
-   * Any other transaction a wallet handed back for this flow. The page stops waiting on a prompt after two
-   * minutes, so a person can say nothing was sent and send again with the first prompt still open, and
-   * answer both. Each one that lands pays, so each one stays on the record until it has an answer.
+   * Any other transaction sent for this flow. The page stops waiting on a prompt after two minutes, so a
+   * person can say nothing was sent and send again with the first prompt still open, and answer both. A hash
+   * can also come back after the read found a payment under another one, and a new claim keeps a send the
+   * person let go of, which can still land. Each one that lands pays, so each one stays on the record until
+   * it has an answer. One that was replaced can no longer land, and it stops counting: see otherSends.
    */
   alsoSent?: TxRecord[]
   /** A payment of this flow's amount to its payee found on chain, under another hash than tx: a speed-up, usually. */
   paidBy?: string
+  /** A hash came back for this claim and went to alsoSent, so tx is empty and the wallet has still answered. */
+  hashBack?: boolean
   /** When tx was first seen replaced with no payment of it found. A host can lag, so one read is not the answer. */
   replacedSeenAt?: string
   /** tx was replaced, and the Paid events, read well after that, hold no payment: it can no longer land and nothing replaced it with a payment. */
@@ -274,23 +278,36 @@ const sameHash = (a: TxRecord, b: TxRecord) => a.hash.toLowerCase() === b.hash.t
  * The wallet said no to this claim's prompt, or was never asked. A run can outlive its claim, and its prompt
  * can be answered long after a later claim took the record: see alsoSent. So the record goes only if it is
  * still this claim and holds no send. Anything else it holds is another prompt's, and that one can still pay.
+ * A send this claim carried stays followed, and nothing is asked any more, so the record goes back to what
+ * the person said before they tried again.
  */
 export function dropClaim(claim: HandoffSend): void {
   const now = storedHandoff(claim)
-  if (now?.token === claim.token && !now.tx && !now.paidBy && !now.server) clearHandoff(claim.network, claim.vault, claim.flowId)
+  if (now?.token !== claim.token || now.tx || now.paidBy || now.server) return
+  if (now.alsoSent?.some((t) => t.outcome !== 'replaced')) saveHandoff({ ...now, released: true, releasedAt: new Date().toISOString() })
+  else clearHandoff(claim.network, claim.vault, claim.flowId)
 }
 
 /**
  * The hash a wallet handed back for this claim, on the record as it stands now and not as the claim left it,
- * whichever prompt answers first. The first hash is the record's tx, and any other goes beside it. A new hash
- * also ends what was said about nothing being on its way, because something now is.
+ * whichever prompt answers first. The first hash is the record's tx, and any other goes beside it, as does one
+ * that comes back after the read found a payment under another hash, which it may have paid beside. A new hash
+ * also ends what was said about nothing being on its way, because something now is, and a replaced hash's watch
+ * starts over, because only a read well after the latest replacement can speak for it.
  */
 export function saveSentHash(claim: HandoffSend, tx: TxRecord): void {
   const now = storedHandoff(claim)
   if (!now) return saveHandoff({ ...claim, tx })
-  if ((now.tx && sameHash(now.tx, tx)) || now.alsoSent?.some((t) => sameHash(t, tx))) return
-  const open = { ...now, released: undefined, releasedAt: undefined, replacedClear: undefined }
-  saveHandoff(now.tx ? { ...open, alsoSent: [...(now.alsoSent ?? []), tx] } : { ...open, tx })
+  if (now.tx && sameHash(now.tx, tx)) return
+  // A wallet that signs the same transaction again hands back the very hash a claim carried: one send, and an answer.
+  if (now.alsoSent?.some((t) => sameHash(t, tx))) {
+    if (!now.tx) saveHandoff({ ...now, hashBack: true })
+    return
+  }
+  const open = { ...now, released: undefined, releasedAt: undefined, replacedClear: undefined, replacedSeenAt: undefined }
+  if (now.tx) return saveHandoff({ ...open, alsoSent: [...(now.alsoSent ?? []), tx] })
+  if (now.paidBy && now.paidBy.toLowerCase() !== tx.hash.toLowerCase()) return saveHandoff({ ...open, alsoSent: [...(now.alsoSent ?? []), tx], hashBack: true })
+  saveHandoff({ ...open, tx })
 }
 
 /** This record, with one of its transactions as it stands now. */
@@ -313,6 +330,17 @@ export function saveDeclined(network: string, vault: string, flowId: string, dec
 export type SendLocks = { request: <T>(name: string, fn: () => T) => Promise<T> }
 
 /**
+ * A new claim takes the record's place, and what the record held is not over because the person said so: a send
+ * they let go of can still be queued in a wallet, and if it lands it pays. So it stays on the new record, and
+ * it is followed again. One that was replaced can no longer land, and stays behind.
+ */
+function withCarried(r: HandoffSend, was: HandoffSend | null): HandoffSend {
+  const sends = was ? [...(was.tx ? [was.tx] : []), ...(was.alsoSent ?? [])] : []
+  const alsoSent = sends.filter((t) => t.outcome !== 'replaced').map((t): TxRecord => (t.outcome === 'untracked' ? { ...t, outcome: 'pending', note: undefined, nonceUsedAt: undefined, unseen: undefined, likelyReplaced: undefined } : t))
+  return alsoSent.length ? { ...r, alsoSent } : r
+}
+
+/**
  * Take the send for a flow, or say another send holds it. `refused` is asked inside the lock, with every
  * record read fresh. Two tabs reach this at the same moment, and only one of them gets to open a wallet.
  * With no Web Locks the record is written and read back, which leaves a window of a few milliseconds
@@ -321,7 +349,7 @@ export type SendLocks = { request: <T>(name: string, fn: () => T) => Promise<T> 
 export async function claimHandoff(r: HandoffSend, refused: (records: HandoffSend[]) => boolean, locks: SendLocks | null | undefined = defaultLocks()): Promise<boolean> {
   const take = () => {
     if (refused(loadHandoffs(r.network, r.vault))) return false
-    saveHandoff(r)
+    saveHandoff(withCarried(r, storedHandoff(r)))
     return read<HandoffSend>(`${handoffPrefix(r.network, r.vault)}${r.flowId.toLowerCase()}`)?.token === r.token
   }
   return locks ? locks.request(`aid-arc-handoff:${r.vault.toLowerCase()}`, take) : take()

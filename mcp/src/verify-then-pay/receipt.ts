@@ -52,7 +52,8 @@
  * on its vault, payee and amount that could take it, the one whose verdict block is the
  * highest below the payment's block (a tie goes to the later record, then the higher id).
  * Posted to any other flow it is refused (TX_ANSWERS_LATER_CHECK) with the flow it answers
- * named, and nothing changes. Whoever posts, in whatever order, a payment cannot be moved onto
+ * named, and nothing changes, and once linked it is refused with the flow that holds it named
+ * (TX_LINKED_ELSEWHERE). Whoever posts, in whatever order, a payment cannot be moved onto
  * an earlier check than the one it followed, and a flow whose own payment came first cannot be
  * left behind by a later payment posted to it.
  *
@@ -241,7 +242,7 @@ export type VtpReceiptResult = {
   record: { url: string } | null
   /** Post the same hash again later: nothing was decided yet. */
   retry?: boolean
-  /** On TX_ANSWERS_LATER_CHECK: the flow this payment answers. */
+  /** On TX_ANSWERS_LATER_CHECK and TX_LINKED_ELSEWHERE: the flow this payment answers, or is already recorded on. */
   answersFlow?: string
   next: string
 }
@@ -297,7 +298,7 @@ export async function recordVtpReceipt(flowIdRaw: unknown, txHashRaw: unknown, d
     return reply(503, flowId, { code: 'FLOW_STORE_UNREADABLE', reason: FLOW_LOG_UNREADABLE, retry: true, next: 'The flow log could not be read; nothing changed. Post the same hash again shortly.' }, origin)
   }
   if (linked.flowId && linked.flowId !== flowId) {
-    return reply(409, flowId, { outcome: flow.outcome, detail: flow.detail, code: 'TX_LINKED_ELSEWHERE', reason: `that transaction is already linked to flow ${linked.flowId}`, next: 'One transaction proves one flow. Nothing changed.' }, origin)
+    return reply(409, flowId, { outcome: flow.outcome, detail: flow.detail, code: 'TX_LINKED_ELSEWHERE', answersFlow: linked.flowId, reason: `that transaction is already linked to flow ${linked.flowId}`, next: 'One transaction proves one flow. Nothing changed.' }, origin)
   }
 
   const opts = { perCallTimeoutMs: DEFAULT_PER_CALL_MS, ...deps.receipts }
@@ -419,7 +420,8 @@ export async function recordVtpReceipt(flowIdRaw: unknown, txHashRaw: unknown, d
   const u = await store.update(flowId, { ...ended, payment, updatedAt: at }, OPEN)
   if (!u.ok) {
     if (u.conflict === 'tx_linked') {
-      return reply(409, flowId, { outcome: flow.outcome, detail: flow.detail, code: 'TX_LINKED_ELSEWHERE', reason: u.reason, next: 'One transaction proves one flow. Nothing changed.' }, origin)
+      // Another post linked it while this one read the chain, and this write does not know which flow took it. The read above does, so a post again names it.
+      return reply(409, flowId, { outcome: flow.outcome, detail: flow.detail, code: 'TX_LINKED_ELSEWHERE', reason: u.reason, retry: true, next: 'One transaction proves one flow. Nothing changed. Post the same hash again to learn which flow holds it.' }, origin)
     }
     logFlowStoreFault('recording a receipt', u.reason)
     return reply(503, flowId, { outcome: flow.outcome, detail: flow.detail, code: 'FLOW_STORE_UNREADABLE', reason: 'the flow log refused the write', retry: true, next: 'The receipt proved the flow but the record could not be written. Post the same hash again.' }, origin)
