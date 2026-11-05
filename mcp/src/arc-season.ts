@@ -588,7 +588,7 @@ export function mergeVaults(curated: ArcOwnerHeldVault[], admitted: ArcOwnerHeld
   return out
 }
 
-const PARTNER_OWNER_NOTE = 'Passed every owner-held check and admitted automatically. The chain cannot say whose wallet an owner is; this one is a wallet attributed to an external team on this page.'
+const PARTNER_OWNER_NOTE = 'Passed every owner-held check and admitted automatically. The chain cannot say whose wallet an owner is; this one is on our list of wallets attributed to external teams.'
 
 /**
  * What is known of whose wallet each vault's owner is. A stored row says 'unstated', because the chain cannot tell. A
@@ -1071,7 +1071,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
     },
     usage: {
       basis:
-        'A payer is internal when its address is on either rail\'s published list of our own buyer wallets (the hardcoded KNOWN_INTERNAL_PAYERS plus X402_GATEWAY_INTERNAL_PAYERS and X402_3009_INTERNAL_PAYERS), is an address this repo commits as ours (the list admission refuses a vault owner from, our own agents among them), owns a vault labeled team, or is the agent key on a recorded verify-then-pay flow through such a vault or through the launch-day vault, compared case-insensitively; every other payer is external, and a check is a Circle Gateway row credited or completed, or a facilitator row settled, on Arc Mainnet. Everything after the rails\' lists is read in this report only: the rails\' own proof reads the lists alone, and an agent key with no recorded flow through that vault stays external until it is on a list.' + teamKeysCaveat(externalChecks.length),
+        'A payer is internal when its address is on either rail\'s published list of our own buyer wallets (the hardcoded KNOWN_INTERNAL_PAYERS plus X402_GATEWAY_INTERNAL_PAYERS and X402_3009_INTERNAL_PAYERS), is an address this repo commits as ours (admission refuses a vault owner from the same addresses, and our own agents are among them), owns a vault labeled team, or is the agent key on a recorded verify-then-pay flow through such a vault or through the launch-day vault, compared case-insensitively; every other payer is external, and a check is a Circle Gateway row credited or completed, or a facilitator row settled, on Arc Mainnet. Everything after the rails\' lists counts as internal in this report only: the rails\' own proof reads the lists alone, and an agent key with no recorded flow through that vault stays external until it is on a list.' + teamKeysCaveat(externalChecks.length),
       internal: side(internalChecks),
       external: { ...side(externalChecks), byWallet: external, ...flagTeamKeys(externalChecks.length) },
     },

@@ -903,8 +903,9 @@ test("what the repo calls ours is ours here too: its own agents, the committed l
   const elsewhere = await arcSeasonReport(deps({ gateway: [check], flows: [{ ...paid, vault: EXT_C }] }))
   assert.equal(elsewhere.milestone2.externalChecks.count, 1)
 
-  assert.match(after.usage.basis, /is an address this repo commits as ours \(the list admission refuses a vault owner from, our own agents among them\), owns a vault labeled team/)
+  assert.match(after.usage.basis, /is an address this repo commits as ours \(admission refuses a vault owner from the same addresses, and our own agents are among them\), owns a vault labeled team/)
   assert.match(after.usage.basis, /through such a vault or through the launch-day vault/)
+  assert.match(after.usage.basis, /Everything after the rails' lists counts as internal in this report only: the rails' own proof reads the lists alone/)
   assert.doesNotMatch(after.usage.basis, /X402_3009_INTERNAL_PAYERS\) owns/, 'the comma that was missing')
 })
 
