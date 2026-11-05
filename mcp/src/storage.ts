@@ -1096,10 +1096,10 @@ export async function persistGatewaySettlement(rec: GatewaySettlementRecord, io:
  * Upgrade a credited row once Gateway reports its batch: outcome, Gateway's status word, the
  * batch hash and its explorer link. Only a credited row with this nonce and this payer. The
  * nonce is the value both we and Gateway hold for the same payment, and it is unique per
- * payer, not across payers. An unconfirmed row under the same nonce is another attempt, written
- * before Gateway verified anything, with whatever `from` the caller sent, so moving it to
- * credited or completed would count a check nobody paid for. Never throws; a refresh that fails
- * leaves the row as it was, which is still true.
+ * payer, not across payers. An unconfirmed row under the same nonce is another attempt, and one
+ * written while settle had no answer holds whatever `from` the caller sent, with nothing verified,
+ * so moving it to credited or completed would count a check nobody paid for. Never throws; a
+ * refresh that fails leaves the row as it was, which is still true.
  */
 export async function updateGatewaySettlement(
   authNonce: string,
