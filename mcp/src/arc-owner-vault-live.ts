@@ -390,7 +390,19 @@ export const PLAIN_REFUSALS: Readonly<Record<string, string>> = {
   usdc: 'The vault does not use the USDC of this network.',
   'daily-cap': 'The vault has no daily cap: a cap of 0 means no limit at all.',
   'auto-approve-max': 'The vault has no limit per payment: a limit of 0 means no limit at all.',
-  'session-key-expiry': "The agent key has no end date in the future. Set one from the vault's page, then try again.",
+  'session-key-expiry': 'The agent key has no end date in the future.',
+}
+
+/**
+ * What an owner can change on chain, the control on the vault's page that changes it, and that posting again then counts it.
+ * Said only when the whole refusal is retryable: beside a fact about the vault, changing this would not make it count, and the
+ * page offers no Try again. A test holds each control's name to src/components/app/arc/OwnerControls.tsx.
+ */
+export const WHAT_TO_CHANGE: Readonly<Record<string, string>> = {
+  'operator-set': "Give it one under Replace the operator on the vault's page, then try again.",
+  'daily-cap': "Set one under Change the policy on the vault's page, then try again.",
+  'auto-approve-max': "Set one under Change the policy on the vault's page, then try again.",
+  'session-key-expiry': "Set one in the Session key box on the vault's page, then try again.",
 }
 
 /** Checks whose detail says which of our env vars holds which address: a public refusal gives their plain words only. */
@@ -406,12 +418,15 @@ export type VaultRefusal = { id: string; reason: string; detail?: string }
 const RUNTIME_NOT_CONFIRMED = "A network host's answer about this vault's code could not be confirmed. Try again in a minute."
 const creationInputMatched = (run: Pick<AdmissionRun, 'checks'>): boolean => run.checks.some((c) => c.id === 'creation-input' && c.ok === true)
 
-export function plainRefusals(v: Verdict, run?: Pick<AdmissionRun, 'checks'>): VaultRefusal[] {
-  return v.refusals.map((c) => ({
-    id: c.id,
-    reason: c.id === 'runtime-code' && run && creationInputMatched(run) ? RUNTIME_NOT_CONFIRMED : (PLAIN_REFUSALS[c.id] ?? c.label),
-    ...(DETAIL_KEPT_BACK.has(c.id) ? {} : { detail: c.detail }),
-  }))
+export function plainRefusals(v: Verdict, run?: Pick<AdmissionRun, 'checks'>, retryable = false): VaultRefusal[] {
+  return v.refusals.map((c) => {
+    const said = c.id === 'runtime-code' && run && creationInputMatched(run) ? RUNTIME_NOT_CONFIRMED : (PLAIN_REFUSALS[c.id] ?? c.label)
+    return {
+      id: c.id,
+      reason: retryable && WHAT_TO_CHANGE[c.id] ? `${said} ${WHAT_TO_CHANGE[c.id]}` : said,
+      ...(DETAIL_KEPT_BACK.has(c.id) ? {} : { detail: c.detail }),
+    }
+  })
 }
 
 /**
@@ -520,7 +535,8 @@ export async function admitVaultDeploy(body: unknown, deps: VaultAdmissionDeps):
       logRouteFailure(OWN_CHECK_UNFINISHED, ownCheck.detail)
       return { httpStatus: 503, answer: { status: 'unavailable', retryable: true, reason: OWN_CHECK_UNFINISHED } }
     }
-    return { httpStatus: 200, answer: { status: 'refused', vault: run.vault, deployTx, retryable: refusalIsRetryable(run), reasons: plainRefusals(run.verdict, run) } }
+    const retryable = refusalIsRetryable(run)
+    return { httpStatus: 200, answer: { status: 'refused', vault: run.vault, deployTx, retryable, reasons: plainRefusals(run.verdict, run, retryable) } }
   }
   const state = run.snapshot.state
   if (!run.vault || !state || run.deployBlock === null || run.deployBlockTime === null) {

@@ -8,6 +8,7 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { OUR_KEY_PUBLIC_ADDRESSES, collectOurAddresses, encodeCreationInput, liveOurAddressSources, type OurAddresses } from './arc-owner-vault.js'
 import {
   PLAIN_REFUSALS,
+  WHAT_TO_CHANGE,
   admissionContext,
   admissionReadiness,
   admissionSlots,
@@ -179,7 +180,7 @@ test('refused vaults are never stored, and each refusal says why in plain words'
     if (answer.status !== 'refused') continue
     const hit = answer.reasons.find((r) => r.id === id)
     assert.ok(hit, `${name}: expected ${id} among ${answer.reasons.map((r) => r.id).join(', ')}`)
-    assert.equal(hit.reason, PLAIN_REFUSALS[id])
+    assert.ok(hit.reason.startsWith(PLAIN_REFUSALS[id]), `${name}: ${hit.reason}`)
     const read = await loadAdmittedArcVaults(io)
     assert.ok(read.ok)
     assert.deepEqual(read.rows, [], `${name} was stored`)
@@ -518,6 +519,41 @@ test('what the owner can still change on chain is retryable, and a fact about th
   }
   const ours_ = await admitVaultDeploy({ deployTx: TX }, routeDeps({ dailyCap: 0n }, { ours: ours([OWNER]) }))
   assert.equal(ours_.answer.status === 'refused' && ours_.answer.retryable, false, 'an owner of ours stays refused for good')
+})
+
+test('a refusal the owner can fix says what to change, on a control the page has, then to try again, and not when a fact stands beside it', async () => {
+  const cases: [ChainFacts, string, RegExp][] = [
+    [{ operator: '0x0000000000000000000000000000000000000000' }, 'operator-set', /^The vault's agent key is missing, or it is the same wallet as the owner\. The limits only mean something when the agent has a key of its own\. Give it one under Replace the operator on the vault's page, then try again\.$/],
+    [{ operator: OWNER }, 'operator-set', /Give it one under Replace the operator on the vault's page, then try again\.$/],
+    [{ dailyCap: 0n }, 'daily-cap', /^The vault has no daily cap: a cap of 0 means no limit at all\. Set one under Change the policy on the vault's page, then try again\.$/],
+    [{ autoApproveMax: 0n }, 'auto-approve-max', /^The vault has no limit per payment: a limit of 0 means no limit at all\. Set one under Change the policy on the vault's page, then try again\.$/],
+    [{ sessionKeyExpiry: 0n }, 'session-key-expiry', /^The agent key has no end date in the future\. Set one in the Session key box on the vault's page, then try again\.$/],
+    [{ sessionKeyExpiry: NOW_SECONDS - 1000n }, 'session-key-expiry', /Set one in the Session key box on the vault's page, then try again\.$/],
+  ]
+  for (const [facts, id, says] of cases) {
+    const { answer } = await admitVaultDeploy({ deployTx: TX }, routeDeps(facts))
+    assert.ok(answer.status === 'refused' && answer.retryable, id)
+    assert.match(answer.reasons.find((r) => r.id === id)?.reason ?? '', says)
+  }
+
+  // Each control it names is on the vault's page, under that very name. Rename one and this says which sentence to move.
+  const controls = readFileSync(new URL('../../src/components/app/arc/OwnerControls.tsx', import.meta.url), 'utf8')
+  assert.deepEqual(Object.keys(WHAT_TO_CHANGE).sort(), ['auto-approve-max', 'daily-cap', 'operator-set', 'session-key-expiry'])
+  for (const [id, words] of Object.entries(WHAT_TO_CHANGE)) {
+    const named = /(?:under|in the) (.+?)(?: box)? on the vault's page, then try again\.$/.exec(words)?.[1]
+    assert.ok(named, `${id} names no control: ${words}`)
+    assert.match(controls, new RegExp(`(?:<summary[^>]*>\\s*${named} \\(|<Card title="${named}">)`), `${id} names ${named}, which is not on the page`)
+  }
+
+  // A fact beside it: the same post can never be admitted, so nothing tells the owner to change this and try again.
+  const beside = await admitVaultDeploy({ deployTx: TX }, routeDeps({ dailyCap: 0n, status: '0x0' }))
+  assert.ok(beside.answer.status === 'refused' && beside.answer.retryable === false)
+  if (beside.answer.status === 'refused') {
+    assert.equal(beside.answer.reasons.find((r) => r.id === 'daily-cap')?.reason, PLAIN_REFUSALS['daily-cap'])
+    assert.doesNotMatch(JSON.stringify(beside.answer.reasons), /then try again/)
+  }
+  const owned = await admitVaultDeploy({ deployTx: TX }, routeDeps({ sessionKeyExpiry: 0n }, { ours: ours([OWNER]) }))
+  assert.doesNotMatch(JSON.stringify(owned.answer), /then try again/)
 })
 
 test('hosts that disagree about the receipt admit nothing', async () => {
