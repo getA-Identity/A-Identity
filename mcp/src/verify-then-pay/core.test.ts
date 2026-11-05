@@ -13,7 +13,7 @@ import type { VtpReadClient } from './reads.js'
 import { ARC_MIN_MAX_FEE_WEI } from './prepare.js'
 import { AgentSpendPolicyAbi } from '../contracts/AgentSpendPolicy.js'
 import { getChainById } from '../chains/index.js'
-import { clearKindCache, type GatewayKind, type GatewaySettleResponse, type GatewayTransfer } from '../x402-gateway/index.js'
+import { clearKindCache, railProof, railStatus, type GatewayKind, type GatewaySettleResponse, type GatewayTransfer } from '../x402-gateway/index.js'
 import type { GatewaySettlementRecord, VtpFlowRecord } from '../storage.js'
 
 /**
@@ -841,7 +841,10 @@ test('a used nonce says this request charged nothing, and sends the caller to th
     assert.match(next, /may have been charged and may hold a verdict, or may still be running/)
     assert.ok(next.includes(`GET /api/x402/gateway/flows/${NONCE.toLowerCase()}`), next)
     assert.match(next, /GET \/api\/x402\/gateway\/proof/)
-    assert.match(next, /Sign a new authorization only if neither shows this nonce by then, or the proof log says it failed/)
+    assert.match(next, /a flow there that names this vault, payee and amount is your answer, so do not sign again/)
+    assert.match(next, /One that names others does not answer this request, so sign a new authorization for it/)
+    assert.doesNotMatch(next, /a flow there is your answer/)
+    assert.match(next, /If neither shows this nonce by then, or the proof log says it failed, sign a new authorization/)
     assert.doesNotMatch(next, /no check was bought/)
     assert.doesNotMatch(reason ?? '', /sign a new authorization/i)
   }
@@ -887,6 +890,102 @@ test('a used nonce says this request charged nothing, and sends the caller to th
   const resent = await runVerifyThenPay(request(), header(), stalled.deps)
   assert.equal(resent.body.code, 'NONCE_ALREADY_USED')
   said(resent.body.next, resent.body.reason)
+})
+
+test('a signature sent again for another vault, payee or amount is told that the flow under it does not answer this request', async () => {
+  const { g, s, deps } = setup()
+  const first = await runVerifyThenPay(request(), header(), deps)
+  assert.equal(first.body.stage, 'prepared')
+  const other = '0x' + 'e5'.repeat(20)
+  for (const [what, over] of [
+    ['payee', { payee: other }],
+    ['amount', { amount: '100000' }],
+    ['vault', { vault: other }],
+    ['payee and amount', { payee: other, amount: '100000' }],
+  ] as [string, Partial<VtpInput>][]) {
+    const again = await runVerifyThenPay(request(over), header(), deps)
+    assert.deepEqual([again.httpStatus, again.body.stage, again.body.code, again.body.charged, again.body.prepared, again.body.flowId], [409, 'refused', 'NONCE_ALREADY_USED', false, null, null], what)
+    assert.match(again.body.next, /named another vault, payee or amount/, what)
+    assert.match(again.body.next, /does not answer this request/, what)
+    assert.match(again.body.next, /sign a new authorization for this request: a new authorization costs another 0\.005 USDC/, what)
+    assert.doesNotMatch(again.body.next, /is your answer|do not sign again/, what)
+  }
+  assert.equal(g.spy.settles, 1, 'nothing was bought for any of them')
+  assert.equal(s.rows.get(NONCE)?.payee, PAYEE, 'and the first flow is as it was')
+
+  // The same request is the same request, whatever case its addresses were typed in, so it is not told to pay again.
+  const typed = await runVerifyThenPay(request({ payee: '0x' + 'D4'.repeat(20), vault: '0x' + 'A1'.repeat(20) }), header(), deps)
+  assert.equal(typed.body.code, 'NONCE_ALREADY_USED')
+  assert.match(typed.body.next, /a flow there that names this vault, payee and amount is your answer/)
+  assert.doesNotMatch(typed.body.next, /named another vault, payee or amount/)
+
+  // The race has no row to compare, so its words have to hold for another payee too.
+  const lost = setup({ store: { insert: async () => ({ ok: true, inserted: false }) } })
+  const raced = await runVerifyThenPay(request({ payee: other }), header(), lost.deps)
+  assert.equal(raced.body.code, 'NONCE_ALREADY_USED')
+  assert.match(raced.body.next, /One that names others does not answer this request/)
+  assert.equal(lost.g.spy.settles, 0)
+})
+
+test("the guide's table says what a used nonce and an unconfirmed settlement answer", () => {
+  const guide = readFileSync(new URL('../../../docs/chains/arc-integration.mdx', import.meta.url), 'utf8').split('\n')
+  const row = (start: string) => {
+    const rows = guide.filter((l) => l.startsWith(start))
+    assert.equal(rows.length, 1, start)
+    return rows[0]
+  }
+  const used = row('| `409` | `refused` |')
+  assert.match(used, /A flow there that names this vault, payee and amount is your answer, so do not sign again/)
+  assert.match(used, /One that names others does not answer this request/)
+  assert.match(used, /which lists only the newest 50 rows/)
+  assert.match(used, /`credited`, `completed` or `unconfirmed` and the flow still answers `404`, treat this nonce as giving no flow/)
+  assert.match(used, /a new authorization costs another 0\.005 USDC/)
+  assert.match(used, /may still settle until it expires/)
+  const unknown = row('| `409`, `500`, `502`, `503` | `check_failed`, `unavailable` |')
+  assert.match(unknown, /which lists only the newest 50 rows/)
+  assert.match(unknown, /If it reads `unconfirmed`, treat this nonce as giving no flow/)
+})
+
+test('a used nonce the proof shows and no flow came of has a way forward, and the proof is not taken for complete', async () => {
+  const noFlow = /[Tt]reat this nonce as giving no flow: a new authorization costs another 0\.005 USDC/
+  // The first request settled, its flow could not be closed, and its answer was lost.
+  const closeFails = setup({ store: { update: async () => ({ ok: false, reason: 'db down' }) } })
+  const first = await runVerifyThenPay(request(), header(), closeFails.deps)
+  assert.equal(first.body.code, 'FLOW_NOT_RECORDED')
+  const again = await runVerifyThenPay(request(), header(), closeFails.deps)
+  assert.equal(again.body.code, 'NONCE_ALREADY_USED')
+  assert.equal((await readVtpFlow(NONCE, { store: closeFails.s.store })).httpStatus, 404, 'the flow reads as nothing, and nothing will change that')
+  const shown = await railProof(railStatus(ENV, arc.caip2), { env: ENV, load: async () => closeFails.g.spy.persisted })
+  assert.deepEqual(shown.recent.map((r) => [r.authNonce, r.outcome]), [[NONCE, 'credited']], 'and the proof shows it settled')
+  // Those two facts are the case the answer has to name: neither "neither shows it" nor "it failed".
+  assert.match(again.body.next, /If the proof log reads credited, completed or unconfirmed and the flow still answers 404/)
+  assert.match(again.body.next, noFlow)
+  assert.match(again.body.next, /one that reads unconfirmed may still settle until it expires/)
+  assert.doesNotMatch(again.body.next, /no flow will come/, 'a very slow first request could still close its flow, so the words do not promise that')
+
+  // The proof has no look-up, so a settled nonce older than its newest rows reads as absent, and the answer says so.
+  const later = Array.from({ length: 50 }, (_, i) => ({ ...closeFails.g.spy.persisted[0], authNonce: '0x' + String(i).padStart(64, '0') }))
+  const crowded = await railProof(railStatus(ENV, arc.caip2), { env: ENV, load: async () => [...closeFails.g.spy.persisted, ...later] })
+  assert.equal(crowded.recent.length, 50)
+  assert.equal(crowded.recent.filter((r) => r.authNonce === NONCE).length, 0)
+  assert.equal(crowded.credited, 51)
+  assert.match(again.body.next, /GET \/api\/x402\/gateway\/proof, which lists only the newest 50 rows/)
+
+  // A settle that got no usable answer ends at unconfirmed, and its own answer already says what to do with that.
+  const stalled = setup({ gw: { settle: { success: false, unknown: true, errorReason: 'Gateway settle did not answer within 8000 ms' } } })
+  const unknown = await runVerifyThenPay(request(), header(), stalled.deps)
+  assert.equal(unknown.body.code, 'SETTLEMENT_UNKNOWN')
+  assert.equal(stalled.g.spy.persisted[0].outcome, 'unconfirmed')
+  assert.match(unknown.body.next, /GET \/api\/x402\/gateway\/proof, which lists only the newest 50 rows, before signing another/)
+  assert.match(unknown.body.next, /If it reads unconfirmed, treat this nonce as giving no flow: a new authorization costs another 0\.005 USDC/)
+  assert.match(unknown.body.next, /this one may still settle until it expires/)
+
+  // So does a success whose transfer could not be read back.
+  const unread = setup({ gw: { transfers: [] } })
+  const r502 = await runVerifyThenPay(request(), header(), unread.deps)
+  assert.deepEqual([r502.httpStatus, r502.body.charged, unread.g.spy.persisted[0].outcome], [502, null, 'unconfirmed'])
+  assert.match(r502.body.next, noFlow)
+  assert.match(r502.body.next, /this one may still settle until it expires/)
 })
 
 test('the reservation goes in before the rail is asked, and to a reader it is nothing yet', async () => {

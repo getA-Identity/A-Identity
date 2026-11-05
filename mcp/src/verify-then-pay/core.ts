@@ -501,18 +501,33 @@ export function vtpRateLimited(windowMs: number): VtpResponse {
   }
 }
 
+/** What another try costs, for an answer that sends a caller to one. */
+const anotherAuthorization = (): string => `a new authorization costs another ${toolPriceUsd('risk_check')} USDC`
+
 /**
  * A nonce seen before says what this request did, and nothing about how the first one went: that one may
  * have been charged and hold a verdict, its answer lost on the way back, or still be running, in which case
  * no reader can see it yet. So this does not send the caller off to pay for a second check and open a second flow.
+ *
+ * A signature names no payee, so the same header can come back with other inputs, and a flow answers only the
+ * vault, payee and amount it names. `otherRequest` says the row was read and names others. The race for the
+ * reservation has no row to read, so the words for it have to hold in both cases.
+ *
+ * A nonce the proof shows with no flow to read can stay that way for good: nothing closes an opening row whose
+ * server died, and nothing refreshes an unconfirmed one. So the last step says what to do with one rather than
+ * leaving the caller to wait, and it is worded as what to treat it as, because a very slow first request could
+ * still close its flow. The proof has no look-up: it lists its newest rows, so a nonce older than those reads
+ * as missing.
  */
-function nonceUsed(chain: ChainDescriptor, nonce: string, checks: VtpChecks | null): VtpResponse {
+function nonceUsed(chain: ChainDescriptor, nonce: string, checks: VtpChecks | null, otherRequest = false): VtpResponse {
   const out = refused(chain, 409, 'NONCE_ALREADY_USED', `this authorization nonce already opened flow ${nonce}`, checks)
   return {
     ...out,
     body: {
       ...out.body,
-      next: `This request charged nothing. The first request with this nonce may have been charged and may hold a verdict, or may still be running. Read GET ${flowPath(nonce)}: a flow there is your answer, so do not sign again. If that answers 404, look this nonce up on GET /api/x402/gateway/proof and read both again in a minute, because a request still running shows in neither. Sign a new authorization only if neither shows this nonce by then, or the proof log says it failed.`,
+      next: otherRequest
+        ? `This request charged nothing. The first request with this nonce named another vault, payee or amount, so what is recorded under it does not answer this request, and no verdict there is about this payment. A signature names no payee, so sign a new authorization for this request: ${anotherAuthorization()}.`
+        : `This request charged nothing. The first request with this nonce may have been charged and may hold a verdict, or may still be running. Read GET ${flowPath(nonce)}: a flow there that names this vault, payee and amount is your answer, so do not sign again. One that names others does not answer this request, so sign a new authorization for it. If that read answers 404, look this nonce up on GET /api/x402/gateway/proof, which lists only the newest 50 rows, and read both again in a minute, because a request still running shows in neither. If neither shows this nonce by then, or the proof log says it failed, sign a new authorization. If the proof log reads credited, completed or unconfirmed and the flow still answers 404, treat this nonce as giving no flow: ${anotherAuthorization()}, and one that reads unconfirmed may still settle until it expires.`,
     },
   }
 }
@@ -740,7 +755,11 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
         logFlowStoreFault('reading a payment nonce', existing.reason)
         return refused(chain, 503, 'FLOW_STORE_UNREADABLE', `${FLOW_LOG_UNREADABLE}, so a flow for this payment could not be recorded`, null)
       }
-      if (existing.row) return nonceUsed(chain, payment.nonce, null)
+      if (existing.row) {
+        // A row holds these as flowRecord wrote them: lowercase addresses, and the amount as a string.
+        const { vault, payee, amount } = existing.row
+        return nonceUsed(chain, payment.nonce, null, vault !== p.vault || payee !== p.payee || amount !== p.amount.toString())
+      }
     }
   }
 
@@ -849,9 +868,9 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
         rail: { httpStatus: out.httpStatus, body: challenge ?? out.body },
         reason: String((railBody as { verifyError?: unknown })?.verifyError ?? (railBody as { reason?: unknown })?.reason ?? (railBody as { error?: unknown })?.error ?? `the rail answered ${out.httpStatus}`),
         next: unknown
-          ? 'The settle call got no usable answer from Gateway, so whether this authorization settled is not known and it stays valid until it expires. No verdict was served and no flow was recorded. Do not pay, and look the nonce up on GET /api/x402/gateway/proof before signing another.'
+          ? `The settle call got no usable answer from Gateway, so whether this authorization settled is not known and it stays valid until it expires. No verdict was served and no flow was recorded. Do not pay, and look the nonce up on GET /api/x402/gateway/proof, which lists only the newest 50 rows, before signing another. If it reads unconfirmed, treat this nonce as giving no flow: ${anotherAuthorization()}, and this one may still settle until it expires.`
           : unconfirmed
-            ? 'Gateway answered success but its transfer could not be read back, so no verdict was served and no flow was recorded. Do not pay; the settlement is recorded as unconfirmed on GET /api/x402/gateway/proof.'
+            ? `Gateway answered success but its transfer could not be read back, so no verdict was served and no flow was recorded. Do not pay; the settlement is recorded as unconfirmed on GET /api/x402/gateway/proof. Treat this nonce as giving no flow: ${anotherAuthorization()}, and this one may still settle until it expires.`
             : `No verdict, so do not pay. Nothing was recorded as a flow. Read rail.body for what the Gateway rail refused.${flowId ? ' This nonce has had its one attempt: trying again takes a new authorization.' : ''}`,
       }),
     }
