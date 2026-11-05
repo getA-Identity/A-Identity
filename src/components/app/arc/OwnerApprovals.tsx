@@ -51,6 +51,7 @@ import {
   promptLine,
   refusedLead,
   replacedSendLine,
+  replacedWithNoPayment,
   scanStart,
   standingOf,
   stillWatched,
@@ -960,13 +961,13 @@ function SendTracker({ record, chain, asking = false, standing, closedBy = null,
       {h.held && h.why === 'maybe' && (
         <div role="status" className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
           <div className="font-semibold">This may still land, so it is not offered again.</div>
-          <p className="mt-1">This page keeps looking for the payment in the vault's activity. Look in your wallet's activity list. If it is still waiting there, or your wallet sent a replacement, it can still pay, and a second send would pay twice.</p>
+          <p className="mt-1">{server ? '' : "This page keeps looking for the payment in the vault's activity. "}Look in your wallet's activity list. If it is still waiting there, or your wallet sent a replacement, it can still pay, and a second send would pay twice.</p>
           <button type="button" onClick={release} className="mt-1 font-semibold text-accent underline underline-offset-2">
             I checked: it is dropped or cancelled in my wallet, and it will not land
           </button>
         </div>
       )}
-      {!h.held && record.tx?.outcome === 'replaced' && (
+      {replacedWithNoPayment(record) && (
         <p className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
           Your wallet replaced what this page sent, and no payment came of it: the vault's activity shows none. It can be approved again.
         </p>

@@ -753,6 +753,15 @@ export function noAnswerLine(promptEnded: boolean): string {
 }
 
 /**
+ * The hash was replaced and the vault's activity, read well after that, shows no payment of it. Only that read
+ * can say so. The person pressing that they checked frees the flow too, and it reads nothing, so a speed-up
+ * that paid is still possible then: see the line on what they said.
+ */
+export function replacedWithNoPayment(r: HandoffSend): boolean {
+  return !holdOf(r).held && r.tx?.outcome === 'replaced' && r.replacedClear === true
+}
+
+/**
  * The first line of a refusal. On a flow that is over, another hash closed it and this hash was refused for that
  * alone, so what matters is what this one did: it may have paid as well, or reverted with nothing moved.
  */

@@ -65,6 +65,7 @@ type Rules = {
   promptMayBeOpen: (r: Send) => boolean
   promptLine: (r: Send | null, o: { paid: boolean; standing?: Standing }) => string | null
   noAnswerLine: (promptEnded: boolean) => string
+  replacedWithNoPayment: (r: Send) => boolean
   refusedLead: (r: Send, s?: Standing) => string
   endedWords: (others: number) => { lead: string; next: string }
 }
@@ -961,6 +962,39 @@ test('a refusal on a flow another hash closed keeps its tracker, and its first l
   assert.match(page, /\{refusedLead\(record, standing\)\}/)
   assert.match(page, /closedBy=\{flow\.payment\?\.txHash \?\? null\}/, 'and it names the hash on the record, which the flow card would have')
   assert.match(page, /\{flowOver \? 'This request is over, so nothing more is offered for it\.' : 'It is not offered again\./)
+})
+
+test('the line that no payment came of a replaced hash has a read behind it', async () => {
+  const r = await rules()
+  // The person pressing that they checked frees the flow and reads nothing, and a speed-up can have paid.
+  assert.equal(r.replacedWithNoPayment(send({ tx: txRecord('replaced'), released: true, releasedAt: CHECKED })), false)
+  assert.equal(r.replacedWithNoPayment(send({ tx: txRecord('replaced'), replacedClear: true })), true)
+  assert.equal(r.replacedWithNoPayment(send({ tx: txRecord('replaced') })), false, 'still held')
+  assert.equal(r.replacedWithNoPayment(send({ tx: txRecord('replaced'), replacedClear: true, paidBy: TX2 })), false, 'a payment turned up')
+  assert.equal(r.replacedWithNoPayment(send({ tx: txRecord('untracked'), released: true })), false)
+  const page = repo('src/components/app/arc/OwnerApprovals.tsx')
+  assert.match(page, /\{replacedWithNoPayment\(record\) && \(/)
+  assert.doesNotMatch(page, /!h\.held && record\.tx\?\.outcome === 'replaced'/)
+})
+
+test("the tracker's lines say what is so on a record with an answer or another send", async () => {
+  const r = await rules()
+  const page = repo('src/components/app/arc/OwnerApprovals.tsx')
+  // With an answer the page has stopped looking, as stillWatched says, so the line waits for there being none.
+  const answered = send({ tx: txRecord('settled'), alsoSent: [txRecord('untracked', { hash: TX2 })], server: { state: 'settled', txHash: TX, flowId: FLOW, at: CHECKED } })
+  assert.equal(r.holdOf(answered).why, 'maybe')
+  assert.equal(r.stillWatched(answered, Date.parse(CHECKED)), false)
+  assert.match(page, /\{server \? '' : "This page keeps looking for the payment in the vault's activity\. "\}/)
+  // A revert beside another send speaks for itself and no further.
+  assert.match(r.endedWords(1).lead, /^This one reverted: it moved nothing/)
+  assert.doesNotMatch(r.endedWords(1).lead, /Nothing moved/)
+  assert.doesNotMatch(r.endedWords(1).next, /If you still mean to pay/)
+  assert.match(r.endedWords(0).lead, /Nothing moved/)
+  assert.match(r.endedWords(0).next, /If you still mean to pay/)
+  assert.match(page, /endedWords\(others\.length\)\.lead/)
+  // A line the alert cannot make: a carried send alone is one send, and it is said what it is.
+  assert.match(page, /\{!several && others\.length > 0 && !record\.tx && !record\.paidBy && \(/)
+  assert.match(page, /oneOfSeveral=\{several \|\| Boolean\(server\)\}/)
 })
 
 test("the tracker's writes keep every send, and each one goes to the transaction it is about", async () => {
