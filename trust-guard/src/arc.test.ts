@@ -1988,4 +1988,10 @@ test('the package says one version, and the README says what that version change
   assert.match(readme, /\*\*Changed in 0\.4\.1\.\*\*/)
   assert.match(readme, /`ownerOnly`/)
   assert.match(readme, /`approvalUrl`/)
+  // The status line is what someone following the install line reads: which version gets them what.
+  const status = readme.slice(readme.indexOf('**Status: this code ran our own 100 flows'), readme.indexOf('**Changed in 0.4.1.**')).replace(/\s+/g, ' ')
+  assert.match(status, /`verifyThenPay` needs version 0\.4\.0 or later/)
+  assert.match(status, /`ownerOnly`, `approvalUrl` and the hand-off of a payment above the vault's ceiling or off its allowlist need 0\.4\.1/)
+  assert.match(status, /not on npm yet, so `npm install` gets 0\.4\.0 for now/)
+  assert.doesNotMatch(status, /It needs version 0\.4\.0 or later/)
 })

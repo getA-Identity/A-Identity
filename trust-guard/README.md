@@ -147,8 +147,11 @@ claude mcp add a-identity-trust -e A_IDENTITY_ALGORAND_MNEMONIC="..." -- npx -y 
 ## Verify, then pay from a vault, on Arc Mainnet
 
 **Status: this code ran our own 100 flows on Arc Mainnet on 2026-11-02, and the hosted route it calls
-is live. It needs version 0.4.0 or later, because 0.3.0 has no `/arc` entry point. No outside team has
-run the published package yet.**
+is live. `verifyThenPay` needs version 0.4.0 or later, because 0.3.0 has no `/arc` entry point.
+`ownerOnly`, `approvalUrl` and the hand-off of a payment above the vault's ceiling or off its allowlist
+need 0.4.1, which is in the repo and not on npm yet, so `npm install` gets 0.4.0 for now: there
+`out.approvalUrl` is undefined, and such a payment throws `VaultPolicyError` before anything is signed. No
+outside team has run the published package yet.**
 
 **Changed in 0.4.1.** On a vault with a human, a payment above the vault's ceiling or to a payee off its
 allowlist used to be refused before the check, for free. It now goes on to the check, which is charged,

@@ -1,5 +1,6 @@
 import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { decodeFunctionData, encodeAbiParameters, encodeEventTopics, encodeFunctionData, encodeFunctionResult, type Hex } from 'viem'
 import { runVerifyThenPay, type VtpInput } from './core.js'
 import type { VtpStore } from './context.js'
@@ -485,6 +486,18 @@ test('a WARN on a vault whose owner and operator are one key is NO_HUMAN_GATE: p
   assert.match(e.message, /with setOperator/)
   assert.doesNotMatch(e.message, /unknown stage/)
   assert.equal(h.sent.length, 0, 'nothing is sent')
+})
+
+test('the guide says which version of the SDK has what, wherever it sends someone to install it or use it', () => {
+  const guide = readFileSync(new URL('../../../docs/chains/arc-integration.mdx', import.meta.url), 'utf8').replace(/\s+/g, ' ')
+  const pkg = JSON.parse(readFileSync(new URL('../../../trust-guard/package.json', import.meta.url), 'utf8')) as { version: string }
+  // "in the repo" is a claim about this file, so the two are read together.
+  const [major, minor, patch] = pkg.version.split('.').map(Number)
+  assert.ok(major > 0 || minor > 4 || (minor === 4 && patch >= 1), pkg.version)
+  assert.match(guide, /`verifyThenPay` needs version 0\.4\.0 or later/)
+  assert.match(guide, /`ownerOnly`, `out\.approvalUrl` and the hand-off of a payment above the ceiling or off the allowlist need 0\.4\.1, which is in the repo and not on npm yet/)
+  assert.match(guide, /`out\.approvalUrl` from `verifyThenPay` 0\.4\.1/)
+  assert.doesNotMatch(guide, /x402-batching`, version 0\.4\.0 or later/)
 })
 
 test('a flow the server could not close comes out as FLOW_NOT_RECORDED with paid true, and nothing is sent', async () => {
