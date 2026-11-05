@@ -151,7 +151,7 @@ claude mcp add a-identity-trust -e A_IDENTITY_ALGORAND_MNEMONIC="..." -- npx -y 
 0.3.0 has no `/arc` entry point. `ownerOnly`, `approvalUrl` and the hand-off of a payment above the vault's
 ceiling or off its allowlist need 0.5.0 or later. 0.4.0 has none of them: there `out.approvalUrl` is
 undefined, and such a payment throws `VaultPolicyError` before anything is signed.
-`npm ls @a-identity/trust-guard` says which version you have. As of 2026-11-05 no outside team has run a
+`npm ls @a-identity/trust-guard` says which version you have. As of 2026-11-04 no outside team has run a
 published version of it.**
 
 **Changed in 0.5.0.** On a vault with a human, a payment above the vault's ceiling or to a payee off its
