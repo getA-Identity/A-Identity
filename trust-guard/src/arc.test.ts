@@ -559,6 +559,7 @@ for (const [label, reply, code, paid] of [
   ['the flow not recorded', (p: Paid) => failed(p, 409, { charged: true, code: 'FLOW_NOT_RECORDED', reason: 'db down' }), 'FLOW_NOT_RECORDED', true],
   ['the verdict block unreadable', (p: Paid) => failed(p, 503, { charged: true, code: 'VERDICT_BLOCK_UNREADABLE', reason: 'no block' }), 'VERDICT_BLOCK_UNREADABLE', true],
   ['the rail gone', (p: Paid) => ({ status: 503, body: answerBody(p, 'unavailable', { charged: false, check: null }) }), 'REFUSED', false],
+  ['a nonce the server has seen', (p: Paid) => ({ status: 409, body: answerBody(p, 'refused', { charged: false, code: 'NONCE_ALREADY_USED', reason: 'this authorization nonce already opened flow', check: null, record: null, flowId: null }) }), 'UNCONFIRMED', null],
   ['an HTML 504 from a proxy', () => ({ status: 504, body: '<html>Gateway Timeout</html>' }), 'NETWORK', null],
 ] as const) {
   test(`${label} refuses with the right paid flag and never calls the operator`, async () => {
@@ -570,6 +571,26 @@ for (const [label, reply, code, paid] of [
     assert.match(e.authNonce ?? '', /^0x[0-9a-f]{64}$/)
   })
 }
+
+test("a used nonce is about the first request, so paid stays unknown and the server's steps are the message", async () => {
+  const next = 'This request charged nothing. The first request with this nonce may have been charged and may hold a verdict.'
+  const used = (over: Record<string, unknown> = {}) => (p: Paid): Reply => ({ status: 409, body: answerBody(p, 'refused', { charged: false, code: 'NONCE_ALREADY_USED', reason: 'this authorization nonce already opened flow', check: null, record: null, flowId: null, next, ...over }) })
+  const { signer, opts } = setup({ paid: used() })
+  const e = await refused(verifyThenPay(opts), GatewayCheckError)
+  assert.equal(e.code, 'UNCONFIRMED', 'not REFUSED, which reads as a final no')
+  assert.equal(e.paid, null, 'the answer says this request charged nothing, not that the first did not')
+  assert.equal(e.status, 409)
+  assert.equal(e.serverCode, 'NONCE_ALREADY_USED')
+  assert.equal(e.message, next)
+  assert.equal(signer.sent.length, 0)
+  // An answer with no next still has its reason to show.
+  const bare = setup({ paid: used({ next: undefined }) })
+  assert.equal((await refused(verifyThenPay(bare.opts), GatewayCheckError)).message, 'this authorization nonce already opened flow')
+  // Any other refusal after signing keeps its plain answer.
+  const other = setup({ paid: used({ code: 'PAYMENT_WRONG_NETWORK', next }) })
+  const no = await refused(verifyThenPay(other.opts), GatewayCheckError)
+  assert.deepEqual([no.code, no.paid, no.serverCode], ['REFUSED', false, 'PAYMENT_WRONG_NETWORK'])
+})
 
 test('a WARN with no human to hand it to is a typed error: paid, with its record and the server\'s words', async () => {
   const next = "WARN, and this vault's owner and operator are the same key, so there is no human to hand the payment to: do not pay. A vault's owner cannot be changed, so give your agent a new key of its own with setOperator, and keep this key from it."

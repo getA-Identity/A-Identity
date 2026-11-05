@@ -237,7 +237,8 @@ export class GatewayCheckError extends Error {
   readonly code: GatewayCheckCode
   readonly status?: number
   /** Was the check paid for? null: a signed authorization left this process and the answer
-   *  does not say. Look the nonce up on GET /api/x402/gateway/proof. */
+   *  does not say. Look the nonce up on GET /api/x402/gateway/proof, which lists only its
+   *  newest 50 rows, and do not sign again before that. */
   readonly paid: boolean | null
   readonly authNonce?: Hex
   /** The server's own refusal code, when it named one. */
@@ -1081,6 +1082,12 @@ function readPaidAnswer(res: { status: number; body: unknown }, o: { vault: Addr
   const recordUrl = record?.recorded === true ? flowUrl(o.baseUrl, nonce) : undefined
   const tail = { ...(recordUrl ? { recordUrl } : {}) }
 
+  // This process signs once and posts once, so a used nonce means something under `fetch` sent that post
+  // twice. The answer's charged is about this request. The first one may have been charged and may hold a
+  // verdict, so whether the check was paid is not known here, and the server's next says where to look.
+  if (stage === 'refused' && serverCode === 'NONCE_ALREADY_USED') {
+    throw new GatewayCheckError('UNCONFIRMED', typeof body.next === 'string' ? body.next : reason, { paid: null, status, authNonce: nonce, serverCode })
+  }
   if (stage === 'refused') throw refusalError(body, status, { vault: o.vault, payee: o.payee, authNonce: nonce })
   if (stage === 'unavailable' || stage === 'payment_required') throw new GatewayCheckError('REFUSED', reason, { paid: false, status, authNonce: nonce, ...(serverCode ? { serverCode } : {}) })
   if (stage === 'check_failed') {
