@@ -488,8 +488,9 @@ function refused(chain: ChainDescriptor, httpStatus: number, code: VtpRefusalCod
   }
 }
 
-/** The answer for a caller over the verify-then-pay budget: nothing was read, nothing was
- *  charged, and the same request can be sent again once the window has passed. */
+/** The MCP tool's answer for a caller over the verify-then-pay budget: nothing was read, nothing was
+ *  charged, and the same request can be sent again once the window has passed. Over HTTP the limiter
+ *  in http.ts answers before this route runs, with only {error} and Retry-After. */
 export function vtpRateLimited(windowMs: number): VtpResponse {
   const chain = vtpChain()
   const s = Math.ceil(windowMs / 1000)

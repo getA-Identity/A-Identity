@@ -470,6 +470,8 @@ const DEFAULT_POLL_MS = 1500
 const DEFAULT_REQUEST_TIMEOUT_MS = 60_000
 const RECEIPT_POST_ATTEMPTS = 3
 const RECEIPT_POST_PAUSE_MS = 2000
+/** The most a 429's Retry-After holds a receipt post. The route's window is a minute, and a server's word does not hold this process longer. */
+const RECEIPT_LIMITED_PAUSE_MAX_MS = 60_000
 const VTP_PATH = '/api/x402/gateway/verify-then-pay'
 const FLOWS_PATH = '/api/x402/gateway/flows'
 
@@ -1221,9 +1223,16 @@ function receiptProvesPayment(v: Viem, r: ArcReceipt, p: CheckedPayment): boolea
   return paid && moved
 }
 
+/** How long a 429 asks for, in seconds, when it says. */
+function limitedPauseMs(retryAfter: string | null): number {
+  const seconds = Number(retryAfter)
+  return retryAfter !== null && Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds * 1000, RECEIPT_LIMITED_PAUSE_MAX_MS) : RECEIPT_POST_PAUSE_MS
+}
+
 /** POST a hash to a flow's receipt route. The server reads the chain itself. Posting the same
- *  hash again is safe and only happens when the server said to or did not answer, a bounded
- *  number of times. No transaction is ever sent from here. */
+ *  hash again is safe and only happens when the server said to, with retry or a 429, or did not
+ *  answer, a bounded number of times. After a 429 it first waits as Retry-After says, up to a
+ *  minute. No transaction is ever sent from here. */
 export async function recordFlowReceipt(o: { flowId: string; txHash: string; baseUrl?: string; fetch?: FetchLike; requestTimeoutMs?: number; clock?: ArcClock }): Promise<FlowRecordReport> {
   if (typeof o.flowId !== 'string' || !HASH.test(o.flowId)) throw new TypeError('flowId must be the 32-byte authorization nonce')
   if (typeof o.txHash !== 'string' || !HASH.test(o.txHash)) throw new TypeError('txHash must be a 32-byte transaction hash')
@@ -1235,6 +1244,7 @@ export async function recordFlowReceipt(o: { flowId: string; txHash: string; bas
   let last: FlowRecordReport = { url, recorded: false, reason: 'the receipt route was not reached' }
   for (let attempt = 1; attempt <= RECEIPT_POST_ATTEMPTS; attempt++) {
     let again = true
+    let pause = RECEIPT_POST_PAUSE_MS
     try {
       const res = await httpCall(doFetch, `${url}/receipt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ txHash: o.txHash }) }, o.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS)
       const b = isObject(res.body) ? res.body : {}
@@ -1247,12 +1257,15 @@ export async function recordFlowReceipt(o: { flowId: string; txHash: string; bas
         ...(typeof b.answersFlow === 'string' ? { answersFlow: b.answersFlow } : {}),
         ...(b.verified === true ? {} : { reason: typeof b.reason === 'string' ? b.reason : `the receipt route answered HTTP ${res.status}` }),
       }
-      again = b.verified !== true && b.retry === true
+      // The route's limiter answers before it reads anything, and its body is only {error}, with no retry in it.
+      const limited = res.status === 429
+      if (limited) pause = limitedPauseMs(res.headers.get('retry-after'))
+      again = b.verified !== true && (b.retry === true || limited)
     } catch (e) {
       last = { url, recorded: false, reason: `the receipt route did not answer: ${msg(e)}` }
     }
     if (!again) break
-    if (attempt < RECEIPT_POST_ATTEMPTS) await clock.sleep(RECEIPT_POST_PAUSE_MS)
+    if (attempt < RECEIPT_POST_ATTEMPTS) await clock.sleep(pause)
   }
   return last
 }

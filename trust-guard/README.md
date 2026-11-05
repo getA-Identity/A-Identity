@@ -219,7 +219,8 @@ The order, and what each step can cost:
    below which Arc drops a transaction with no error. The receipt is looked for on every RPC, because
    one RPC can answer null for a transaction that exists. Nothing is retried with a new nonce.
 5. **The record.** The hash is posted to the flow, the server reads the receipt from the chain itself,
-   and `record.recorded` says whether it did. Flow records are public by flow id, at
+   and `record.recorded` says whether it did. A post the route's rate limit turned away goes again after
+   the wait its `Retry-After` names, up to a minute, at most 3 posts. Flow records are public by flow id, at
    `/api/x402/gateway/flows/<flowId>`, DENYs included. After a WARN, send `ownerPay` from the owner's key
    and close the flow with `recordFlowReceipt({ flowId, txHash })`, unless `ownerPay.simulation.ok` is
    false: the vault would refuse it right now, so sending it would revert and cost gas. An owner with a

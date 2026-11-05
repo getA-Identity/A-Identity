@@ -561,6 +561,7 @@ for (const [label, reply, code, paid] of [
   ['the rail gone', (p: Paid) => ({ status: 503, body: answerBody(p, 'unavailable', { charged: false, check: null }) }), 'REFUSED', false],
   ['a nonce the server has seen', (p: Paid) => ({ status: 409, body: answerBody(p, 'refused', { charged: false, code: 'NONCE_ALREADY_USED', reason: 'this authorization nonce already opened flow', check: null, record: null, flowId: null }) }), 'UNCONFIRMED', null],
   ['an HTML 504 from a proxy', () => ({ status: 504, body: '<html>Gateway Timeout</html>' }), 'NETWORK', null],
+  ['the limiter in front of the route', () => ({ status: 429, headers: { 'Retry-After': '60' }, body: { error: 'Too many requests. Slow down and try again in a minute.' } }), 'NETWORK', null],
 ] as const) {
   test(`${label} refuses with the right paid flag and never calls the operator`, async () => {
     const { signer, opts } = setup({ paid: reply as (p: Paid) => Reply })
@@ -1504,6 +1505,42 @@ test('a server that says retry gets the same hash again, and a later success cou
   const hashes = api.calls.filter((c) => c.url.endsWith('/receipt')).map((c) => (c.body as { txHash: string }).txHash)
   assert.deepEqual(hashes, [TX_HASH, TX_HASH])
   assert.equal(signer.sent.length, 1)
+})
+
+test('a receipt post the limiter turned away goes again after the wait it names, a bounded number of times', async () => {
+  const flowId = `0x${'ab'.repeat(32)}`
+  const limited = (retryAfter?: string): Reply => ({ status: 429, ...(retryAfter ? { headers: { 'Retry-After': retryAfter } } : {}), body: { error: 'Too many requests. Slow down and try again in a minute.' } })
+  const proven: Reply = { status: 200, body: { verified: true, outcome: 'executed', detail: 'owner_paid' } }
+  const post = async (receipt: (n: number) => Reply) => {
+    const api = fakeApi({ receipt })
+    const clock = fakeClock()
+    const r = await recordFlowReceipt({ flowId, txHash: TX_HASH, baseUrl: BASE, fetch: api, clock })
+    return { r, posts: api.receipts(), waited: clock.t }
+  }
+
+  const once = await post((n) => (n === 1 ? limited('60') : proven))
+  assert.deepEqual([once.r.recorded, once.r.outcome, once.posts, once.waited], [true, 'executed', 2, 60_000], 'as long as Retry-After says')
+
+  const always = await post(() => limited('60'))
+  assert.deepEqual([always.r.recorded, always.posts, always.waited], [false, 3, 120_000], 'and it stops')
+  assert.match(always.r.reason ?? '', /HTTP 429/)
+
+  const huge = await post((n) => (n === 1 ? limited('86400') : proven))
+  assert.deepEqual([huge.r.recorded, huge.posts, huge.waited], [true, 2, 60_000], "a server's word does not hold this process longer than the window")
+
+  const silent = await post((n) => (n === 1 ? limited() : proven))
+  assert.deepEqual([silent.r.recorded, silent.posts, silent.waited], [true, 2, 2000], 'a 429 that names no wait gets the plain pause')
+
+  const words = await post((n) => (n === 1 ? limited('soon') : proven))
+  assert.deepEqual([words.posts, words.waited], [2, 2000])
+
+  // The payment path takes the same way, and sends nothing again.
+  const paid = setup({ receipt: (n) => (n === 1 ? limited('60') : { status: 200, body: { verified: true, outcome: 'executed', detail: 'agent_paid' } }) })
+  const out = await verifyThenPay(paid.opts)
+  assert.equal(out.outcome, 'executed')
+  assert.equal(out.record.recorded, true)
+  assert.equal(paid.api.receipts(), 2)
+  assert.equal(paid.signer.sent.length, 1)
 })
 
 test('a server that refuses the receipt is reported as is, once, and names the flow it answers', async () => {

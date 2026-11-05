@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ContractFunctionRevertedError, decodeFunctionData, encodeErrorResult } from 'viem'
-import { runVerifyThenPay, readVtpFlow, readVtpVaultFlows, VAULT_FLOWS_LIMIT, VAULT_FLOWS_OTHERS_CAP, type VtpInput } from './core.js'
+import { runVerifyThenPay, readVtpFlow, readVtpVaultFlows, VAULT_FLOWS_LIMIT, VAULT_FLOWS_OTHERS_CAP, vtpRateLimited, type VtpInput } from './core.js'
 import { flowUrl, storageVtpStore, type VtpStore } from './context.js'
 import { fakeVtpPool } from './fake-pg.js'
 import { recordVtpReceipt } from './receipt.js'
@@ -944,6 +944,34 @@ test("the guide's table says what a used nonce and an unconfirmed settlement ans
   const unknown = row('| `409`, `500`, `502`, `503` | `check_failed`, `unavailable` |')
   assert.match(unknown, /which lists only the newest 50 rows/)
   assert.match(unknown, /If it reads `unconfirmed`, treat this nonce as giving no flow/)
+})
+
+test("the guide's table says what a refused payment and the rate limit answer, which is not what a client branching on stage would guess", async () => {
+  const guide = readFileSync(new URL('../../../docs/chains/arc-integration.mdx', import.meta.url), 'utf8').split('\n')
+  const row = (start: string) => guide.find((l) => l.startsWith(start)) ?? ''
+
+  // A signed payment Gateway refuses is a 402 as well, and signing again on any 402 would loop.
+  const refusedPay = setup({ gw: { settle: { success: false, errorReason: 'insufficient_balance' } } })
+  const r402 = await runVerifyThenPay(request(), header(), refusedPay.deps)
+  assert.deepEqual([r402.httpStatus, r402.body.stage, r402.body.charged, r402.body.flowId], [402, 'check_failed', false, null])
+  assert.ok(r402.body.challenge, 'with a fresh offer')
+  const failed = row('| `402` | `check_failed` |')
+  assert.match(failed, /Gateway refused the signed payment/)
+  assert.match(failed, /`charged` is false/)
+  assert.match(failed, /`reason` says why/)
+  assert.match(failed, /this nonce has had its one attempt/)
+  assert.match(row('| `402` | `payment_required` |'), /Nothing charged yet/)
+
+  // The limiter stands in front of the route over HTTP, so its body is its own: what http.ts sends, and what the row says.
+  const limiter = readFileSync(new URL('../../src/http.ts', import.meta.url), 'utf8')
+  assert.match(limiter, /res\.setHeader\('Retry-After', String\(Math\.ceil\(budget\.windowMs \/ 1000\)\)\)\s+sendJson\(res, 429, \{ error: '[^']+' \}\)/)
+  const limited = row('| `429` |')
+  assert.match(limited, /^\| `429` \| none over HTTP, `refused` over MCP \|/)
+  assert.match(limited, /Over HTTP the body is only `\{"error": "\.\.\."\}` with a `Retry-After` header, so it has no `stage`, `code` or `charged`/)
+  assert.match(limited, /`RATE_LIMITED` is the MCP tool's answer alone/)
+  assert.match(limited, /`recordFlowReceipt` waits as `Retry-After` says/)
+  const overMcp = vtpRateLimited(60_000)
+  assert.deepEqual([overMcp.httpStatus, overMcp.body.stage, overMcp.body.code, overMcp.body.charged], [429, 'refused', 'RATE_LIMITED', false])
 })
 
 test('a used nonce the proof shows and no flow came of has a way forward, and the proof is not taken for complete', async () => {
