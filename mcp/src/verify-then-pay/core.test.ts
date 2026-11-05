@@ -907,7 +907,7 @@ test('a signature sent again for another vault, payee or amount is told that the
     assert.deepEqual([again.httpStatus, again.body.stage, again.body.code, again.body.charged, again.body.prepared, again.body.flowId], [409, 'refused', 'NONCE_ALREADY_USED', false, null, null], what)
     assert.match(again.body.next, /named another vault, payee or amount/, what)
     assert.match(again.body.next, /does not answer this request/, what)
-    assert.match(again.body.next, /sign a new authorization for this request: a new authorization costs another 0\.005 USDC/, what)
+    assert.match(again.body.next, /sign a new authorization, which costs another 0\.005 USDC/, what)
     assert.doesNotMatch(again.body.next, /is your answer|do not sign again/, what)
   }
   assert.equal(g.spy.settles, 1, 'nothing was bought for any of them')

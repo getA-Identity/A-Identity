@@ -531,7 +531,7 @@ function nonceUsed(chain: ChainDescriptor, nonce: string, checks: VtpChecks | nu
     body: {
       ...out.body,
       next: otherRequest
-        ? `This request charged nothing. The first request with this nonce named another vault, payee or amount, so what is recorded under it does not answer this request, and no verdict there is about this payment. A signature names no payee, so sign a new authorization for this request: ${anotherAuthorization()}.`
+        ? `This request charged nothing. The first request with this nonce named another vault, payee or amount, so what is recorded under it does not answer this request, and no verdict there is about this payment. A signature names no payee, so this request needs its own: sign a new authorization, which costs another ${toolPriceUsd('risk_check')} USDC.`
         : `This request charged nothing. The first request with this nonce may have been charged and may hold a verdict, or may still be running. Read GET ${flowPath(nonce)}: a flow there that names this vault, payee and amount is your answer, so do not sign again. One that names others does not answer this request, so sign a new authorization for it. If that read answers 404, look this nonce up on GET /api/x402/gateway/proof, which lists only the newest 50 rows, and read both again in a minute, because a request still running shows in neither. If neither shows this nonce by then, or the proof log says it failed, sign a new authorization. If the proof log reads credited, completed or unconfirmed and the flow still answers 404, treat this nonce as giving no flow: ${anotherAuthorization()}, and one that reads unconfirmed may still settle until it expires.`,
     },
   }
