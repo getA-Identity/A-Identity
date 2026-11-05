@@ -19,7 +19,7 @@ type Flow = Record<string, unknown> & { flowId: string; payee: string; amount: b
 type Live = Record<string, unknown>
 type Standing = { kind: string; what?: string; why?: string; ageSeconds?: bigint | null; have?: bigint }
 type Failure = { code: string; message: string }
-type Send = Record<string, unknown> & { flowId: string; payee: string; amount: bigint; tx?: Record<string, unknown> }
+type Send = Record<string, unknown> & { flowId: string; payee: string; amount: bigint; tx?: Record<string, unknown>; alsoSent?: Record<string, unknown>[] }
 type Paid = { to: string; amount: bigint; byOwner: boolean; block: bigint; txHash: string }
 type Scan = { from: bigint; through: bigint; paid: Paid[]; short: string | null }
 type Rules = {
@@ -60,6 +60,9 @@ type Rules = {
   flowIsOver: (s: Standing) => boolean
   otherSends: (s: Send) => Record<string, unknown>[]
   cardHeading: (s: Standing, o: { sent: boolean; held: boolean; paid: boolean }) => { heading: string; asks: boolean }
+  moreThanOneSend: (s: Send) => boolean
+  replacedSendLine: (s: Send) => string | null
+  promptMayBeOpen: (r: Send) => boolean
 }
 const rules = async () => (await import(repoUrl('src/lib/arc/handoff-rules.ts').href)) as Rules
 
@@ -707,11 +710,176 @@ test("a run's own late hash ends what was said about nothing being sent, and kee
   p.clearHandoff(NETWORK, first.vault as string, FLOW)
   p.saveSentHash(first, txRecord('pending', { hash: TX2 }))
   assert.equal(stored()?.tx?.hash, TX2)
-  // What a scan found stays.
+  // What a scan found stays, and a hash that comes back after it goes beside it: it may have paid as well.
   p.clearHandoff(NETWORK, first.vault as string, FLOW)
   p.saveHandoff({ ...first, paidBy: TX })
   p.saveSentHash(first, txRecord('settled', { hash: TX2 }))
-  assert.deepEqual([stored()?.paidBy, stored()?.tx?.hash], [TX, TX2])
+  assert.deepEqual([stored()?.paidBy, stored()?.tx, stored()?.alsoSent?.map((t) => t.hash)], [TX, undefined, [TX2]])
+  // The same hash the scan found is that one send.
+  p.clearHandoff(NETWORK, first.vault as string, FLOW)
+  p.saveHandoff({ ...first, paidBy: TX })
+  p.saveSentHash(first, txRecord('settled', { hash: TX.toUpperCase().replace('0X', '0x') }))
+  assert.deepEqual([stored()?.alsoSent, r.otherSends(stored() as Send)], [undefined, []])
+})
+
+test('a hash back after the read found a payment is followed and named, whichever way the answer went', async () => {
+  const { p, r, first, stored } = await twoRuns()
+  p.saveHandoff({ ...first, paidBy: TX })
+  p.saveSentHash(first, txRecord('pending', { hash: TX2 }))
+  const now = () => stored() as Send
+  // On its way, it holds the flow and the page, and the payment that was found is what goes to the server.
+  assert.equal(r.holdOf(now()).why, 'pending')
+  assert.equal(r.holdsPage(now()), true)
+  assert.equal(r.hashToPost(now()), TX)
+  assert.deepEqual(r.otherSends(now()).map((t) => t.hash), [TX2])
+  assert.equal(r.promptMayBeOpen(now()), false, 'the wallet answered, though tx is empty')
+  // Landed, that is two payments, and the card keeps naming the second once the flow reads closed.
+  p.saveHandoff(p.withTx(now(), txRecord('settled', { hash: TX2 })))
+  assert.equal(r.moreThanOneSend(now()), true)
+  p.saveHandoff({ ...now(), server: { state: 'settled', txHash: TX, flowId: FLOW, at: CHECKED } })
+  assert.deepEqual(r.otherSends(now()).map((t) => t.hash), [TX2])
+  assert.equal(r.moreThanOneSend(now()), true)
+  assert.equal(r.followedHere(now(), { kind: 'settled' }), true)
+  assert.equal(r.holdsPage(now()), false)
+  // The same on an older check whose payment was recorded on a newer one, which stays open here.
+  assert.equal(r.followedHere({ ...now(), server: { state: 'moved', txHash: TX, flowId: FLOW, at: CHECKED } }, { kind: 'approvable' }), true)
+  // An answer that was there before the hash came back changes none of that.
+  const again = await twoRuns()
+  again.p.saveHandoff({ ...again.first, paidBy: TX, server: { state: 'settled', txHash: TX, flowId: FLOW, at: CHECKED } })
+  again.p.saveSentHash(again.first, txRecord('settled', { hash: TX2 }))
+  assert.deepEqual(r.otherSends(again.stored() as Send).map((t) => t.hash), [TX2])
+  assert.equal(r.followedHere(again.stored() as Send, { kind: 'settled' }), true)
+})
+
+test("one prompt whose speed-up the read found first does not read as two payments", async () => {
+  const { p, r, first, stored } = await twoRuns()
+  p.saveHandoff({ ...first, paidBy: TX2 })
+  // The wallet hands back the first hash, which a speed-up replaced. Nothing yet says which it is.
+  p.saveSentHash(first, txRecord('pending', { hash: TX }))
+  const now = () => stored() as Send
+  assert.equal(r.moreThanOneSend(now()), false, 'followed, and not counted')
+  assert.equal(r.holdOf(now()).why, 'pending')
+  // It reads replaced: it can no longer land, the hold goes with it, and nothing is left to let go of.
+  p.saveHandoff(p.withTx(now(), txRecord('replaced')))
+  assert.equal(r.moreThanOneSend(now()), false)
+  assert.deepEqual(r.otherSends(now()), [])
+  assert.equal(r.holdOf(now()).why, 'landed')
+  assert.equal(r.holdsPage(now()), false)
+  assert.equal(r.replacedSendLine(now()), null, 'the found payment is what replaced it')
+  // A hash no host ever saw reads most likely replaced, which beside a found payment is the same thing.
+  assert.equal(r.moreThanOneSend(p.withTx(now(), txRecord('untracked', { likelyReplaced: true }))), false)
+  // The read can find a carried send's own payment, under its own hash. That is one payment, with nothing left to follow.
+  const found = send({ paidBy: TX, alsoSent: [txRecord('untracked')] })
+  assert.deepEqual(r.otherSends(found), [])
+  assert.equal(r.moreThanOneSend(found), false)
+  assert.equal(r.holdOf(found).why, 'landed')
+  // A hash marked untracked beside the speed-up the read found is a record of one send, as it was.
+  assert.equal(r.moreThanOneSend(send({ tx: txRecord('untracked'), paidBy: TX2 })), false)
+  // A first hash that was replaced, with a second that landed, is the second's nonce: one payment.
+  assert.equal(r.moreThanOneSend(send({ tx: txRecord('replaced'), alsoSent: [txRecord('settled', { hash: TX2 })] })), false)
+  // Anywhere else that a second hash is on its way, the alert does not wait for it.
+  assert.equal(r.moreThanOneSend(send({ tx: txRecord('pending'), alsoSent: [txRecord('pending', { hash: TX2 })] })), true)
+})
+
+test('a new claim keeps a send the person let go of, follows it again, and says nothing of two until there are two', async () => {
+  const { p, r, first, second, stored } = await twoRuns()
+  const f = second as unknown as Flow
+  const refused = (rs: Send[]) => r.holdFor(f, rs).held
+  p.saveHandoff({ ...first, tx: txRecord('untracked', { likelyReplaced: true, note: 'x', unseen: true, nonceUsedAt: CHECKED }), released: true, releasedAt: CHECKED })
+  assert.equal(await p.claimHandoff(second, refused, null), true, 'the person said so, and the hold check is as it was')
+  const now = () => stored() as Send
+  const { retracked } = (await import(repoUrl('src/lib/arc/tx-rules.ts').href)) as { retracked: (t: Record<string, unknown>) => Record<string, unknown> }
+  assert.equal(now().token, 'run-2')
+  assert.equal(now().tx, undefined)
+  assert.equal(now().released, undefined)
+  assert.deepEqual(now().alsoSent, [JSON.parse(JSON.stringify(retracked(txRecord('untracked', { likelyReplaced: true, note: 'x', unseen: true, nonceUsedAt: CHECKED }))))], "the same as the receipt's own Track it again")
+  assert.equal(r.holdOf(now()).why, 'pending')
+  assert.equal(r.holdsPage(now()), true)
+  assert.equal(r.moreThanOneSend(now()), false, 'nothing was signed yet: one hash, however many claims')
+  assert.equal(r.promptMayBeOpen(now()), true, 'and the prompt this claim opened is still unanswered')
+  // The second prompt is signed, and that is two.
+  p.saveSentHash(second, txRecord('pending', { hash: TX2 }))
+  assert.equal(now().tx?.hash, TX2)
+  assert.deepEqual(r.otherSends(now()).map((t) => t.hash), [TX])
+  assert.equal(r.moreThanOneSend(now()), true)
+  // Both land: of two that paid, one goes to the server, and the other is still named after the answer.
+  p.saveHandoff(p.withTx(p.withTx(now(), txRecord('settled')), txRecord('settled', { hash: TX2 })))
+  assert.equal(r.hashToPost(now()), TX2)
+  p.saveHandoff({ ...now(), server: { state: 'settled', txHash: TX2, flowId: FLOW, at: CHECKED } })
+  assert.deepEqual(r.otherSends(now()).map((t) => t.hash), [TX])
+  assert.equal(r.followedHere(now(), { kind: 'settled' }), true)
+  // A wallet can sign the same transaction again, which hands back the same hash: one send, and the prompt has its answer.
+  const same = await twoRuns()
+  same.p.saveHandoff({ ...same.first, tx: txRecord('untracked'), released: true, releasedAt: CHECKED })
+  assert.equal(await same.p.claimHandoff(same.second, (rs) => r.holdFor(f, rs).held, null), true)
+  same.p.saveSentHash(same.second, txRecord('pending'))
+  assert.deepEqual((same.stored() as Send).alsoSent?.map((t) => t.hash), [TX])
+  assert.equal(same.stored()?.tx, undefined)
+  assert.equal(r.promptMayBeOpen(same.stored() as Send), false)
+  assert.equal(r.moreThanOneSend(same.stored() as Send), false)
+  // One that was replaced can no longer land, so a new claim does not carry it.
+  const gone = await twoRuns()
+  gone.p.saveHandoff({ ...gone.first, tx: txRecord('replaced'), released: true, releasedAt: CHECKED })
+  assert.equal(await gone.p.claimHandoff(gone.second, (rs) => r.holdFor(f, rs).held, null), true)
+  assert.equal(gone.stored()?.alsoSent, undefined)
+})
+
+test("a send that ended replaced leaves the alert and the hold, and the card says what that leaves open", async () => {
+  const { p, r, first, second, stored } = await twoRuns()
+  p.saveHandoff({ ...first, tx: txRecord('untracked'), released: true, releasedAt: CHECKED })
+  assert.equal(await p.claimHandoff(second, (rs) => r.holdFor(second as unknown as Flow, rs).held, null), true)
+  p.saveSentHash(second, txRecord('settled', { hash: TX2 }))
+  const now = () => stored() as Send
+  // The second took the first one's nonce: the wallet really had dropped it.
+  p.saveHandoff(p.withTx(now(), txRecord('replaced')))
+  assert.deepEqual(r.otherSends(now()), [])
+  assert.equal(r.moreThanOneSend(now()), false)
+  assert.equal(r.holdOf(now()).why, 'landed')
+  p.saveHandoff({ ...now(), server: { state: 'settled', txHash: TX2, flowId: FLOW, at: CHECKED } })
+  assert.equal(r.holdOf(now()).why, 'answered', 'not "maybe" after the answer, which only a person could end')
+  assert.equal(r.holdsPage(now()), false)
+  assert.equal(r.followedHere(now(), { kind: 'settled' }), false)
+  // A wallet's speed-up reads replaced too, and what replaced it can pay, so that much stays said.
+  assert.match(String(r.replacedSendLine(now())), /what replaced it can still pay/)
+  assert.equal(r.replacedSendLine(send({ tx: txRecord('settled') })), null)
+  // On the tracker, and on both cards a closed flow falls back to.
+  const page = repo('src/components/app/arc/OwnerApprovals.tsx')
+  assert.match(page, /\{replacedLine && <p /)
+  assert.equal([...page.matchAll(/\{replaced && <p /g)].length, 2)
+})
+
+test('a no to a prompt leaves what the claim carried on the record, and frees what the person had freed', async () => {
+  const { p, r, first, second, stored } = await twoRuns()
+  p.saveHandoff({ ...first, tx: txRecord('untracked'), released: true, releasedAt: CHECKED })
+  assert.equal(await p.claimHandoff(second, (rs) => r.holdFor(second as unknown as Flow, rs).held, null), true)
+  p.dropClaim(second)
+  const now = () => stored() as Send
+  assert.equal(now()?.alsoSent?.[0].hash, TX, 'it may still land')
+  assert.equal(now().released, true, 'and nothing is asked any more')
+  assert.equal(r.holdOf(now()).why, 'pending')
+  // It is followed to where it was, and the person's word stands for it again.
+  p.saveHandoff(p.withTx(now(), txRecord('untracked')))
+  assert.deepEqual(r.holdOf(now()), { held: false })
+  // With only a replaced one left, there is nothing to keep.
+  const gone = await twoRuns()
+  gone.p.saveHandoff({ ...gone.second, alsoSent: [txRecord('replaced')] })
+  gone.p.dropClaim(gone.second)
+  assert.equal(gone.stored(), undefined)
+})
+
+test("a replaced hash's watch starts over with a second hash, so that one does not skip the wait", async () => {
+  const { p, r, first, stored } = await twoRuns()
+  const f = await flow()
+  const t0 = Date.parse('2026-11-04T12:00:00Z')
+  p.saveHandoff({ ...first, tx: txRecord('replaced'), replacedSeenAt: new Date(t0 - 10 * 60_000).toISOString() })
+  p.saveSentHash(first, txRecord('pending', { hash: TX2 }))
+  assert.equal(stored()?.replacedSeenAt, undefined)
+  const both = p.withTx(stored() as Send, txRecord('replaced', { hash: TX2 }))
+  const after = r.afterScan(both, f, read([]), t0)
+  assert.equal(after.replacedClear, undefined, 'a host can lag by 50 seconds, and the second one was replaced just now')
+  assert.equal(r.holdOf(after).why, 'maybe')
+  assert.equal(after.replacedSeenAt, new Date(t0).toISOString())
+  assert.deepEqual(r.holdOf(r.afterScan(after, f, read([]), t0 + r.REPLACED_WATCH_MS)), { held: false })
 })
 
 test("the tracker's writes keep every send, and each one goes to the transaction it is about", async () => {
@@ -735,7 +903,7 @@ test('a second send holds the flow and the page until it has an answer, and each
   assert.equal(r.holdOf(send({ tx: txRecord('settled'), ...answered, ...also('pending') })).why, 'pending', 'the answer is about the other hash')
   assert.equal(r.holdsPage(send({ tx: txRecord('settled'), ...answered, ...also('pending') })), true)
   assert.equal(r.holdOf(send({ tx: txRecord('settled'), ...answered, ...also('untracked') })).why, 'maybe')
-  assert.equal(r.holdOf(send({ tx: txRecord('settled'), ...answered, ...also('replaced') })).why, 'maybe')
+  assert.equal(r.holdOf(send({ tx: txRecord('settled'), ...answered, ...also('replaced') })).why, 'answered', 'it can no longer land')
   // What holds the same payee and amount is the same as what holds the flow.
   const other = '0x' + 'cd'.repeat(32)
   assert.equal(r.holdFor(f, [send({ flowId: other, tx: txRecord('settled'), server: { ...answered.server, flowId: other }, ...also('pending') })]).held, true)
@@ -807,8 +975,10 @@ test('the page writes through these, says when there is more than one, and offer
   assert.doesNotMatch(confirm, /clearHandoff|saveHandoff\(\{ \.\.\.claim/, 'neither of which looks at what is on the record now')
   const tracker = page.slice(page.indexOf('function SendTracker('))
   assert.match(tracker, /saveHandoff\(withTx\(latest\.current, tx\)\)/)
-  assert.match(tracker, /Your wallet sent more than one transaction for this one request\. Each one that lands pays this amount\./)
-  assert.match(tracker, /others\.map\(\(t\) => \(\s*<TxReceipt key=\{t\.hash\} record=\{t\} onUpdate=\{update\} onSettled=\{\(\) => onLanded\(\)\} serverJudges oneOfSeveral \/>/)
+  assert.match(tracker, /\{several && \(\s*<div role="alert"/)
+  assert.match(tracker, /Your wallet sent more than one transaction for this one request\. Each one that does not revert pays this amount\./)
+  assert.doesNotMatch(tracker, /It answered a prompt this page had stopped waiting on/, 'a send let go of, or a payment from another device, is not that')
+  assert.match(tracker, /others\.map\(\(t\) => \(\s*<TxReceipt key=\{t\.hash\} record=\{t\} onUpdate=\{update\} onSettled=\{\(\) => onLanded\(\)\} serverJudges oneOfSeveral=\{several \|\| Boolean\(server\)\} \/>/)
   assert.match(tracker, /\{h\.held && h\.why === 'maybe' && \(/, 'a second send that may land can be let go of, with the first one paid')
   assert.match(repo('src/components/app/arc/TxReceipt.tsx'), /as one of several transactions for one request/)
 })

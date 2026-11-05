@@ -473,13 +473,32 @@ const HOLD_ORDER = ['pending', 'maybe', 'asked', 'answered', 'landed'] as const
 
 /**
  * The transactions on a record of more than one send that its own lines do not speak for: every one beside
- * the first, and once the server has answered, every one but the hash it answered about.
+ * the first, and once the server has answered, every one but the hash it answered about. A hash the read found
+ * as the payment is spoken for already. One that was replaced can no longer land, so it holds nothing and is
+ * followed no further: what replaced it is another hash, which the wallet's activity and the vault's show.
  */
 export function otherSends(s: HandoffSend): TxRecord[] {
   if (!s.alsoSent?.length) return []
-  if (!s.server) return s.alsoSent
-  const answered = s.server.txHash.toLowerCase()
-  return [...(s.tx ? [s.tx] : []), ...s.alsoSent].filter((t) => t.hash.toLowerCase() !== answered)
+  const spoken = (s.server?.txHash ?? s.paidBy ?? '').toLowerCase()
+  return (s.server ? [...(s.tx ? [s.tx] : []), ...s.alsoSent] : s.alsoSent).filter((t) => t.outcome !== 'replaced' && t.hash.toLowerCase() !== spoken)
+}
+
+/**
+ * There is a second hash on this record that can have paid, which is what the card's alert waits for. A send
+ * carried from an earlier claim, with nothing beside it, is one send. And a hash that came back after the read
+ * found a payment can be that payment's own first hash, which a speed-up replaced, so beside paidBy it is followed
+ * and not counted until the chain says it landed: a single prompt must not read as two payments.
+ */
+export function moreThanOneSend(s: HandoffSend): boolean {
+  if (otherSends(s).length === 0) return false
+  const sends = [...(s.tx ? [s.tx] : []), ...(s.alsoSent ?? [])].filter((t) => t.outcome !== 'replaced' && !(s.paidBy && (t.outcome === 'pending' || t.likelyReplaced)))
+  return new Set([...sends.map((t) => t.hash.toLowerCase()), ...(s.paidBy ? [s.paidBy.toLowerCase()] : [])]).size > 1
+}
+
+/** Said when a send beside the first was replaced. It left the record's alert, and if the wallet sped it up, what replaced it can pay. */
+export function replacedSendLine(s: HandoffSend): string | null {
+  if (s.paidBy || !s.alsoSent?.some((t) => t.outcome === 'replaced')) return null
+  return "Another transaction for this request was replaced in your wallet, so that hash can no longer land. If your wallet sped it up, what replaced it can still pay: the vault's recent activity on this page shows what it paid."
 }
 
 function holdOfRecord(s: HandoffSend): Hold {
@@ -703,6 +722,11 @@ export function cardHeading(s: HandoffStanding, o: { sent: boolean; held: boolea
   const asks = (s.kind === 'approvable' || s.kind === 'no_balance') && !o.held && !o.paid
   if (asks) return { heading: 'Your agent asks you to pay this', asks }
   return { heading: o.sent ? 'What this browser sent for this request' : 'A payment your agent asked for', asks }
+}
+
+/** The wallet was asked for this flow and no hash came back, so a prompt may still be open in it, wherever that wallet is. */
+export function promptMayBeOpen(r: HandoffSend): boolean {
+  return !r.tx && !r.hashBack
 }
 
 /** A plain length of time, for how old a check is. */

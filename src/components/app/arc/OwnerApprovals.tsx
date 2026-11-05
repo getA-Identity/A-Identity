@@ -38,6 +38,7 @@ import {
   holdOf,
   holdsPage,
   keyStoppedLine,
+  moreThanOneSend,
   notFromAgentLine,
   otherSends,
   ownerOnlyLine,
@@ -45,6 +46,7 @@ import {
   paidAfter,
   paidBefore,
   paymentsRead,
+  replacedSendLine,
   scanStart,
   standingOf,
   stillWatched,
@@ -447,7 +449,8 @@ function FlowCard(props: CardProps) {
         <p className="mt-1 break-words text-foreground/85">{standing.why}</p>
       </div>
     )
-  if (standing.kind === 'settled') return <SettledCard chain={chain} vault={vault} flow={flow} />
+  const replaced = record ? replacedSendLine(record) : null
+  if (standing.kind === 'settled') return <SettledCard chain={chain} vault={vault} flow={flow} replaced={replaced} />
   if (standing.kind === 'reverted')
     return (
       <div role="status" data-flow={flow.flowId} className="rounded-xl border border-danger/25 bg-danger/[0.07] p-4 text-sm text-foreground">
@@ -456,6 +459,7 @@ function FlowCard(props: CardProps) {
           {standing.why ? `What made it revert: ${standing.why}. ` : ''}The network fee was still charged, and this request is over. If you still mean to pay, ask your agent to check the payee again.
         </p>
         <TxLink chain={chain} hash={flow.payment?.txHash ?? null} />
+        {replaced && <p className="mt-2 text-xs text-foreground/85">{replaced}</p>}
       </div>
     )
   return <RequestCard {...props} record={record} />
@@ -477,7 +481,7 @@ function TxLink({ chain, hash }: { chain: Chain; hash: string | null }) {
   )
 }
 
-function SettledCard({ chain, vault, flow }: { chain: Chain; vault: VaultSnapshot; flow: HandoffFlow }) {
+function SettledCard({ chain, vault, flow, replaced }: { chain: Chain; vault: VaultSnapshot; flow: HandoffFlow; replaced: string | null }) {
   return (
     <div role="status" data-flow={flow.flowId} className="rounded-xl border border-ok/30 bg-ok/[0.07] p-4 text-sm text-foreground">
       <div className="flex items-start gap-2">
@@ -488,6 +492,7 @@ function SettledCard({ chain, vault, flow }: { chain: Chain; vault: VaultSnapsho
             The vault paid {formatUnitsExact(flow.amount, vault.decimals)} USDC to {flow.payee} in block {flow.payment?.blockNumber}.
           </p>
           <TxLink chain={chain} hash={flow.payment?.txHash ?? null} />
+          {replaced && <p className="mt-2 text-xs text-foreground/85">{replaced}</p>}
         </div>
       </div>
     </div>
@@ -885,6 +890,8 @@ function SendTracker({ record, chain, asking = false, flowOver = false, onRecord
   const h = holdOf(record)
   const server = record.server
   const others = otherSends(record)
+  const several = moreThanOneSend(record)
+  const replacedLine = replacedSendLine(record)
   const release = () => {
     saveHandoff({ ...latest.current, released: true, releasedAt: new Date().toISOString() })
     onRecords()
@@ -892,17 +899,23 @@ function SendTracker({ record, chain, asking = false, flowOver = false, onRecord
 
   return (
     <div className="mt-3 space-y-2">
-      {others.length > 0 && (
+      {several && (
         <div role="alert" className="rounded-lg border border-danger/25 bg-danger/[0.07] px-3 py-2 text-xs text-foreground">
-          <div className="font-semibold">Your wallet sent more than one transaction for this one request. Each one that lands pays this amount.</div>
+          <div className="font-semibold">Your wallet sent more than one transaction for this one request. Each one that does not revert pays this amount.</div>
           <p className="mt-1">
-            It answered a prompt this page had stopped waiting on, as well as a later one. Our server's record of this request holds one transaction, so the others show only here and in the vault's recent activity on this page. If one is still waiting in your wallet, you can cancel it there.
+            A transaction sent earlier, or from another device, does not stop because a later one went out. Our server's record of this request holds one transaction, so the others show only here and in the vault's recent activity on this page. If one is still waiting in your wallet, you can cancel it there.
           </p>
         </div>
       )}
+      {!several && others.length > 0 && !record.tx && !record.paidBy && (
+        <p role="status" className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
+          You said an earlier transaction for this request will not land. This page follows it again, because if it lands it pays, whatever else is sent.
+        </p>
+      )}
+      {replacedLine && <p className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">{replacedLine}</p>}
       {record.tx && !server && <TxReceipt record={record.tx} onUpdate={update} onSettled={() => onLanded()} serverJudges />}
       {others.map((t) => (
-        <TxReceipt key={t.hash} record={t} onUpdate={update} onSettled={() => onLanded()} serverJudges oneOfSeveral />
+        <TxReceipt key={t.hash} record={t} onUpdate={update} onSettled={() => onLanded()} serverJudges oneOfSeveral={several || Boolean(server)} />
       ))}
       {!asking && !record.tx && !record.paidBy && !record.released && !server && (
         <div role="status" className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
