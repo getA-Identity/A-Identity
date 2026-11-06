@@ -557,7 +557,9 @@ check the operator key did not pay for, or a payment to the operator key itself.
 chain when it opens, and it can still refuse for what the server does not look at: a vault that is ours or
 not the build the page deploys, a key stopped or replaced since the check, or a check older than 24 hours.
 `GET /api/x402/gateway/flows/<flowId>` reads no chain, so it keeps naming the link through all of those.
-`ownerPay` from the owner key is the way then too. For each payment the page says who gets paid, how much,
+For a vault the page does not act on, `ownerPay` from the owner key is the way then too. A stopped or
+replaced key and a check that old are refused for the request itself, for the reasons below, so a new
+check from a working agent key is the way there. For each payment the page says who gets paid, how much,
 what the check said and why, when it was checked, and that approving counts toward today's budget. `ownerPay` adds to the
 day's spending with no cap check, so an approval can use up the budget and stop your agent until 00:00
 UTC. It works while the vault is frozen, by design, and the page says that too. You review it, your

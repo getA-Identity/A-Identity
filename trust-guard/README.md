@@ -232,8 +232,10 @@ The order, and what each step can cost:
    operator paid for, so a flow paid by a separate `payer`, or a payment to the operator key, comes back with
    `approvalUrl` null: send `ownerPay` from the owner key. The page reads the chain when it opens and can still
    refuse a link it is given: a vault that is ours or not the build it deploys, a key stopped or replaced since
-   the check, or a check older than 24 hours. `ownerPay` is the way then too. The integration guide has a
-   sample for that, starting from the public flow record. An `ownerPay` counts toward the agent's day on the
+   the check, or a check older than 24 hours. For a vault the page does not act on, `ownerPay` is the way then
+   too, and the integration guide has a sample for that, starting from the public flow record. A stopped or
+   replaced key and a check that old are refused for the request itself, so a new check from a working agent
+   key is the way there. An `ownerPay` counts toward the agent's day on the
    vault: if it uses up today's room, the agent cannot pay until 00:00 UTC unless the owner raises the cap, so
    tell the owner before they sign.
 

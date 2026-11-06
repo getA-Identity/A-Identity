@@ -979,11 +979,25 @@ test('the words on approvalUrl say what the server can see, and that the page ca
     assert.match(text, /can still refuse/, page)
     assert.match(text, /a vault that is ours or not the build (it|the page) deploys, a key stopped or replaced since the check,? or a check older than 24 hours/, page)
     assert.doesNotMatch(text, /`null` on a hand-off the page would refuse|null when the vault page would refuse it/, page)
+    // Only a vault the page does not act on leaves ownerPay as the way. A stopped or replaced key and an old check are
+    // refusals of the request itself, where the card sends the owner to a new check, so no summary sends them past it.
+    assert.match(text, /For a vault the page does not act on, /, page)
+    assert.match(text, /A stopped or replaced key and a check that old are refused for the request itself,( for the reasons below,)? so a new check from a working agent key is the way there/, page)
+    assert.doesNotMatch(text, /older than 24 hours\. (Then|`ownerPay`)/, page)
   }
   assert.match(said('docs/chains/arc-integration.mdx'), /`GET \/api\/x402\/gateway\/flows\/<flowId>` reads no chain, so it keeps naming the link/)
   // The tool's own description and the published card make no promise for the page either.
   assert.doesNotMatch(said('mcp/src/server.ts'), /null when the vault page would refuse it/)
   assert.doesNotMatch(said('public/.well-known/mcp/server-card.json'), /approvalUrl when the vault page would offer it/)
+  assert.match(said('mcp/src/server.ts'), /then ownerPay from the owner key is the way for a vault the page does not act on, and a new check from a working agent key is the way for a stopped or replaced key or a check over 24 hours old/)
+  const sdk = said('trust-guard/src/arc.ts')
+  assert.match(sdk, /A stopped or replaced key and a check that old are refused for the request itself, so a new check from a working agent key is the way there/)
+  assert.doesNotMatch(sdk, /ownerPay is the way in all of those/)
+  // Which is what the card says on each of those.
+  const rules = said('src/lib/arc/handoff-rules.ts')
+  assert.match(rules, /This page does not send this one\. To pay it, send ownerPay from the owner key/)
+  assert.match(rules, /A stopped key does not get to ask, so this is not offered\. If you still mean to pay it, give your agent a working key and ask it for a new check\./)
+  assert.match(said('src/components/app/arc/OwnerApprovals.tsx'), /so it cannot be approved\. If this still needs paying, ask your agent to check the payee again/)
 
   // What the guide says of the read is what it does: the link stays on a flow of any age, because it looks at no chain.
   const { s, deps } = setup({ gw: { scored: verdict('WARN') } })

@@ -135,7 +135,9 @@ owner key, or send the owner `ownerHandoff.approvalUrl`, the vault page where th
 wallet. That link is null where the server can already see the vault page would refuse it: the check was not
 paid by the vault's operator key, or the payee is that key. The page reads the chain when it opens and can still
 refuse a link it is given: a vault that is ours or not the build it deploys, a key stopped or replaced since the
-check, or a check older than 24 hours. Then `ownerHandoff.ownerPay` from the owner key is the way.
+check, or a check older than 24 hours. For a vault the page does not act on, `ownerHandoff.ownerPay` from
+the owner key is the way then. A stopped or replaced key and a check that old are refused for the request
+itself, so a new check from a working agent key is the way there.
 `ownerHandoff.ownerOnly` names the gate when the vault would refuse the operator.
 
 ### verify_then_pay_receipt
