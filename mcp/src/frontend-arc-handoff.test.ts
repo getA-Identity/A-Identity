@@ -64,6 +64,7 @@ type Rules = {
   moreThanOneSend: (s: Send) => boolean
   replacedSendLine: (s: Send) => string | null
   readOrder: (records: Send[]) => Send[]
+  readsAgain: (r: Send, now: number) => boolean
   promptMayBeOpen: (r: Send) => boolean
   promptLine: (r: Send | null, o: { paid: boolean; standing?: Standing }) => string | null
   noAnswerLine: (promptEnded: boolean) => string
@@ -977,6 +978,33 @@ test('the card stops asking for a prompt once the money left or the request ende
   assert.match(page, /\{record\.tx \? "This payment landed under another transaction, most likely your wallet's speed-up\."/, 'a hash that never came back is no speed-up of it')
 })
 
+test('a prompt with no answer keeps the read of the vault going, whatever a send it carried holds, and a payment from the owner key is kept', async () => {
+  const { p, r, first, second, stored } = await twoRuns()
+  const f = await flow()
+  const t0 = Date.parse(CHECKED)
+  // A hash no host ever saw, let go of, and a new claim that carries it: its own prompt is open, and the carried send is pending.
+  p.saveHandoff({ ...first, tx: txRecord('untracked', { likelyReplaced: true }), released: true, releasedAt: CHECKED })
+  assert.equal(await p.claimHandoff(second, (rs) => r.holdFor(second as unknown as Flow, rs).held, null), true)
+  const now = () => stored() as Send
+  assert.equal(r.holdOf(now()).why, 'pending', 'the carried send speaks for the hold')
+  assert.equal(r.promptMayBeOpen(now()), true)
+  assert.equal(r.readsAgain(now(), t0), true, 'and the read that ends that prompt goes on beside it')
+  // What the read finds is what ends the prompt, from any key.
+  assert.match(String(r.promptLine(now(), { paid: true, standing: { kind: 'approvable' } })), /decline it: signing it pays this amount again/)
+  // A payment from the owner key, from another device, is kept on the record, as it is with nothing carried.
+  assert.equal(r.afterScan(now(), f, read([PAID()]), t0).paidBy, TX2)
+  // Once the prompt has its own hash on its way, that hash's receipt is what follows it.
+  p.saveSentHash(second, txRecord('pending', { hash: '0x' + '79'.repeat(32) }))
+  const answered = now()
+  assert.equal(r.readsAgain(answered, t0), false)
+  assert.equal(r.afterScan(answered, f, read([PAID()]), t0), answered)
+  // The page reads by this, and on the same tick reads the flow behind such a prompt: a revert that ended it is no payment.
+  const page = repo('src/components/app/arc/OwnerApprovals.tsx')
+  assert.match(page, /const unresolved = records\.some\(\(r\) => readsAgain\(r, Date\.now\(\)\)\)/)
+  assert.match(page, /\.filter\(\(r\) => readsAgain\(r, Date\.now\(\)\) && promptMayBeOpen\(r\)\)/)
+  assert.match(page, /void readPayments\(true\)\s+void readPromptFlows\(\)/)
+})
+
 test("a hash from an earlier prompt answers nothing about the one the record's claim opened, which stays open", async () => {
   const r = await rules()
   const open: Standing = { kind: 'approvable' }
@@ -1647,5 +1675,5 @@ test('the read of new blocks does not claim anything across a gap, and a timer d
   assert.match(scan, /if \(r\.short\) return \{ failed: r\.short \}/)
   assert.match(scan, /held\.from <= from \|\| o\.topUpOnly/)
   const page = repo('src/components/app/arc/OwnerApprovals.tsx')
-  assert.match(page, /setInterval\(\(\) => void readPayments\(true\), SCAN_AGAIN_MS\)/)
+  assert.match(page, /setInterval\(\(\) => \{\s+void readPayments\(true\)\s+void readPromptFlows\(\)\s+\}, SCAN_AGAIN_MS\)/)
 })

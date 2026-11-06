@@ -604,6 +604,17 @@ export function readOrder(records: readonly HandoffSend[]): HandoffSend[] {
   return [...records].sort((a, b) => rank(a) - rank(b))
 }
 
+/**
+ * This record wants the vault's Paid events read every few seconds: nothing the chain alone says about its own
+ * hash answers it, or a prompt it opened may still be open, whatever a send beside it holds. That read is what
+ * tells the card to stop asking for such a prompt once the money left, from any key, since nothing else does.
+ */
+export function readsAgain(r: HandoffSend, now: number): boolean {
+  if (!stillWatched(r, now)) return false
+  const h = holdOf(r)
+  return !h.held || h.why === 'asked' || h.why === 'maybe' || promptMayBeOpen(r)
+}
+
 /** A host is read if it is within 100 blocks of the best, about 50 seconds, so a read this long after a replacement has seen it. */
 export const REPLACED_WATCH_MS = 60_000
 
@@ -615,12 +626,14 @@ export const REPLACED_WATCH_MS = 60_000
  * read that stopped short is answered, not failed, and what it did not reach holds no news either way.
  * A person's "nothing was sent", and a quiet replacement, free the flow and prove nothing: a slow wallet
  * can still send it. If the payment shows up after that it is this send's too, and what the page says and
- * does goes back to following it.
+ * does goes back to following it. A wallet asked with no hash back is asked, whatever a send carried beside it
+ * holds, since that one has its own receipt to follow.
  */
 export function afterScan(s: HandoffSend, f: Pick<HandoffFlow, 'payee' | 'amount' | 'verdictBlock'>, scan: Pick<PaidScan, 'from' | 'paid'>, now: number): HandoffSend {
   if (s.server || s.paidBy) return s
   const h = holdOf(s)
-  if (h.held ? h.why !== 'asked' && h.why !== 'maybe' : !s.released && !s.replacedClear) return s
+  const asked = !s.tx && promptMayBeOpen(s)
+  if (!asked && (h.held ? h.why !== 'asked' && h.why !== 'maybe' : !s.released && !s.replacedClear)) return s
   const hit = paidAfter(f, scan.paid)
   if (hit?.byOwner) return { ...s, paidBy: hit.txHash.toLowerCase() }
   if (!h.held || s.tx?.outcome !== 'replaced') return s

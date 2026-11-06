@@ -52,12 +52,12 @@ import {
   promptLine,
   promptMayBeOpen,
   readOrder,
+  readsAgain,
   refusedLead,
   replacedSendLine,
   replacedWithNoPayment,
   scanStart,
   standingOf,
-  stillWatched,
   unreadRecords,
   verdictMeaning,
   walletBlock,
@@ -170,11 +170,19 @@ export default function OwnerApprovals({ chain, vault: pageVault, wallet, canAct
   // The earliest block anything here needs the vault's payments from: only what can be offered or is still followed.
   const scanFrom = useMemo(() => scanStart(flows.map((f) => ({ f, s: standingOf(f, vault) })), records, declined, Date.now()), [flows, vault, records, declined])
 
-  const unresolved = records.some((r) => {
-    if (!stillWatched(r, Date.now())) return false
-    const h = holdOf(r)
-    return !h.held || h.why === 'asked' || h.why === 'maybe'
-  })
+  const unresolved = records.some((r) => readsAgain(r, Date.now()))
+  // The flows behind a prompt that may still be open, read on the same tick: a revert that closed one leaves no payment
+  // for the read of the vault to find, and only the flow says the request is over.
+  const promptFlows = records
+    .filter((r) => readsAgain(r, Date.now()) && promptMayBeOpen(r))
+    .map((r) => r.flowId)
+    .join(',')
+  const readPromptFlows = useCallback(async () => {
+    if (!promptFlows) return
+    const read = await Promise.all(promptFlows.split(',').map((id) => readFlow(id)))
+    const got = read.flatMap((r) => (r.ok ? [r.flow] : []))
+    if (got.length) setOwn((was) => ({ ...was, ...Object.fromEntries(got.map((f) => [f.flowId, f] as const)) }))
+  }, [promptFlows])
 
   // One read at a time: a read a timer started must not pile up behind one that has a long way to go.
   const scanBusy = useRef(false)
@@ -223,9 +231,12 @@ export default function OwnerApprovals({ chain, vault: pageVault, wallet, canAct
 
   useEffect(() => {
     if (!unresolved) return
-    const t = setInterval(() => void readPayments(true), SCAN_AGAIN_MS)
+    const t = setInterval(() => {
+      void readPayments(true)
+      void readPromptFlows()
+    }, SCAN_AGAIN_MS)
     return () => clearInterval(t)
-  }, [unresolved, readPayments])
+  }, [unresolved, readPayments, readPromptFlows])
 
   // A tab somebody comes back to: the balance, the budget, the check's age and the flows, read again.
   const lastFocusRead = useRef(0)
