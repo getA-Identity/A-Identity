@@ -89,6 +89,15 @@ export function describeNonJsonManifest(manifestUrl: string, contentType: string
  *  used came from, rather than the resolution being a silent rewrite of the caller's input. */
 type ResolvedManifestSource = ResolvedAgentManifest & { ownership: OwnershipNote }
 
+/** The status for a refused registration: 429 with a real Retry-After when the account's row
+ *  budget is spent, the answer POST /api/agents and /api/v1/agents/register give, otherwise
+ *  what errStatus reads from the message (Forbidden 403, anything else 400). */
+function refusalStatus(res: RouteCtx['res'], r: { error: string; resetAt?: string }): number {
+  if (!r.resetAt) return errStatus(r.error)
+  res.setHeader('Retry-After', String(Math.max(1, Math.ceil((Date.parse(r.resetAt) - Date.now()) / 1000))))
+  return 429
+}
+
 /** A tokenURI is agent-controlled and can be a multi-kilobyte inline data: URI, so an
  *  error message quotes the head of it instead of shipping the whole thing back. */
 function shortUrl(u: string): string {
@@ -144,14 +153,17 @@ export async function handleGuardrailRoutes(ctx: RouteCtx): Promise<boolean> {
   }
 
   // ── register_agent + guardrail badge (Phase 1.5) ─────────────────────────────
-  // A manifest-shaped registration over the SAME createAgent path the UI uses. Free.
+  // A manifest-shaped registration over the SAME createAgent path the UI uses. Free, and
+  // like every write here it needs a verified session (the gate in http.ts). The wallet
+  // check, the per-account agent limit and the per-minute row count run inside
+  // registerAgentFromManifest, so this door, register-url and the MCP tool share them.
   if (req.method === 'POST' && url.pathname === '/api/agents/register') {
     const body = (await readBody(req).catch(() => null)) as { manifest?: Record<string, unknown> } | null
     const manifest = (body?.manifest ?? body) as Record<string, unknown> | null
     if (!manifest?.name) { sendJson(res, 400, { error: 'manifest.name required' }); return true }
     // `ci: true` marks a canary: recorded in full, excluded from traction headlines.
     const r = registerAgentFromManifest(manifest as never, callerId)
-    sendJson(res, 'error' in r ? errStatus(r.error) : 201, r)
+    sendJson(res, 'error' in r ? refusalStatus(res, r) : 201, r)
     return true
   }
   // The same registration, by reference: the caller hands us a URL to their manifest
@@ -222,7 +234,10 @@ export async function handleGuardrailRoutes(ctx: RouteCtx): Promise<boolean> {
       return true
     }
     const r = registerAgentFromManifest(manifest as never, callerId)
-    if ('error' in r) { fail(errStatus(r.error), r.error); return true }
+    if ('error' in r) {
+      sendJson(res, refusalStatus(res, r), { ...r, ...(resolvedFrom ? { resolvedFrom } : {}) })
+      return true
+    }
     // A record built off a token the caller does not own is marked `unclaimed`, not
     // `unverified`. The difference matters: unverified means nobody has proven control
     // yet, unclaimed means the party who DOES control it has never spoken to us. Only

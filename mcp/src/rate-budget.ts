@@ -153,10 +153,18 @@ export function rateBudget(method: string, pathname: string): { bucket: string; 
   // is not a person. The per-rater bounds sit in the domain (feedbackComplaint), the same
   // division of labor post-task and bid already have with openTaskComplaint.
   if (pathname === '/api/marketplace/feedback') return { bucket: 'feedback', max: 6, windowMs: 60_000 }
-  // Both agent-creation doors, not just the one: /api/agents is the console's and
-  // /api/v1/agents/register is the external self-register. They write the same row, so
-  // budgeting only the first would move the spam one path over rather than stop it.
-  if (pathname === '/api/agents' || pathname === '/api/v1/agents/register')
+  // Every single-agent creation door, not just one: /api/agents is the console's,
+  // /api/v1/agents/register is the external self-register, and /api/agents/register and
+  // /api/agents/register-url are the manifest doors (inline, or fetched from a URL). They
+  // write the same row, so budgeting only some of them would move the spam one path over
+  // rather than stop it. The register_agent MCP tool writes it too: it is bounded by the mcp
+  // bucket per address and, like all four, by the per-account row ledger below.
+  if (
+    pathname === '/api/agents' ||
+    pathname === '/api/v1/agents/register' ||
+    pathname === '/api/agents/register' ||
+    pathname === '/api/agents/register-url'
+  )
     return { bucket: 'agent-create', max: 10, windowMs: 60_000 }
   // The bulk door. Its own REQUEST bucket, because one request here is up to
   // MAX_BATCH_REGISTER rows and counting it as one write against agent-create would be
@@ -241,8 +249,10 @@ export function rateLimited(key: string, max: number, windowMs: number, cost = 1
 // which is not a batch endpoint, it is a documented way around the limit.
 //
 // So agent rows get a second budget counted in rows, charged by EVERY door that writes one
-// (the console's /api/agents, the API's /api/v1/agents/register, and the batch). One
-// ledger, so neither door is a route around the other.
+// (the console's /api/agents, the API's /api/v1/agents/register, the batch, and the
+// manifest doors, which charge it inside registerAgentFromManifest: /api/agents/register,
+// /api/agents/register-url and the register_agent MCP tool). One ledger, so no door is a
+// route around another.
 //
 // Keyed on the ACCOUNT rather than the address, because the ceiling this pairs with
 // (agentQuotaComplaint) is per account, and a budget that disagreed with the ceiling about
@@ -298,7 +308,7 @@ export function chargeVolume(key: string, max: number, windowMs: number, now = D
 /**
  * Charge one agent row to an account's budget, at its tier.
  *
- * The single helper all three registration doors call, so they cannot end up counting
+ * The single helper every registration door calls, so they cannot end up counting
  * differently. `tier` is a plain string on purpose: this module owns the numbers and
  * marketplace.ts owns who is in which tier, so neither has to import the other.
  */

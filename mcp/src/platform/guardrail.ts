@@ -15,7 +15,8 @@ import {
   type AuditEntry, type AuditOutcome, type AuditProvenance, type Decision, type GuardrailProfile,
 } from '../policy/index.js'
 import { resolveCallerInput, type CallerInput } from '../callers/normalize.js'
-import type { KyaStatus } from '../marketplace.js'
+import { accountTier, agentQuotaComplaint, type KyaStatus } from '../marketplace.js'
+import { chargeAgentCreate } from '../rate-budget.js'
 
 // ── Policy Engine v2 store (Phase 1.3) ───────────────────────────────────────────
 //
@@ -200,7 +201,12 @@ export function listAgentAudits(
 /** What a manifest registration answers with. */
 export type RegistrationResult = {
   agentId: string
-  /** Honest on-chain state. `queued` means no ERC-8004 tx has been broadcast yet. */
+  /**
+   * Honest on-chain state. `queued` means a platform record only: no ERC-8004 registration
+   * has been sent, and nothing sends one by itself. It stays queued until the owner anchors
+   * the agent from the console (POST /api/agents/anchor), which registers it on Arc testnet,
+   * the chain every new record is created under.
+   */
   erc8004Status: {
     onchain: 'queued' | 'registered'
     tokenId?: string
@@ -212,10 +218,33 @@ export type RegistrationResult = {
   badgeUrl: string | null
 }
 
+/** A refused registration. `resetAt` is set only when the account's row budget for this
+ *  window is spent, so a door can answer 429 with a real Retry-After, as the other doors do. */
+export type RegistrationRefusal = { error: string; resetAt?: string }
+
+/** The refusal for a registration with no verified caller. Starts with "Forbidden:" so every
+ *  door maps it to 403, and says what to send, because the caller is usually an agent. */
+export const REGISTER_NEEDS_SESSION =
+  'Forbidden: registering an agent needs a verified session, and nothing was registered. Send Authorization: Bearer <token>, from OAuth or a wallet or email sign-in; how: https://a-identity.xyz/auth.md'
+
+/** A wallet a manifest may name: 0x and 40 hex characters, the rule POST /api/v1/agents/register applies. */
+const WALLET_ADDRESS = /^0x[0-9a-fA-F]{40}$/
+
 /**
  * Register an agent from a manifest (Phase 1.5). A THIN wrapper over createAgent, not a
  * second registration path: two ways to create an agent is exactly the drift this session
  * has been removing everywhere else.
+ *
+ * Three doors end here: register_agent over MCP, POST /api/agents/register and POST
+ * /api/agents/register-url. So the refusals live here too, in the order the other doors use,
+ * and all of them come before the row is written:
+ *   - no verified caller is Forbidden. The REST doors sit behind the session gate in http.ts;
+ *     the MCP door passes undefined for a guest or a missing token, and it used to create a
+ *     record with no owner, which nobody could ever manage or claim.
+ *   - a walletAddress must be 0x and 40 hex. It was stored as typed: '0x<KENDI_ADRESIN>' was.
+ *   - the per-account agent limit (agentQuotaComplaint) and the per-minute row count
+ *     (chargeAgentCreate), the same rule and the same ledger as POST /api/agents and
+ *     /api/v1/agents/register, so no door is a way around another.
  *
  * A fresh registration is honest about itself: `queued`, KYA `unverified`, and a badge set
  * that reads `no policy` until the owner actually configures one.
@@ -228,7 +257,9 @@ export function registerAgentFromManifest(
     capabilities?: unknown
     services?: Service[]
     endpoint?: string
-    walletAddress?: string
+    /** Optional; 0x and 40 hex characters, or the registration is refused. Unknown because a
+     *  manifest fetched by URL is anyone's JSON. */
+    walletAddress?: unknown
     /** Optional card style preset (whole 1..6); invalid input means unset. */
     cardStyle?: unknown
     /**
@@ -240,8 +271,28 @@ export function registerAgentFromManifest(
     ci?: boolean
   },
   caller?: string,
-): RegistrationResult | { error: string } {
+): RegistrationResult | RegistrationRefusal {
+  // First, before the manifest is even read: a record needs an owner.
+  if (typeof caller !== 'string' || !caller.trim()) return { error: REGISTER_NEEDS_SESSION }
   if (!manifest?.name || typeof manifest.name !== 'string') return { error: 'manifest.name required' }
+  // Absent, null or empty means no wallet, as on the other doors; anything else must be an address.
+  const wallet = manifest.walletAddress
+  const hasWallet = wallet !== undefined && wallet !== null && wallet !== ''
+  if (hasWallet && (typeof wallet !== 'string' || !WALLET_ADDRESS.test(wallet))) {
+    return { error: 'walletAddress must be a 0x address (0x and 40 hex characters); nothing was registered' }
+  }
+  const tier = accountTier(caller)
+  const quota = agentQuotaComplaint(state.agents.filter((a) => a.owner === caller).length, tier)
+  if (quota) return { error: quota }
+  // Charged BEFORE the write, as the other doors do: a charge taken after it would let the
+  // row that broke the limit through.
+  const room = chargeAgentCreate(caller, tier)
+  if (!room.ok) {
+    return {
+      error: `Too many agents registered too quickly: this account may create ${room.max} per minute. Nothing was registered; try again after the window resets.`,
+      resetAt: new Date(room.resetAt).toISOString(),
+    }
+  }
 
   const agent = createAgent({
     name: manifest.name,
@@ -250,7 +301,7 @@ export function registerAgentFromManifest(
     capabilities: Array.isArray(manifest.capabilities) ? (manifest.capabilities as string[]) : [],
     services: manifest.services,
     endpoint: manifest.endpoint,
-    walletAddress: manifest.walletAddress,
+    walletAddress: hasWallet ? (wallet as string) : undefined,
     cardStyle: manifest.cardStyle,
     permissions: {},
     owner: caller,
