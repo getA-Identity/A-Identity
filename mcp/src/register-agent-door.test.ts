@@ -341,3 +341,17 @@ test('http.ts hands every MCP hook that needs a session the verified caller, nev
     assert.ok(region.slice(at, next).includes('mcpCaller'), `the ${h} hook must be handed mcpCaller`)
   }
 })
+
+test('a task row with no client is still closed to a caller with no session', async () => {
+  const state = __resetPlatformStateForTests()
+  const worker = createAgent({ name: 'Worker', description: '', category: 'Other', capabilities: [], permissions: {}, owner: account('owner') })
+  const now = new Date().toISOString()
+  // No path writes such a row today; a hand-edited or migrated one must not open the gate.
+  const legacy: Task = { id: 'task_legacy', client: undefined as unknown as string, agentId: worker.id, service: 's', priceUsd: 1, description: '', status: 'delivered', createdAt: now, updatedAt: now }
+  state.tasks.push(legacy)
+  const released = await releaseTask(legacy.id, {}, undefined)
+  assert.ok('error' in released && released.error.startsWith('Forbidden'), JSON.stringify(released).slice(0, 200))
+  assert.equal(legacy.status, 'delivered', 'nothing was released')
+  const read = getTask(legacy.id, undefined)
+  assert.ok('error' in read && read.error.startsWith('Forbidden'), 'and nothing is read')
+})
