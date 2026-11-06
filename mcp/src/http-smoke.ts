@@ -70,6 +70,12 @@ async function main() {
   if (!refused || gated.includes('perActionCapUsd')) {
     throw new Error(`policy_get served an unauthenticated MCP caller: ${gated.slice(0, 160)}`)
   }
+  // register_agent writes a record, so the same caller is refused there too. It used to be
+  // served: a call with no token created an agent with no owner.
+  const reg = textOf((await client.callTool({ name: 'register_agent', arguments: { name: 'http-smoke anonymous' } })) as TextResult)
+  if (!reg.includes('Forbidden') || reg.includes('erc8004Status')) {
+    throw new Error(`register_agent served an unauthenticated MCP caller: ${reg.slice(0, 160)}`)
+  }
 
   await client.close()
 

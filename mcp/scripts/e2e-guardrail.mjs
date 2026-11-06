@@ -53,7 +53,16 @@ async function req(method, path, body, opts = {}) {
   const headers = { 'Content-Type': 'application/json', ...(opts.headers ?? {}) }
   const auth = opts.token === undefined ? token : opts.token
   if (auth) headers.Authorization = `Bearer ${auth}`
-  const res = await fetch(BASE + path, { method, headers, body: body ? JSON.stringify(body) : undefined })
+  let res = await fetch(BASE + path, { method, headers, body: body ? JSON.stringify(body) : undefined })
+  // Honor a short Retry-After once, as a real client would. The per-address registration
+  // budget is shared with whatever ran just before this script against the same server (in CI,
+  // e2e.mjs, which registers several agents), so its window can still be open here.
+  const wait = Number(res.headers.get('retry-after'))
+  if (res.status === 429 && wait > 0 && wait <= 70) {
+    console.log(`  ..    429 on ${method} ${path}: waiting the ${wait}s Retry-After once`)
+    await new Promise((r) => setTimeout(r, wait * 1000))
+    res = await fetch(BASE + path, { method, headers, body: body ? JSON.stringify(body) : undefined })
+  }
   const text = await res.text()
   let json = null
   try {
@@ -178,6 +187,23 @@ const anonCheck = await post(
   { token: null },
 )
 check('unauthenticated action-check is refused', anonCheck.status >= 400, `status ${anonCheck.status}`)
+
+// Registering writes a record, so it is closed the same way on every door, MCP included:
+// without a session the MCP tool used to create an agent with no owner.
+const agentsBefore = (await get('/api/agents')).json?.total
+const anonReg = await post('/api/agents/register', { manifest: { name: 'E2E Anonymous Agent', ci: true } }, { token: null })
+eq('unauthenticated registration is refused', anonReg.status, 401)
+const anonRegUrl = await post('/api/agents/register-url', { url: 'https://example.com/agent-manifest.json' }, { token: null })
+eq('unauthenticated registration by URL is refused', anonRegUrl.status, 401)
+const anonMcp = await post(
+  '/mcp',
+  { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'register_agent', arguments: { name: 'E2E Anonymous MCP Agent' } } },
+  { token: null, headers: { Accept: 'application/json, text/event-stream' } },
+)
+const anonMcpText = anonMcp.json?.result?.content?.[0]?.text ?? ''
+check('register_agent over MCP without a session is Forbidden', /"error": "Forbidden: /.test(anonMcpText), anonMcpText.slice(0, 200))
+const agentsAfter = (await get('/api/agents')).json?.total
+check('and none of the three registered anything', typeof agentsBefore === 'number' && agentsAfter === agentsBefore, `${agentsBefore} then ${agentsAfter}`)
 
 const owner = await signIn()
 token = owner.token
