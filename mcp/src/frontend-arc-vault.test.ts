@@ -7,7 +7,7 @@ import { CHAINS } from './chains/registry.js'
 import { PROVENANCE } from './chains/provenance.js'
 import { arcLedgerFacts } from './chains/frontend-ledger.js'
 import { PAGE_MAX_SESSION_SECONDS } from './arc-owner-vault.js'
-import { BaseError, ContractFunctionZeroDataError, HttpRequestError, InternalRpcError, LimitExceededRpcError, RpcRequestError } from 'viem'
+import { BaseError, ContractFunctionZeroDataError, HttpRequestError, InternalRpcError, LimitExceededRpcError, RpcRequestError, TimeoutError } from 'viem'
 import { getContractError } from 'viem/utils'
 
 /**
@@ -1705,6 +1705,49 @@ test('a host fault is not a revert: -32603 and rate limits move on to the next h
   assert.equal(isContractAnswer(new ContractFunctionZeroDataError({ functionName: 'owner' })), true)
   assert.equal(isContractAnswer(new Error('nothing to do with a contract')), false)
   assert.equal(isContractAnswer(null), false)
+  // A request that never got an HTTP answer (Brave Shields, an ad blocker, a VPN, offline) is told
+  // apart from a busy host, which does answer: 429. Built the way viem builds each.
+  const { neverAnswered, noneAnswered, onHosts, NoHostAnswered } = (await hostsModule()) as unknown as {
+    neverAnswered: (e: unknown) => boolean
+    noneAnswered: (failures: readonly { error: unknown }[]) => boolean
+    onHosts: HostsModule['onHosts']
+    NoHostAnswered: new (...a: unknown[]) => Error & { failures: { host: string; error: unknown }[] }
+  }
+  const blockedFetch = new HttpRequestError({ url, body: {}, cause: new TypeError('Failed to fetch') })
+  const busy = new HttpRequestError({ url, status: 429, body: {}, details: 'Too Many Requests' })
+  assert.equal(neverAnswered(blockedFetch), true)
+  assert.equal(neverAnswered(asContract(blockedFetch)), true, 'inside a contract call, as readUsdcFacts sees it')
+  assert.equal(neverAnswered(busy), false, 'a rate limit is an answer')
+  assert.equal(neverAnswered(asContract(busy)), false)
+  assert.equal(neverAnswered(new TimeoutError({ body: {}, url })), false, 'a slow host got the request')
+  assert.equal(neverAnswered(new Error('x answered for chain 1, not 5042')), false)
+  assert.equal(noneAnswered([]), false, 'no failure is not a blocked browser')
+  assert.equal(noneAnswered([{ error: blockedFetch }, { error: asContract(blockedFetch) }]), true)
+  assert.equal(noneAnswered([{ error: blockedFetch }, { error: busy }]), false, 'one host answering means the browser reaches the network')
+  // onHosts hands the caller every host's own failure, so all of them can be judged, not the last.
+  await assert.rejects(
+    onHosts(
+      [
+        { host: 'a', client: 1 },
+        { host: 'b', client: 2 },
+      ],
+      {
+        chainId: 5042,
+        askChainId: async (c: number) => {
+          if (c === 1) throw blockedFetch
+          return 1
+        },
+        isFinal: () => false,
+      },
+      async () => 'never',
+    ),
+    (e: unknown) =>
+      e instanceof NoHostAnswered &&
+      e.failures.length === 2 &&
+      e.failures[0].host === 'a' &&
+      e.failures[0].error === blockedFetch &&
+      /b answered for chain 1, not 5042/.test((e.failures[1].error as Error).message),
+  )
   // Two hosts agreeing, or the only host there is.
   const noCode = { kind: 'no_contract', reason: 'a' }
   const notVault = { kind: 'not_a_vault', reason: 'b' }
@@ -1722,7 +1765,20 @@ test('a host fault is not a revert: -32603 and rate limits move on to the next h
   // A rate limit never asks the owner to change the values they typed.
   assert.match(fnBody(read, 'readUsdcFacts'), /noAnswer: e instanceof RpcUnreachableError/)
   const flow = codeOnly(repo('src/components/app/arc/DeployFlow.tsx'))
-  assert.match(flow, /code: facts\.noAnswer \? 'rpc_unreachable' : 'refused'/)
+  assert.match(flow, /code: facts\.noAnswer \? \(facts\.blocked \? 'rpc_blocked' : 'rpc_unreachable'\) : 'refused'/)
+  assert.match(fnBody(read, 'readUsdcFacts'), /blocked: e instanceof RpcUnreachableError && e\.blocked/)
+  // When no registry RPC answers, the connected wallet is the last host, asked its chain id first
+  // like the others, and a wallet on another network never makes the registry entry look wrong.
+  assert.match(fnBody(read, 'onFirstHost'), /readUrls\(chain\)/)
+  assert.match(fnBody(read, 'onFirstHost'), /judgeFailures\(e\.failures\)/)
+  for (const fn of ['readTransaction', 'pollReceipt']) assert.match(fnBody(read, fn), /const urls = readUrls\(chain\)/, fn)
+  assert.match(body, /const urls = \[\.\.\.readUrls\(chain\)\]/)
+  assert.match(body, /if \(!isWalletHost\(host\)\) registryWrongChain = true/)
+  assert.match(body, /if \(registryWrongChain\) return failed\('wrong_chain'/)
+  const urlsFn = read.slice(read.indexOf('export function readUrls'), read.indexOf('export function isWalletHost'))
+  assert.match(urlsFn, /\[\.\.\.urls, WALLET_URL\]/, 'the wallet comes after the registry hosts by default')
+  const hook = codeOnly(repo('src/components/app/arc/useArcWallet.ts'))
+  assert.match(hook, /setWalletReadProvider\(p\)\s*return \(\) => clearWalletReadProvider\(p\)/)
   // "No vault there yet" only on an answer that says so.
   const line = flow.slice(flow.indexOf('function lookedLine'), flow.indexOf('const STEPS'))
   assert.ok(line.indexOf("l.status === 'unreadable'") < line.indexOf('no vault there yet'))

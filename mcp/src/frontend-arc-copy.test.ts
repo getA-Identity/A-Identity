@@ -230,6 +230,14 @@ test('a network that did not answer is not blamed on the connection alone, and s
   // The read that throws this is known by name, and happens before the wallet is asked.
   const unreachable = Object.assign(new Error('no host answered'), { name: 'RpcUnreachableError' })
   assert.equal(failureOf(unreachable).code, 'rpc_unreachable')
+  // No node answered at all: the browser stopped the requests, and waiting would not help.
+  const blocked = explainFailure({ code: 'rpc_blocked', message: 'no host answered' })
+  assert.match(blocked.title, /browser/)
+  assert.match(blocked.next, /^Nothing was sent\./)
+  assert.match(blocked.next, /Brave Shields/)
+  assert.match(blocked.next, /reads through your wallet/, 'and the way through it without turning anything off')
+  assert.doesNotMatch(blocked.next, /Wait a minute|too many requests/)
+  assert.equal(failureOf(Object.assign(new Error('no host answered'), { name: 'RpcUnreachableError', blocked: true })).code, 'rpc_blocked')
   // The wallet failing on the send itself is never this code, however network-like it sounds:
   // the transaction may have left, so "Nothing was sent" would not hold there.
   const r = await rules()

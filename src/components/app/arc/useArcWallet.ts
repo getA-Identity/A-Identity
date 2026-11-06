@@ -13,6 +13,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { getAddress, isAddress, type Address } from 'viem'
 import type { Chain } from '../../../lib/chains'
 import { ACCOUNT_UNCHANGED, PHONE_ACCOUNT_WAY_OUT } from '../../../lib/arc/deploy-copy'
+import { clearWalletReadProvider, setWalletReadProvider } from '../../../lib/arc/vault-read'
 import {
   askForAnotherAccount,
   connectWalletConnect,
@@ -111,6 +112,15 @@ export function useArcWallet(): ArcWalletState {
     setWallet(w)
     void read(w)
   }, [read])
+
+  // The wallet's node is the page's last place to read the chain from, for a browser whose blocker
+  // stops every request to the registry's RPCs. Reads only: nothing here can open a prompt.
+  useEffect(() => {
+    if (!wallet) return
+    const p = wallet.provider
+    setWalletReadProvider(p)
+    return () => clearWalletReadProvider(p)
+  }, [wallet])
 
   // The provider's own events, when it emits them, and focus for the ones that do not.
   useEffect(() => {

@@ -158,7 +158,7 @@ function simulationStop(e: unknown, what: string): TxStop {
       name ?? undefined,
     )
   }
-  if (e instanceof RpcUnreachableError) return stop('rpc_unreachable', e.message)
+  if (e instanceof RpcUnreachableError) return stop(e.blocked ? 'rpc_blocked' : 'rpc_unreachable', e.message)
   return stop('rpc_unreachable', `The chain could not be read while preparing ${what}: ${messageOf(e)}`)
 }
 

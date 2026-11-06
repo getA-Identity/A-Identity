@@ -41,16 +41,47 @@ export function agreedAbsence<K extends string>(said: readonly { kind: K; reason
   return said.find((s) => said.filter((o) => o.kind === s.kind).length >= need) ?? null
 }
 
-/** Every host failed: the hosts tried, in order, and the last failure. */
+/** Every host failed: the hosts tried, in order, the last failure, and each host's own failure. */
 export class NoHostAnswered extends Error {
   readonly tried: string[]
   readonly last: unknown
-  constructor(tried: string[], last: unknown) {
+  readonly failures: readonly { host: string; error: unknown }[]
+  constructor(tried: string[], last: unknown, failures: readonly { host: string; error: unknown }[] = []) {
     super(`no host answered (${tried.join(', ')})`)
     this.name = 'NoHostAnswered'
     this.tried = tried
     this.last = last
+    this.failures = failures
   }
+}
+
+type FetchWalked = { name?: unknown; status?: unknown; message?: unknown; cause?: unknown }
+
+/**
+ * True when a request never got an HTTP answer at all: the browser refused to send it or could not
+ * finish it. viem raises HttpRequestError with no status for that (with fetch's TypeError as its
+ * cause), and with a status when the host did answer, a 429 rate limit included. A timeout is not
+ * this: the request went out and the host was slow.
+ *
+ * Brave Shields, an ad or tracker blocker, a VPN or a filtering DNS all end a request this way, and
+ * so does a lost connection. A busy host does not: it answers 429. So when every host fails like
+ * this at once, the cause is on this side, and "wait a minute" would not help. Known by name, so
+ * this file needs no viem.
+ */
+export function neverAnswered(e: unknown): boolean {
+  let x = e as FetchWalked | null | undefined
+  for (let i = 0; i < 12 && x && typeof x === 'object'; i += 1) {
+    if (x.name === 'TimeoutError') return false
+    if (x.name === 'HttpRequestError') return x.status === undefined || x.status === null
+    if (x.name === 'TypeError' && typeof x.message === 'string' && /fetch|network|load failed/i.test(x.message)) return true
+    x = x.cause as FetchWalked | null | undefined
+  }
+  return false
+}
+
+/** True when there was at least one failure and none of them got an HTTP answer. */
+export function noneAnswered(failures: readonly { error: unknown }[]): boolean {
+  return failures.length > 0 && failures.every((f) => neverAnswered(f.error))
 }
 
 /**
@@ -64,6 +95,7 @@ export async function onHosts<C, T>(
   fn: (client: C, host: string) => Promise<T>,
 ): Promise<{ value: T; host: string }> {
   const tried: string[] = []
+  const failures: { host: string; error: unknown }[] = []
   let last: unknown = null
   for (const { host, client } of hosts) {
     tried.push(host)
@@ -72,10 +104,12 @@ export async function onHosts<C, T>(
       id = await x.askChainId(client)
     } catch (e) {
       last = e
+      failures.push({ host, error: e })
       continue
     }
     if (id !== x.chainId) {
       last = new Error(`${host} answered for chain ${id}, not ${x.chainId}`)
+      failures.push({ host, error: last })
       continue
     }
     try {
@@ -83,7 +117,8 @@ export async function onHosts<C, T>(
     } catch (e) {
       if (x.isFinal(e)) throw e
       last = e
+      failures.push({ host, error: e })
     }
   }
-  throw new NoHostAnswered(tried, last)
+  throw new NoHostAnswered(tried, last, failures)
 }
