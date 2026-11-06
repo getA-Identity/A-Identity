@@ -128,6 +128,10 @@ export const STEP_META: { id: Step; label: string }[] = [
 
 /** Same command texts the agent profile's Metadata tab publishes. */
 export const MCP_ADD_CMD = 'claude mcp add a-identity --transport http https://a-identity.xyz/mcp'
-export const REGISTER_CURL = `curl -X POST https://a-identity.xyz/api/agents/register \\
+/** Registering needs a verified session on every door, MCP included, so the command
+ *  carries the header and says where a token comes from. */
+export const REGISTER_CURL = `# Needs a verified session. How to get a Bearer token: https://a-identity.xyz/auth.md
+curl -X POST https://a-identity.xyz/api/agents/register \\
   -H 'Content-Type: application/json' \\
+  -H 'Authorization: Bearer <token>' \\
   -d '{"manifest":{"name":"My Agent","description":"What it does (20+ chars)","category":"Other","capabilities":["translation"]}}'`
