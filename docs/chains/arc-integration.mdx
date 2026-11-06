@@ -596,9 +596,10 @@ What the page refuses, each for a reason:
   plainly when the vault paid the same amount to the same payee in the 6 hours before that check. What the
   page cannot stop is a wallet prompt answered after you told it nothing was sent and sent again: sign both,
   and both pay. It keeps and follows each hash your wallet hands back to it and each payment its read of the
-  vault found, says so when there are two, and tells you to decline a prompt once the payment has left. The
-  flow's public record holds one of them. A second payment whose hash never reaches the page, once it already
-  holds a hash or a payment for that request, shows only in the vault's activity on the page.
+  vault found, and says so when there are two. It tells you to decline the last prompt it opened once the
+  payment has left, or once a transaction your wallet sent for an earlier prompt is on its way. The flow's
+  public record holds one of them. A second payment whose hash never reaches the page, once it already holds
+  a hash or a payment for that request, shows only in the vault's activity on the page.
 - **A check older than 24 hours**, by the chain's clock. An owner has to be able to find a request in a
   working day, and past that our answer may be wrong without anyone having seen it change. A new check
   costs your agent 0.005 USDC.

@@ -81,6 +81,7 @@ type Pending = {
   saveDeclined: (network: string, vault: string, flowId: string, declined: boolean) => void
   claimHandoff: (r: Send, refused: (rs: Send[]) => boolean, locks?: { request: <T>(name: string, fn: () => T) => Promise<T> } | null) => Promise<boolean>
   dropClaim: (claim: Send) => void
+  noPromptOpen: (r: Send) => void
   saveSentHash: (claim: Send, tx: Record<string, unknown>) => void
   withTx: (r: Send, tx: Record<string, unknown>) => Send
 }
@@ -962,18 +963,71 @@ test('the card stops asking for a prompt once the money left or the request ende
   assert.doesNotMatch(r.noAnswerLine(true), /answer it there/)
   // The page: the line, the timer and the notice, and the card that replaces this one when the flow settles.
   const page = repo('src/components/app/arc/OwnerApprovals.tsx')
-  assert.match(page, /const promptOpen = asking && record !== null && !record\.tx/)
+  assert.match(page, /const promptOpen = asking && record !== null && promptMayBeOpen\(record\)/)
   assert.match(page, /const decline = promptLine\(record, \{ paid: paid !== null, standing \}\)/)
   assert.match(page, /const waitingOnWallet = promptOpen && decline === null/)
   assert.match(page, /if \(!promptOpen\) return\s+const t = setTimeout\(\(\) => release\('confirm'\), WALLET_ANSWER_MS\)/, 'or its cleanup would cancel it, and busy would stick')
   assert.match(page, /\{paid && \(!sentHere \|\| !record\?\.tx\) && \(/, 'the notice shows on a record that only says the wallet was asked')
-  assert.match(page, /<SettledCard chain=\{chain\} vault=\{vault\} flow=\{flow\} decline=\{promptLine\(record, \{ paid: false, standing \}\)\} replaced=\{replaced\} \/>/)
-  assert.match(page, /\{decline && <PromptLine line=\{decline\} \/>\}/, 'the tracker is on every card with a record, and on one whose flow was not read')
+  assert.match(page, /<SettledCard chain=\{chain\} vault=\{vault\} flow=\{flow\} decline=\{promptLine\(record, \{ paid: false, standing \}\)\} onNoPrompt=\{noPrompt\} replaced=\{replaced\} \/>/)
+  assert.match(page, /\{decline && <PromptLine line=\{decline\} onNone=\{asking \|\| askedBox \? undefined : noPrompt\} \/>\}/, 'the tracker is on every card with a record, and on one whose flow was not read')
   assert.match(page, /decline=\{decline\}/)
   assert.match(page, /decline=\{promptLine\(r, \{ paid: false \}\)\}/)
   assert.match(page, /\{noAnswerLine\(decline !== null\)\}/)
   assert.match(page, /I checked: my wallet shows nothing was sent/)
   assert.match(page, /\{record\.tx \? "This payment landed under another transaction, most likely your wallet's speed-up\."/, 'a hash that never came back is no speed-up of it')
+})
+
+test("a hash from an earlier prompt answers nothing about the one the record's claim opened, which stays open", async () => {
+  const r = await rules()
+  const open: Standing = { kind: 'approvable' }
+  const TX3 = '0x' + '79'.repeat(32)
+  // The read found the payment while the second prompt is open, and the first prompt's own hash comes back to its run late.
+  {
+    const { p, first, second, reclaimed, stored } = await twoRuns()
+    await reclaimed()
+    p.saveHandoff({ ...(stored() as Send), paidBy: TX2 })
+    p.saveSentHash(first, txRecord('pending', { hash: TX }))
+    const now = stored() as Send
+    assert.deepEqual(now.alsoSent?.map((t) => t.hash), [TX], 'it is a send, and followed')
+    assert.equal(r.promptMayBeOpen(now), true, 'and no answer to the second prompt')
+    assert.match(String(r.promptLine(now, { paid: true, standing: open })), /decline it: signing it pays this amount again/)
+    p.saveSentHash(second, txRecord('pending', { hash: TX3 }))
+    assert.equal(r.promptMayBeOpen(stored() as Send), false, "the second prompt's own hash is its answer")
+  }
+  // Nothing found yet, and the first prompt's hash comes back the ordinary way, into tx.
+  {
+    const { p, first, second, reclaimed, stored } = await twoRuns()
+    await reclaimed()
+    p.saveSentHash(first, txRecord('pending', { hash: TX }))
+    const now = () => stored() as Send
+    assert.equal(now().tx?.hash, TX, 'the first hash is the one the record follows')
+    assert.equal(r.promptMayBeOpen(now()), true, 'and the second prompt is still open')
+    assert.match(String(r.promptLine(now(), { paid: false, standing: open })), /Another transaction your wallet sent for this request is on its way, so decline it: if both land, the vault pays this amount twice/)
+    // It lands and the request reads paid: the card that replaces this one says it too, and so does the record alone.
+    p.saveHandoff(p.withTx(now(), txRecord('settled', { hash: TX })))
+    assert.match(String(r.promptLine(now(), { paid: false, standing: { kind: 'settled' } })), /already left the vault, so decline it/)
+    assert.match(String(r.promptLine(now(), { paid: false, standing: open })), /already left the vault, so decline it/)
+    // The second prompt declined: its run says so, and the line goes.
+    p.dropClaim(second)
+    assert.equal(now().tx?.hash, TX, 'the send stays')
+    assert.equal(r.promptLine(now(), { paid: true, standing: { kind: 'settled' } }), null)
+  }
+  // The person said the first will not land, and it never showed: then the prompt has a reason again.
+  assert.equal(r.promptLine(send({ answered: false, tx: txRecord('untracked'), released: true }), { paid: false, standing: open }), null)
+  // A hash a claim carried, handed back late by that claim's own run, is that claim's send and no answer to this one.
+  {
+    const { p, first, second, stored } = await twoRuns()
+    p.saveHandoff({ ...first, tx: txRecord('untracked'), released: true, releasedAt: CHECKED })
+    assert.equal(await p.claimHandoff(second, (rs) => r.holdFor(second as unknown as Flow, rs).held, null), true)
+    p.saveSentHash(first, txRecord('pending'))
+    assert.equal(r.promptMayBeOpen(stored() as Send), true)
+    p.saveSentHash(second, txRecord('pending'))
+    assert.equal(r.promptMayBeOpen(stored() as Send), false, 'the same hash back to this claim is its answer')
+  }
+  // A record from before the answer was kept reads as it did.
+  assert.equal(r.promptMayBeOpen(send({ tx: txRecord('pending') })), false)
+  assert.equal(r.promptMayBeOpen(send({ paidBy: TX, hashBack: true })), false)
+  assert.equal(r.promptMayBeOpen(send()), true)
 })
 
 test('a send the person said is dropped, which no receipt ever showed, stops counting toward two', async () => {
@@ -984,6 +1038,38 @@ test('a send the person said is dropped, which no receipt ever showed, stops cou
   assert.equal(r.holdsPage(send({ ...landed, released: true, releasedAt: CHECKED })), false)
   // A hash that did land counts, whatever was said about the other.
   assert.equal(r.moreThanOneSend(send({ ...landed, alsoSent: [txRecord('settled')], released: true })), true)
+})
+
+test('a prompt the wallet declined, or that the person says is closed, stops being one on a paid card', async () => {
+  const { p, r, first, stored } = await twoRuns()
+  const settled: Standing = { kind: 'settled' }
+  const answer = { state: 'settled', txHash: TX2, flowId: FLOW, at: CHECKED }
+  // The same payment from another device, and the server's answer, with the prompt still open.
+  assert.equal(await p.claimHandoff(first, (rs) => r.holdFor(first as unknown as Flow, rs).held, null), true)
+  p.saveHandoff({ ...(stored() as Send), paidBy: TX2, server: answer })
+  assert.match(String(r.promptLine(stored() as Send, { paid: false, standing: settled })), /may still be open in your wallet/)
+  // The owner declines it, and the run that asked hears that.
+  p.dropClaim(first)
+  assert.equal(stored()?.paidBy, TX2, 'the payment stays')
+  assert.equal(r.promptLine(stored() as Send, { paid: false, standing: settled }), null)
+  // A phone: the run was lost to a reload, so only the person can say the one prompt was the payment.
+  const phone = await twoRuns()
+  assert.equal(await phone.p.claimHandoff(phone.first, (rs) => r.holdFor(phone.first as unknown as Flow, rs).held, null), true)
+  phone.p.saveHandoff({ ...(phone.stored() as Send), paidBy: TX2, server: answer })
+  phone.p.noPromptOpen({ ...phone.first, token: 'another-claim' })
+  assert.match(String(r.promptLine(phone.stored() as Send, { paid: false, standing: settled })), /may still be open/, 'said of another claim, it is not this one')
+  phone.p.noPromptOpen(phone.stored() as Send)
+  assert.equal(r.promptLine(phone.stored() as Send, { paid: false, standing: settled }), null)
+  // A record from before the answer was kept ends the same way.
+  phone.p.saveHandoff(send({ vault: phone.vault, paidBy: TX2, server: answer }))
+  assert.equal(r.promptMayBeOpen(phone.stored() as Send), true)
+  phone.p.noPromptOpen(send({ vault: phone.vault }))
+  assert.equal(r.promptMayBeOpen(phone.stored() as Send), false)
+  // The page: the paid card and the tracker offer that way out, and not while this tab waits on the prompt.
+  const page = repo('src/components/app/arc/OwnerApprovals.tsx')
+  assert.match(page, /I checked: no prompt for this is open in my wallet/)
+  assert.match(page, /<PromptLine line=\{decline\} onNone=\{onNoPrompt\} \/>/)
+  assert.match(page, /onNone=\{asking \|\| askedBox \? undefined : noPrompt\}/)
 })
 
 test('a refusal on a flow another hash closed keeps its tracker, and its first line says what this hash did', async () => {
@@ -1474,6 +1560,10 @@ test('the words about who can send and what a read is for say what the page does
   assert.doesNotMatch(guide, /It keeps and follows both hashes/)
   assert.match(guide, /keeps and follows each hash your wallet hands back/)
   assert.match(guide, /shows only in the vault's activity on the page/)
+  // Which prompt it can speak for, and which payments its read keeps.
+  const said = guide.replace(/\s+/g, ' ')
+  assert.match(said, /It tells you to decline the last prompt it opened once the payment has left, or once a transaction your wallet sent for an earlier prompt is on its way/)
+  assert.doesNotMatch(said, /tells you to decline a prompt once the payment has left/)
 })
 
 test('declining is kept in this browser only, and the card says nothing records it', async () => {

@@ -50,6 +50,7 @@ import {
   paidBefore,
   paymentsRead,
   promptLine,
+  promptMayBeOpen,
   readOrder,
   refusedLead,
   replacedSendLine,
@@ -65,7 +66,7 @@ import {
   type ReceiptStep,
 } from '../../../lib/arc/handoff-rules'
 import { postHandoffReceipt, readFlow, readWaitingFlows, recheckHandoff, scanPaid, type PaidScan, type WaitingRead } from '../../../lib/arc/handoff-send'
-import { claimHandoff, dropClaim, holdsFlow, loadDeclined, loadHandoffs, saveDeclined, saveHandoff, saveSentHash, withTx, type HandoffSend, type TxRecord } from '../../../lib/arc/pending'
+import { claimHandoff, dropClaim, holdsFlow, loadDeclined, loadHandoffs, noPromptOpen, saveDeclined, saveHandoff, saveSentHash, withTx, type HandoffSend, type TxRecord } from '../../../lib/arc/pending'
 import { DOCS_URL } from '../../../lib/brand'
 import { addressUrl, localTime, networkName, networkWord, readVault, txUrl, type VaultSnapshot } from '../../../lib/arc/vault-read'
 import { aboveSoftWarn, formatUnitsExact, sameAddress } from '../../../lib/arc/vault-rules'
@@ -473,7 +474,13 @@ function FlowCard(props: CardProps) {
       </div>
     )
   const replaced = record ? replacedSendLine(record) : null
-  if (standing.kind === 'settled') return <SettledCard chain={chain} vault={vault} flow={flow} decline={promptLine(record, { paid: false, standing })} replaced={replaced} />
+  const noPrompt = record
+    ? () => {
+        noPromptOpen(record)
+        props.onRecords()
+      }
+    : undefined
+  if (standing.kind === 'settled') return <SettledCard chain={chain} vault={vault} flow={flow} decline={promptLine(record, { paid: false, standing })} onNoPrompt={noPrompt} replaced={replaced} />
   if (standing.kind === 'reverted')
     return (
       <div role="status" data-flow={flow.flowId} className="rounded-xl border border-danger/25 bg-danger/[0.07] p-4 text-sm text-foreground">
@@ -519,16 +526,24 @@ function VerdictReasons({ reasons }: { reasons: readonly string[] }) {
   )
 }
 
-/** What to do about a prompt that may still be open, wherever the card stands. */
-function PromptLine({ line }: { line: string }) {
+/**
+ * What to do about a prompt that may still be open, wherever the card stands. With no run of this tab waiting on it,
+ * no answer from the wallet can reach the page, so the person can say there is none.
+ */
+function PromptLine({ line, onNone }: { line: string; onNone?: () => void }) {
   return (
-    <p role="alert" className="rounded-lg border border-danger/25 bg-danger/[0.07] px-3 py-2 text-xs font-semibold text-foreground">
-      {line}
-    </p>
+    <div role="alert" className="rounded-lg border border-danger/25 bg-danger/[0.07] px-3 py-2 text-xs text-foreground">
+      <p className="font-semibold">{line}</p>
+      {onNone && (
+        <button type="button" onClick={onNone} className="mt-1 font-semibold text-accent underline underline-offset-2">
+          I checked: no prompt for this is open in my wallet
+        </button>
+      )}
+    </div>
   )
 }
 
-function SettledCard({ chain, vault, flow, decline, replaced }: { chain: Chain; vault: VaultSnapshot; flow: HandoffFlow; decline: string | null; replaced: string | null }) {
+function SettledCard({ chain, vault, flow, decline, onNoPrompt, replaced }: { chain: Chain; vault: VaultSnapshot; flow: HandoffFlow; decline: string | null; onNoPrompt?: () => void; replaced: string | null }) {
   return (
     <div role="status" data-flow={flow.flowId} className="rounded-xl border border-ok/30 bg-ok/[0.07] p-4 text-sm text-foreground">
       <div className="flex items-start gap-2">
@@ -541,7 +556,7 @@ function SettledCard({ chain, vault, flow, decline, replaced }: { chain: Chain; 
           <TxLink chain={chain} hash={flow.payment?.txHash ?? null} />
           {decline && (
             <div className="mt-2">
-              <PromptLine line={decline} />
+              <PromptLine line={decline} onNone={onNoPrompt} />
             </div>
           )}
           {replaced && <p className="mt-2 text-xs text-foreground/85">{replaced}</p>}
@@ -585,9 +600,10 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
   const cardState = { sent: record !== null && sentHere, held: hold.held, paid: paid !== null, canAct }
   const { heading, asks } = cardHeading(standing, cardState)
   const offHere = notHereLine(standing, cardState)
-  // This tab is the one waiting on the wallet right now: its prompt may be open, unsigned.
+  // This tab is the one waiting on the wallet right now: its prompt may be open, unsigned. A hash an earlier prompt
+  // handed back is no answer to this one, which is the record's claim.
   const asking = busy === 'confirm'
-  const promptOpen = asking && record !== null && !record.tx
+  const promptOpen = asking && record !== null && promptMayBeOpen(record)
   // Once the money left, or the request ended, that prompt has no reason left and the card stops asking for it.
   const decline = promptLine(record, { paid: paid !== null, standing })
   const waitingOnWallet = promptOpen && decline === null
@@ -951,10 +967,16 @@ function SendTracker({ record, chain, asking = false, standing, closedBy = null,
     saveHandoff({ ...latest.current, released: true, releasedAt: new Date().toISOString() })
     onRecords()
   }
+  // The box below that waits on a prompt with no hash back already has its own way out.
+  const askedBox = !asking && !record.tx && !record.paidBy && !record.released && !server
+  const noPrompt = () => {
+    noPromptOpen(latest.current)
+    onRecords()
+  }
 
   return (
     <div className="mt-3 space-y-2">
-      {decline && <PromptLine line={decline} />}
+      {decline && <PromptLine line={decline} onNone={asking || askedBox ? undefined : noPrompt} />}
       {several && (
         <div role="alert" className="rounded-lg border border-danger/25 bg-danger/[0.07] px-3 py-2 text-xs text-foreground">
           <div className="font-semibold">Your wallet sent more than one transaction for this one request. Each one that does not revert pays this amount.</div>
@@ -973,7 +995,7 @@ function SendTracker({ record, chain, asking = false, standing, closedBy = null,
       {others.map((t) => (
         <TxReceipt key={t.hash} record={t} onUpdate={update} onSettled={() => onLanded()} serverJudges oneOfSeveral={several || Boolean(server)} />
       ))}
-      {!asking && !record.tx && !record.paidBy && !record.released && !server && (
+      {askedBox && (
         <div role="status" className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
           <div className="font-semibold">Your wallet was asked to send this, and this page has not heard back.</div>
           <p className="mt-1">{noAnswerLine(decline !== null)}</p>

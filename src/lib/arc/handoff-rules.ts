@@ -749,21 +749,28 @@ export function notHereLine(s: HandoffStanding, o: CardState): string | null {
   return 'This page does not send this one. To pay it, send ownerPay from the owner key: the guide has a sample.'
 }
 
-/** The wallet was asked for this flow and no hash came back, so a prompt may still be open in it, wherever that wallet is. */
+/**
+ * The wallet was asked for this record's claim and that prompt has had no answer, so it may still be open in it, wherever
+ * that wallet is. A hash an earlier claim's run handed back is a send, and no answer to this claim. A record from before
+ * the answer was kept says it by its hash.
+ */
 export function promptMayBeOpen(r: HandoffSend): boolean {
-  return !r.tx && !r.hashBack
+  return r.answered === undefined ? !r.tx && !r.hashBack : !r.answered
 }
 
 /**
  * What a prompt that may still be open has become, or null while it still stands for what it asked. ownerPay names
  * no flow and the contract keeps no list of what it paid, so a signature pays whatever has happened since. The
  * wallet's prompt is out of this page's reach, and this is the page's one way to stop it. `paid` is what the read
- * of the vault found, whoever's key it was.
+ * of the vault found, whoever's key it was. A hash from an earlier prompt that is still on its way is a payment
+ * this one would pay beside, if both land.
  */
 export function promptLine(r: HandoffSend | null | undefined, o: { paid: boolean; standing?: HandoffStanding }): string | null {
   if (!r || !promptMayBeOpen(r)) return null
-  if (o.paid || r.paidBy || r.server || o.standing?.kind === 'settled' || r.alsoSent?.some((t) => t.outcome === 'settled')) return 'A prompt for this may still be open in your wallet. This payment already left the vault, so decline it: signing it pays this amount again.'
+  const sends = [...(r.tx ? [r.tx] : []), ...(r.alsoSent ?? [])]
+  if (o.paid || r.paidBy || r.server || o.standing?.kind === 'settled' || sends.some((t) => t.outcome === 'settled')) return 'A prompt for this may still be open in your wallet. This payment already left the vault, so decline it: signing it pays this amount again.'
   if (o.standing?.kind === 'reverted') return 'A prompt for this may still be open in your wallet. This request is over, so decline it: signing it still sends this amount from the vault.'
+  if (r.tx?.outcome === 'pending' || (r.tx?.outcome === 'untracked' && !r.released)) return 'A prompt for this may still be open in your wallet. Another transaction your wallet sent for this request is on its way, so decline it: if both land, the vault pays this amount twice.'
   return null
 }
 
