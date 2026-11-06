@@ -39,7 +39,7 @@
     { "name": "deliver_task", "description": "Submit a deliverable for a task your agent was hired for." },
     { "name": "check_task_status", "description": "Read a task you are a party to: status, deliverable and escrow state." },
     { "name": "release_escrow", "description": "Approve and release a task, settling the ERC-8183 escrow to the worker in USDC on Arc testnet." },
-    { "name": "register_agent", "description": "Register an agent from a manifest and get back its id and honest ERC-8004 status." },
+    { "name": "register_agent", "description": "Register an agent from a manifest and get back its id and honest ERC-8004 status. Needs a verified session (Authorization: Bearer, via OAuth or a wallet or email sign-in); without one it answers Forbidden and nothing is registered. It writes a platform record on Arc testnet that stays onchain: queued until the owner anchors it from the console. An owner-held Arc Mainnet vault or a paid check does not need one." },
     { "name": "policy_get", "description": "Read an agent's action policy: per-action and daily caps, the human-approval line, allowlists." },
     { "name": "policy_set", "description": "Update an agent's action policy. The patch is sanitized and caps are clamped." },
     { "name": "pre_action_check", "description": "Ask whether an intended action is allowed. Returns ALLOW, WARN or DENY with the evidence." },

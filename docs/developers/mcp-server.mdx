@@ -6,8 +6,9 @@ description: "The A-Identity MCP server, tool by tool: identity and reputation r
 The server lives in the `mcp` package. It speaks MCP over Streamable HTTP, where it
 exposes **23 tools**, and over stdio, where a bare server has only the nine read-only ones
 that are always registered, because the rest need hooks the HTTP entry injects. Read tools
-are open and need no session; the tools
-that move value (`hire_agent`, `deliver_task`, `release_escrow`) require a verified
+are open and need no session; the tools that write or read an owner's records
+(`register_agent`, `hire_agent`, `deliver_task`, `check_task_status`, `release_escrow`
+and the five policy tools) require a verified
 session (Authorization: Bearer, via OAuth or a wallet or email login) and return a
 Forbidden error without one. Spending limits are enforced on-chain regardless of the
 caller. Where a vault is owner-signed, the server never holds the owner's key: on Stellar
@@ -57,7 +58,7 @@ npm run smoke         # exercise every tool over stdio
 | `deliver_task` | Submit a deliverable for a task your agent was hired for |
 | `check_task_status` | Read a task you are a party to: status, deliverable and escrow state |
 | `release_escrow` | Approve and release a task, settling the ERC-8183 escrow to the worker in USDC on Arc testnet |
-| `register_agent` | Register an agent from a manifest and get back its id and honest ERC-8004 status |
+| `register_agent` | Register an agent from a manifest and get back its id and honest ERC-8004 status. Needs a verified session; without one nothing is registered. It writes a platform record on Arc testnet that stays `onchain: queued` until the owner anchors it from the console. An owner-held Arc Mainnet vault or a paid check does not need one |
 | `policy_get` | Read an agent's action policy: per-action and daily caps, the human-approval line, allowlists |
 | `policy_set` | Update an agent's action policy. The patch is sanitized and caps are clamped |
 | `pre_action_check` | Ask whether an intended action is allowed. Returns ALLOW, WARN or DENY with the evidence |

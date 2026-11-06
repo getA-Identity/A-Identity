@@ -449,8 +449,13 @@ version `0.2.0`, protocol `2025-06-18`.
 23 tools:
 
 **Identity and discovery**: `resolve_agent`, `get_reputation`, `list_agents`,
-`find_agent`, `get_agent_manifest`, `register_agent`, `list_capabilities`,
-`merchant_check`
+`find_agent`, `get_agent_manifest`, `list_capabilities`, `merchant_check`
+
+**Register (verified session)**: `register_agent`. Without a session it answers
+Forbidden and registers nothing. It writes a platform record, not an on-chain one:
+the record is created under Arc testnet (`eip155:5042002`) and stays
+`onchain: queued` until the owner anchors it from the console. An owner-held Arc
+Mainnet vault or a paid check does not need one.
 
 **Chain and platform status**: `get_chain_status`, `get_arc_status`,
 `get_circle_status`
@@ -484,10 +489,13 @@ with nothing charged. Over HTTP: `POST /api/x402/gateway/verify-then-pay`,
 for one vault's owner) and
 `POST /api/x402/gateway/flows/<flowId>/receipt`.
 
-Read tools need no credential. Tools that move value require a verified session
-(Authorization: Bearer, from OAuth or a wallet or email login) and, without one,
-return a Forbidden error rather than moving anything. Spending limits are
-enforced on-chain regardless of how the caller authenticated.
+Read tools need no credential. Tools that write, or read an owner's records,
+require a verified session (Authorization: Bearer, from OAuth or a wallet or email
+login) and, without one, return a Forbidden error rather than acting:
+`register_agent`, the work and escrow tools and the policy and audit tools. The
+verify-then-pay pair takes no session: the check is paid through Gateway, and the
+receipt records only what the chain proves. Spending limits are enforced on-chain
+regardless of how the caller authenticated.
 
 Machine-readable server card:
 https://a-identity.xyz/.well-known/mcp/server-card.json
