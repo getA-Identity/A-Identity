@@ -971,6 +971,16 @@ test('the card stops asking for a prompt once the money left or the request ende
   assert.match(page, /\{record\.tx \? "This payment landed under another transaction, most likely your wallet's speed-up\."/, 'a hash that never came back is no speed-up of it')
 })
 
+test('a send the person said is dropped, which no receipt ever showed, stops counting toward two', async () => {
+  const r = await rules()
+  const landed = { tx: txRecord('settled', { hash: TX2 }), alsoSent: [txRecord('untracked', { likelyReplaced: true })], server: { state: 'settled', txHash: TX2, flowId: FLOW, at: CHECKED } }
+  assert.equal(r.moreThanOneSend(send(landed)), true, 'until the person says so, it can still land')
+  assert.equal(r.moreThanOneSend(send({ ...landed, released: true, releasedAt: CHECKED })), false, 'then it holds nothing, and counts for nothing')
+  assert.equal(r.holdsPage(send({ ...landed, released: true, releasedAt: CHECKED })), false)
+  // A hash that did land counts, whatever was said about the other.
+  assert.equal(r.moreThanOneSend(send({ ...landed, alsoSent: [txRecord('settled')], released: true })), true)
+})
+
 test('a refusal on a flow another hash closed keeps its tracker, and its first line says what this hash did', async () => {
   const r = await rules()
   const refused = { state: 'refused', txHash: TX, flowId: FLOW, code: 'FLOW_ENDED', reason: 'this flow is executed', at: CHECKED }

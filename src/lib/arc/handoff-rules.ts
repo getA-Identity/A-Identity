@@ -491,11 +491,12 @@ export function otherSends(s: HandoffSend): TxRecord[] {
  * There is a second hash on this record that can have paid, which is what the card's alert waits for. A send
  * carried from an earlier claim, with nothing beside it, is one send. And a hash that came back after the read
  * found a payment can be that payment's own first hash, which a speed-up replaced, so beside paidBy it is followed
- * and not counted until the chain says it landed: a single prompt must not read as two payments.
+ * and not counted until the chain says it landed: a single prompt must not read as two payments. A send the person
+ * said is dropped or cancelled, which no receipt ever showed, stops counting as holdOfTx stops holding it.
  */
 export function moreThanOneSend(s: HandoffSend): boolean {
   if (otherSends(s).length === 0) return false
-  const sends = [...(s.tx ? [s.tx] : []), ...(s.alsoSent ?? [])].filter((t) => t.outcome !== 'replaced' && !(s.paidBy && (t.outcome === 'pending' || t.likelyReplaced)))
+  const sends = [...(s.tx ? [s.tx] : []), ...(s.alsoSent ?? [])].filter((t) => t.outcome !== 'replaced' && !(t.outcome === 'untracked' && s.released) && !(s.paidBy && (t.outcome === 'pending' || t.likelyReplaced)))
   return new Set([...sends.map((t) => t.hash.toLowerCase()), ...(s.paidBy ? [s.paidBy.toLowerCase()] : [])]).size > 1
 }
 
