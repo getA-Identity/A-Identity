@@ -19,7 +19,7 @@ import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
 import { Skeleton } from '../ui/skeleton'
 
 // incomplete: a log this number reads could not be read, so the count is a lower limit.
-// mayIncludeTeamKeys: the flow log could not be read, so the agent key of a vault labeled team could be in it: an upper limit.
+// mayIncludeTeamKeys: the flow log could not be read, so the agent key of a vault labeled team, or of the launch-day vault, could be in it: an upper limit.
 type Metric = { count: number; target: number; note?: string; incomplete?: boolean; mayIncludeTeamKeys?: boolean }
 type RailTotals = { checks: number; usd: number }
 type UsageSide = {
@@ -478,7 +478,7 @@ export default function ArcSeasonProgress() {
             <p className="mt-3 rounded-xl bg-warn/10 px-4 py-2.5 text-xs leading-relaxed text-warn">
               The verify-then-pay flow log could not be read on this request, so the flows it holds are missing from the flow and
               refusal counts below until it answers.
-              {external.mayIncludeTeamKeys && ' The agent key of a vault labeled team is known from that log, so it could be counted as external, and the external numbers below could be too high.'}
+              {external.mayIncludeTeamKeys && ' The agent key of a vault labeled team, or of the launch-day vault, is known from that log, so it could be counted as external, and the external numbers below could be too high.'}
             </p>
           )}
 
@@ -564,7 +564,7 @@ export default function ArcSeasonProgress() {
             <UsageCell title="Internal" caption="Our own buyer wallets, labeled, never hidden." side={report.usage.internal} />
             <UsageCell
               title="External"
-              caption={external.mayIncludeTeamKeys ? 'Wallets A-Identity does not control, and possibly the agent key of a vault labeled team until the flow log answers.' : 'Wallets A-Identity does not control.'}
+              caption={external.mayIncludeTeamKeys ? 'Wallets A-Identity does not control, and possibly the agent key of a vault labeled team, or of the launch-day vault, until the flow log answers.' : 'Wallets A-Identity does not control.'}
               side={external}
             />
           </div>

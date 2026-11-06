@@ -351,9 +351,9 @@ export type ArcSeasonReport = {
     internal: ArcSeasonUsageSide
     external: ArcSeasonUsageSide & {
       byWallet: ArcSeasonWallet[]
-      /** Set when the flow log could not be read and a vault is labeled team: that vault's agent key is known from that log, so
-       *  it could be counted as external. The number is then an upper limit, the opposite of incomplete. Every number that reads
-       *  external checks carries this. */
+      /** Set when the flow log could not be read: the agent key of a vault labeled team, and a key the launch-day vault rotated
+       *  to, are known from that log, so one could be counted as external. The number is then an upper limit, the opposite of
+       *  incomplete. Every number that reads external checks carries this. */
       mayIncludeTeamKeys?: true
     }
   }
@@ -1002,12 +1002,17 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   const everyFlowOnLaunchVault = linkedList.length > 0 && flowsByVault['launch-day'] === linkedList.length
   const flowLogUnreadable = Boolean(recordedFlows && !recordedFlows.read.readable)
   const flowsIncomplete = !gateway.read.readable || flowLogUnreadable
-  // The agent keys of team vaults come from the flow log, so with it down one could be counted as external. That makes a number
-  // too high, not too low, so it is not `incomplete`. Said on every number that reads external checks, wherever there is one.
-  const teamKeysUnknown = flowLogUnreadable && vaultsByKind.team > 0
+  // The agent keys of team vaults come from the flow log, and so does a key the launch-day vault rotated to before anyone
+  // committed it, so with the log down one could be counted as external. That makes a number too high, not too low, so it is
+  // not `incomplete`. Said on every number that reads external checks, wherever there is one. The launch-day vault is always
+  // there to rotate, and whether its key now is committed takes a chain read this report does not make, so it is said on
+  // every outage of the log rather than never.
+  const keysFromLog = [...(vaultsByKind.team > 0 ? ['a vault labeled team'] : []), ...(launchVault ? ['the launch-day vault'] : [])]
+  const keysOf = keysFromLog.length > 1 ? `${keysFromLog[0]}, or of ${keysFromLog[1]},` : keysFromLog[0]
+  const teamKeysUnknown = flowLogUnreadable && keysFromLog.length > 0
   const flagTeamKeys = (count: number) => (teamKeysUnknown && count > 0 ? { mayIncludeTeamKeys: true as const } : {})
   const teamKeysCaveat = (count: number) =>
-    teamKeysUnknown && count > 0 ? ' The verify-then-pay flow log could not be read on this request, so the agent key of a vault labeled team could be counted as external until it answers.' : ''
+    teamKeysUnknown && count > 0 ? ` The verify-then-pay flow log could not be read on this request, so the agent key of ${keysOf} could be counted as external until it answers.` : ''
   const externalFlowItems = [...externalRows.values()].map(flowItem)
   const weekly = weeklyUsage(externalChecks, now(), teamOf)
   // A wallet that paid and also owns a vault nobody identified, or runs as its agent key, could be
