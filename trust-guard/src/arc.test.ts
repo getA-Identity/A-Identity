@@ -2056,6 +2056,11 @@ test('the shipped docs say what a returned preflight and record.recorded mean, b
   const readme = read('README.md')
   assert.match(readme, /On `awaiting_human` it is true because the flow is on record, with no payment made/)
   assert.match(readme, /a return does not mean `pay\(\)` will pass/)
+  // paid null: a check charged and recorded, with only the answer lost, has its verdict on the flow, so that is read first.
+  assert.match(readme, /`paid` is true, false, or null when the answer does not say\. Then read `GET \/api\/x402\/gateway\/flows\/<authNonce>` before you sign again/)
+  assert.match(readme, /a flow there that names this vault, payee and amount is your answer, so do not sign again/)
+  assert.match(readme, /If the proof reads `unconfirmed`, or `credited` or `completed` with the flow still answering 404, treat that nonce as giving no flow/)
+  assert.match(types, /Read GET \/api\/x402\/gateway\/flows\/<authNonce> first: a flow there that names this vault, payee and amount is your answer, so do not sign again/)
 })
 
 test('the package says one version, and the README says what that version changed', () => {

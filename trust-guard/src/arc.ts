@@ -237,8 +237,10 @@ export class GatewayCheckError extends Error {
   readonly code: GatewayCheckCode
   readonly status?: number
   /** Was the check paid for? null: a signed authorization left this process and the answer
-   *  does not say. Look the nonce up on GET /api/x402/gateway/proof, which lists only its
-   *  newest 50 rows, and do not sign again before that. */
+   *  does not say. Read GET /api/x402/gateway/flows/<authNonce> first: a flow there that names
+   *  this vault, payee and amount is your answer, so do not sign again. If it answers 404, look
+   *  the nonce up on GET /api/x402/gateway/proof, which lists only its newest 50 rows, and do
+   *  not sign again before that. */
   readonly paid: boolean | null
   readonly authNonce?: Hex
   /** The server's own refusal code, when it named one. */
