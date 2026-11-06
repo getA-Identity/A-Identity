@@ -24,6 +24,7 @@ import {
 } from './platform.js'
 import { MAX_AGENTS_PER_OWNER, agentQuotaComplaint, type Task } from './marketplace.js'
 import { agentCreateVolume, chargeAgentCreate } from './rate-budget.js'
+import { getChainById } from './chains/index.js'
 import { buildServer, type ServerData } from './server.js'
 import { handleGuardrailRoutes } from './http/guardrail-routes.js'
 import { publicAgents, type RouteCtx } from './http/shared.js'
@@ -354,4 +355,16 @@ test('a task row with no client is still closed to a caller with no session', as
   assert.equal(legacy.status, 'delivered', 'nothing was released')
   const read = getTask(legacy.id, undefined)
   assert.ok('error' in read && read.error.startsWith('Forbidden'), 'and nothing is read')
+})
+
+// ── what the list says about a record ────────────────────────────────────────────
+
+test('the agent list names the chain id beside the chain, read from the record', () => {
+  __resetPlatformStateForTests()
+  const a = createAgent({ name: 'Listed', description: '', category: 'Other', capabilities: [], permissions: {}, owner: account('list') })
+  const row = publicAgents().find((r) => r.agentId === a.id)
+  assert.ok(row)
+  assert.equal(row.caip2, `eip155:${a.chainId}`)
+  assert.equal(getChainById(row.chain)?.caip2, row.caip2, 'the id and the chain name the same registry chain')
+  assert.equal(row.onchain, 'queued', 'a new record is not on chain')
 })

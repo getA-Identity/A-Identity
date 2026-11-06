@@ -239,7 +239,9 @@ export function createAgent(input: {
       },
     },
     followers: [],
-    activity: [{ at: new Date().toISOString(), text: 'Agent registered; KYA pending (prove wallet control), on-chain anchor queued' }],
+    // Says what exists: a platform record. Nothing anchors it by itself; the owner does, from
+    // the console, and until then `onchain` stays 'queued'.
+    activity: [{ at: new Date().toISOString(), text: `Agent registered on the platform; KYA pending (prove wallet control); not on chain until the owner anchors it on ${ARC_TESTNET.name}` }],
     createdAt: new Date().toISOString(),
   }
 

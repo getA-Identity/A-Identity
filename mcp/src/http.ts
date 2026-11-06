@@ -301,9 +301,13 @@ const server = http.createServer(async (req, res) => {
         })
         return
       }
-      // Bake the request's VERIFIED caller into the marketplace hooks. A guest / no token ->
-      // mcpCaller is undefined, so the ownership gate in platform.ts rejects the mutating tools
-      // (hire/deliver/release) with a Forbidden error - MCP never bypasses the verified-session gate.
+      // Bake the request's VERIFIED caller into every hook below that writes or reads an
+      // owner's records. A guest or no token -> mcpCaller is undefined, and each of those hooks
+      // answers Forbidden inside platform.ts: hire, deliver, check and release, the five owner
+      // tools, and register, which refuses a missing caller itself (it used to create a record
+      // with no owner here). MCP never bypasses the verified-session gate. The verify-then-pay
+      // pair is the one exception, on purpose and on the same terms as its REST routes: the
+      // check is bought with a Gateway payment and the receipt records only what the chain proves.
       const mcpCaller = isVerified(caller) ? callerId : undefined
       const mcp = buildServer({
         listAgents: publicAgents,
@@ -385,8 +389,8 @@ server.listen(PORT, () => {
   console.error(`  GET  /api/agents/audit-log       decision trail (?since= &limit=)`)
   console.error(`  POST /api/agents/audit-log/outcome  record what happened after a verdict`)
   console.error(`  POST /api/agents/logo            set/replace/remove the profile image (owner-only)`)
-  console.error(`  POST /api/agents/register         register an agent from a manifest (free)`)
-  console.error(`  POST /api/agents/register-url     register from a hosted manifest URL (free)`)
+  console.error(`  POST /api/agents/register         register an agent from a manifest (free, verified session)`)
+  console.error(`  POST /api/agents/register-url     register from a hosted manifest URL (free, verified session)`)
   console.error(`  GET  /api/agents/badge           public guardrail badge (SVG or JSON, opt-in)`)
   console.error(`  GET  /api/traction               aggregate guardrail traction (public)`)
   console.error(`  GET  /api/stats                  platform-wide aggregates (public)`)

@@ -128,12 +128,17 @@ export function denyRead(res: http.ServerResponse, agentId: string, caller?: str
 }
 
 /** The real agents this platform knows, in a public discovery shape. Shared by the
- *  REST /api/agents endpoint and the MCP `list_agents` tool. No mocks. */
+ *  REST /api/agents endpoint and the MCP `list_agents` tool. No mocks.
+ *
+ *  `caip2` sits beside `chain` because 'arc' alone does not say which Arc: every record is
+ *  created under Arc testnet, and a reader comparing against Arc Mainnet needs the id. It is
+ *  read from the record, so this file names no chain. */
 export function publicAgents() {
   return listPlatformAgents().map((a) => ({
     agentId: a.onchainAgentId ? `eip155:${a.chainId}:8004/${a.onchainAgentId}` : a.id,
     name: a.name,
     chain: a.chain,
+    caip2: typeof a.chainId === 'number' ? `eip155:${a.chainId}` : null,
     kya: a.kya,
     onchain: a.onchain,
     walletAddress: a.walletAddress,

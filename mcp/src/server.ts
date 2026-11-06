@@ -43,7 +43,7 @@ const CHAIN_COUNT = (status: string) => CHAINS.filter((c) => c.status === status
  * says reputation lives on the platform. No mocks in either path.
  */
 export type ServerData = {
-  listAgents?: () => Array<{ agentId: string; name?: string; chain: string; kya?: string; onchain?: string; walletAddress?: string | null }>
+  listAgents?: () => Array<{ agentId: string; name?: string; chain: string; caip2?: string | null; kya?: string; onchain?: string; walletAddress?: string | null }>
   getReputation?: (agentId: string) => unknown | null
   /** Marketplace hooks the HTTP entry injects (with a per-request verified caller baked in),
    *  so an external agent can transact over MCP. Absent on the stdio entry (read-only). The
@@ -60,8 +60,11 @@ export type ServerData = {
   /**
    * Policy Engine v2 hooks (Phase 1.7), injected by the HTTP entry with the per-request
    * verified caller baked in. Same security model as the marketplace hooks and no new
-   * one: every hook is ownership-gated inside platform.ts, so without a verified caller
-   * they return Forbidden and exposing them over MCP cannot bypass auth.
+   * one: without a verified caller every hook returns Forbidden inside platform.ts, so
+   * exposing them over MCP cannot bypass auth. The five owner hooks get there through the
+   * ownership gate. `register` has no agent to own yet, so registerAgentFromManifest refuses
+   * a missing caller itself, before it writes anything; until it did, a call with no token
+   * created a record with no owner.
    *
    * These are the OWNER surface and they are free. The paid counterparty signal
    * (guardrail_check) lives on the ASP behind x402 instead, because payment proves
@@ -182,7 +185,7 @@ export function buildServer(data: ServerData = {}): McpServer {
     {
       title: 'List registered agents',
       description:
-        'List the real agents registered on this A-Identity platform (name, chain, KYA + on-chain status). ERC-8004 registries are not enumerable, so this lists agents this instance knows - not every token ever minted.',
+        'List the real agents registered on this A-Identity platform (name, chain and its CAIP-2 id, KYA + on-chain status). A record is on chain only once its owner anchored it, and onchain says which. ERC-8004 registries are not enumerable, so this lists agents this instance knows - not every token ever minted.',
       inputSchema: listAgentsInput,
     },
     async () => {
@@ -351,18 +354,22 @@ export function buildServer(data: ServerData = {}): McpServer {
   }
 
   // ── policy tools (Phase 1.7; only when the HTTP entry injects the hooks) ─────────
-  // The guardrail an agent's own actions clear before they reach a venue. Every tool is
-  // ownership-gated in platform.ts, so a request without a verified session gets Forbidden.
+  // The guardrail an agent's own actions clear before they reach a venue. A request without
+  // a verified session gets Forbidden from every tool here, inside platform.ts: the owner
+  // tools through the ownership gate, register_agent because a new record needs an owner.
   // Free: these are the owner's own rules on their own account.
   if (data.policy) {
     const p = data.policy
+    // The chain a new record is created under, named from the registry rather than typed.
+    const recordChain = getChainById('arc')
+    const recordChainName = recordChain?.name ?? 'Arc testnet'
 
     server.registerTool(
       'register_agent',
       {
         title: 'Register an agent from a manifest',
         description:
-          'Register an agent from a manifest and get back its id, its honest ERC-8004 status (queued until a registration tx is broadcast) and its guardrail badge set. Free. Requires a verified session.',
+          `Register an agent from a manifest. Needs a verified session: send Authorization: Bearer <token> with the /mcp request, from OAuth or a wallet or email sign-in (how: https://a-identity.xyz/auth.md). Without one it answers Forbidden and nothing is registered. What it writes is a record on this platform, not a transaction: the record is created under ${recordChainName}${recordChain ? ` (${recordChain.caip2})` : ''} and comes back with onchain: queued, which stays queued until the owner anchors the agent from the console, the step that registers it on ${recordChainName}. walletAddress, when given, must be 0x and 40 hex characters. The per-account agent limit and the per-minute registration count apply, as on every registration door. Returns the agent id, its ERC-8004 status and its guardrail badge set. You do not need it for an owner-held Arc Mainnet vault (deployed from https://a-identity.xyz/app/vault/arc) or for a check: verify_then_pay and the paid trust checks take no registered agent. Free.`,
         inputSchema: registerAgentInput,
       },
       async (manifest) => json(p.register(manifest as Record<string, unknown>)),
