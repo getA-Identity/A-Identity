@@ -31,6 +31,7 @@ import {
   agePhrase,
   budgetLine,
   cardHeading,
+  endedWords,
   flowIsOver,
   followedHere,
   hashToPost,
@@ -38,16 +39,26 @@ import {
   holdOf,
   holdsPage,
   keyStoppedLine,
+  moreThanOneSend,
+  noAnswerLine,
   notFromAgentLine,
+  notHereLine,
   otherSends,
   ownerOnlyLine,
   ownerOnlyStands,
   paidAfter,
   paidBefore,
   paymentsRead,
+  promptLine,
+  promptMayBeOpen,
+  readOrder,
+  readsAgain,
+  refusedLead,
+  replacedSendLine,
+  replacedWithNoPayment,
   scanStart,
+  severalLead,
   standingOf,
-  stillWatched,
   unreadRecords,
   verdictMeaning,
   walletBlock,
@@ -56,7 +67,8 @@ import {
   type ReceiptStep,
 } from '../../../lib/arc/handoff-rules'
 import { postHandoffReceipt, readFlow, readWaitingFlows, recheckHandoff, scanPaid, type PaidScan, type WaitingRead } from '../../../lib/arc/handoff-send'
-import { claimHandoff, dropClaim, holdsFlow, loadDeclined, loadHandoffs, saveDeclined, saveHandoff, saveSentHash, withTx, type HandoffSend, type TxRecord } from '../../../lib/arc/pending'
+import { claimHandoff, dropClaim, holdsFlow, loadDeclined, loadHandoffs, noPromptOpen, saveDeclined, saveHandoff, saveSentHash, withTx, type HandoffSend, type TxRecord } from '../../../lib/arc/pending'
+import { DOCS_URL } from '../../../lib/brand'
 import { addressUrl, localTime, networkName, networkWord, readVault, txUrl, type VaultSnapshot } from '../../../lib/arc/vault-read'
 import { aboveSoftWarn, formatUnitsExact, sameAddress } from '../../../lib/arc/vault-rules'
 import { STEP_LABEL, failureOf, sendPrepared, TxStop, type PreparedTx } from '../../../lib/arc/vault-write'
@@ -132,12 +144,10 @@ export default function OwnerApprovals({ chain, vault: pageVault, wallet, canAct
     setReading(true)
     const sent = loadHandoffs(network, address)
     setRecords(sent)
-    // A send with no answer first: it is the one that must keep being followed.
-    const openFirst = [...sent.filter((r) => !r.server), ...sent.filter((r) => r.server)]
     const [waiting, one, mine] = await Promise.all([
       readWaitingFlows(address),
       direct ? readFlow(direct) : Promise.resolve(null),
-      Promise.all(openFirst.slice(0, LOCAL_FLOWS_READ).map((r) => readFlow(r.flowId))),
+      Promise.all(readOrder(sent).slice(0, LOCAL_FLOWS_READ).map((r) => readFlow(r.flowId))),
     ])
     setList(waiting)
     setNamed(direct ? { flow: one?.ok ? one.flow : null, failed: one && !one.ok ? one.reason : null } : null)
@@ -161,11 +171,19 @@ export default function OwnerApprovals({ chain, vault: pageVault, wallet, canAct
   // The earliest block anything here needs the vault's payments from: only what can be offered or is still followed.
   const scanFrom = useMemo(() => scanStart(flows.map((f) => ({ f, s: standingOf(f, vault) })), records, declined, Date.now()), [flows, vault, records, declined])
 
-  const unresolved = records.some((r) => {
-    if (!stillWatched(r, Date.now())) return false
-    const h = holdOf(r)
-    return !h.held || h.why === 'asked' || h.why === 'maybe'
-  })
+  const unresolved = records.some((r) => readsAgain(r, Date.now()))
+  // The flows behind a prompt that may still be open, read on the same tick: a revert that closed one leaves no payment
+  // for the read of the vault to find, and only the flow says the request is over.
+  const promptFlows = records
+    .filter((r) => readsAgain(r, Date.now()) && promptMayBeOpen(r))
+    .map((r) => r.flowId)
+    .join(',')
+  const readPromptFlows = useCallback(async () => {
+    if (!promptFlows) return
+    const read = await Promise.all(promptFlows.split(',').map((id) => readFlow(id)))
+    const got = read.flatMap((r) => (r.ok ? [r.flow] : []))
+    if (got.length) setOwn((was) => ({ ...was, ...Object.fromEntries(got.map((f) => [f.flowId, f] as const)) }))
+  }, [promptFlows])
 
   // One read at a time: a read a timer started must not pile up behind one that has a long way to go.
   const scanBusy = useRef(false)
@@ -214,9 +232,12 @@ export default function OwnerApprovals({ chain, vault: pageVault, wallet, canAct
 
   useEffect(() => {
     if (!unresolved) return
-    const t = setInterval(() => void readPayments(true), SCAN_AGAIN_MS)
+    const t = setInterval(() => {
+      void readPayments(true)
+      void readPromptFlows()
+    }, SCAN_AGAIN_MS)
     return () => clearInterval(t)
-  }, [unresolved, readPayments])
+  }, [unresolved, readPayments, readPromptFlows])
 
   // A tab somebody comes back to: the balance, the budget, the check's age and the flows, read again.
   const lastFocusRead = useRef(0)
@@ -326,7 +347,7 @@ export default function OwnerApprovals({ chain, vault: pageVault, wallet, canAct
             The link names a payment, and what it names is not a payment id. Nothing here comes from it.
           </p>
         )}
-        {direct && named?.failed && (
+        {direct && named?.failed && !linked && (
           <p role="alert" className="rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-foreground">
             The payment this link names could not be read: {named.failed} Nothing is offered from it.
           </p>
@@ -337,12 +358,16 @@ export default function OwnerApprovals({ chain, vault: pageVault, wallet, canAct
         {unread.map((r) => (
           <div key={r.flowId} className="rounded-xl border border-border bg-background/60 p-4">
             <h4 className="text-sm font-semibold text-foreground">What this browser sent, for a payment whose record could not be read just now</h4>
-            <SendTracker record={r} chain={chain} onRecords={refreshRecords} onLanded={landed} />
+            <SendTracker record={r} chain={chain} decline={promptLine(r, { paid: false })} onRecords={refreshRecords} onLanded={landed} />
           </div>
         ))}
         {nothing && <p className="text-sm text-foreground/70">Nothing is waiting for this vault's owner right now.</p>}
         {list?.ok && list.unreadable > 0 && <p className="text-xs text-foreground/70">{list.unreadable} more could not be read, so nothing is offered for them.</p>}
-        {list?.ok && list.truncated && <p className="text-xs text-foreground/70">Only the newest are listed here. If your agent has more waiting, deal with these first.</p>}
+        {list?.ok && list.truncated && (
+          <p className="text-xs text-foreground/70">
+            Only the newest 20 are listed, and saying no does not make room. If one you expect is missing, open the approval link your agent sent for it, which works until 24 hours after its check, or ask your agent to check that payee again.
+          </p>
+        )}
         {stopped.length > 0 && (
           <p className="text-xs text-foreground/70">
             {stopped.length} {stopped.length === 1 ? 'request came' : 'requests came'} from an agent key that has since been revoked or run out, so {stopped.length === 1 ? 'it is' : 'they are'} not offered. If one still needs paying, give your agent a working key and ask it for a new check.
@@ -372,11 +397,23 @@ export default function OwnerApprovals({ chain, vault: pageVault, wallet, canAct
         {others > 0 && (
           <p className="rounded-xl border border-border bg-background/60 px-3 py-2 text-xs text-foreground/75">
             {capped ? 'Many' : others} other {others === 1 ? 'check names' : 'checks name'} this vault, paid for by a key that is not your agent's key now. Anyone can buy a check that names any vault, so this page cannot show {others === 1 ? 'it' : 'they'} came from your agent, and nothing about{' '}
-            {others === 1 ? 'it' : 'them'} is listed. If someone you do not know sends you a link to one, do not act on it.
+            {others === 1 ? 'it' : 'them'} is listed. If someone you do not know sends you a link to one, do not act on it. A check your agent paid for from a separate key reads this way too, and this page offers nothing for it:{' '}
+            <GuideLink>the guide shows how to send ownerPay from the owner key</GuideLink> for one you know about.
           </p>
         )}
       </div>
     </section>
+  )
+}
+
+/** The guide's section on a request this page does not send, with its sample of ownerPay from the owner key. */
+const OWNER_PAY_GUIDE = `${DOCS_URL}/chains/arc-integration#when-a-payment-waits-for-its-owner`
+
+function GuideLink({ children }: { children: React.ReactNode }) {
+  return (
+    <a href={OWNER_PAY_GUIDE} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-accent hover:underline">
+      {children} <ExternalLink size={11} aria-hidden="true" />
+    </a>
   )
 }
 
@@ -445,9 +482,17 @@ function FlowCard(props: CardProps) {
       <div role="status" data-flow={flow.flowId} className="rounded-xl border border-warn/30 bg-warn/10 p-4 text-sm text-foreground">
         <div className="font-semibold">Nothing to approve here.</div>
         <p className="mt-1 break-words text-foreground/85">{standing.why}</p>
+        {standing.kind === 'refused' && <VerdictReasons reasons={flow.verdict?.reasons ?? []} />}
       </div>
     )
-  if (standing.kind === 'settled') return <SettledCard chain={chain} vault={vault} flow={flow} />
+  const replaced = record ? replacedSendLine(record) : null
+  const noPrompt = record
+    ? () => {
+        noPromptOpen(record)
+        props.onRecords()
+      }
+    : undefined
+  if (standing.kind === 'settled') return <SettledCard chain={chain} vault={vault} flow={flow} decline={promptLine(record, { paid: false, standing })} onNoPrompt={noPrompt} replaced={replaced} />
   if (standing.kind === 'reverted')
     return (
       <div role="status" data-flow={flow.flowId} className="rounded-xl border border-danger/25 bg-danger/[0.07] p-4 text-sm text-foreground">
@@ -456,6 +501,7 @@ function FlowCard(props: CardProps) {
           {standing.why ? `What made it revert: ${standing.why}. ` : ''}The network fee was still charged, and this request is over. If you still mean to pay, ask your agent to check the payee again.
         </p>
         <TxLink chain={chain} hash={flow.payment?.txHash ?? null} />
+        {replaced && <p className="mt-2 text-xs text-foreground/85">{replaced}</p>}
       </div>
     )
   return <RequestCard {...props} record={record} />
@@ -477,7 +523,39 @@ function TxLink({ chain, hash }: { chain: Chain; hash: string | null }) {
   )
 }
 
-function SettledCard({ chain, vault, flow }: { chain: Chain; vault: VaultSnapshot; flow: HandoffFlow }) {
+/** A check's reasons, in the server's own words. */
+function VerdictReasons({ reasons }: { reasons: readonly string[] }) {
+  if (reasons.length === 0) return null
+  return (
+    <>
+      <p className="mt-1 text-xs text-foreground/65">Its reasons, as our server gave them:</p>
+      <ul className="mt-1 list-disc space-y-0.5 break-words pl-4 text-xs text-foreground/85">
+        {reasons.map((r, i) => (
+          <li key={i}>{r}</li>
+        ))}
+      </ul>
+    </>
+  )
+}
+
+/**
+ * What to do about a prompt that may still be open, wherever the card stands. With no run of this tab waiting on it,
+ * no answer from the wallet can reach the page, so the person can say there is none.
+ */
+function PromptLine({ line, onNone }: { line: string; onNone?: () => void }) {
+  return (
+    <div role="alert" className="rounded-lg border border-danger/25 bg-danger/[0.07] px-3 py-2 text-xs text-foreground">
+      <p className="font-semibold">{line}</p>
+      {onNone && (
+        <button type="button" onClick={onNone} className="mt-1 font-semibold text-accent underline underline-offset-2">
+          I checked: no prompt for this is open in my wallet
+        </button>
+      )}
+    </div>
+  )
+}
+
+function SettledCard({ chain, vault, flow, decline, onNoPrompt, replaced }: { chain: Chain; vault: VaultSnapshot; flow: HandoffFlow; decline: string | null; onNoPrompt?: () => void; replaced: string | null }) {
   return (
     <div role="status" data-flow={flow.flowId} className="rounded-xl border border-ok/30 bg-ok/[0.07] p-4 text-sm text-foreground">
       <div className="flex items-start gap-2">
@@ -488,6 +566,12 @@ function SettledCard({ chain, vault, flow }: { chain: Chain; vault: VaultSnapsho
             The vault paid {formatUnitsExact(flow.amount, vault.decimals)} USDC to {flow.payee} in block {flow.payment?.blockNumber}.
           </p>
           <TxLink chain={chain} hash={flow.payment?.txHash ?? null} />
+          {decline && (
+            <div className="mt-2">
+              <PromptLine line={decline} onNone={onNoPrompt} />
+            </div>
+          )}
+          {replaced && <p className="mt-2 text-xs text-foreground/85">{replaced}</p>}
         </div>
       </div>
     </div>
@@ -525,16 +609,22 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
   const big = aboveSoftWarn(flow.amount, vault.decimals)
   const onlyLine = ownerOnlyLine(flow.ownerOnly, flow.amount, vault)
   const account = { account: wallet.account, chainId: wallet.chainId }
-  const { heading, asks } = cardHeading(standing, { sent: record !== null && sentHere, held: hold.held, paid: paid !== null })
-  // This tab is the one waiting on the wallet right now: its prompt may be open, unsigned.
+  const cardState = { sent: record !== null && sentHere, held: hold.held, paid: paid !== null, canAct }
+  const { heading, asks } = cardHeading(standing, cardState)
+  const offHere = notHereLine(standing, cardState)
+  // This tab is the one waiting on the wallet right now: its prompt may be open, unsigned. A hash an earlier prompt
+  // handed back is no answer to this one, which is the record's claim.
   const asking = busy === 'confirm'
-  const waitingOnWallet = asking && record !== null && !record.tx
+  const promptOpen = asking && record !== null && promptMayBeOpen(record)
+  // Once the money left, or the request ended, that prompt has no reason left and the card stops asking for it.
+  const decline = promptLine(record, { paid: paid !== null, standing })
+  const waitingOnWallet = promptOpen && decline === null
 
   useEffect(() => {
-    if (!waitingOnWallet) return
+    if (!promptOpen) return
     const t = setTimeout(() => release('confirm'), WALLET_ANSWER_MS)
     return () => clearTimeout(t)
-  }, [waitingOnWallet, release])
+  }, [promptOpen, release])
 
   // A payment went out after this check, and it was the owner's: the receipt can close the flow. The route
   // only records what the chain proves, so posting it costs nothing and needs no person.
@@ -639,16 +729,7 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
         </Row>
         <Row label="What the check said">
           <p className="text-sm">{verdictMeaning(flow.verdict?.effective ?? null, flow.verdict?.reasons ?? [])}</p>
-          {flow.verdict && flow.verdict.reasons.length > 0 && (
-            <>
-              <p className="mt-1 text-xs text-foreground/65">Its reasons, as our server gave them:</p>
-              <ul className="mt-1 list-disc space-y-0.5 break-words pl-4 text-xs text-foreground/85">
-                {flow.verdict.reasons.map((r, i) => (
-                  <li key={i}>{r}</li>
-                ))}
-              </ul>
-            </>
-          )}
+          <VerdictReasons reasons={flow.verdict?.reasons ?? []} />
         </Row>
         <Row label="When it was checked">
           {flow.checkedAtSec !== null ? `${agePhrase(age)} ago, at ${localTime(flow.checkedAt)} your time. ` : 'The record gives no time we can read. '}
@@ -677,6 +758,12 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
           {vault.frozen && <p className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2">{FROZEN_LINE}</p>}
           {big && <p className="font-semibold text-warn">This is more than 10 USDC. Check the address character by character.</p>}
         </div>
+      )}
+
+      {offHere && (
+        <p className="mt-3 rounded-lg border border-border bg-card px-3 py-2 text-xs text-foreground/85">
+          {offHere} <GuideLink>See the sample</GuideLink>
+        </p>
       )}
 
       {standing.kind === 'stale' && (
@@ -712,14 +799,14 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
           {step === 'wallet' ? 'Confirm this in your wallet now. If your wallet is an app on your phone, open it there: the request is waiting for you.' : `${step ? STEP_LABEL[step] : 'Working'}...`}
         </p>
       )}
-      {record && <SendTracker record={record} chain={chain} asking={asking} flowOver={flowIsOver(standing)} onRecords={onRecords} onLanded={onLanded} />}
+      {record && <SendTracker record={record} chain={chain} asking={asking} standing={standing} closedBy={flow.payment?.txHash ?? null} decline={decline} onRecords={onRecords} onLanded={onLanded} />}
       {hold.held && !record && (
         <p className="mt-3 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
           This browser has already sent a payment of this amount to this payee, for another request, and has no final answer for it yet. This is not offered until it has one: two sends pay twice.
         </p>
       )}
 
-      {paid && !sentHere && (
+      {paid && (!sentHere || !record?.tx) && (
         <div role="status" className="mt-3 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
           <div className="font-semibold">A payment of this amount to this payee already left this vault after this check.</div>
           <p className="mt-1">{paid.byOwner ? 'It came from the owner key.' : "It came from your agent's key."} It is not offered again. If you really mean to pay it twice, ask your agent for a new check.</p>
@@ -729,7 +816,7 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
 
       {canAct && offer && read === 'reading' && (
         <p className="mt-3 inline-flex items-center gap-2 text-xs text-foreground/70">
-          <Loader2 size={12} className="animate-spin" aria-hidden="true" /> Reading the vault's recent payments, so this cannot be paid twice...
+          <Loader2 size={12} className="animate-spin" aria-hidden="true" /> Reading the vault's recent payments, so a payment already made is not offered again...
         </p>
       )}
       {canAct && offer && read === 'failed' && (
@@ -831,8 +918,9 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
  * What was sent for a flow, until the server gave its final word on it: the receipt while the chain has
  * no answer, then the post, retried for as long as the server does not decide anything.
  */
-function SendTracker({ record, chain, asking = false, flowOver = false, onRecords, onLanded }: { record: HandoffSend; chain: Chain; asking?: boolean; flowOver?: boolean; onRecords: () => void; onLanded: () => void }) {
+function SendTracker({ record, chain, asking = false, standing, closedBy = null, decline = null, onRecords, onLanded }: { record: HandoffSend; chain: Chain; asking?: boolean; standing?: HandoffStanding; closedBy?: string | null; decline?: string | null; onRecords: () => void; onLanded: () => void }) {
   const [waitingOn, setWaitingOn] = useState<string | null>(null)
+  const flowOver = standing !== undefined && flowIsOver(standing)
   const hash = hashToPost(record)
   const latest = useRef(record)
   latest.current = record
@@ -885,29 +973,50 @@ function SendTracker({ record, chain, asking = false, flowOver = false, onRecord
   const h = holdOf(record)
   const server = record.server
   const others = otherSends(record)
+  const several = moreThanOneSend(record)
+  const replacedLine = replacedSendLine(record)
   const release = () => {
     saveHandoff({ ...latest.current, released: true, releasedAt: new Date().toISOString() })
+    onRecords()
+  }
+  // The box below that waits on a prompt with no hash back already has its own way out.
+  const askedBox = !asking && !record.tx && !record.paidBy && !record.released && !server
+  const noPrompt = () => {
+    noPromptOpen(latest.current)
     onRecords()
   }
 
   return (
     <div className="mt-3 space-y-2">
-      {others.length > 0 && (
+      {decline && <PromptLine line={decline} onNone={asking || askedBox ? undefined : noPrompt} />}
+      {several && (
         <div role="alert" className="rounded-lg border border-danger/25 bg-danger/[0.07] px-3 py-2 text-xs text-foreground">
-          <div className="font-semibold">Your wallet sent more than one transaction for this one request. Each one that lands pays this amount.</div>
+          <div className="font-semibold">{severalLead(record)}</div>
           <p className="mt-1">
-            It answered a prompt this page had stopped waiting on, as well as a later one. Our server's record of this request holds one transaction, so the others show only here and in the vault's recent activity on this page. If one is still waiting in your wallet, you can cancel it there.
+            A transaction sent earlier, or from another device, does not stop because a later one went out. Our server's record of this request holds one transaction, so the others show only here and in the vault's recent activity on this page. If one is still waiting in your wallet, you can cancel it there.
           </p>
+          {record.agentPaid && (
+            <>
+              <p className="mt-2 font-semibold">The payment from your agent's key:</p>
+              <TxLink chain={chain} hash={record.agentPaid} />
+            </>
+          )}
         </div>
       )}
+      {!several && others.length > 0 && !record.tx && !record.paidBy && (
+        <p role="status" className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
+          You said an earlier transaction for this request will not land. This page follows it again, because if it lands it pays, whatever else is sent.
+        </p>
+      )}
+      {replacedLine && <p className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">{replacedLine}</p>}
       {record.tx && !server && <TxReceipt record={record.tx} onUpdate={update} onSettled={() => onLanded()} serverJudges />}
       {others.map((t) => (
-        <TxReceipt key={t.hash} record={t} onUpdate={update} onSettled={() => onLanded()} serverJudges oneOfSeveral />
+        <TxReceipt key={t.hash} record={t} onUpdate={update} onSettled={() => onLanded()} serverJudges oneOfSeveral={several || Boolean(server)} />
       ))}
-      {!asking && !record.tx && !record.paidBy && !record.released && !server && (
+      {askedBox && (
         <div role="status" className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
           <div className="font-semibold">Your wallet was asked to send this, and this page has not heard back.</div>
-          <p className="mt-1">If a prompt is still open in your wallet, you can answer it there. If your wallet sent it, this page sees the payment land and carries on. Do not start another one from here.</p>
+          <p className="mt-1">{noAnswerLine(decline !== null)}</p>
           <button type="button" onClick={release} className="mt-1 font-semibold text-accent underline underline-offset-2">
             I checked: my wallet shows nothing was sent
           </button>
@@ -915,20 +1024,22 @@ function SendTracker({ record, chain, asking = false, flowOver = false, onRecord
       )}
       {record.paidBy && !server && (
         <div role="status" className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
-          <div className="font-semibold">This payment landed under another transaction, most likely your wallet's speed-up. It is not settled until our server reads it.</div>
+          <div className="font-semibold">
+            {record.tx ? "This payment landed under another transaction, most likely your wallet's speed-up." : 'This page found this payment in the vault\'s activity, from this wallet with no hash back to this page, or from another device.'} It is not settled until our server reads it.
+          </div>
           <TxLink chain={chain} hash={record.paidBy} />
         </div>
       )}
       {h.held && h.why === 'maybe' && (
         <div role="status" className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
           <div className="font-semibold">This may still land, so it is not offered again.</div>
-          <p className="mt-1">This page keeps looking for the payment in the vault's activity. Look in your wallet's activity list. If it is still waiting there, or your wallet sent a replacement, it can still pay, and a second send would pay twice.</p>
+          <p className="mt-1">{server ? '' : "This page keeps looking for the payment in the vault's activity. "}Look in your wallet's activity list. If it is still waiting there, or your wallet sent a replacement, it can still pay, and a second send would pay twice.</p>
           <button type="button" onClick={release} className="mt-1 font-semibold text-accent underline underline-offset-2">
             I checked: it is dropped or cancelled in my wallet, and it will not land
           </button>
         </div>
       )}
-      {!h.held && record.tx?.outcome === 'replaced' && (
+      {replacedWithNoPayment(record) && (
         <p className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
           Your wallet replaced what this page sent, and no payment came of it: the vault's activity shows none. It can be approved again.
         </p>
@@ -946,9 +1057,10 @@ function SendTracker({ record, chain, asking = false, flowOver = false, onRecord
       )}
       {server?.state === 'ended' && (
         <div role="alert" className="rounded-lg border border-danger/25 bg-danger/[0.07] px-3 py-2 text-xs text-foreground">
-          <div className="font-semibold">This payment was sent and reverted. Nothing moved, and the network fee was still charged.</div>
+          <div className="font-semibold">{endedWords(others.length).lead}</div>
           <p className="mt-1 break-words">
-            {server.reason ? `${server.reason}. ` : ''}This request is over. If you still mean to pay, ask your agent to check the payee again.
+            {server.reason ? `${server.reason}. ` : ''}
+            {endedWords(others.length).next}
           </p>
           <TxLink chain={chain} hash={server.txHash} />
         </div>
@@ -962,10 +1074,16 @@ function SendTracker({ record, chain, asking = false, flowOver = false, onRecord
       )}
       {server?.state === 'refused' && (
         <div role="alert" className="rounded-lg border border-danger/25 bg-danger/[0.07] px-3 py-2 text-xs text-foreground">
-          <div className="font-semibold">Our server does not take this transaction as proof of this payment, so nothing is marked as settled.</div>
+          <div className="font-semibold">{refusedLead(record, standing)}</div>
           <p className="mt-1 break-words">{server.reason}</p>
-          <p className="mt-1">It is not offered again. Look at the transaction before you do anything else: if it paid someone, a second send would pay twice.</p>
+          <p className="mt-1">{flowOver ? 'This request is over, so nothing more is offered for it.' : 'It is not offered again. Look at the transaction before you do anything else: if it paid someone, a second send would pay twice.'}</p>
           <TxLink chain={chain} hash={server.txHash} />
+          {flowOver && closedBy && closedBy !== server.txHash.toLowerCase() && (
+            <>
+              <p className="mt-2 font-semibold">The transaction on the request's record:</p>
+              <TxLink chain={chain} hash={closedBy} />
+            </>
+          )}
         </div>
       )}
       {!h.held && record.released && (

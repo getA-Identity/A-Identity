@@ -559,7 +559,9 @@ for (const [label, reply, code, paid] of [
   ['the flow not recorded', (p: Paid) => failed(p, 409, { charged: true, code: 'FLOW_NOT_RECORDED', reason: 'db down' }), 'FLOW_NOT_RECORDED', true],
   ['the verdict block unreadable', (p: Paid) => failed(p, 503, { charged: true, code: 'VERDICT_BLOCK_UNREADABLE', reason: 'no block' }), 'VERDICT_BLOCK_UNREADABLE', true],
   ['the rail gone', (p: Paid) => ({ status: 503, body: answerBody(p, 'unavailable', { charged: false, check: null }) }), 'REFUSED', false],
+  ['a nonce the server has seen', (p: Paid) => ({ status: 409, body: answerBody(p, 'refused', { charged: false, code: 'NONCE_ALREADY_USED', reason: 'this authorization nonce already opened flow', check: null, record: null, flowId: null }) }), 'UNCONFIRMED', null],
   ['an HTML 504 from a proxy', () => ({ status: 504, body: '<html>Gateway Timeout</html>' }), 'NETWORK', null],
+  ['the limiter in front of the route', () => ({ status: 429, headers: { 'Retry-After': '60' }, body: { error: 'Too many requests. Slow down and try again in a minute.' } }), 'NETWORK', null],
 ] as const) {
   test(`${label} refuses with the right paid flag and never calls the operator`, async () => {
     const { signer, opts } = setup({ paid: reply as (p: Paid) => Reply })
@@ -570,6 +572,26 @@ for (const [label, reply, code, paid] of [
     assert.match(e.authNonce ?? '', /^0x[0-9a-f]{64}$/)
   })
 }
+
+test("a used nonce is about the first request, so paid stays unknown and the server's steps are the message", async () => {
+  const next = 'This request charged nothing. The first request with this nonce may have been charged and may hold a verdict.'
+  const used = (over: Record<string, unknown> = {}) => (p: Paid): Reply => ({ status: 409, body: answerBody(p, 'refused', { charged: false, code: 'NONCE_ALREADY_USED', reason: 'this authorization nonce already opened flow', check: null, record: null, flowId: null, next, ...over }) })
+  const { signer, opts } = setup({ paid: used() })
+  const e = await refused(verifyThenPay(opts), GatewayCheckError)
+  assert.equal(e.code, 'UNCONFIRMED', 'not REFUSED, which reads as a final no')
+  assert.equal(e.paid, null, 'the answer says this request charged nothing, not that the first did not')
+  assert.equal(e.status, 409)
+  assert.equal(e.serverCode, 'NONCE_ALREADY_USED')
+  assert.equal(e.message, next)
+  assert.equal(signer.sent.length, 0)
+  // An answer with no next still has its reason to show.
+  const bare = setup({ paid: used({ next: undefined }) })
+  assert.equal((await refused(verifyThenPay(bare.opts), GatewayCheckError)).message, 'this authorization nonce already opened flow')
+  // Any other refusal after signing keeps its plain answer.
+  const other = setup({ paid: used({ code: 'PAYMENT_WRONG_NETWORK', next }) })
+  const no = await refused(verifyThenPay(other.opts), GatewayCheckError)
+  assert.deepEqual([no.code, no.paid, no.serverCode], ['REFUSED', false, 'PAYMENT_WRONG_NETWORK'])
+})
 
 test('a WARN with no human to hand it to is a typed error: paid, with its record and the server\'s words', async () => {
   const next = "WARN, and this vault's owner and operator are the same key, so there is no human to hand the payment to: do not pay. A vault's owner cannot be changed, so give your agent a new key of its own with setOperator, and keep this key from it."
@@ -809,6 +831,17 @@ for (const [label, w, code] of [
     assert.equal(signer.sent.length, 0)
   })
 }
+
+test('a refusal to the key that is the owner does not tell it that only the owner can pay', async () => {
+  const oneKey = setup({}, { autoApproveMax: AMOUNT - 1n, owner: OPERATOR })
+  const e = await refused(verifyThenPay(oneKey.opts), VaultPolicyError)
+  assert.equal(e.code, 'AboveAutoApprove')
+  assert.match(e.message, /above the vault's per-payment ceiling/)
+  assert.doesNotMatch(e.message, /ownerPay|only the owner/)
+  const twoKeys = setup({}, { autoApproveMax: AMOUNT - 1n })
+  const p = await preflightVault({ vault: VAULT, payee: PAYEE, amountUnits: AMOUNT, operator: OPERATOR, chain: twoKeys.chain })
+  assert.match(p.ownerOnly?.reason ?? '', /only the owner can pay it \(ownerPay\)/)
+})
 
 test('the cap is the operator\'s question: above the ceiling and past the cap reaches the owner, and the cap alone is still refused', async () => {
   const past = { autoApproveMax: AMOUNT - 1n, dailyCap: AMOUNT - 1n }
@@ -1474,6 +1507,42 @@ test('a server that says retry gets the same hash again, and a later success cou
   assert.equal(signer.sent.length, 1)
 })
 
+test('a receipt post the limiter turned away goes again after the wait it names, a bounded number of times', async () => {
+  const flowId = `0x${'ab'.repeat(32)}`
+  const limited = (retryAfter?: string): Reply => ({ status: 429, ...(retryAfter ? { headers: { 'Retry-After': retryAfter } } : {}), body: { error: 'Too many requests. Slow down and try again in a minute.' } })
+  const proven: Reply = { status: 200, body: { verified: true, outcome: 'executed', detail: 'owner_paid' } }
+  const post = async (receipt: (n: number) => Reply) => {
+    const api = fakeApi({ receipt })
+    const clock = fakeClock()
+    const r = await recordFlowReceipt({ flowId, txHash: TX_HASH, baseUrl: BASE, fetch: api, clock })
+    return { r, posts: api.receipts(), waited: clock.t }
+  }
+
+  const once = await post((n) => (n === 1 ? limited('60') : proven))
+  assert.deepEqual([once.r.recorded, once.r.outcome, once.posts, once.waited], [true, 'executed', 2, 60_000], 'as long as Retry-After says')
+
+  const always = await post(() => limited('60'))
+  assert.deepEqual([always.r.recorded, always.posts, always.waited], [false, 3, 120_000], 'and it stops')
+  assert.match(always.r.reason ?? '', /HTTP 429/)
+
+  const huge = await post((n) => (n === 1 ? limited('86400') : proven))
+  assert.deepEqual([huge.r.recorded, huge.posts, huge.waited], [true, 2, 60_000], "a server's word does not hold this process longer than the window")
+
+  const silent = await post((n) => (n === 1 ? limited() : proven))
+  assert.deepEqual([silent.r.recorded, silent.posts, silent.waited], [true, 2, 2000], 'a 429 that names no wait gets the plain pause')
+
+  const words = await post((n) => (n === 1 ? limited('soon') : proven))
+  assert.deepEqual([words.posts, words.waited], [2, 2000])
+
+  // The payment path takes the same way, and sends nothing again.
+  const paid = setup({ receipt: (n) => (n === 1 ? limited('60') : { status: 200, body: { verified: true, outcome: 'executed', detail: 'agent_paid' } }) })
+  const out = await verifyThenPay(paid.opts)
+  assert.equal(out.outcome, 'executed')
+  assert.equal(out.record.recorded, true)
+  assert.equal(paid.api.receipts(), 2)
+  assert.equal(paid.signer.sent.length, 1)
+})
+
 test('a server that refuses the receipt is reported as is, once, and names the flow it answers', async () => {
   const later = `0x${'34'.repeat(32)}`
   const { api, opts } = setup({ receipt: () => ({ status: 409, body: { verified: false, code: 'TX_ANSWERS_LATER_CHECK', answersFlow: later, reason: 'a later check', outcome: 'pending', detail: 'agent_will_pay' } }) })
@@ -1975,23 +2044,54 @@ for (const [label, value] of [
   })
 }
 
+test('the shipped docs say what a returned preflight and record.recorded mean, because a script reads them as promises', () => {
+  const read = (rel: string) => readFileSync(new URL(`../${rel}`, import.meta.url), 'utf8').replace(/\s*\n\s*(\*\s+)?/g, ' ')
+  const types = read('src/arc.ts')
+  assert.match(types, /returns the vault's facts, with `ownerOnly` set when only the owner can pay/)
+  assert.doesNotMatch(types, /returns the vault's facts when it would pay/)
+  assert.match(types, /null for a contract operator or when ownerOnly is set/)
+  assert.doesNotMatch(types, /gasLimit and operatorGasWei then describe ownerPay/)
+  assert.match(types, /On `awaiting_human`: true means the flow is on record, and no payment has been made/)
+  assert.doesNotMatch(types, /\/\*\* True only when the server read the receipt/)
+  const readme = read('README.md')
+  assert.match(readme, /On `awaiting_human` it is true because the flow is on record, with no payment made/)
+  assert.match(readme, /a return does not mean `pay\(\)` will pass/)
+  // paid null: a check charged and recorded, with only the answer lost, has its verdict on the flow, so that is read first.
+  assert.match(readme, /`paid` is true, false, or null when the answer does not say\. Then read `GET \/api\/x402\/gateway\/flows\/<authNonce>` before you sign again/)
+  assert.match(readme, /a flow there that names this vault, payee and amount is your answer, so do not sign again/)
+  assert.match(readme, /If the proof reads `unconfirmed`, or `credited` or `completed` with the flow still answering 404, treat that nonce as giving no flow/)
+  assert.match(types, /Read GET \/api\/x402\/gateway\/flows\/<authNonce> first: a flow there that names this vault, payee and amount is your answer, so do not sign again/)
+})
+
 test('the package says one version, and the README says what that version changed', () => {
   const read = (rel: string) => readFileSync(new URL(`../${rel}`, import.meta.url), 'utf8')
   const pkg = JSON.parse(read('package.json')) as { version: string }
   const lock = JSON.parse(read('package-lock.json')) as { version: string; packages: Record<string, { version?: string }> }
   assert.equal(lock.version, pkg.version)
   assert.equal(lock.packages[''].version, pkg.version)
-  // ownerOnly and approvalUrl came after 0.4.0 went to npm, so a version that has them is past it.
-  const [major, minor, patch] = pkg.version.split('.').map(Number)
-  assert.ok(major > 0 || minor > 4 || (minor === 4 && patch >= 1), pkg.version)
+  // ownerOnly and approvalUrl turn a free refusal into a charged check, so a version that has them is a minor
+  // past 0.4.0: a caret range on 0.4 takes a patch without asking, and it must not take this.
+  const [major, minor] = pkg.version.split('.').map(Number)
+  assert.ok(major > 0 || minor >= 5, pkg.version)
   const readme = read('README.md')
-  assert.match(readme, /\*\*Changed in 0\.4\.1\.\*\*/)
+  assert.match(readme, /\*\*Changed in 0\.5\.0\.\*\*/)
   assert.match(readme, /`ownerOnly`/)
   assert.match(readme, /`approvalUrl`/)
+  // What moves, by name: this is what a caller on 0.4.0 has to read before taking this version.
+  const changed = readme.slice(readme.indexOf('**Changed in 0.5.0.**'), readme.indexOf('`verifyThenPay` buys a `risk_check`')).replace(/\s+/g, ' ')
+  assert.match(changed, /On a vault with a human, a payment above the vault's ceiling or to a payee off its allowlist used to throw `VaultPolicyError` before the check, for free/)
+  assert.match(changed, /It now buys a check, 0\.005 USDC per attempt, and `verifyThenPay` returns `awaiting_human`/)
+  assert.match(changed, /`preflightVault` returns `ownerOnly` instead of throwing/)
+  assert.match(changed, /a nonce the server has already seen reads as `UNCONFIRMED` with `paid` null, not `REFUSED` with `paid` false/)
+  assert.match(changed, /`recordFlowReceipt` goes again after a 429, so it can take up to two minutes/)
   // The status line is what someone following the install line reads: which version gets them what.
-  const status = readme.slice(readme.indexOf('**Status: this code ran our own 100 flows'), readme.indexOf('**Changed in 0.4.1.**')).replace(/\s+/g, ' ')
+  const status = readme.slice(readme.indexOf('**Status: an earlier build of this code ran our own 100 flows'), readme.indexOf('**Changed in 0.5.0.**')).replace(/\s+/g, ' ')
+  assert.match(status, /on its `pay\(\)` path/)
   assert.match(status, /`verifyThenPay` needs version 0\.4\.0 or later/)
-  assert.match(status, /`ownerOnly`, `approvalUrl` and the hand-off of a payment above the vault's ceiling or off its allowlist need 0\.4\.1/)
-  assert.match(status, /not on npm yet, so `npm install` gets 0\.4\.0 for now/)
+  assert.match(status, /`ownerOnly`, `approvalUrl` and the hand-off of a payment above the vault's ceiling or off its allowlist need 0\.5\.0 or later/)
+  assert.match(status, /0\.4\.0 has none of them/)
   assert.doesNotMatch(status, /It needs version 0\.4\.0 or later/)
+  // This file ships in the tarball and cannot change after a publish, so it states versions and dated facts, and never
+  // what npm serves today: that went false once already, in the README of 0.4.0. The guide can change on the day, so it says it.
+  assert.doesNotMatch(readme.replace(/\s+/g, ' '), /on npm yet|not on npm|for now|when it is published|published package yet/)
 })

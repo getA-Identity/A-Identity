@@ -469,11 +469,17 @@ those on Arc Mainnet; a full id such as `eip155:5042:8004/0` names its own chain
 
 **Verify then pay (Arc Mainnet)**: `verify_then_pay`, `verify_then_pay_receipt`. Buys
 risk_check through Circle Gateway (0.005 USDC), never signs, and returns the exact vault
-pay() call on ALLOW, a prepared ownerPay for the owner on WARN, and nothing on DENY. A payee
-with no ERC-8004 agent is not refused: unknown is not bad, so it gets WARN. A payment above the
+pay() call on ALLOW, a prepared ownerPay for the owner on WARN, and nothing on DENY, nor on a
+WARN from a vault whose owner is its operator, since no human stands behind it. A payee
+with no ERC-8004 agent is not refused: unknown is not bad, so it gets WARN. On a vault with a human, a payment above the
 vault's ceiling or off its allowlist still buys the check, and ALLOW or WARN hands ownerPay to the
 owner, who approves it on the vault page from the link in ownerHandoff.approvalUrl, which is null when the
-check was not paid from the vault's operator key, since the page offers no other. Over HTTP: `POST /api/x402/gateway/verify-then-pay`,
+check was not paid from the vault's operator key or the payee is that key, since the page offers neither. The page
+can still refuse a link it is given: a vault that is ours or not the build it deploys, a key stopped or replaced
+since the check, or a check older than 24 hours. For a vault the page does not act on, the owner sends ownerPay
+from the owner key then. A stopped or replaced key and a check that old are refused for the request itself, so a
+new check from a working agent key is the way there. On a vault whose owner is its operator both stay refusals,
+with nothing charged. Over HTTP: `POST /api/x402/gateway/verify-then-pay`,
 `GET /api/x402/gateway/flows/<flowId>` (public), `GET /api/x402/gateway/flows?vault=0x...` (what waits
 for one vault's owner) and
 `POST /api/x402/gateway/flows/<flowId>/receipt`.

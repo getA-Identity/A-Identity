@@ -76,8 +76,10 @@ export function NetworkSplitTable({ split }: { split: NetworkSplit }) {
       <p className="mt-2 max-w-[75ch] text-sm leading-relaxed text-foreground/55">
         The Circle Gateway and EIP-3009 facilitator logs above, split by the network each payment settled on.
         Internal is a payment from one of our own buyer wallets and external one from a wallet we do not control:
-        a payer is internal when it is on either rail&apos;s published list of our own wallets, the rule
-        /api/arc/season counts by. Each rail keeps its own columns and is never added to the other.
+        a payer is internal when it is on either rail&apos;s published list of our own wallets.
+        /api/arc/season starts from the same list and also reads as internal the other wallets of ours its
+        own basis names, so for such a wallet the two can differ. Each rail keeps its own columns and is
+        never added to the other.
       </p>
 
       {split.rows.length === 0 ? (

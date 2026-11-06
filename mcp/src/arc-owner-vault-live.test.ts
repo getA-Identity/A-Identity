@@ -8,6 +8,7 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { OUR_KEY_PUBLIC_ADDRESSES, collectOurAddresses, encodeCreationInput, liveOurAddressSources, type OurAddresses } from './arc-owner-vault.js'
 import {
   PLAIN_REFUSALS,
+  WHAT_TO_CHANGE,
   admissionContext,
   admissionReadiness,
   admissionSlots,
@@ -15,6 +16,7 @@ import {
   admittedVaultsFromStore,
   everyHost,
   listAdmittedVaults,
+  liveVaultAdmissionDeps,
   plainRefusals,
   refusalIsRetryable,
   runAdmission,
@@ -24,6 +26,7 @@ import {
   type RpcHost,
   type VaultAdmissionDeps,
 } from './arc-owner-vault-live.js'
+import { labelOwners } from './arc-season.js'
 import { AgentSpendPolicyAbi, AgentSpendPolicyBytecode } from './contracts/AgentSpendPolicy.js'
 import { rateBudget, rateLimited } from './rate-budget.js'
 import { findAdmittedArcVaultByTx, loadAdmittedArcVaults, persistAdmittedArcVault, type ArcAdmittedVaultRecord, type ArcVaultStoreIo } from './storage.js'
@@ -137,6 +140,7 @@ function routeDeps(facts: ChainFacts = {}, opts: { ours?: OurAddresses; io?: Arc
     persist: (rec) => persistAdmittedArcVault(rec, io),
     now: () => Date.parse('2026-11-03T10:00:00Z'),
     admit: (tx) => runAdmission({ context, hosts: opts.hosts ?? [fakeHost('one', facts, opts.calls), fakeHost('two', facts, opts.calls)], tx, ours: opts.ours ?? ours(), requireEnvKeys: true }),
+    ours: () => opts.ours ?? ours(),
   }
 }
 
@@ -176,7 +180,7 @@ test('refused vaults are never stored, and each refusal says why in plain words'
     if (answer.status !== 'refused') continue
     const hit = answer.reasons.find((r) => r.id === id)
     assert.ok(hit, `${name}: expected ${id} among ${answer.reasons.map((r) => r.id).join(', ')}`)
-    assert.equal(hit.reason, PLAIN_REFUSALS[id])
+    assert.ok(hit.reason.startsWith(PLAIN_REFUSALS[id]), `${name}: ${hit.reason}`)
     const read = await loadAdmittedArcVaults(io)
     assert.ok(read.ok)
     assert.deepEqual(read.rows, [], `${name} was stored`)
@@ -196,7 +200,7 @@ test('a vault owned by any of our keys is refused and never stored: committed li
 
   // A key only the env knows: its address is derived, and the deploy from it is refused.
   const fromEnv = privateKeyToAccount(FAKE_KEY as Hex).address
-  const envOurs = collectOurAddresses({ provenance: [], gatewayInternalPayers: [], facilitatorInternalPayers: [], attestationValidators: [], committedKeyAddresses: {}, keyEnvVars: ['SOME_KEY'], addressEnvVars: [], env: { SOME_KEY: FAKE_KEY } })
+  const envOurs = collectOurAddresses({ provenance: [], gatewayInternalPayers: [], facilitatorInternalPayers: [], attestationValidators: [], ourPayees: [], committedKeyAddresses: {}, keyEnvVars: ['SOME_KEY'], addressEnvVars: [], env: { SOME_KEY: FAKE_KEY } })
   const viaEnv = await admitVaultDeploy({ deployTx: TX }, routeDeps({ owner: fromEnv }, { io, ours: envOurs }))
   assert.equal(viaEnv.answer.status, 'refused')
   const read = await loadAdmittedArcVaults(io)
@@ -346,6 +350,51 @@ test('the same deploy posted twice is a no-op: no second row and no chain read',
   assert.equal(read.rows.length, 1)
 })
 
+test('a stored row the report no longer counts is not called admitted: a key committed later makes the post a refusal, with no chain read', async () => {
+  const io = tmpIo()
+  const calls: string[] = []
+  const first = await admitVaultDeploy({ deployTx: TX }, routeDeps({}, { io, calls }))
+  assert.equal(first.answer.status, 'admitted')
+  const vault = first.answer.status === 'admitted' ? first.answer.vault : ''
+  const reads = calls.length
+
+  // The owner's address is committed after the row was stored, which is the way the file header gives to close that gap.
+  const nowOurs = ours([OWNER.toUpperCase().replace('0X', '0x')])
+  const later = await admitVaultDeploy({ deployTx: TX }, routeDeps({}, { io, calls, ours: nowOurs }))
+  assert.equal(later.httpStatus, 200)
+  assert.deepEqual(later.answer, { status: 'refused', vault, deployTx: TX, retryable: false, reasons: [{ id: 'owner-not-ours', reason: PLAIN_REFUSALS['owner-not-ours'] }] })
+  assert.equal(calls.length, reads, 'a known hash still answers from the store')
+
+  // It says what the report says of the same row, and the row stays stored.
+  const skipped: { vault: string | null; reason: string }[] = []
+  assert.deepEqual(await admittedVaultsFromStore(nowOurs, (r) => skipped.push(r), io), [])
+  assert.deepEqual(skipped.map((s) => s.reason), ['its owner is one of our keys'])
+  const read = await loadAdmittedArcVaults(io)
+  assert.ok(read.ok)
+  assert.equal(read.rows.length, 1)
+
+  // Nobody's key: what it was.
+  const same = await admitVaultDeploy({ deployTx: TX }, routeDeps({}, { io, calls }))
+  assert.ok(same.answer.status === 'admitted' && same.answer.alreadyAdmitted === true)
+})
+
+test('a stored row that does not read as a vault is not called admitted either, and nothing of it is published', async (t) => {
+  const logged = t.mock.method(console, 'error', () => {})
+  const row = { v: 1, address: 'nope', owner: OWNER, ownerKind: 'unstated', deployTx: TX, deployBlock: '1', deployedAt: '2026-11-03', admittedAt: 'x', note: 'n' } as ArcAdmittedVaultRecord
+  const { httpStatus, answer } = await admitVaultDeploy({ deployTx: TX }, { ...routeDeps(), findByTx: async () => ({ ok: true as const, row }) })
+  assert.equal(httpStatus, 503)
+  assert.deepEqual(answer, { status: 'unavailable', retryable: true, reason: 'the list of admitted vaults could not be read' })
+  assert.match(JSON.stringify(logged.mock.calls.map((c) => c.arguments)), /does not name a vault/)
+})
+
+test('the route compares a stored row with the same sources as the report, env included', () => {
+  const key = ('0x' + '11'.repeat(32)) as Hex
+  const env = { CELO_BUYER_KEY: key } as NodeJS.ProcessEnv
+  const { byAddress } = liveVaultAdmissionDeps(env).ours()
+  assert.deepEqual([...byAddress.keys()].sort(), [...collectOurAddresses(liveOurAddressSources(env)).byAddress.keys()].sort())
+  assert.ok(byAddress.has(privateKeyToAccount(key).address.toLowerCase()))
+})
+
 test('two posts racing past the lookup still leave one row', async () => {
   const io = tmpIo()
   const deps = { ...routeDeps({}, { io }), findByTx: async () => ({ ok: true as const, row: null }) }
@@ -392,6 +441,27 @@ test('GET /api/arc/vaults publishes a short fixed message for a store it cannot 
   assert.equal(body.reason, 'the list of admitted vaults could not be read')
   assert.ok(!JSON.stringify(body).includes('db.internal'), 'the store error does not reach the answer')
   assert.ok(JSON.stringify(logged.mock.calls.map((c) => c.arguments)).includes('db.internal'), 'it reaches the log')
+})
+
+test('GET /api/arc/vaults reads a vault\'s owner as the season report does: a person\'s label and a partner\'s wallet reach it, and the note says so', async () => {
+  const io = tmpIo()
+  const row = (address: string, owner: string): ArcAdmittedVaultRecord => ({ v: 1, address, owner, ownerKind: 'unstated', deployTx: `0x${address.slice(2).padEnd(64, '0')}`, deployBlock: '1', deployedAt: '2026-11-03', admittedAt: `2026-11-03T10:00:00.000Z`, note: 'the owner is not identified' })
+  const [team, partner, nobody] = ['0x' + 'a1'.repeat(20), '0x' + 'a2'.repeat(20), '0x' + 'a3'.repeat(20)]
+  for (const rec of [row(team, OWNER), row(partner, OPERATOR), row(nobody, '0x' + 'b3'.repeat(20))]) await persistAdmittedArcVault(rec, io)
+  const curated = [{ address: team.toUpperCase().replace('0X', '0x'), owner: OWNER, ownerKind: 'team' as const, deployTx: TX, deployedAt: '2026-11-03', note: 'a person on the team said so' }]
+  const partners = [{ wallet: OPERATOR, team: 'Team P', publicReference: false }]
+  const { body } = await listAdmittedVaults({}, io, (rows) => labelOwners(rows, curated, partners))
+  const items = body.items as { address: string; ownerKind: string; note: string }[]
+  assert.deepEqual(items.map((i) => i.ownerKind).sort(), ['external', 'team', 'unstated'])
+  assert.equal(items.find((i) => i.address === team)?.note, 'a person on the team said so')
+  assert.doesNotMatch(items.find((i) => i.address === partner)?.note ?? '', /not identified|Team P/)
+  assert.match(String(body.note), /an owner is not identified unless ownerKind on its item says team or external/)
+  assert.doesNotMatch(String(body.note), /each owner is not identified/)
+  // Asked with no label it is what the store holds, and the route is what passes the real one.
+  const bare = (await listAdmittedVaults({}, io)).body.items as { ownerKind: string }[]
+  assert.deepEqual(bare.map((i) => i.ownerKind), ['unstated', 'unstated', 'unstated'])
+  const route = readFileSync(new URL('../src/http/arc-season-routes.ts', import.meta.url), 'utf8')
+  assert.match(route, /listAdmittedVaults\(process\.env, \{\}, labelOwners\)/)
 })
 
 test('a body that is not a transaction hash on Arc Mainnet is refused before anything is read', async () => {
@@ -449,6 +519,41 @@ test('what the owner can still change on chain is retryable, and a fact about th
   }
   const ours_ = await admitVaultDeploy({ deployTx: TX }, routeDeps({ dailyCap: 0n }, { ours: ours([OWNER]) }))
   assert.equal(ours_.answer.status === 'refused' && ours_.answer.retryable, false, 'an owner of ours stays refused for good')
+})
+
+test('a refusal the owner can fix says what to change, on a control the page has, then to try again, and not when a fact stands beside it', async () => {
+  const cases: [ChainFacts, string, RegExp][] = [
+    [{ operator: '0x0000000000000000000000000000000000000000' }, 'operator-set', /^The vault's agent key is missing, or it is the same wallet as the owner\. The limits only mean something when the agent has a key of its own\. Give it one under Replace the operator on the vault's page, then try again\.$/],
+    [{ operator: OWNER }, 'operator-set', /Give it one under Replace the operator on the vault's page, then try again\.$/],
+    [{ dailyCap: 0n }, 'daily-cap', /^The vault has no daily cap: a cap of 0 means no limit at all\. Set one under Change the policy on the vault's page, then try again\.$/],
+    [{ autoApproveMax: 0n }, 'auto-approve-max', /^The vault has no limit per payment: a limit of 0 means no limit at all\. Set one under Change the policy on the vault's page, then try again\.$/],
+    [{ sessionKeyExpiry: 0n }, 'session-key-expiry', /^The agent key has no end date in the future\. Set one in the Session key box on the vault's page, then try again\.$/],
+    [{ sessionKeyExpiry: NOW_SECONDS - 1000n }, 'session-key-expiry', /Set one in the Session key box on the vault's page, then try again\.$/],
+  ]
+  for (const [facts, id, says] of cases) {
+    const { answer } = await admitVaultDeploy({ deployTx: TX }, routeDeps(facts))
+    assert.ok(answer.status === 'refused' && answer.retryable, id)
+    assert.match(answer.reasons.find((r) => r.id === id)?.reason ?? '', says)
+  }
+
+  // Each control it names is on the vault's page, under that very name. Rename one and this says which sentence to move.
+  const controls = readFileSync(new URL('../../src/components/app/arc/OwnerControls.tsx', import.meta.url), 'utf8')
+  assert.deepEqual(Object.keys(WHAT_TO_CHANGE).sort(), ['auto-approve-max', 'daily-cap', 'operator-set', 'session-key-expiry'])
+  for (const [id, words] of Object.entries(WHAT_TO_CHANGE)) {
+    const named = /(?:under|in the) (.+?)(?: box)? on the vault's page, then try again\.$/.exec(words)?.[1]
+    assert.ok(named, `${id} names no control: ${words}`)
+    assert.match(controls, new RegExp(`(?:<summary[^>]*>\\s*${named} \\(|<Card title="${named}">)`), `${id} names ${named}, which is not on the page`)
+  }
+
+  // A fact beside it: the same post can never be admitted, so nothing tells the owner to change this and try again.
+  const beside = await admitVaultDeploy({ deployTx: TX }, routeDeps({ dailyCap: 0n, status: '0x0' }))
+  assert.ok(beside.answer.status === 'refused' && beside.answer.retryable === false)
+  if (beside.answer.status === 'refused') {
+    assert.equal(beside.answer.reasons.find((r) => r.id === 'daily-cap')?.reason, PLAIN_REFUSALS['daily-cap'])
+    assert.doesNotMatch(JSON.stringify(beside.answer.reasons), /then try again/)
+  }
+  const owned = await admitVaultDeploy({ deployTx: TX }, routeDeps({ sessionKeyExpiry: 0n }, { ours: ours([OWNER]) }))
+  assert.doesNotMatch(JSON.stringify(owned.answer), /then try again/)
 })
 
 test('hosts that disagree about the receipt admit nothing', async () => {

@@ -46,7 +46,9 @@
  * A payment BEFORE the check is no bar, because a new check is how a second payment is meant to happen,
  * but the card says so (paidBefore), since an agent that asks again can be asking for the same invoice.
  * What the page cannot stop is a person answering two wallet prompts, so a second hash stays on the record
- * and is followed and named beside the first (alsoSent in pending.ts, otherSends here).
+ * and is followed and named beside the first (alsoSent in pending.ts, otherSends here). Nor can it close a
+ * prompt, and signing one pays whatever has happened since, so it says to decline one that has no reason left
+ * (promptLine).
  *
  * STALENESS. A verdict ages: a record can be revoked, or a Sybil cluster found, the moment after it. See
  * HANDOFF_MAX_AGE_SECONDS. A vault's state ages faster, so it is read again and the call simulated right
@@ -402,16 +404,18 @@ export function stillWatched(r: HandoffSend | null | undefined, now: number): bo
  * this browser is still following. Nothing else may reach this read. A flow has no way to close, so an old
  * one stays on the list, and anyone can send a link naming any old flow on any vault, and neither gets to
  * make the owner's browser read a week of logs. It reads back past the check for an offered flow, and only
- * from the check for a followed one, whose question is whether its own payment landed.
+ * from the check for a followed one, whose question is whether its own payment landed. A flow the person freed
+ * is both, and the offer is asked first: paymentsRead holds its button back for the hours before the check.
  */
 export function scanStart(rows: readonly { f: HandoffFlow; s: HandoffStanding }[], records: readonly HandoffSend[], declined: readonly string[], now: number): bigint | null {
   let from: bigint | null = null
   for (const { f, s } of rows) {
     if (f.verdictBlock === null || s.kind === 'not_this_vault') continue
     const after = f.verdictBlock + 1n
+    const record = records.find((r) => holdsFlow(r, f.flowId))
     let wanted: bigint | null = null
-    if (stillWatched(records.find((r) => holdsFlow(r, f.flowId)), now)) wanted = after
-    else if (s.kind === 'approvable' && !declined.includes(f.flowId)) wanted = after > PAID_LOOKBACK_BLOCKS ? after - PAID_LOOKBACK_BLOCKS : 0n
+    if (s.kind === 'approvable' && !declined.includes(f.flowId) && !holdOf(record).held) wanted = after > PAID_LOOKBACK_BLOCKS ? after - PAID_LOOKBACK_BLOCKS : 0n
+    else if (stillWatched(record, now)) wanted = after
     if (wanted !== null && (from === null || wanted < from)) from = wanted
   }
   return from
@@ -473,13 +477,48 @@ const HOLD_ORDER = ['pending', 'maybe', 'asked', 'answered', 'landed'] as const
 
 /**
  * The transactions on a record of more than one send that its own lines do not speak for: every one beside
- * the first, and once the server has answered, every one but the hash it answered about.
+ * the first, and once the server has answered, every one but the hash it answered about. A hash the read found
+ * as the payment is spoken for already. One that was replaced can no longer land, so it holds nothing and is
+ * followed no further: what replaced it is another hash, which the wallet's activity and the vault's show.
  */
 export function otherSends(s: HandoffSend): TxRecord[] {
   if (!s.alsoSent?.length) return []
-  if (!s.server) return s.alsoSent
-  const answered = s.server.txHash.toLowerCase()
-  return [...(s.tx ? [s.tx] : []), ...s.alsoSent].filter((t) => t.hash.toLowerCase() !== answered)
+  const spoken = (s.server?.txHash ?? s.paidBy ?? '').toLowerCase()
+  return (s.server ? [...(s.tx ? [s.tx] : []), ...s.alsoSent] : s.alsoSent).filter((t) => t.outcome !== 'replaced' && t.hash.toLowerCase() !== spoken)
+}
+
+/**
+ * There is a second hash on this record that can have paid, which is what the card's alert waits for. A send
+ * carried from an earlier claim, with nothing beside it, is one send. And a hash that came back after the read
+ * found a payment can be that payment's own first hash, which a speed-up replaced, so beside paidBy it is followed
+ * and not counted until the chain says it landed: a single prompt must not read as two payments. A send the person
+ * said is dropped or cancelled, which no receipt ever showed, stops counting as holdOfTx stops holding it. The
+ * agent's key paying while the prompt was open counts as the payment it is.
+ */
+export function moreThanOneSend(s: HandoffSend): boolean {
+  if (otherSends(s).length === 0 && !s.agentPaid) return false
+  const sends = [...(s.tx ? [s.tx] : []), ...(s.alsoSent ?? [])].filter((t) => t.outcome !== 'replaced' && !(t.outcome === 'untracked' && s.released) && !(s.paidBy && (t.outcome === 'pending' || t.likelyReplaced)))
+  return new Set([...sends.map((t) => t.hash.toLowerCase()), ...(s.paidBy ? [s.paidBy.toLowerCase()] : []), ...(s.agentPaid ? [s.agentPaid.toLowerCase()] : [])]).size > 1
+}
+
+/** The alert's first line. A payment from the agent's key is not the wallet's, so it is named as what it is. */
+export function severalLead(s: HandoffSend): string {
+  if (s.agentPaid) return "Your agent's key paid this amount to this payee after this check, and your wallet sent a payment for it too. Each one that does not revert pays this amount."
+  return 'Your wallet sent more than one transaction for this one request. Each one that does not revert pays this amount.'
+}
+
+/** What this record names that the server's answer about it does not: another send, or the agent's payment beside the owner's. */
+export function namesMore(s: HandoffSend): boolean {
+  return otherSends(s).length > 0 || Boolean(s.agentPaid)
+}
+
+/**
+ * Said when a send beside the first was replaced. It left the record's alert, and if the wallet sped it up, what replaced
+ * it can pay as well, and may have by the time this is read: nothing on the record names that hash.
+ */
+export function replacedSendLine(s: HandoffSend): string | null {
+  if (s.paidBy || !s.alsoSent?.some((t) => t.outcome === 'replaced')) return null
+  return "Another transaction for this request was replaced in your wallet, so that hash can no longer land. If your wallet sped it up, what replaced it can pay this amount as well, and may already have: the vault's recent activity on this page shows each payment."
 }
 
 function holdOfRecord(s: HandoffSend): Hold {
@@ -535,14 +574,16 @@ export function holdsPage(r: HandoffSend): boolean {
  * Whether this flow's card is what this browser sent, with its tracker, rather than what the flow's record
  * says. Only that tracker finishes a record: it follows the hash, posts it, and writes the server's answer.
  * So a record with no answer keeps it on a flow another browser or a phone already closed. The post gets the
- * recorded answer or a refusal, and either one is the answer the record was waiting for. Without it a pending
- * hash holds the page's controls, and a landed one every later check of the same payee and amount, with
- * nothing on screen to finish or stop. A record of more than one send stays there for good, because the flow's
- * own card names one transaction, and the other may have paid too.
+ * recorded answer or a refusal. Without it a pending hash holds the page's controls, and a landed one every
+ * later check of the same payee and amount, with nothing on screen to finish or stop. A record of more than one
+ * send stays there, because the flow's own card names one transaction, and the other may have paid too, as does one
+ * beside the agent's own payment. So does a refusal on a flow that is over: another hash closed it, and the flow's
+ * card says nothing of this one, which may have paid beside it, or reverted beside a card that names a payment.
+ * What keeps the records bounded still drops such a refusal in the end, past the newest fifty answers.
  */
 export function followedHere(r: HandoffSend | null | undefined, s: HandoffStanding): boolean {
   if (!r || !holdOf(r).held) return false
-  return !r.server || !flowIsOver(s) || otherSends(r).length > 0
+  return !r.server || !flowIsOver(s) || namesMore(r) || r.server.state === 'refused'
 }
 
 /** The flow's record says it is finished, one way or the other: nothing more can happen to it. */
@@ -555,17 +596,35 @@ export const ANSWER_SHOWN_MS = 10 * 60_000
 
 /**
  * What this browser sent whose flow could not be read just now, and still has something to say: no final
- * answer yet, or one given in the last few minutes. An old answer has nothing to add, and only a few flows
- * are read back, so without this every older approval would stay on the page as a card with nothing in it.
+ * answer yet, one given in the last few minutes, or a transaction the answer does not speak for, which nothing
+ * else on the page names. An old answer has nothing to add, and only a few flows are read back, so without this
+ * every older approval would stay on the page as a card with nothing in it.
  */
 export function unreadRecords(records: readonly HandoffSend[], flowIds: readonly string[], now: number): HandoffSend[] {
   return records.filter((r) => {
     if (flowIds.some((id) => holdsFlow(r, id))) return false
     const h = holdOf(r)
     if (!h.held) return false
-    if (h.why !== 'answered') return true
+    if (h.why !== 'answered' || namesMore(r)) return true
     return now - Date.parse(r.server?.at ?? '') < ANSWER_SHOWN_MS
   })
+}
+
+/** The order this browser's flows are read back in, of which only the first few are read: what has no answer, what names a payment the answer does not, then the rest. */
+export function readOrder(records: readonly HandoffSend[]): HandoffSend[] {
+  const rank = (r: HandoffSend) => (!r.server ? 0 : namesMore(r) ? 1 : 2)
+  return [...records].sort((a, b) => rank(a) - rank(b))
+}
+
+/**
+ * This record wants the vault's Paid events read every few seconds: nothing the chain alone says about its own
+ * hash answers it, or a prompt it opened may still be open, whatever a send beside it holds. That read is what
+ * tells the card to stop asking for such a prompt once the money left, from any key, since nothing else does.
+ */
+export function readsAgain(r: HandoffSend, now: number): boolean {
+  if (!stillWatched(r, now)) return false
+  const h = holdOf(r)
+  return !h.held || h.why === 'asked' || h.why === 'maybe' || promptMayBeOpen(r)
 }
 
 /** A host is read if it is within 100 blocks of the best, about 50 seconds, so a read this long after a replacement has seen it. */
@@ -579,14 +638,18 @@ export const REPLACED_WATCH_MS = 60_000
  * read that stopped short is answered, not failed, and what it did not reach holds no news either way.
  * A person's "nothing was sent", and a quiet replacement, free the flow and prove nothing: a slow wallet
  * can still send it. If the payment shows up after that it is this send's too, and what the page says and
- * does goes back to following it.
+ * does goes back to following it. A wallet asked with no hash back is asked, whatever a send carried beside it
+ * holds, since that one has its own receipt to follow. And the agent's key paying while that prompt is open is
+ * kept, because the prompt can still be signed, and then the vault has paid twice.
  */
 export function afterScan(s: HandoffSend, f: Pick<HandoffFlow, 'payee' | 'amount' | 'verdictBlock'>, scan: Pick<PaidScan, 'from' | 'paid'>, now: number): HandoffSend {
   if (s.server || s.paidBy) return s
   const h = holdOf(s)
-  if (h.held ? h.why !== 'asked' && h.why !== 'maybe' : !s.released && !s.replacedClear) return s
+  const asked = !s.tx && promptMayBeOpen(s)
+  if (!asked && (h.held ? h.why !== 'asked' && h.why !== 'maybe' : !s.released && !s.replacedClear)) return s
   const hit = paidAfter(f, scan.paid)
   if (hit?.byOwner) return { ...s, paidBy: hit.txHash.toLowerCase() }
+  if (hit && asked && !s.agentPaid) return { ...s, agentPaid: hit.txHash.toLowerCase() }
   if (!h.held || s.tx?.outcome !== 'replaced') return s
   if (f.verdictBlock === null || scan.from > f.verdictBlock + 1n) return s
   if (!s.replacedSeenAt) return { ...s, replacedSeenAt: new Date(now).toISOString() }
@@ -617,7 +680,7 @@ export type ReceiptStep =
   | { step: 'settled' }
   /** The chain proved the prepared call reverted, and the flow ended on it. */
   | { step: 'ended'; outcome: string; detail: string | null; reason: string | null }
-  /** The payment answers a later check on the same vault, payee and amount. Post the same hash there. */
+  /** The payment answers another check on the same vault, payee and amount, or is already linked to it. Post the same hash there. */
   | { step: 'moved'; flowId: string; reason: string }
   /** The server read it and it does not prove this flow. Final for this hash, and it is not settled. */
   | { step: 'refused'; code: string; reason: string }
@@ -633,8 +696,9 @@ export function receiptStep(status: number, body: unknown): ReceiptStep {
   if (b.verified === true && b.outcome === 'executed' && isObject(b.payment) && b.payment.status === 'success') return { step: 'settled' }
   if (b.verified === true && (b.outcome === 'failed' || b.outcome === 'blocked')) return { step: 'ended', outcome: b.outcome, detail: str(b.detail), reason: str(b.reason) ?? str(b.next) }
   if (b.retry === true || status === 202 || status >= 500 || status === 0) return { step: 'retry', waitMs: RETRY_MS, reason }
-  if (b.code === 'TX_ANSWERS_LATER_CHECK' && typeof b.answersFlow === 'string' && HASH.test(b.answersFlow)) return { step: 'moved', flowId: b.answersFlow.toLowerCase(), reason }
-  if (status >= 400) return { step: 'refused', code: str(b.code) ?? String(status), reason }
+  if ((b.code === 'TX_ANSWERS_LATER_CHECK' || b.code === 'TX_LINKED_ELSEWHERE') && typeof b.answersFlow === 'string' && HASH.test(b.answersFlow)) return { step: 'moved', flowId: b.answersFlow.toLowerCase(), reason }
+  // Our route names what it refused. A 4xx with no code is an edge or a proxy in front of it, and says nothing about the payment.
+  if (status >= 400 && typeof b.code === 'string') return { step: 'refused', code: b.code, reason }
   return { step: 'retry', waitMs: RETRY_MS, reason }
 }
 
@@ -697,11 +761,79 @@ export function ownerOnlyLine(code: HandoffFlow['ownerOnly'], amount: bigint, li
   return "When your agent checked this, the payee was not on the vault's allowlist, so its key could not pay it. If that is still so, only you can."
 }
 
-/** The card's heading. It asks only while it can be approved, and not once something was sent. */
-export function cardHeading(s: HandoffStanding, o: { sent: boolean; held: boolean; paid: boolean }): { heading: string; asks: boolean } {
-  const asks = (s.kind === 'approvable' || s.kind === 'no_balance') && !o.held && !o.paid
+type CardState = { sent: boolean; held: boolean; paid: boolean; canAct: boolean }
+
+/** The card's heading. It asks only while it can be approved here, and not once something was sent. */
+export function cardHeading(s: HandoffStanding, o: CardState): { heading: string; asks: boolean } {
+  const asks = o.canAct && (s.kind === 'approvable' || s.kind === 'no_balance') && !o.held && !o.paid
   if (asks) return { heading: 'Your agent asks you to pay this', asks }
   return { heading: o.sent ? 'What this browser sent for this request' : 'A payment your agent asked for', asks }
+}
+
+/** The next step on a request this page builds no call for, which it would otherwise leave with no button and nothing to do. */
+export function notHereLine(s: HandoffStanding, o: CardState): string | null {
+  if (o.canAct || (s.kind !== 'approvable' && s.kind !== 'no_balance') || o.held || o.paid) return null
+  return 'This page does not send this one. To pay it, send ownerPay from the owner key: the guide has a sample.'
+}
+
+/**
+ * The wallet was asked for this record's claim and that prompt has had no answer, so it may still be open in it, wherever
+ * that wallet is. A hash an earlier claim's run handed back is a send, and no answer to this claim. A record from before
+ * the answer was kept says it by its hash.
+ */
+export function promptMayBeOpen(r: HandoffSend): boolean {
+  return r.answered === undefined ? !r.tx && !r.hashBack : !r.answered
+}
+
+/**
+ * What a prompt that may still be open has become, or null while it still stands for what it asked. ownerPay names
+ * no flow and the contract keeps no list of what it paid, so a signature pays whatever has happened since. The
+ * wallet's prompt is out of this page's reach, and this is the page's one way to stop it. `paid` is what the read
+ * of the vault found, whoever's key it was. A hash from an earlier prompt that is still on its way is a payment
+ * this one would pay beside, if both land.
+ */
+export function promptLine(r: HandoffSend | null | undefined, o: { paid: boolean; standing?: HandoffStanding }): string | null {
+  if (!r || !promptMayBeOpen(r)) return null
+  const sends = [...(r.tx ? [r.tx] : []), ...(r.alsoSent ?? [])]
+  if (o.paid || r.paidBy || r.agentPaid || r.server || o.standing?.kind === 'settled' || sends.some((t) => t.outcome === 'settled')) return 'A prompt for this may still be open in your wallet. This payment already left the vault, so decline it: signing it pays this amount again.'
+  if (o.standing?.kind === 'reverted') return 'A prompt for this may still be open in your wallet. This request is over, so decline it: signing it still sends this amount from the vault.'
+  if (r.tx?.outcome === 'pending' || (r.tx?.outcome === 'untracked' && !r.released)) return 'A prompt for this may still be open in your wallet. Another transaction your wallet sent for this request is on its way, so decline it: if both land, the vault pays this amount twice.'
+  return null
+}
+
+/** What the tracker says when the wallet was asked and nothing came back. It invites a signature only while one still has a reason. */
+export function noAnswerLine(promptEnded: boolean): string {
+  const rest = 'If your wallet sent it, this page sees the payment land and carries on. Do not start another one from here.'
+  return promptEnded ? rest : `If a prompt is still open in your wallet, you can answer it there. ${rest}`
+}
+
+/**
+ * The hash was replaced and the vault's activity, read well after that, shows no payment of it. Only that read
+ * can say so. The person pressing that they checked frees the flow too, and it reads nothing, so a speed-up
+ * that paid is still possible then: see the line on what they said.
+ */
+export function replacedWithNoPayment(r: HandoffSend): boolean {
+  return !holdOf(r).held && r.tx?.outcome === 'replaced' && r.replacedClear === true
+}
+
+/**
+ * The first line of a refusal. On a flow that is over, another hash closed it and this hash was refused for that
+ * alone, so what matters is what this one did: it may have paid as well, or reverted with nothing moved.
+ */
+export function refusedLead(r: HandoffSend, s?: HandoffStanding): string {
+  if (!s || !flowIsOver(s) || !r.server) return 'Our server does not take this transaction as proof of this payment, so nothing is marked as settled.'
+  const hash = r.server.txHash.toLowerCase()
+  const send = [...(r.tx ? [r.tx] : []), ...(r.alsoSent ?? [])].find((t) => t.hash.toLowerCase() === hash)
+  const closed = s.kind === 'settled' ? 'Another transaction paid this request and closed it, and this one is not on its record.' : 'Another transaction reverted and closed this request, and this one is not on its record.'
+  if (send?.outcome === 'settled' || r.paidBy?.toLowerCase() === hash) return s.kind === 'settled' ? `${closed} This one paid as well: the vault paid this amount twice.` : `${closed} This one paid: the vault moved this amount, whatever the record of this request says.`
+  if (send?.outcome === 'reverted') return `${closed} This one reverted, so nothing moved from it, and the network fee was still charged.`
+  return `${closed} Look at this one to see what it did.`
+}
+
+/** What the card says of a hash the server recorded as reverted. With another send on the record, that one is still its own question. */
+export function endedWords(others: number): { lead: string; next: string } {
+  if (others > 0) return { lead: 'This one reverted: it moved nothing, and the network fee was still charged.', next: 'This request is over. The other transaction is on its own line here, and if it landed it paid.' }
+  return { lead: 'This payment was sent and reverted. Nothing moved, and the network fee was still charged.', next: 'This request is over. If you still mean to pay, ask your agent to check the payee again.' }
 }
 
 /** A plain length of time, for how old a check is. */
