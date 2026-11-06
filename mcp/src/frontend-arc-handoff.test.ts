@@ -385,7 +385,11 @@ test('on a vault this page builds no calls for, the card does not ask or talk of
   assert.match(page, /const \{ heading, asks \} = cardHeading\(standing, cardState\)/)
   assert.match(page, /\{asks && <span className="text-xs text-foreground\/65">It can be approved for 24 hours after the check\.<\/span>\}/)
   assert.ok(page.indexOf('{asks && (') < page.indexOf('{FROZEN_LINE}'))
-  assert.match(page, /\{offHere && <p /)
+  // The sample it names is one click away, at the guide's own heading, and so is the way for a check from a separate key.
+  assert.match(page, /\{offHere\} <GuideLink>See the sample<\/GuideLink>/)
+  assert.match(page, /const OWNER_PAY_GUIDE = `\$\{DOCS_URL\}\/chains\/arc-integration#when-a-payment-waits-for-its-owner`/)
+  assert.match(repo('docs/chains/arc-integration.mdx'), /^### When a payment waits for its owner$/m)
+  assert.match(repo('docs/chains/arc-integration.mdx'), /\*\*A key held by a script, or a browser wallet with no page\.\*\*/)
 })
 
 // ── staleness ─────────────────────────────────────────────────────────────────────
@@ -880,7 +884,8 @@ test("a send that ended replaced leaves the alert and the hold, and the card say
   assert.equal(r.holdsPage(now()), false)
   assert.equal(r.followedHere(now(), { kind: 'settled' }), false)
   // A wallet's speed-up reads replaced too, and what replaced it can pay, so that much stays said.
-  assert.match(String(r.replacedSendLine(now())), /what replaced it can still pay/)
+  assert.match(String(r.replacedSendLine(now())), /what replaced it can pay this amount as well, and may already have/)
+  assert.doesNotMatch(String(r.replacedSendLine(now())), /can still pay/, 'a speed-up that paid has paid')
   assert.equal(r.replacedSendLine(send({ tx: txRecord('settled') })), null)
   // On the tracker, and on both cards a closed flow falls back to.
   const page = repo('src/components/app/arc/OwnerApprovals.tsx')
@@ -1280,8 +1285,8 @@ test('a record the page did not expect is not a flow, and its text stays bounded
   const page = repo('src/components/app/arc/OwnerApprovals.tsx')
   assert.doesNotMatch(page, /dangerouslySetInnerHTML/)
   assert.doesNotMatch(page, /innerHTML/)
-  // Every link on the card comes from the registry's explorer and a checked value, never from a record's field.
-  assert.deepEqual([...page.matchAll(/href=\{([^}]+)\}/g)].map((m) => m[1]).sort(), ['href', 'payeeUrl'])
+  // Every link on the card comes from the registry's explorer and a checked value, or is the guide's own address, never from a record's field.
+  assert.deepEqual([...page.matchAll(/href=\{([^}]+)\}/g)].map((m) => m[1]).sort(), ['OWNER_PAY_GUIDE', 'href', 'payeeUrl'])
   assert.doesNotMatch(page, /explorerUrl/)
 })
 
@@ -1439,16 +1444,21 @@ test('what the list cannot show is said as that, and a read that failed does not
   const page = repo('src/components/app/arc/OwnerApprovals.tsx')
   const { VAULT_FLOWS_LIMIT } = (await import('./verify-then-pay/core.js')) as typeof import('./verify-then-pay/core.js')
   // The list is newest first with no age bound, and neither age nor a no closes a flow, so it can stay truncated for good.
-  assert.match(page, new RegExp(`Only the newest ${VAULT_FLOWS_LIMIT} are listed, and saying no does not make room\\. If one you expect is missing, ask your agent to check that payee again\\.`))
+  assert.match(page.replace(/\s+/g, ' '), new RegExp(`Only the newest ${VAULT_FLOWS_LIMIT} are listed, and saying no does not make room\\. If one you expect is missing, open the approval link your agent sent for it, which works until 24 hours after its check, or ask your agent to check that payee again\\.`))
   assert.doesNotMatch(page, /deal with these first/)
   assert.match(repo('docs/chains/arc-integration.mdx'), /saying no on the page records nothing, so neither age nor a no\s+makes room/)
+  // A row past the list is still a flow the page reads by its link, as the card from a link shows.
+  const guide = repo('docs/chains/arc-integration.mdx').replace(/\s+/g, ' ')
+  assert.doesNotMatch(guide, /out of reach until your agent checks that payee again/)
+  assert.match(guide, /a request past the newest 20 is not listed\. The approval link your agent sent for it still opens it on the page until 24 hours after its check/)
+  assert.match(page, /direct \? readFlow\(direct\) : Promise\.resolve\(null\)/)
   // The named flow's own read can fail with the list still holding it, and they have separate budgets.
   assert.match(page, /\{direct && named\?\.failed && !linked && \(/)
 })
 
 test('a check from a separate key is said to get nothing here, with no way promised, and a refused card gives the check its reasons', () => {
   const page = repo('src/components/app/arc/OwnerApprovals.tsx')
-  assert.match(page, /A check your agent paid for from a separate key reads this way too, and this page offers nothing for it\./)
+  assert.match(page, /A check your agent paid for from a separate key reads this way too, and this page offers nothing for it:\{' '\}\s+<GuideLink>the guide shows how to send ownerPay from the owner key<\/GuideLink> for one you know about\./)
   assert.doesNotMatch(page.slice(page.indexOf('other {others === 1'), page.indexOf('function Row(')), /Have it pay/)
   assert.match(page, /\{standing\.kind === 'refused' && <VerdictReasons reasons=\{flow\.verdict\?\.reasons \?\? \[\]\} \/>\}/)
 })

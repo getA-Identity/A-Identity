@@ -500,10 +500,13 @@ export function moreThanOneSend(s: HandoffSend): boolean {
   return new Set([...sends.map((t) => t.hash.toLowerCase()), ...(s.paidBy ? [s.paidBy.toLowerCase()] : [])]).size > 1
 }
 
-/** Said when a send beside the first was replaced. It left the record's alert, and if the wallet sped it up, what replaced it can pay. */
+/**
+ * Said when a send beside the first was replaced. It left the record's alert, and if the wallet sped it up, what replaced
+ * it can pay as well, and may have by the time this is read: nothing on the record names that hash.
+ */
 export function replacedSendLine(s: HandoffSend): string | null {
   if (s.paidBy || !s.alsoSent?.some((t) => t.outcome === 'replaced')) return null
-  return "Another transaction for this request was replaced in your wallet, so that hash can no longer land. If your wallet sped it up, what replaced it can still pay: the vault's recent activity on this page shows what it paid."
+  return "Another transaction for this request was replaced in your wallet, so that hash can no longer land. If your wallet sped it up, what replaced it can pay this amount as well, and may already have: the vault's recent activity on this page shows each payment."
 }
 
 function holdOfRecord(s: HandoffSend): Hold {

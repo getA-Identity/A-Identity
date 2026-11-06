@@ -719,7 +719,8 @@ evidence it happened. Do not use this route for a payment you need to keep priva
 nothing new. `waiting` holds the flows waiting for that vault's owner whose check was paid by the key
 that was its operator when checked, newest first, at most 20, and `truncated` says when there were
 more. Only a receipt closes a flow, and saying no on the page records nothing, so neither age nor a no
-makes room: a request past the newest 20 is out of reach until your agent checks that payee again.
+makes room: a request past the newest 20 is not listed. The approval link your agent sent for it still
+opens it on the page until 24 hours after its check, and `GET .../flows/<flowId>` still reads it.
 Compare a row with the vault's operator now before you treat one as a request. `notFromOperator`
 only counts the rest, up to 100: anyone can buy a check naming any vault, so those are not requests,
 and they cannot crowd out the ones that are. It allows 30 reads a minute per address.

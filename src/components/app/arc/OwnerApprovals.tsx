@@ -66,6 +66,7 @@ import {
 } from '../../../lib/arc/handoff-rules'
 import { postHandoffReceipt, readFlow, readWaitingFlows, recheckHandoff, scanPaid, type PaidScan, type WaitingRead } from '../../../lib/arc/handoff-send'
 import { claimHandoff, dropClaim, holdsFlow, loadDeclined, loadHandoffs, saveDeclined, saveHandoff, saveSentHash, withTx, type HandoffSend, type TxRecord } from '../../../lib/arc/pending'
+import { DOCS_URL } from '../../../lib/brand'
 import { addressUrl, localTime, networkName, networkWord, readVault, txUrl, type VaultSnapshot } from '../../../lib/arc/vault-read'
 import { aboveSoftWarn, formatUnitsExact, sameAddress } from '../../../lib/arc/vault-rules'
 import { STEP_LABEL, failureOf, sendPrepared, TxStop, type PreparedTx } from '../../../lib/arc/vault-write'
@@ -349,7 +350,11 @@ export default function OwnerApprovals({ chain, vault: pageVault, wallet, canAct
         ))}
         {nothing && <p className="text-sm text-foreground/70">Nothing is waiting for this vault's owner right now.</p>}
         {list?.ok && list.unreadable > 0 && <p className="text-xs text-foreground/70">{list.unreadable} more could not be read, so nothing is offered for them.</p>}
-        {list?.ok && list.truncated && <p className="text-xs text-foreground/70">Only the newest 20 are listed, and saying no does not make room. If one you expect is missing, ask your agent to check that payee again.</p>}
+        {list?.ok && list.truncated && (
+          <p className="text-xs text-foreground/70">
+            Only the newest 20 are listed, and saying no does not make room. If one you expect is missing, open the approval link your agent sent for it, which works until 24 hours after its check, or ask your agent to check that payee again.
+          </p>
+        )}
         {stopped.length > 0 && (
           <p className="text-xs text-foreground/70">
             {stopped.length} {stopped.length === 1 ? 'request came' : 'requests came'} from an agent key that has since been revoked or run out, so {stopped.length === 1 ? 'it is' : 'they are'} not offered. If one still needs paying, give your agent a working key and ask it for a new check.
@@ -379,11 +384,23 @@ export default function OwnerApprovals({ chain, vault: pageVault, wallet, canAct
         {others > 0 && (
           <p className="rounded-xl border border-border bg-background/60 px-3 py-2 text-xs text-foreground/75">
             {capped ? 'Many' : others} other {others === 1 ? 'check names' : 'checks name'} this vault, paid for by a key that is not your agent's key now. Anyone can buy a check that names any vault, so this page cannot show {others === 1 ? 'it' : 'they'} came from your agent, and nothing about{' '}
-            {others === 1 ? 'it' : 'them'} is listed. If someone you do not know sends you a link to one, do not act on it. A check your agent paid for from a separate key reads this way too, and this page offers nothing for it.
+            {others === 1 ? 'it' : 'them'} is listed. If someone you do not know sends you a link to one, do not act on it. A check your agent paid for from a separate key reads this way too, and this page offers nothing for it:{' '}
+            <GuideLink>the guide shows how to send ownerPay from the owner key</GuideLink> for one you know about.
           </p>
         )}
       </div>
     </section>
+  )
+}
+
+/** The guide's section on a request this page does not send, with its sample of ownerPay from the owner key. */
+const OWNER_PAY_GUIDE = `${DOCS_URL}/chains/arc-integration#when-a-payment-waits-for-its-owner`
+
+function GuideLink({ children }: { children: React.ReactNode }) {
+  return (
+    <a href={OWNER_PAY_GUIDE} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-accent hover:underline">
+      {children} <ExternalLink size={11} aria-hidden="true" />
+    </a>
   )
 }
 
@@ -715,7 +732,11 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
         </div>
       )}
 
-      {offHere && <p className="mt-3 rounded-lg border border-border bg-card px-3 py-2 text-xs text-foreground/85">{offHere}</p>}
+      {offHere && (
+        <p className="mt-3 rounded-lg border border-border bg-card px-3 py-2 text-xs text-foreground/85">
+          {offHere} <GuideLink>See the sample</GuideLink>
+        </p>
+      )}
 
       {standing.kind === 'stale' && (
         <p className="mt-3 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground">
