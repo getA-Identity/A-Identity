@@ -115,14 +115,21 @@ export type ArcPartner = {
 /**
  * External teams, attributed by wallet. A team is added here only AFTER its wallet has
  * paid a check on Arc Mainnet, with the settlement row it first appeared in named in the
- * commit; an entry written before that would make externalTeamsLive count a promise. Empty
- * on 2026-10-19: no external wallet has paid yet.
+ * commit; an entry written before that would make externalTeamsLive count a promise. It was
+ * empty on 2026-10-19, before any external wallet had paid. A team that pays from more than
+ * one wallet has one entry per wallet under the same name, and every team metric counts it once.
  */
 export const ARC_PARTNERS: ArcPartner[] = [
   // Named on the team's own written OK of 2026-11-03: as an integration, on this page and in the
   // Milestone 2 report. Its wallet paid risk_check on Arc Mainnet from its own Gateway balance:
   // transfer 824da778-5018-4b39-893a-7d2f5d7955f9, the row the team quoted, read back from the log.
   { wallet: '0x40BC51511ad79166FCc3506bea745A928f7E2708', team: 'Trustless Work', publicReference: true },
+  // Named with the team's OK, confirmed by Meric on 2026-11-06, in the same scope: as an integration,
+  // on this page and in the Milestone 2 report. Both wallets are the team's own and paid from their
+  // own Gateway balances, 5 checks and 2 on 2026-10-19 and 2026-10-20. The first row of each is named
+  // in the commit that added them.
+  { wallet: '0x94a2f2f914862f99bf122b9a932ebc4ae3e555c6', team: 'Slippay', publicReference: true },
+  { wallet: '0xe75d597f414eba88bf4226a3ad8e0fae46b1edc1', team: 'Slippay', publicReference: true },
 ]
 
 /**

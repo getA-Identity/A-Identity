@@ -1753,3 +1753,41 @@ test("the Arc ledger lists Simon's identity and the first paid flow, with caveat
   assert.ok(entry.caveats.some((c) => /This ledger is not the whole settlement log/.test(c) && /counts those as external/.test(c)))
   assert.ok(!entry.caveats.some((c) => /Every payment recorded here is self-funded/.test(c)))
 })
+
+// ── what the founder decided on 2026-11-06, as the curated lists hold it ─────────────
+
+const SLIPPAY_WALLETS = ['0x94a2f2f914862f99bf122b9a932ebc4ae3e555c6', '0xe75d597f414eba88bf4226a3ad8e0fae46b1edc1']
+const TRUSTLESS_WORK = '0x40BC51511ad79166FCc3506bea745A928f7E2708'
+
+/** The external rows as the log held them on 2026-11-06, by wallet and time: Slippay's 5 and 2, Trustless Work's 2. */
+const seasonRows = () => [
+  ...['2026-10-19T20:10:01.533Z', '2026-10-19T20:14:54.600Z', '2026-10-19T20:32:41.900Z', '2026-10-19T20:47:54.500Z', '2026-10-20T12:21:30.812Z'].map((ts) => gw({ payer: SLIPPAY_WALLETS[0], ts, amountUsd: 0.005 })),
+  ...['2026-10-20T12:21:50.365Z', '2026-10-20T12:22:30.210Z'].map((ts) => gw({ payer: SLIPPAY_WALLETS[1], ts, amountUsd: 0.005 })),
+  ...['2026-11-03T19:39:04.433Z', '2026-11-04T18:18:24.661Z'].map((ts) => gw({ payer: TRUSTLESS_WORK, ts, amountUsd: 0.005 })),
+]
+const SEASON_READ = Date.parse('2026-11-06T16:00:00Z')
+
+test('Slippay is named with both of its wallets, which read as one team, so external teams live reads 2 of 2', async () => {
+  const slippay = ARC_PARTNERS.filter((p) => p.team === 'Slippay')
+  assert.deepEqual(slippay.map((p) => p.wallet.toLowerCase()).sort(), SLIPPAY_WALLETS)
+  assert.ok(slippay.every((p) => p.publicReference), 'named in the same scope as Trustless Work')
+  assert.deepEqual([...new Set(ARC_PARTNERS.map((p) => p.team))].sort(), ['Slippay', 'Trustless Work'])
+
+  const r = await arcSeasonReport(deps({ partners: ARC_PARTNERS, gateway: seasonRows(), now: () => SEASON_READ }))
+  const m2 = r.milestone2
+  assert.deepEqual([m2.externalTeamsLive.count, m2.externalTeamsLive.target], [2, 2])
+  assert.deepEqual([...new Set(m2.externalTeamsLive.teams.map((t) => t.team))], ['Trustless Work', 'Slippay'])
+  // One team across its two wallets: its days are both wallets' days, and it is one name wherever names are listed.
+  const slip = m2.teamActiveOnSeveralDays.byTeam.find((t) => t.team === 'Slippay')!
+  assert.deepEqual(slip.activeDays, ['2026-10-19', '2026-10-20'])
+  assert.deepEqual([slip.firstTs, slip.lastTs], ['2026-10-19T20:10:01.533Z', '2026-10-20T12:22:30.210Z'])
+  assert.deepEqual(m2.teamActiveOnSeveralDays.teams, ['Slippay', 'Trustless Work'])
+  assert.deepEqual(m2.publicReference.names, ['Slippay', 'Trustless Work'])
+  assert.deepEqual([m2.unattributed.wallets, m2.unattributed.checks], [0, 0])
+  assert.deepEqual(r.usage.external.byWallet.map((w) => [w.wallet, w.team, w.checks]), [
+    [SLIPPAY_WALLETS[0], 'Slippay', 5],
+    [SLIPPAY_WALLETS[1], 'Slippay', 2],
+    [TRUSTLESS_WORK.toLowerCase(), 'Trustless Work', 2],
+  ])
+  assert.doesNotMatch(m2.teamActiveOnSeveralDays.note, /attributed to no team/)
+})
