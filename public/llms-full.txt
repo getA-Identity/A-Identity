@@ -469,7 +469,8 @@ those on Arc Mainnet; a full id such as `eip155:5042:8004/0` names its own chain
 
 **Verify then pay (Arc Mainnet)**: `verify_then_pay`, `verify_then_pay_receipt`. Buys
 risk_check through Circle Gateway (0.005 USDC), never signs, and returns the exact vault
-pay() call on ALLOW, a prepared ownerPay for the owner on WARN, and nothing on DENY. A payee
+pay() call on ALLOW, a prepared ownerPay for the owner on WARN, and nothing on DENY, nor on a
+WARN from a vault whose owner is its operator, since no human stands behind it. A payee
 with no ERC-8004 agent is not refused: unknown is not bad, so it gets WARN. On a vault with a human, a payment above the
 vault's ceiling or off its allowlist still buys the check, and ALLOW or WARN hands ownerPay to the
 owner, who approves it on the vault page from the link in ownerHandoff.approvalUrl, which is null when the

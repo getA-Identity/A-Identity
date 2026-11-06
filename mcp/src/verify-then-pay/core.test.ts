@@ -958,6 +958,11 @@ test('every summary of the flow says a payment only the owner can make buys the 
   assert.match(full, /On a vault with a human, a payment above the vault's ceiling or off its allowlist still buys the check/)
   assert.match(full, /On a vault whose owner is its operator both stay refusals, with nothing charged/)
   assert.match(full, /null when the check was not paid from the vault's operator key or the payee is that key/)
+  // A WARN on one key hands nothing to anyone, and each summary that names the WARN hand-off says so beside it.
+  assert.match(server, /and nothing to sign when the vault's owner and operator are one key/)
+  assert.match(said('public/.well-known/mcp/server-card.json'), /on WARN a hand-off to the owner [^.]*, or nothing to sign on a vault whose owner is its operator, since no human stands behind it/)
+  assert.match(mcp, /WARN a prepared `ownerPay` for the owner, or nothing on a vault whose owner is its operator, DENY nothing/)
+  assert.match(full, /a prepared ownerPay for the owner on WARN, and nothing on DENY, nor on a WARN from a vault whose owner is its operator/)
   const readme = said('mcp/README.md')
   assert.match(readme, /so a payment that neither key could make never buys a check/)
   assert.doesNotMatch(readme, /so a payment the vault would refuse never buys a check/)
