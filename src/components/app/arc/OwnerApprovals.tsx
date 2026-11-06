@@ -57,6 +57,7 @@ import {
   replacedSendLine,
   replacedWithNoPayment,
   scanStart,
+  severalLead,
   standingOf,
   unreadRecords,
   verdictMeaning,
@@ -990,10 +991,16 @@ function SendTracker({ record, chain, asking = false, standing, closedBy = null,
       {decline && <PromptLine line={decline} onNone={asking || askedBox ? undefined : noPrompt} />}
       {several && (
         <div role="alert" className="rounded-lg border border-danger/25 bg-danger/[0.07] px-3 py-2 text-xs text-foreground">
-          <div className="font-semibold">Your wallet sent more than one transaction for this one request. Each one that does not revert pays this amount.</div>
+          <div className="font-semibold">{severalLead(record)}</div>
           <p className="mt-1">
             A transaction sent earlier, or from another device, does not stop because a later one went out. Our server's record of this request holds one transaction, so the others show only here and in the vault's recent activity on this page. If one is still waiting in your wallet, you can cancel it there.
           </p>
+          {record.agentPaid && (
+            <>
+              <p className="mt-2 font-semibold">The payment from your agent's key:</p>
+              <TxLink chain={chain} hash={record.agentPaid} />
+            </>
+          )}
         </div>
       )}
       {!several && others.length > 0 && !record.tx && !record.paidBy && (

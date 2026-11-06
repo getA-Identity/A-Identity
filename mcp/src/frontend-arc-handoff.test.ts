@@ -62,6 +62,8 @@ type Rules = {
   cardHeading: (s: Standing, o: { sent: boolean; held: boolean; paid: boolean; canAct: boolean }) => { heading: string; asks: boolean }
   notHereLine: (s: Standing, o: { sent: boolean; held: boolean; paid: boolean; canAct: boolean }) => string | null
   moreThanOneSend: (s: Send) => boolean
+  severalLead: (s: Send) => string
+  namesMore: (s: Send) => boolean
   replacedSendLine: (s: Send) => string | null
   readOrder: (records: Send[]) => Send[]
   readsAgain: (r: Send, now: number) => boolean
@@ -532,7 +534,8 @@ test('"nothing was sent" frees a flow and proves nothing: if the payment shows u
   assert.equal(r.afterScan(send({ tx: txRecord('untracked'), released: true }), f, read([PAID()]), t0).paidBy, TX2)
   assert.equal(r.afterScan(send({ tx: txRecord('replaced'), replacedClear: true }), f, read([PAID()]), t0).paidBy, TX2)
   // The agent's own payment is not this send's, and no payment leaves it freed.
-  assert.equal(r.afterScan(released, f, read([PAID({ byOwner: false })]), t0), released)
+  assert.equal(r.afterScan(released, f, read([PAID({ byOwner: false })]), t0).paidBy, undefined)
+  assert.deepEqual(r.holdOf(r.afterScan(released, f, read([PAID({ byOwner: false })]), t0)), { held: false })
   assert.equal(r.afterScan(released, f, read([]), t0), released)
   // The page keeps looking for a while after a release, and not for ever.
   assert.equal(r.stillWatched(released, t0 + r.RELEASE_WATCH_MS - 1), true)
@@ -1058,6 +1061,41 @@ test("a hash from an earlier prompt answers nothing about the one the record's c
   assert.equal(r.promptMayBeOpen(send()), true)
 })
 
+test("the agent's key paying while the prompt is open is kept, and a prompt signed anyway reads as the second payment it is", async () => {
+  const { p, r, first, stored } = await twoRuns()
+  const f = await flow()
+  const t0 = Date.parse(CHECKED)
+  const AGENT_TX = '0x' + '7a'.repeat(32)
+  assert.equal(await p.claimHandoff(first, (rs) => r.holdFor(first as unknown as Flow, rs).held, null), true)
+  // The prompt is open, and the read finds the agent's own payment: kept, and not as this send's.
+  const found = r.afterScan(stored() as Send, f, read([PAID({ byOwner: false, txHash: AGENT_TX })]), t0)
+  assert.deepEqual([found.agentPaid, found.paidBy], [AGENT_TX, undefined])
+  assert.equal(r.holdOf(found).why, 'asked', 'it holds what it held')
+  assert.equal(r.moreThanOneSend(found), false, 'one payment so far')
+  assert.match(String(r.promptLine(found, { paid: false, standing: { kind: 'approvable' } })), /already left the vault, so decline it/, 'from the record too, after a reload')
+  p.saveHandoff(found)
+  // Signed anyway: two payments, named as what they are, and the card stays on them once the server answers.
+  p.saveSentHash(first, txRecord('pending'))
+  const now = () => stored() as Send
+  assert.equal(now().agentPaid, AGENT_TX)
+  assert.equal(r.moreThanOneSend(now()), true)
+  assert.match(r.severalLead(now()), /^Your agent's key paid this amount to this payee after this check, and your wallet sent a payment for it too\./)
+  p.saveHandoff({ ...p.withTx(now(), txRecord('settled')), server: { state: 'settled', txHash: TX, flowId: FLOW, at: CHECKED } })
+  assert.equal(r.moreThanOneSend(now()), true)
+  assert.equal(r.followedHere(now(), { kind: 'settled' }), true, 'the paid card names one transaction')
+  assert.equal(r.namesMore(now()), true)
+  assert.equal(r.readOrder([send({ server: { state: 'settled', txHash: TX, flowId: FLOW, at: CHECKED } }), now()])[0].agentPaid, AGENT_TX)
+  // With no agent's payment the words are as they were.
+  assert.equal(r.severalLead(send({ tx: txRecord('pending'), alsoSent: [txRecord('pending', { hash: TX2 })] })), 'Your wallet sent more than one transaction for this one request. Each one that does not revert pays this amount.')
+  // A prompt that has its hash is followed by that hash, and the read keeps nothing beside it then.
+  assert.equal(r.afterScan(send({ tx: txRecord('pending'), answered: true }), f, read([PAID({ byOwner: false })]), t0).agentPaid, undefined)
+  // The tracker names the agent's payment in the alert.
+  const page = repo('src/components/app/arc/OwnerApprovals.tsx')
+  const tracker = page.slice(page.indexOf('function SendTracker('))
+  assert.match(tracker, /\{record\.agentPaid && \(/)
+  assert.match(tracker, /<TxLink chain=\{chain\} hash=\{record\.agentPaid\} \/>/)
+})
+
 test('a send the person said is dropped, which no receipt ever showed, stops counting toward two', async () => {
   const r = await rules()
   const landed = { tx: txRecord('settled', { hash: TX2 }), alsoSent: [txRecord('untracked', { likelyReplaced: true })], server: { state: 'settled', txHash: TX2, flowId: FLOW, at: CHECKED } }
@@ -1236,13 +1274,16 @@ test('what keeps the records bounded does not drop a record of more than one sen
   const flowOf = (n: number) => '0x' + n.toString(16).padStart(64, '0')
   const both = flowOf(1000)
   const one = flowOf(1001)
+  const withAgent = flowOf(1002)
   p.saveHandoff(send({ vault, flowId: both, askedAt: oldest, tx: txRecord('settled'), server: answer(both), alsoSent: [txRecord('settled', { hash: TX2 })] }))
   p.saveHandoff(send({ vault, flowId: one, askedAt: oldest, tx: txRecord('settled'), server: answer(one) }))
+  p.saveHandoff(send({ vault, flowId: withAgent, askedAt: oldest, tx: txRecord('settled'), server: answer(withAgent), agentPaid: TX2 }))
   for (let n = 0; n < 60; n++) p.saveHandoff(send({ vault, flowId: flowOf(n), askedAt: new Date(Date.parse('2026-06-01T00:00:00Z') + n).toISOString(), tx: txRecord('settled'), server: answer(flowOf(n)) }))
   const kept = p.loadHandoffs(NETWORK, vault).map((r) => r.flowId)
   assert.ok(kept.includes(both))
+  assert.ok(kept.includes(withAgent), "nor one that names the agent's payment beside the owner's")
   assert.ok(!kept.includes(one), 'an old record of one send goes, as it always did')
-  assert.equal(kept.length, 51)
+  assert.equal(kept.length, 52)
   for (const id of kept) p.clearHandoff(NETWORK, vault, id)
 })
 
@@ -1255,7 +1296,7 @@ test('the page writes through these, says when there is more than one, and offer
   const tracker = page.slice(page.indexOf('function SendTracker('))
   assert.match(tracker, /saveHandoff\(withTx\(latest\.current, tx\)\)/)
   assert.match(tracker, /\{several && \(\s*<div role="alert"/)
-  assert.match(tracker, /Your wallet sent more than one transaction for this one request\. Each one that does not revert pays this amount\./)
+  assert.match(tracker, /<div className="font-semibold">\{severalLead\(record\)\}<\/div>/)
   assert.doesNotMatch(tracker, /It answered a prompt this page had stopped waiting on/, 'a send let go of, or a payment from another device, is not that')
   assert.match(tracker, /others\.map\(\(t\) => \(\s*<TxReceipt key=\{t\.hash\} record=\{t\} onUpdate=\{update\} onSettled=\{\(\) => onLanded\(\)\} serverJudges oneOfSeveral=\{several \|\| Boolean\(server\)\} \/>/)
   assert.match(tracker, /\{h\.held && h\.why === 'maybe' && \(/, 'a second send that may land can be let go of, with the first one paid')
@@ -1590,8 +1631,10 @@ test('the words about who can send and what a read is for say what the page does
   assert.match(guide, /shows only in the vault's activity on the page/)
   // Which prompt it can speak for, and which payments its read keeps.
   const said = guide.replace(/\s+/g, ' ')
+  assert.match(said, /each payment its read of the vault finds while it waits on your wallet, from your key or your agent's, and says so when there are two/)
   assert.match(said, /It tells you to decline the last prompt it opened once the payment has left, or once a transaction your wallet sent for an earlier prompt is on its way/)
   assert.doesNotMatch(said, /tells you to decline a prompt once the payment has left/)
+  assert.match(said, /Once a hash for that request is on its way, the page follows that hash/)
 })
 
 test('declining is kept in this browser only, and the card says nothing records it', async () => {

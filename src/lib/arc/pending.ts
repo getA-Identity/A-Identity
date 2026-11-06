@@ -101,6 +101,12 @@ export type HandoffSend = {
   alsoSent?: TxRecord[]
   /** A payment of this flow's amount to its payee found on chain, under another hash than tx: a speed-up, usually. */
   paidBy?: string
+  /**
+   * A payment of this flow's amount to its payee from the agent's key, found on chain after the check while this
+   * claim's prompt had no answer. The card says to decline that prompt, and one signed anyway is a second payment,
+   * which the server's record of this request does not name.
+   */
+  agentPaid?: string
   /** A hash came back for this claim and went to alsoSent, so tx is empty and the wallet has still answered. Read on a record from before `answered`. */
   hashBack?: boolean
   /**
@@ -264,9 +270,9 @@ export function loadHandoffs(network: string, vault: string): HandoffSend[] {
 export function saveHandoff(r: HandoffSend): void {
   write(`${handoffPrefix(r.network, r.vault)}${r.flowId.toLowerCase()}`, r)
   // Only a record with a final answer is ever dropped to keep this bounded: an open one stops a second send,
-  // and one of more than one send names a transaction the server's record of it does not.
+  // and one of more than one send, or of the agent's payment beside one, names a payment the server's record of it does not.
   const all = loadHandoffs(r.network, r.vault)
-  for (const old of all.filter((x) => x.server && !x.alsoSent?.length).slice(HANDOFFS_KEPT)) clearHandoff(old.network, old.vault, old.flowId)
+  for (const old of all.filter((x) => x.server && !x.alsoSent?.length && !x.agentPaid).slice(HANDOFFS_KEPT)) clearHandoff(old.network, old.vault, old.flowId)
 }
 
 export function clearHandoff(network: string, vault: string, flowId: string): void {

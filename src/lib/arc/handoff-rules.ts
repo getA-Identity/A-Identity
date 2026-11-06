@@ -492,12 +492,24 @@ export function otherSends(s: HandoffSend): TxRecord[] {
  * carried from an earlier claim, with nothing beside it, is one send. And a hash that came back after the read
  * found a payment can be that payment's own first hash, which a speed-up replaced, so beside paidBy it is followed
  * and not counted until the chain says it landed: a single prompt must not read as two payments. A send the person
- * said is dropped or cancelled, which no receipt ever showed, stops counting as holdOfTx stops holding it.
+ * said is dropped or cancelled, which no receipt ever showed, stops counting as holdOfTx stops holding it. The
+ * agent's key paying while the prompt was open counts as the payment it is.
  */
 export function moreThanOneSend(s: HandoffSend): boolean {
-  if (otherSends(s).length === 0) return false
+  if (otherSends(s).length === 0 && !s.agentPaid) return false
   const sends = [...(s.tx ? [s.tx] : []), ...(s.alsoSent ?? [])].filter((t) => t.outcome !== 'replaced' && !(t.outcome === 'untracked' && s.released) && !(s.paidBy && (t.outcome === 'pending' || t.likelyReplaced)))
-  return new Set([...sends.map((t) => t.hash.toLowerCase()), ...(s.paidBy ? [s.paidBy.toLowerCase()] : [])]).size > 1
+  return new Set([...sends.map((t) => t.hash.toLowerCase()), ...(s.paidBy ? [s.paidBy.toLowerCase()] : []), ...(s.agentPaid ? [s.agentPaid.toLowerCase()] : [])]).size > 1
+}
+
+/** The alert's first line. A payment from the agent's key is not the wallet's, so it is named as what it is. */
+export function severalLead(s: HandoffSend): string {
+  if (s.agentPaid) return "Your agent's key paid this amount to this payee after this check, and your wallet sent a payment for it too. Each one that does not revert pays this amount."
+  return 'Your wallet sent more than one transaction for this one request. Each one that does not revert pays this amount.'
+}
+
+/** What this record names that the server's answer about it does not: another send, or the agent's payment beside the owner's. */
+export function namesMore(s: HandoffSend): boolean {
+  return otherSends(s).length > 0 || Boolean(s.agentPaid)
 }
 
 /**
@@ -564,14 +576,14 @@ export function holdsPage(r: HandoffSend): boolean {
  * So a record with no answer keeps it on a flow another browser or a phone already closed. The post gets the
  * recorded answer or a refusal. Without it a pending hash holds the page's controls, and a landed one every
  * later check of the same payee and amount, with nothing on screen to finish or stop. A record of more than one
- * send stays there, because the flow's own card names one transaction, and the other may have paid too. So does
- * a refusal on a flow that is over: another hash closed it, and the flow's card says nothing of this one, which
- * may have paid beside it, or reverted beside a card that names a payment. What keeps the records bounded
- * still drops such a refusal in the end, past the newest fifty answers.
+ * send stays there, because the flow's own card names one transaction, and the other may have paid too, as does one
+ * beside the agent's own payment. So does a refusal on a flow that is over: another hash closed it, and the flow's
+ * card says nothing of this one, which may have paid beside it, or reverted beside a card that names a payment.
+ * What keeps the records bounded still drops such a refusal in the end, past the newest fifty answers.
  */
 export function followedHere(r: HandoffSend | null | undefined, s: HandoffStanding): boolean {
   if (!r || !holdOf(r).held) return false
-  return !r.server || !flowIsOver(s) || otherSends(r).length > 0 || r.server.state === 'refused'
+  return !r.server || !flowIsOver(s) || namesMore(r) || r.server.state === 'refused'
 }
 
 /** The flow's record says it is finished, one way or the other: nothing more can happen to it. */
@@ -593,14 +605,14 @@ export function unreadRecords(records: readonly HandoffSend[], flowIds: readonly
     if (flowIds.some((id) => holdsFlow(r, id))) return false
     const h = holdOf(r)
     if (!h.held) return false
-    if (h.why !== 'answered' || otherSends(r).length > 0) return true
+    if (h.why !== 'answered' || namesMore(r)) return true
     return now - Date.parse(r.server?.at ?? '') < ANSWER_SHOWN_MS
   })
 }
 
-/** The order this browser's flows are read back in, of which only the first few are read: what has no answer, what names a transaction the answer does not, then the rest. */
+/** The order this browser's flows are read back in, of which only the first few are read: what has no answer, what names a payment the answer does not, then the rest. */
 export function readOrder(records: readonly HandoffSend[]): HandoffSend[] {
-  const rank = (r: HandoffSend) => (!r.server ? 0 : otherSends(r).length > 0 ? 1 : 2)
+  const rank = (r: HandoffSend) => (!r.server ? 0 : namesMore(r) ? 1 : 2)
   return [...records].sort((a, b) => rank(a) - rank(b))
 }
 
@@ -627,7 +639,8 @@ export const REPLACED_WATCH_MS = 60_000
  * A person's "nothing was sent", and a quiet replacement, free the flow and prove nothing: a slow wallet
  * can still send it. If the payment shows up after that it is this send's too, and what the page says and
  * does goes back to following it. A wallet asked with no hash back is asked, whatever a send carried beside it
- * holds, since that one has its own receipt to follow.
+ * holds, since that one has its own receipt to follow. And the agent's key paying while that prompt is open is
+ * kept, because the prompt can still be signed, and then the vault has paid twice.
  */
 export function afterScan(s: HandoffSend, f: Pick<HandoffFlow, 'payee' | 'amount' | 'verdictBlock'>, scan: Pick<PaidScan, 'from' | 'paid'>, now: number): HandoffSend {
   if (s.server || s.paidBy) return s
@@ -636,6 +649,7 @@ export function afterScan(s: HandoffSend, f: Pick<HandoffFlow, 'payee' | 'amount
   if (!asked && (h.held ? h.why !== 'asked' && h.why !== 'maybe' : !s.released && !s.replacedClear)) return s
   const hit = paidAfter(f, scan.paid)
   if (hit?.byOwner) return { ...s, paidBy: hit.txHash.toLowerCase() }
+  if (hit && asked && !s.agentPaid) return { ...s, agentPaid: hit.txHash.toLowerCase() }
   if (!h.held || s.tx?.outcome !== 'replaced') return s
   if (f.verdictBlock === null || scan.from > f.verdictBlock + 1n) return s
   if (!s.replacedSeenAt) return { ...s, replacedSeenAt: new Date(now).toISOString() }
@@ -781,7 +795,7 @@ export function promptMayBeOpen(r: HandoffSend): boolean {
 export function promptLine(r: HandoffSend | null | undefined, o: { paid: boolean; standing?: HandoffStanding }): string | null {
   if (!r || !promptMayBeOpen(r)) return null
   const sends = [...(r.tx ? [r.tx] : []), ...(r.alsoSent ?? [])]
-  if (o.paid || r.paidBy || r.server || o.standing?.kind === 'settled' || sends.some((t) => t.outcome === 'settled')) return 'A prompt for this may still be open in your wallet. This payment already left the vault, so decline it: signing it pays this amount again.'
+  if (o.paid || r.paidBy || r.agentPaid || r.server || o.standing?.kind === 'settled' || sends.some((t) => t.outcome === 'settled')) return 'A prompt for this may still be open in your wallet. This payment already left the vault, so decline it: signing it pays this amount again.'
   if (o.standing?.kind === 'reverted') return 'A prompt for this may still be open in your wallet. This request is over, so decline it: signing it still sends this amount from the vault.'
   if (r.tx?.outcome === 'pending' || (r.tx?.outcome === 'untracked' && !r.released)) return 'A prompt for this may still be open in your wallet. Another transaction your wallet sent for this request is on its way, so decline it: if both land, the vault pays this amount twice.'
   return null
