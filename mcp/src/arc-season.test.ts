@@ -1791,3 +1791,30 @@ test('Slippay is named with both of its wallets, which read as one team, so exte
   ])
   assert.doesNotMatch(m2.teamActiveOnSeveralDays.note, /attributed to no team/)
 })
+
+/** The three counted vaults as the chain read them on 2026-11-06: address, owner (the deploy's sender and owner()), deploy hash, block and UTC day. */
+const COUNTED_VAULTS = [
+  ['0x25e461649e232ae23fF6CBA1e4Cd001F7a056B90', '0x8cd5D3981A1fA059A92722591d25240e6F0f27A5', '0xbd8d1e4ab5d14e6f65837f92becf0a492165bd007e8e9308ad177f7ab3cf9d2f', '29552025', '2026-11-04'],
+  ['0xa4D8052998A59017fd6816654F4C9eef62DE8182', '0x39AEfbC8388da12907A21d9De888B288a9fa5794', '0xeedb9cf539988596b145b8f467c15fe489f8f2b6f5ef5b8488bcd991e7a42e7b', '29681265', '2026-11-05'],
+  ['0x033FdeECD2f60d2A0Cb78794c4Cd1F191A9DEbE5', '0xeD701bA695FBBaa7f0CD1D4cBe540E86F55C677b', '0xd7ea1ee90de141eb89ac6c10b16d8066fb54d66088550dc9794569d83a5ae7fe', '29751356', '2026-11-06'],
+]
+
+test("the three counted vaults are outside the team on the founder's word, and each owner is still not identified", async () => {
+  assert.deepEqual(ARC_OWNER_HELD_VAULTS.map((v) => [v.address, v.owner, v.deployTx, v.deployBlock, v.deployedAt]), COUNTED_VAULTS)
+  for (const v of ARC_OWNER_HELD_VAULTS) {
+    assert.equal(v.ownerKind, 'external', v.address)
+    assert.match(v.note, /on 2026-11-06 the founder confirmed that this owner is not a team wallet/, v.address)
+    assert.match(v.note, /The owner is not identified: nobody has said whose wallet it is\./, v.address)
+  }
+  // The rows as the store holds them, admitted with the owner not identified: the entries label them, and each counts once.
+  const stored = ARC_OWNER_HELD_VAULTS.map((v) => ({ ...v, address: v.address.toLowerCase(), ownerKind: 'unstated' as const, note: 'Admitted automatically by POST /api/arc/vaults; the owner is not identified.' }))
+  const r = await arcSeasonReport(deps({ vaults: ARC_OWNER_HELD_VAULTS, admittedVaults: async () => stored }))
+  const v = r.milestone1.vaults
+  assert.equal(v.count, 3)
+  assert.deepEqual(v.byKind, { team: 0, external: 3, unstated: 0 })
+  assert.match(v.note, /0 of them someone on our own team, in their own wallet; 3 someone outside the team; 0 not identified as either\./)
+  assert.doesNotMatch(v.note, /admitted automatically after every check passed, with the owner not identified/)
+  assert.deepEqual(v.items.map((i) => [i.ownerKind, i.note === ARC_OWNER_HELD_VAULTS[0].note]), [['external', true], ['external', true], ['external', true]])
+  // GET /api/arc/vaults labels the stored rows the same way, through the same function and its defaults.
+  assert.deepEqual(labelOwners(stored).map((s) => s.ownerKind), ['external', 'external', 'external'])
+})

@@ -162,9 +162,46 @@ export type ArcOwnerHeldVault = {
  * vault and prints its entry, which can say whose wallet it is. A vault is listed only with its
  * deploy hash. The browser vault deployer at /app/vault/arc needs no entry here: its deploys are
  * admitted by POST /api/arc/vaults or the server's own sweep under the same checks, and
- * ArcSeasonDeps.admittedVaults reads them.
+ * ArcSeasonDeps.admittedVaults reads them. An entry here for a vault already admitted that way is
+ * what a person says about its owner: it wins over the stored row (labelOwners), and counts once.
  */
-export const ARC_OWNER_HELD_VAULTS: ArcOwnerHeldVault[] = []
+/** The note on a vault the server admitted with its owner not identified, which the founder later said is not a team wallet. */
+const EXTERNAL_BY_FOUNDER_NOTE =
+  "Deploy sent by the owner's own wallet (receipt.from is owner()), its creation input is AgentSpendPolicyBytecode plus its constructor args, and its owner is none of the keys it was compared with; admitted automatically by POST /api/arc/vaults. Outside the team: on 2026-11-06 the founder confirmed that this owner is not a team wallet. The owner is not identified: nobody has said whose wallet it is."
+
+export const ARC_OWNER_HELD_VAULTS: ArcOwnerHeldVault[] = [
+  // The three vaults POST /api/arc/vaults admitted, deployed on 2026-11-04, 11-05 and 11-06, each with the owner
+  // not identified. On 2026-11-06 the founder, Meric, confirmed that none of the three owners is a team wallet, so
+  // each is labeled external here. Nobody has said whose wallets they are. Every field is the admitted row's,
+  // re-read from the chain the same day: the deploy receipt's sender, created address and block, and owner().
+  {
+    address: '0x25e461649e232ae23fF6CBA1e4Cd001F7a056B90',
+    owner: '0x8cd5D3981A1fA059A92722591d25240e6F0f27A5',
+    ownerKind: 'external',
+    deployTx: '0xbd8d1e4ab5d14e6f65837f92becf0a492165bd007e8e9308ad177f7ab3cf9d2f',
+    deployBlock: '29552025',
+    deployedAt: '2026-11-04',
+    note: EXTERNAL_BY_FOUNDER_NOTE,
+  },
+  {
+    address: '0xa4D8052998A59017fd6816654F4C9eef62DE8182',
+    owner: '0x39AEfbC8388da12907A21d9De888B288a9fa5794',
+    ownerKind: 'external',
+    deployTx: '0xeedb9cf539988596b145b8f467c15fe489f8f2b6f5ef5b8488bcd991e7a42e7b',
+    deployBlock: '29681265',
+    deployedAt: '2026-11-05',
+    note: EXTERNAL_BY_FOUNDER_NOTE,
+  },
+  {
+    address: '0x033FdeECD2f60d2A0Cb78794c4Cd1F191A9DEbE5',
+    owner: '0xeD701bA695FBBaa7f0CD1D4cBe540E86F55C677b',
+    ownerKind: 'external',
+    deployTx: '0xd7ea1ee90de141eb89ac6c10b16d8066fb54d66088550dc9794569d83a5ae7fe',
+    deployBlock: '29751356',
+    deployedAt: '2026-11-06',
+    note: EXTERNAL_BY_FOUNDER_NOTE,
+  },
+]
 
 /**
  * Where the server's own vault sweep (arc-vault-sweep.ts) starts after a restart, on Arc Mainnet: just
@@ -1103,7 +1140,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
           (skippedVaults.length ? `${skippedVaults.length} admitted vault row(s) are not counted; logs.admittedVaults names them and says why. ` : '') +
           (vaults.length === 0
             ? `${admittedVaults && !admittedVaults.read.readable ? '' : 'No owner-held vault yet. '}The launch-day vault${launchVault ? ` ${launchVault}` : ''} was deployed from our server key with our operating wallet as its owner, so it is not owner-held and is not counted. This count fills from vaults deployed by the owner's own wallet, whose owner key A-Identity never holds, each listed with its deploy hash. The deploy page at /app/vault/arc is one way to do that. Owners without USDC on Arc can receive up to 0.08 USDC from our operating wallet for the network fees; those transfers are public on chain, and the deploy is still signed by the owner's own wallet.`
-            : `${vaults.length} of ${ARC_SEASON_TARGETS.ownerHeldVaults} vaults deployed by the owner's own wallet, with an owner key A-Identity's servers never held. By whose wallet: ${vaultsByKind.team} of them someone on our own team, in their own wallet; ${vaultsByKind.external} someone outside the team; ${vaultsByKind.unstated} not identified. The chain cannot show which tool sent a deploy, so this count rests on the deploy transaction and the vault's code, not on proof that the page at /app/vault/arc was used. The launch-day vault${launchVault ? ` ${launchVault}` : ''} is owned by our operating wallet and is not among them. Owners without USDC on Arc can receive up to 0.08 USDC from our operating wallet for the network fees; those transfers are public on chain, and the deploy is still signed by the owner's own wallet.` +
+            : `${vaults.length} of ${ARC_SEASON_TARGETS.ownerHeldVaults} vaults deployed by the owner's own wallet, with an owner key A-Identity's servers never held. By whose wallet: ${vaultsByKind.team} of them someone on our own team, in their own wallet; ${vaultsByKind.external} someone outside the team; ${vaultsByKind.unstated} not identified as either. The chain cannot show which tool sent a deploy, so this count rests on the deploy transaction and the vault's code, not on proof that the page at /app/vault/arc was used. The launch-day vault${launchVault ? ` ${launchVault}` : ''} is owned by our operating wallet and is not among them. Owners without USDC on Arc can receive up to 0.08 USDC from our operating wallet for the network fees; those transfers are public on chain, and the deploy is still signed by the owner's own wallet.` +
               (unstatedVaults > 0
                 ? ` ${unstatedVaults} of them were admitted automatically after every check passed, with the owner not identified: the checks prove the owner's wallet sent the deploy and is none of the keys it was compared with, and the chain cannot say whose wallet it is, so one could be a team member's.`
                 : '') +
