@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { arcSeasonReport, liveArcSeasonDeps } from './arc-season.js'
 import { CHAINS, getChainById } from './chains/index.js'
 import { proofRailIndex } from './chains/proof.js'
@@ -164,6 +165,23 @@ test('each network is split per rail into internal and external, named from the 
   assert.equal(r.logs.facilitator.path, '/api/facilitator/proof')
   assert.match(r.basis, /either rail's published list/)
   assert.match(r.basis, /never added to the other/)
+})
+
+test('the split reads the lists alone and says so, and the season report reading more is said on both surfaces', async () => {
+  const teamVault = { address: '0x' + 'e3'.repeat(20), owner: EXT_A, ownerKind: 'team' as const, deployTx: '0x' + 'dd'.repeat(32), deployedAt: '2026-10-29', note: 'x' }
+  const shared = deps({ gateway: [gw({ payer: EXT_A }), gw({ payer: EXT_B })] })
+  const season = await arcSeasonReport({ ...shared, partners: [], vaults: [teamVault], refusals: [], flows: [] })
+  const split = await settlementsByNetwork(shared)
+  // The same rows, and the two documents disagree about the team member's wallet.
+  assert.deepEqual([season.usage.internal.checks, season.usage.external.checks], [1, 1])
+  const onArc = split.networks.find((n) => n.chain === 'arc-mainnet')!
+  assert.deepEqual([onArc.byRail.gateway.internal.count, onArc.byRail.gateway.external.count], [0, 2])
+  // So neither sentence may say they count alike.
+  assert.doesNotMatch(split.basis, /the rule \/api\/arc\/season counts by/)
+  assert.match(split.basis, /\/api\/arc\/season starts from the same lists and also reads as internal the other wallets of ours its own basis names, such as the owner of a vault labeled team and its agent key, so for such a wallet the two can differ/)
+  const table = readFileSync(repoUrl('src/components/stats/NetworkSplitTable.tsx'), 'utf8').replace(/\s+/g, ' ')
+  assert.doesNotMatch(table, /the rule \/api\/arc\/season counts by/)
+  assert.match(table, /\/api\/arc\/season starts from the same list and also reads as internal the other wallets of ours its own basis names, so for such a wallet the two can differ/)
 })
 
 test('only settled rows count, and every row read is still reported', async () => {

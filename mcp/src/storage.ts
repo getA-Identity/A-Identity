@@ -442,7 +442,7 @@ async function updateX402Rows(
 
 /**
  * Resolve an ambiguous row from a receipt read later, keyed by the transaction hash the way
- * updateGatewaySettlement is keyed by nonce. Only a row still ambiguous is touched, so a
+ * updateGatewaySettlement is keyed by nonce and payer. Only a row still ambiguous is touched, so a
  * settled or reverted row cannot be rewritten, and two readers racing each other cannot do
  * anything the first one did not. Never throws.
  */
@@ -1061,10 +1061,13 @@ export async function loadGatewaySettlements(): Promise<GatewaySettlementRecord[
 
 /** Durably record one settlement attempt, trimming past the cap. Never throws: by the time
  *  we get here Gateway has already locked the buyer's funds, so a logging hiccup must not
- *  turn a paid call into an error for the buyer. */
-export async function persistGatewaySettlement(rec: GatewaySettlementRecord): Promise<void> {
+ *  turn a paid call into an error for the buyer. The seams are injectable so a test can run
+ *  the real file store in a folder of its own. */
+export async function persistGatewaySettlement(rec: GatewaySettlementRecord, io: { getPool?: () => Promise<unknown>; file?: string } = {}): Promise<void> {
+  const file = io.file ?? GATEWAY_SETTLEMENTS_FILE
   try {
-    const p = await getPool()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const p = (await (io.getPool ?? getPool)()) as any
     if (p) {
       await p.query('CREATE TABLE IF NOT EXISTS gateway_settlements (id bigserial PRIMARY KEY, data jsonb NOT NULL)')
       await p.query('INSERT INTO gateway_settlements (data) VALUES ($1)', [JSON.stringify(rec)])
@@ -1076,50 +1079,58 @@ export async function persistGatewaySettlement(rec: GatewaySettlementRecord): Pr
     }
     let arr: GatewaySettlementRecord[] = []
     try {
-      arr = JSON.parse(readFileSync(GATEWAY_SETTLEMENTS_FILE, 'utf8')) as GatewaySettlementRecord[]
+      arr = JSON.parse(readFileSync(file, 'utf8')) as GatewaySettlementRecord[]
     } catch {
       /* first write */
     }
     arr.push(rec)
     if (arr.length > GATEWAY_SETTLEMENTS_CAP) arr = arr.slice(-GATEWAY_SETTLEMENTS_CAP)
-    mkdirSync(DATA_DIR, { recursive: true })
-    writeFileSync(GATEWAY_SETTLEMENTS_FILE, JSON.stringify(arr))
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, JSON.stringify(arr))
   } catch (e) {
     console.error('[storage] gateway settlement persist failed:', e instanceof Error ? e.message : e)
   }
 }
 
 /**
- * Upgrade a credited row once Gateway reports its batch: outcome, Gateway's status word,
- * the batch hash and its explorer link. Keyed by the authorization nonce because that is
- * the one value both we and Gateway hold for the same payment. Never throws; a refresh
- * that fails leaves the row as it was, which is still true.
+ * Upgrade a credited row once Gateway reports its batch: outcome, Gateway's status word, the
+ * batch hash and its explorer link. Only a credited row with this nonce and this payer. The
+ * nonce is the value both we and Gateway hold for the same payment, and it is unique per
+ * payer, not across payers. An unconfirmed row under the same nonce is another attempt, and one
+ * written while settle had no answer holds whatever `from` the caller sent, with nothing verified,
+ * so moving it to credited or completed would count a check nobody paid for. Never throws; a
+ * refresh that fails leaves the row as it was, which is still true.
  */
 export async function updateGatewaySettlement(
   authNonce: string,
+  payer: string,
   patch: Pick<GatewaySettlementRecord, 'outcome'> & Partial<Pick<GatewaySettlementRecord, 'gatewayStatus' | 'tx' | 'explorerUrl' | 'transferId'>>,
+  io: { getPool?: () => Promise<unknown>; file?: string } = {},
 ): Promise<void> {
+  const file = io.file ?? GATEWAY_SETTLEMENTS_FILE
+  const samePayer = payer.toLowerCase()
   try {
-    const p = await getPool()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const p = (await (io.getPool ?? getPool)()) as any
     if (p) {
       await p.query('CREATE TABLE IF NOT EXISTS gateway_settlements (id bigserial PRIMARY KEY, data jsonb NOT NULL)')
-      await p.query("UPDATE gateway_settlements SET data = data || $2::jsonb WHERE data->>'authNonce' = $1", [authNonce, JSON.stringify(patch)])
+      await p.query("UPDATE gateway_settlements SET data = data || $2::jsonb WHERE data->>'authNonce' = $1 AND data->>'outcome' = 'credited' AND lower(data->>'payer') = $3", [authNonce, JSON.stringify(patch), samePayer])
       return
     }
     let arr: GatewaySettlementRecord[] = []
     try {
-      arr = JSON.parse(readFileSync(GATEWAY_SETTLEMENTS_FILE, 'utf8')) as GatewaySettlementRecord[]
+      arr = JSON.parse(readFileSync(file, 'utf8')) as GatewaySettlementRecord[]
     } catch {
       return
     }
     let touched = false
     for (const r of arr) {
-      if (r.authNonce === authNonce) {
+      if (r.authNonce === authNonce && r.outcome === 'credited' && String(r.payer).toLowerCase() === samePayer) {
         Object.assign(r, patch)
         touched = true
       }
     }
-    if (touched) writeFileSync(GATEWAY_SETTLEMENTS_FILE, JSON.stringify(arr))
+    if (touched) writeFileSync(file, JSON.stringify(arr))
   } catch (e) {
     console.error('[storage] gateway settlement update failed:', e instanceof Error ? e.message : e)
   }

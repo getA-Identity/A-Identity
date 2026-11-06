@@ -146,19 +146,23 @@ claude mcp add a-identity-trust -e A_IDENTITY_ALGORAND_MNEMONIC="..." -- npx -y 
 
 ## Verify, then pay from a vault, on Arc Mainnet
 
-**Status: this code ran our own 100 flows on Arc Mainnet on 2026-11-02, and the hosted route it calls
-is live. `verifyThenPay` needs version 0.4.0 or later, because 0.3.0 has no `/arc` entry point.
-`ownerOnly`, `approvalUrl` and the hand-off of a payment above the vault's ceiling or off its allowlist
-need 0.4.1, which is in the repo and not on npm yet, so `npm install` gets 0.4.0 for now: there
-`out.approvalUrl` is undefined, and such a payment throws `VaultPolicyError` before anything is signed. No
-outside team has run the published package yet.**
+**Status: an earlier build of this code ran our own 100 flows on Arc Mainnet on 2026-11-02, on its
+`pay()` path, and the hosted route it calls is live. `verifyThenPay` needs version 0.4.0 or later, because
+0.3.0 has no `/arc` entry point. `ownerOnly`, `approvalUrl` and the hand-off of a payment above the vault's
+ceiling or off its allowlist need 0.5.0 or later. 0.4.0 has none of them: there `out.approvalUrl` is
+undefined, and such a payment throws `VaultPolicyError` before anything is signed.
+`npm ls @a-identity/trust-guard` says which version you have. As of 2026-11-04 no outside team has run a
+published version of it.**
 
-**Changed in 0.4.1.** On a vault with a human, a payment above the vault's ceiling or to a payee off its
-allowlist used to be refused before the check, for free. It now goes on to the check, which is charged,
-because the owner can pay it: `preflightVault` says so in `ownerOnly`, and `verifyThenPay` returns
-`awaiting_human` on ALLOW or WARN with `ownerOnly` naming the gate. A caller who wants the free refusal
-reads `ownerOnly` from `preflightVault` first. Every `awaiting_human` result also has `approvalUrl`, the
-link to send the owner, or null. 0.4.0 has neither field.
+**Changed in 0.5.0.** On a vault with a human, a payment above the vault's ceiling or to a payee off its
+allowlist used to throw `VaultPolicyError` before the check, for free. It now buys a check, 0.005 USDC per
+attempt, and `verifyThenPay` returns `awaiting_human` on ALLOW or WARN, with `ownerOnly` naming the gate,
+because the owner can pay it. `preflightVault` returns `ownerOnly` instead of throwing, so a returned
+preflight no longer means the operator can pay. A caller who wants the free refusal reads `ownerOnly` from
+`preflightVault` first. A range such as `^0.4.0` does not take this version, so moving to it is your own
+step. Every `awaiting_human` result also has `approvalUrl`, the link to send the owner, or null. 0.4.0 has
+neither field. Two smaller moves: a nonce the server has already seen reads as `UNCONFIRMED` with `paid` null,
+not `REFUSED` with `paid` false, and `recordFlowReceipt` goes again after a 429, so it can take up to two minutes.
 
 `verifyThenPay` buys a `risk_check` through Circle Gateway and then pays the payee from an
 [AgentSpendPolicy](https://a-identity.xyz) vault, with keys only you hold. It needs Node and two
@@ -217,17 +221,23 @@ The order, and what each step can cost:
    below which Arc drops a transaction with no error. The receipt is looked for on every RPC, because
    one RPC can answer null for a transaction that exists. Nothing is retried with a new nonce.
 5. **The record.** The hash is posted to the flow, the server reads the receipt from the chain itself,
-   and `record.recorded` says whether it did. Flow records are public by flow id, at
+   and `record.recorded` says whether it did. On `awaiting_human` it is true because the flow is on record,
+   with no payment made, so read `outcome` first. A post the route's rate limit turned away goes again after
+   the wait its `Retry-After` names, up to a minute, at most 3 posts. Flow records are public by flow id, at
    `/api/x402/gateway/flows/<flowId>`, DENYs included. After a WARN, send `ownerPay` from the owner's key
    and close the flow with `recordFlowReceipt({ flowId, txHash })`, unless `ownerPay.simulation.ok` is
    false: the vault would refuse it right now, so sending it would revert and cost gas. An owner with a
    browser wallet does it on the vault page: send them `out.approvalUrl`. That is passed on only when it is
    the vault page for this vault and this flow, and it is null otherwise. The page approves only a check the
    operator paid for, so a flow paid by a separate `payer`, or a payment to the operator key, comes back with
-   `approvalUrl` null: send `ownerPay` from the owner key. The integration guide has a sample for that,
-   starting from the public flow record. An `ownerPay` counts toward the agent's day on the vault: if it uses
-   up today's room, the agent cannot pay until 00:00 UTC unless the owner raises the cap, so tell the owner
-   before they sign.
+   `approvalUrl` null: send `ownerPay` from the owner key. The page reads the chain when it opens and can still
+   refuse a link it is given: a vault that is ours or not the build it deploys, a key stopped or replaced since
+   the check, or a check older than 24 hours. For a vault the page does not act on, `ownerPay` is the way then
+   too, and the integration guide has a sample for that, starting from the public flow record. A stopped or
+   replaced key and a check that old are refused for the request itself, so a new check from a working agent
+   key is the way there. An `ownerPay` counts toward the agent's day on the
+   vault: if it uses up today's room, the agent cannot pay until 00:00 UTC unless the owner raises the cap, so
+   tell the owner before they sign.
 
 Anything that is not a usable verdict is never treated as ALLOW: a Gateway error, a settlement that does
 not echo what was signed, an unknown decision, a reputation that is not a finite number, an ALLOW below
@@ -246,7 +256,7 @@ independently either: it comes from the same server, so it binds the answer to y
 | `ArcAssetError` | Not the registry's USDC. Nothing bought. |
 | `PayeeNotRegisteredError` | An agent named in `payeeAgentId` is not the payee's, or the registry did not answer. Holding no agent is not this error. Nothing bought. |
 | `VaultPolicyError` | The vault would refuse (its own error name), or could not be read. `stage` says whether the check was already paid. |
-| `GatewayCheckError` | No usable verdict came back. `paid` is true, false, or null when the answer does not say. `code` `NO_HUMAN_GATE` is a WARN on a vault whose owner and operator are one key: the check was paid, the flow is public at `recordUrl`, nothing was prepared, and the way out is a new agent key: a vault's owner cannot be changed, so give the agent its own key with `setOperator` and keep the owner key from it, or, if its process or logs have held that key, deploy a new vault. |
+| `GatewayCheckError` | No usable verdict came back. `paid` is true, false, or null when the answer does not say. Then read `GET /api/x402/gateway/flows/<authNonce>` before you sign again, because the check may have been charged and its verdict recorded with only the answer lost: a flow there that names this vault, payee and amount is your answer, so do not sign again. If that read answers 404, look `authNonce` up on `GET /api/x402/gateway/proof`, which lists only the newest 50 rows, and read both again in a minute, because a request still running shows in neither. If the proof reads `unconfirmed`, or `credited` or `completed` with the flow still answering 404, treat that nonce as giving no flow: a new authorization costs another 0.005 USDC, and one that reads `unconfirmed` may still settle until it expires. A nonce the server has already seen comes back this way too, as `UNCONFIRMED` with `serverCode` `NONCE_ALREADY_USED` and the server's steps as the message, because the first request with it may have been charged. `code` `NO_HUMAN_GATE` is a WARN on a vault whose owner and operator are one key: the check was paid, the flow is public at `recordUrl`, nothing was prepared, and the way out is a new agent key: a vault's owner cannot be changed, so give the agent its own key with `setOperator` and keep the owner key from it, or, if its process or logs have held that key, deploy a new vault. |
 | `UnusableVerdictError` | The check was paid and its answer cannot be acted on. |
 | `TrustDenyError` | DENY. `context` holds the flow id, the check and the record's URL. |
 | `VaultPaymentError` | The payment step failed. With a `txHash`, look that hash up: never send again with a new nonce, because a transaction reported as missing can still land. |
@@ -282,8 +292,10 @@ is not a finite number in [0, 1000], an ALLOW below 500, and an answer with no s
 signed for this call each throw `UnusableVerdictError`. A proxy's 200 page is one of those. The `xlayer` and
 `algorand` rails do not make those checks on a verdict that is returned.
 
-`preflightVault` runs the free checks alone and signs nothing. `ARC_MAINNET` holds the chain's constants,
-generated from the A-Identity chain registry rather than typed by hand.
+`preflightVault` runs the free checks alone and signs nothing. It returns the vault's facts, with `ownerOnly`
+set when only the owner can pay, so a return does not mean `pay()` will pass: read `ownerOnly` first. `operatorGasWei`
+is null for a contract operator or when `ownerOnly` is set. `ARC_MAINNET` holds the chain's constants, generated from
+the A-Identity chain registry rather than typed by hand.
 
 ## Paying on X Layer
 
