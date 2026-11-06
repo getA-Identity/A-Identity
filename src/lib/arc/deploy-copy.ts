@@ -136,3 +136,10 @@ export const AFTER_SETUP =
   'You can freeze the vault, change its limits or take USDC out at any time from its page, as long as you hold the owner account and it has a little USDC for the fee.'
 
 export const GIVE_THE_AGENT = `Next, give your agent this vault's address. ${AGENT_KEY_FEES} If your agent uses verify-then-pay (A-Identity checks a payee, then your agent pays), it also needs a Circle Gateway balance. A check bought on its own can be paid from plain USDC the agent holds, with no Gateway balance.`
+
+/**
+ * What to do when the browser stopped every request to the network. Said for a read and for a write
+ * that stopped before the wallet was asked (failure-explain.ts), so it lives here once.
+ */
+export const BLOCKED_NEXT =
+  'None of the network nodes got the request, which means something in this browser stopped it: most often Brave Shields, an ad or tracker blocker, a VPN or a filtering DNS. Turn it off for this site and press the button again. Or connect your wallet and put it on this network: this page then reads through your wallet instead. If you use none of these, check your internet connection.'

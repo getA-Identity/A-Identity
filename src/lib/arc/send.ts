@@ -30,6 +30,8 @@ export type TxFailureCode =
   | 'insufficient_gas'
   | 'funding_too_high'
   | 'rpc_unreachable'
+  /** Every RPC failed without an HTTP answer: something in the browser stopped the requests. */
+  | 'rpc_blocked'
   | 'no_wallet'
   | 'rejected'
   | 'wrong_chain'
@@ -87,7 +89,8 @@ function codeOf(e: unknown): number | undefined {
 export function failureOf(e: unknown): TxFailure {
   if (e instanceof TxStop) return e.failure
   // vault-read.ts's RpcUnreachableError, known by its name so this file needs no network module.
-  if (e instanceof Error && e.name === 'RpcUnreachableError') return { code: 'rpc_unreachable', message: e.message }
+  if (e instanceof Error && e.name === 'RpcUnreachableError')
+    return { code: (e as { blocked?: unknown }).blocked === true ? 'rpc_blocked' : 'rpc_unreachable', message: e.message }
   if (isWalletRejection(e) || codeOf(e) === 4001) return { code: 'rejected', message: 'You declined in your wallet. Nothing was sent.' }
   const msg = messageOf(e)
   const code = codeOf(e)
