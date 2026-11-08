@@ -160,7 +160,8 @@ function simulationStop(e: unknown, what: string): TxStop {
       name ?? undefined,
     )
   }
-  if (e instanceof RpcUnreachableError) return stop(e.blocked ? 'rpc_blocked' : 'rpc_unreachable', e.message)
+  // No answer reached the page: the next step depends on what the wallet did on that same read.
+  if (e instanceof RpcUnreachableError) return e.blocked ? new TxStop({ code: 'rpc_blocked', message: e.message, wallet: e.wallet }) : stop('rpc_unreachable', e.message)
   return stop('rpc_unreachable', `The chain could not be read while preparing ${what}: ${messageOf(e)}`)
 }
 

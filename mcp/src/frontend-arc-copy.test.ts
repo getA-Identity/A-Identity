@@ -230,12 +230,15 @@ test('a network that did not answer is not blamed on the connection alone, and s
   // The read that throws this is known by name, and happens before the wallet is asked.
   const unreachable = Object.assign(new Error('no host answered'), { name: 'RpcUnreachableError' })
   assert.equal(failureOf(unreachable).code, 'rpc_unreachable')
-  // No node answered at all: the browser stopped the requests, and waiting would not help.
+  // No answer reached the page at all: said as seen, the likely cause hedged, and waiting would not help.
   const blocked = explainFailure({ code: 'rpc_blocked', message: 'no host answered' })
-  assert.match(blocked.title, /browser/)
+  assert.equal(blocked.title, 'No network node answered this page.')
+  assert.doesNotMatch(blocked.title, /browser did not|did not let/, 'what was seen, not a cause')
   assert.match(blocked.next, /^Nothing was sent\./)
-  assert.match(blocked.next, /Brave Shields/)
-  assert.match(blocked.next, /reads through your wallet/, 'and the way through it without turning anything off')
+  assert.match(blocked.next, /Most often something in this browser stops the requests: Brave Shields/)
+  assert.match(blocked.next, /A lost connection looks the same/)
+  assert.match(blocked.next, /Connect wallet at the top of this page/, 'with no wallet, a browser wallet is a way through')
+  assert.doesNotMatch(explainFailure({ code: 'rpc_blocked', message: 'x', wallet: 'walletconnect' } as Failure).next, /Connect wallet/, 'a phone wallet reads through the same nodes')
   assert.doesNotMatch(blocked.next, /Wait a minute|too many requests/)
   assert.equal(failureOf(Object.assign(new Error('no host answered'), { name: 'RpcUnreachableError', blocked: true })).code, 'rpc_blocked')
   // The wallet failing on the send itself is never this code, however network-like it sounds:

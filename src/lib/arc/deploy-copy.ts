@@ -186,10 +186,3 @@ export function blockedNext(wallet: WalletReadState, again: string): string {
 export function walletOnlyNext(again: string): string {
   return `Only your wallet answered, and one node's word is not enough to show this vault or to say there is none here. No answer from the network nodes reached this page. ${BLOCKED_WHY} ${TURN_IT_OFF}, then ${again}. Check the network and the address too: a vault on Arc testnet does not exist on Arc Mainnet, and the other way round.`
 }
-
-/**
- * What to do when the browser stopped every request to the network. Said for a read and for a write
- * that stopped before the wallet was asked (failure-explain.ts), so it lives here once.
- */
-export const BLOCKED_NEXT =
-  'None of the network nodes got the request, which means something in this browser stopped it: most often Brave Shields, an ad or tracker blocker, a VPN or a filtering DNS. Turn it off for this site and press the button again. Or connect your wallet and put it on this network: this page then reads through your wallet instead. If you use none of these, check your internet connection.'

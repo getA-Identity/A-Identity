@@ -9,7 +9,7 @@
  * A module of its own, with only imports named by their .ts extension, so that
  * mcp/src/frontend-arc-copy.test.ts can drive a real send into it and read what the person is told.
  */
-import { BLOCKED_NEXT, USE_ANOTHER_ACCOUNT } from './deploy-copy.ts'
+import { BLOCKED_TITLE, USE_ANOTHER_ACCOUNT, blockedNext } from './deploy-copy.ts'
 import type { TxFailure } from './send'
 
 /** The contract's custom errors, one sentence each. */
@@ -72,11 +72,12 @@ export function explainFailure(f: TxFailure): { title: string; body?: string; ne
       }
     case 'rpc_blocked':
       // Same as above: only a read before the wallet is asked ends here. A busy node answers 429, so
-      // "wait a minute" is not the advice when none of them answered at all.
+      // "wait a minute" is not the advice when no answer reached the page at all. The way through
+      // depends on what the wallet did on that read.
       return {
-        title: 'Your browser did not let this page reach the network.',
+        title: `${BLOCKED_TITLE}.`,
         body: f.message,
-        next: `Nothing was sent. ${BLOCKED_NEXT}`,
+        next: `Nothing was sent. ${blockedNext(f.wallet ?? 'none', 'try again')}`,
         tone: 'danger',
       }
     case 'no_wallet':

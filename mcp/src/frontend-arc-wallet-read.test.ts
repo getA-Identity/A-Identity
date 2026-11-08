@@ -6,9 +6,9 @@ import { decodeFunctionData, encodeFunctionResult, type Abi } from 'viem'
 
 /**
  * The Arc vault page reading through the person's wallet when no network node answers the page, run
- * from src/ as it ships: vault-read.ts and receipt.ts load straight from the repository through
- * Node's type stripping, against a fake network (global fetch, which viem's http transport calls)
- * and a fake EIP-1193 wallet that records every request it gets.
+ * from src/ as it ships: vault-read.ts, receipt.ts and vault-write.ts load straight from the
+ * repository through Node's type stripping, against a fake network (global fetch, which viem's http
+ * transport calls) and a fake EIP-1193 wallet that records every request it gets.
  *
  * What is held here is what the wallet may and may not do. With the RPCs answering it is sent
  * nothing. Its "not found" never counts toward how many hosts answered, so it can never help call a
@@ -49,10 +49,18 @@ type ReadModule = {
   READ_FAILURE_TITLE: Record<string, string>
 }
 type ReceiptModule = { advance: (chain: ChainLike, record: Rec, tick: number, now?: number) => Promise<{ record: Rec; answered: number; total: number }> }
+type Explained = { title: string; body?: string; next: string }
+type Failure = { code: string; message: string; wallet?: string }
+type WriteModule = { prepareFund: (chain: ChainLike, v: Rec, from: string, amount: bigint) => Promise<unknown> }
+type CopyModule = { blockedNext: (w: string, again: string) => string; walletOnlyNext: (again: string) => string; BLOCKED_TITLE: string }
 
 const read = async () => (await import(repoUrl('src/lib/arc/vault-read.ts').href)) as ReadModule
 const receipt = async () => (await import(repoUrl('src/lib/arc/receipt.ts').href)) as ReceiptModule
+const write = async () => (await import(repoUrl('src/lib/arc/vault-write.ts').href)) as WriteModule
 const hosts = async () => (await import(repoUrl('src/lib/arc/hosts.ts').href)) as { walletSaidNo: (e: unknown) => boolean }
+const copy = async () => (await import(repoUrl('src/lib/arc/deploy-copy.ts').href)) as CopyModule
+const explain = async () => (await import(repoUrl('src/lib/arc/failure-explain.ts').href)) as { explainFailure: (f: Failure) => Explained }
+const send = async () => (await import(repoUrl('src/lib/arc/send.ts').href)) as { failureOf: (e: unknown) => Failure }
 const contract = async () => (await import(repoUrl('src/lib/contracts/agent-spend-policy.ts').href)) as { AGENT_SPEND_POLICY_ABI: Abi }
 
 const OWNER = '0x1111111111111111111111111111111111111111'
@@ -590,4 +598,157 @@ test('a wallet that never answers is given up on in the time an RPC gets, and on
   const timer = made.find((t) => t.ms === 8000)
   assert.ok(timer, 'the wallet request has its own time limit')
   assert.ok(cleared.includes(timer.h), 'the 8 second timer is left running')
+})
+
+test('a blocked read says what was seen, the way through follows what the wallet did, and it never says reverted', async () => {
+  const { blockedNext, walletOnlyNext, BLOCKED_TITLE } = await copy()
+  const { explainFailure } = await explain()
+  const { failureOf } = await send()
+  const m = await read()
+  assert.equal(BLOCKED_TITLE, 'No network node answered this page')
+  assert.equal(m.READ_FAILURE_TITLE.blocked, BLOCKED_TITLE)
+  const states = ['none', 'other_chain', 'failed', 'walletconnect'] as const
+  const told = states.map((w) => blockedNext(w, 'press Refresh'))
+  for (const [i, text] of [...told, walletOnlyNext('press Refresh')].entries()) {
+    const w = states[i] ?? 'wallet only'
+    assert.match(text, /Most often something in this browser stops the requests: Brave Shields, an ad or tracker blocker, a VPN or a filtering DNS\./, w)
+    assert.match(text, /A lost connection looks the same/, w)
+    assert.match(text, /then press Refresh\./, `${w}: the button the person sees`)
+    assert.doesNotMatch(text, /which means|did not let|reverted|press the button again|the blocker/, `${w} asserts a cause, or points at no button`)
+  }
+  assert.equal(new Set(told).size, states.length, 'each wallet state has its own way through')
+  assert.match(told[0], /Connect wallet at the top of this page/)
+  assert.match(told[1], /Press Switch in the wallet strip at the top of this page/)
+  assert.match(told[2], /Your wallet could not read for this page either: a VPN or a filtering DNS can stop it too/)
+  assert.doesNotMatch(told[2], /Connect wallet|connect a/, 'a wallet that could not read is not offered as the way through')
+  assert.match(told[3], /this page sends that wallet's reads to these same network nodes/)
+  assert.doesNotMatch(told[3], /Connect wallet|reads through your wallet|read through it/, 'a phone wallet is not a way past it')
+  // The vault page names its own button; the setup says it reads again by itself.
+  assert.match(m.readFailureNext({ kind: 'blocked', wallet: 'other_chain' }, 'press Refresh'), /Press Switch in the wallet strip/)
+  assert.equal(m.readFailureNext({ kind: 'blocked' }, 'press Refresh'), told[0])
+  assert.equal(m.readFailureNext({ kind: 'no_contract' }, 'press Refresh'), m.readFailureNext({ kind: 'no_contract', wallet: 'failed' }, 'x'))
+  const page = repo('src/routes/app/ArcVault.tsx')
+  assert.match(page, /Read failed at \{localTime\(read\.failure\.at\)\}: \{readFailureTitle\(read\.failure\)\}\./)
+  assert.match(page, /\{readFailureNext\(read\.failure, 'press Refresh, or wait: this page tries again by itself'\)\}/)
+  assert.match(repo('src/components/app/arc/DeployFlow.tsx'), /readFailureNext\(r\.failure, `wait: this page reads it again by itself every \$\{REREAD_MS \/ 1000\} seconds`\)/)
+
+  // A write that stopped on a blocked read carries the wallet's state to its notice.
+  for (const w of states) {
+    const f = failureOf(Object.assign(new Error('No Arc Mainnet network node answered this page (a, b).'), { name: 'RpcUnreachableError', blocked: true, wallet: w }))
+    assert.equal(f.code, 'rpc_blocked')
+    assert.equal(f.wallet, w)
+    const notice = explainFailure(f)
+    assert.equal(notice.title, `${BLOCKED_TITLE}.`)
+    assert.equal(notice.next, `Nothing was sent. ${blockedNext(w, 'try again')}`)
+  }
+  assert.equal(failureOf(Object.assign(new Error('x'), { name: 'RpcUnreachableError', blocked: true, wallet: 'nonsense' })).wallet, 'none')
+  assert.equal(failureOf(Object.assign(new Error('x'), { name: 'RpcUnreachableError' })).code, 'rpc_unreachable')
+  // The deploy's own USDC read passes the wallet's state on too.
+  assert.match(repo('src/components/app/arc/DeployFlow.tsx'), /message: facts\.reason, wallet: facts\.wallet \}\)/)
+
+  // The wallet's own failure text, which viem may word as a revert, never reaches a blocked read.
+  const chain = m.ARC_MAINNET
+  const broken = fakeWallet((method) => {
+    if (method === 'eth_chainId') return hex(chain.chainId)
+    if (method === 'eth_getBlockByNumber') return block(100n)
+    if (method === 'eth_getCode') return '0x6080'
+    throw Object.assign(new Error('Failed to fetch'), { code: -32603 })
+  })
+  m.setWalletReadProvider(broken.provider)
+  try {
+    await withNet(
+      () => BLOCKED,
+      async () => {
+        const facts = await m.readUsdcFacts(chain)
+        assert.equal(facts.ok, false)
+        assert.equal(facts.blocked, true)
+        assert.equal(facts.wallet, 'failed')
+        assert.doesNotMatch(String(facts.reason), /revert/i)
+        const v = await m.readVault(chain, VAULT)
+        assert.ok(!v.ok)
+        assert.equal(v.failure.kind, 'blocked')
+        assert.equal(v.failure.wallet, 'failed')
+        assert.doesNotMatch(v.failure.reason, /revert/i)
+      },
+    )
+    // A phone wallet is never asked: its reads leave from this page for the same hosts.
+    const phone = emptyWallet(chain.chainId)
+    m.setWalletReadProvider(phone.provider, { walletConnect: true })
+    const v = await withNet(() => BLOCKED, () => m.readVault(chain, VAULT))
+    assert.ok(!v.ok)
+    assert.equal(v.failure.wallet, 'walletconnect')
+    assert.deepEqual(phone.calls, [])
+  } finally {
+    m.setWalletReadProvider(null)
+  }
+})
+
+test('a write prepared while no node answers stops before the wallet, with the way through its state allows', async () => {
+  const m = await read()
+  const w = await write()
+  const { explainFailure } = await explain()
+  const { blockedNext } = await copy()
+  const chain = m.ARC_MAINNET
+  const usdc = m.usdcOf(chain)
+  assert.ok(usdc)
+  // A vault of the page's own build, as a read would have shown it: only the network is in the way.
+  const v: Rec = {
+    network: chain.caip2,
+    chainId: chain.chainId,
+    address: VAULT,
+    host: m.hostOf(m.rpcUrls(chain)[0]),
+    block: 100n,
+    chainTime: 1_800_000_000n,
+    readAt: new Date(1_000_000).toISOString(),
+    owner: OWNER,
+    operator: OPERATOR,
+    usdc: usdc.address,
+    usdcMatches: true,
+    dailyCap: 0n,
+    autoApproveMax: 0n,
+    frozen: false,
+    allowlistEnabled: false,
+    sessionKeyExpiry: 0n,
+    today: 1n,
+    spentToday: 0n,
+    balance: 0n,
+    decimals: usdc.decimals,
+    codeHash: '0x',
+    codeBytes: 0,
+    knownBuild: true,
+    remainingToday: null,
+    resetsAt: 86_400n,
+    expired: false,
+  }
+  const stopOf = async (net: Net): Promise<Failure> => {
+    try {
+      await withNet(net, () => w.prepareFund(chain, v, OWNER, 1n))
+    } catch (e) {
+      const f = (e as { failure?: Failure }).failure
+      assert.ok(f, `a typed stop, not ${String(e)}`)
+      return f
+    }
+    return assert.fail('a transfer was prepared with no node answering')
+  }
+  try {
+    const none = await stopOf(() => BLOCKED)
+    assert.deepEqual([none.code, none.wallet], ['rpc_blocked', 'none'])
+    assert.equal(explainFailure(none).next, `Nothing was sent. ${blockedNext('none', 'try again')}`)
+    assert.doesNotMatch(none.message, /revert/i)
+    m.setWalletReadProvider(emptyWallet(1).provider)
+    const elsewhere = await stopOf(() => BLOCKED)
+    assert.deepEqual([elsewhere.code, elsewhere.wallet], ['rpc_blocked', 'other_chain'])
+    // emptyWallet answers the chain id and fails the code read with -32603, which viem can word as a revert.
+    m.setWalletReadProvider(emptyWallet(chain.chainId).provider)
+    const failedToo = await stopOf(() => BLOCKED)
+    assert.deepEqual([failedToo.code, failedToo.wallet], ['rpc_blocked', 'failed'])
+    assert.doesNotMatch(failedToo.message, /revert/i)
+    // A network that answers 429 is busy, and busy is not blocked.
+    m.setWalletReadProvider(null)
+    const busy = await stopOf(() => BUSY)
+    assert.equal(busy.code, 'rpc_unreachable')
+    assert.equal(busy.wallet, undefined)
+  } finally {
+    m.setWalletReadProvider(null)
+  }
 })

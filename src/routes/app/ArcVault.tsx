@@ -58,12 +58,12 @@ import { fundingUnresolved, predictedVault, setupAlert, setupFundEndedOn, setupF
 import {
   ARC_CHAINS,
   ARC_MAINNET,
-  READ_FAILURE_NEXT,
-  READ_FAILURE_TITLE,
   arcChainFor,
   localTime,
   networkName,
   networkWord,
+  readFailureNext,
+  readFailureTitle,
   readVault,
   type ReadFailure,
   type VaultSnapshot,
@@ -454,12 +454,12 @@ export default function ArcVault() {
             {read.failure && read.key === key && (
               <div role="alert" className="rounded-2xl border border-danger/25 bg-danger/[0.07] p-4 text-sm">
                 <div className="font-semibold text-foreground">
-                  Read failed at {localTime(read.failure.at)}: {READ_FAILURE_TITLE[read.failure.kind]}.
+                  Read failed at {localTime(read.failure.at)}: {readFailureTitle(read.failure)}.
                 </div>
                 <div className="mt-1 break-words text-foreground/80">{read.failure.reason}.</div>
                 <div className="mt-2 text-foreground/80">
                   <span className="font-semibold text-foreground">Next step: </span>
-                  {READ_FAILURE_NEXT[read.failure.kind]}
+                  {readFailureNext(read.failure, 'press Refresh, or wait: this page tries again by itself')}
                 </div>
                 {read.lastGood && (
                   <div className="mt-2 text-xs text-foreground/60">
