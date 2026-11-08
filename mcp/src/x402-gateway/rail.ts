@@ -581,6 +581,9 @@ const KNOWN_INTERNAL_PAYERS = [
   // counted that self-funded call as external demand, which is the exact error this list
   // exists to make impossible.
   '0x8c8d9cd12d8896a40cf2115ee731258bb4983349',
+  // The agent key of the founder's own approval test on Arc Mainnet. It pays one check from a
+  // deposit we fund, so that check is our own traffic and must never read as external demand.
+  '0x86dc9716eb00164183d43f8e1273888c7eba3cb4',
 ]
 
 export function internalPayers(env: NodeJS.ProcessEnv = process.env): string[] {
