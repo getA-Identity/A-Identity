@@ -45,6 +45,10 @@
  *   - anvil reads the real chain through a stand-in on this machine. A lookup anvil passes on of a transaction hash
  *     this run made (replaced, dropped, unmined or made up) is answered null there, as the real chain would answer
  *     it, the real host's rate limits are waited out a few times, and everything else goes on as it is: see forkVia.
+ *   - One of this script's own calls that meets a closed connection to anvil or the backend is asked again, a few
+ *     times at most and said each time, only where that cannot do anything twice: see rpc and getJson. A request the
+ *     page makes is never asked again: the page is told it failed, as from a host that dropped it, and the run counts
+ *     those and says how many at the end.
  *
  * Safety: the backend gets a built-from-scratch environment (no DATABASE_URL, nothing from your
  * shell, cwd in a temp dir so no .env is found) and a copy of mcp/dist under that temp dir, so its
@@ -114,6 +118,8 @@ const check = (ok, what) => {
 }
 const say = (s) => console.log(`      ${s}`)
 const section = (s) => console.log(`\n--- ${s}`)
+/** What closed connections did, said at the end: this script's own calls asked again, and the page's requests failed to it. */
+const socketNotes = { asked: [], toPage: 0, lastToPage: '' }
 /** What the fork's stand-in did: lookups of this run's own hashes it answered itself, the calls it passed on by method, rate limits it waited out, and failures it passed on. See forkVia. */
 const forkSaid = { nulls: 0, passedOn: {}, waited: 0, failed: 0, lastFailed: '' }
 
@@ -131,6 +137,8 @@ function finish(code) {
   stopChildren()
   const busiest = Object.entries(forkSaid.passedOn).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([m, n]) => `${m} ${n}`).join(', ')
   console.log(`\nthe fork's stand-in: ${forkSaid.nulls} lookups of this run's own hashes answered null, ${Object.values(forkSaid.passedOn).reduce((a, b) => a + b, 0)} calls passed on to the real host (${busiest}), ${forkSaid.waited} rate limits waited out, ${forkSaid.failed} failures passed on to anvil${forkSaid.lastFailed ? `, the last ${forkSaid.lastFailed}` : ''}`)
+  if (socketNotes.asked.length) console.log(`this script's own calls asked again after a closed connection: ${socketNotes.asked.length} (${[...new Set(socketNotes.asked)].join(', ')})`)
+  if (socketNotes.toPage) console.log(`the page's requests failed to it after a failed connection: ${socketNotes.toPage}, the last ${socketNotes.lastToPage}`)
   const failed = results.filter((r) => !r.ok).length
   console.log(failed ? `\n${failed} of ${results.length} check(s) failed` : `\nALL ${results.length} CHECKS PASSED`)
   if (flag('--keep')) console.log('kept', work)
@@ -268,23 +276,108 @@ const forkVia = await new Promise((resolve, reject) => {
   server.listen(0, '127.0.0.1', () => resolve(`http://127.0.0.1:${server.address().port}`))
 })
 
+// A connection anvil or the backend closes under one of this script's own calls says nothing about the code under test.
+// Such a call is asked again, at most SOCKET_RETRIES times and said each time, only where that cannot do anything twice:
+// a read, a call that sets a value whatever was there, a raw transaction anvil is first asked about by its own hash, and a
+// mine checked against the block number. Any other call that changes the chain is not asked again, and its failure stops
+// the run. A request the page makes is never asked again: see ownerBrowser.
+const SOCKET_RETRIES = 3
+const socketClosed = (e) => ['UND_ERR_SOCKET', 'ECONNRESET'].includes(e?.cause?.code)
+const askedAgain = (what, e, n) => {
+  socketNotes.asked.push(what)
+  say(`a closed connection under this script's ${what} (${whyStopped(e)}): asking again, ${n} of ${SOCKET_RETRIES}`)
+}
+
+/**
+ * A closed connection this run can put on one call, to check the rules here against one: `method` names the call,
+ * 'before' closes the connection before the other end has it, and 'after' once it has answered, as if the answer
+ * were lost on the way back. `count` is how many calls of that name went out.
+ */
+const fault = { method: null, when: null, count: 0 }
+const closedConnection = () => Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('other side closed'), { code: 'UND_ERR_SOCKET' }) })
+async function underFault(name, send) {
+  if (fault.method === null || name !== fault.method) return send()
+  fault.count++
+  const when = fault.when
+  fault.when = null
+  if (when === 'before') throw closedConnection()
+  const res = await send()
+  if (when !== 'after') return res
+  await res.arrayBuffer()
+  throw closedConnection()
+}
+async function toAnvil(init) {
+  let method = null
+  try {
+    method = JSON.parse(init.body).method ?? null
+  } catch {
+    method = null
+  }
+  return underFault(method, () => fetch(anvilUrl, init))
+}
+/** A call of this run's with that fault on it: what it said or how it failed, and how many went out. */
+const under = async (method, when, call) => {
+  Object.assign(fault, { method, when, count: 0 })
+  try {
+    return { said: await call(), count: fault.count }
+  } catch (e) {
+    return { failed: socketClosed(e) ? 'a closed connection' : e.message, count: fault.count }
+  } finally {
+    Object.assign(fault, { method: null, when: null })
+  }
+}
+
 /** Long enough for anvil to outlast the stand-in's waiting on the real host, which its own timeout allows. */
 const RPC_TIMEOUT_MS = 200_000
 let rpcId = 1
-async function rpc(method, params = []) {
-  if (method === 'eth_sendRawTransaction') ownHash(keccak256(params[0]))
-  // A fork reads state it has not seen from its upstream, which rate limits it. That says nothing about
-  // this code, and anvil did nothing with a call it answered so, so the same call is asked again.
+/** One call to anvil. A fork's rate limit is anvil saying it did nothing with the call, so the same call is asked again. */
+async function rpcOnce(method, params) {
   for (let attempt = 0; ; attempt++) {
-    const res = await fetch(anvilUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: rpcId++, method, params }), signal: AbortSignal.timeout(RPC_TIMEOUT_MS) })
+    const res = await toAnvil({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: rpcId++, method, params }), signal: AbortSignal.timeout(RPC_TIMEOUT_MS) })
     const j = await res.json()
     if (j.error && /Fork Error|rate limit/i.test(j.error.message) && attempt < 8) {
-      await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)))
+      await pause(2000 * (attempt + 1))
       continue
     }
     if (j.error) throw Object.assign(new Error(j.error.message), { code: j.error.code, data: j.error.data })
-    if (method === 'eth_sendRawTransaction' || method === 'eth_sendTransaction') ownHash(j.result)
     return j.result
+  }
+}
+/** Calls that set a value whatever was there: asked twice, they do what asking once does. */
+const SETS = new Set(['evm_setAutomine', 'anvil_setBalance', 'anvil_setCode', 'anvil_dropTransaction', 'anvil_impersonateAccount', 'anvil_stopImpersonatingAccount'])
+const SENDS = new Set(['eth_sendRawTransaction', 'eth_sendTransaction'])
+/**
+ * A call to anvil, from this script or from the stand-in wallet. `again: false` is for a read the page makes through
+ * that wallet: it is the page's request, so a closed connection under it is the page's to hear.
+ */
+async function rpc(method, params = [], { again = true } = {}) {
+  // How to tell, after a closed connection, whether a call that changes the chain already took.
+  let took = null
+  if (method === 'eth_sendRawTransaction') {
+    const hash = ownHash(keccak256(params[0]))
+    took = async () => ((await rpc('eth_getTransactionByHash', [hash])) ? { result: hash } : null)
+  } else if (method === 'evm_mine' || method === 'anvil_mine') {
+    const from = BigInt(await rpc('eth_blockNumber'))
+    const n = method === 'anvil_mine' && params[0] !== undefined ? BigInt(params[0]) : 1n
+    took = async () => (BigInt(await rpc('eth_blockNumber')) >= from + n ? { result: null } : null)
+  }
+  const safe = again && (took !== null || SETS.has(method) || (method.startsWith('eth_') && !SENDS.has(method)))
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const result = await rpcOnce(method, params)
+      if (SENDS.has(method)) ownHash(result)
+      return result
+    } catch (e) {
+      if (!socketClosed(e) || !safe || attempt >= SOCKET_RETRIES) throw e
+      const already = took ? await took() : null
+      if (already) {
+        socketNotes.asked.push(method)
+        say(`a closed connection under this script's ${method} (${whyStopped(e)}): it had taken, so it is not asked again`)
+        return already.result
+      }
+      askedAgain(method, e, attempt + 1)
+      await pause(500 * (attempt + 1))
+    }
   }
 }
 // Any registry host can serve the fork. anvil exits at once when its host rate limits it, which
@@ -377,11 +470,29 @@ const mockStopped = solOut.contracts[tokensSol].ForkUSDCStopped
 await rpc('anvil_setCode', [USDC, `0x${mock.evm.deployedBytecode.object}`])
 say(`MockUSDC runtime, plus symbol() and decimals(), etched at ${USDC}`)
 
-section("this script's own calls: the fork's stand-in")
+section("this script's own calls: the fork's stand-in, and a closed connection")
 {
   const probe = ownHash(toHex(randomBytes(32)))
   const nulls = forkSaid.nulls
+  const askedBefore = socketNotes.asked.length
   check((await rpc('eth_getTransactionReceipt', [probe])) === null && forkSaid.nulls === nulls + 1, "a lookup of a hash this run made is answered null by the fork's stand-in, and the real host is not asked")
+  const read = await under('eth_blockNumber', 'before', () => rpc('eth_blockNumber'))
+  check(/^0x[0-9a-f]+$/.test(read.said ?? '') && read.count === 2, `a read under a closed connection is asked again, once (${read.count} calls${read.failed ? `, failed: ${read.failed}` : ''})`)
+  const tester = privateKeyToAccount(generatePrivateKey())
+  await rpc('anvil_setBalance', [tester.address, toHex(10n ** 18n)])
+  const nonce = Number(await rpc('eth_getTransactionCount', [tester.address, 'latest']))
+  const raw = await tester.signTransaction({ type: 'eip1559', chainId: chain.evmChainId, nonce, to: tester.address, value: 0n, gas: 21000n, maxFeePerGas: BigInt(await rpc('eth_gasPrice')) * 2n + 1_000_000_000n, maxPriorityFeePerGas: 1_000_000_000n })
+  const sent = await under('eth_sendRawTransaction', 'after', () => rpc('eth_sendRawTransaction', [raw]))
+  const moved = Number(await rpc('eth_getTransactionCount', [tester.address, 'latest'])) - nonce
+  check(sent.said === keccak256(raw) && sent.count === 1 && moved === 1, `a transaction whose answer was lost is found by its own hash and not sent again (${sent.count} sent, the nonce moved ${moved}${sent.failed ? `, failed: ${sent.failed}` : ''})`)
+  const mined = BigInt(await rpc('eth_blockNumber'))
+  const mine1 = await under('evm_mine', 'after', () => rpc('evm_mine'))
+  const minedNow = BigInt(await rpc('eth_blockNumber')) - mined
+  check(mine1.count === 1 && minedNow === 1n && !mine1.failed, `a mine whose answer was lost is read from the block number and not asked again (${mine1.count} asked, ${minedNow} mined)`)
+  const changes = await under('evm_snapshot', 'after', () => rpc('evm_snapshot'))
+  check(changes.failed === 'a closed connection' && changes.count === 1, `a call that changes the chain, with no way to read whether it took, is not asked again (${changes.count} asked, ${changes.failed ?? 'answered'})`)
+  // Those closed connections were these checks' own, so what is said at the end is the run's.
+  socketNotes.asked.length = askedBefore
 }
 
 async function send(account, tx) {
@@ -552,10 +663,25 @@ async function startBackend() {
 }
 await startBackend()
 say(`backend on port ${backendPort}, store ${databaseUrl ? 'a throwaway Postgres' : storeFile}`)
+{
+  const askedBefore = socketNotes.asked.length
+  const got = await under('GET /api/arc/vaults', 'before', () => getJson('/api/arc/vaults'))
+  check(got.said?.status === 200 && got.count === 2, `this script's own read of the backend, under a closed connection, is asked again, once (${got.count} calls${got.failed ? `, failed: ${got.failed}` : ''})`)
+  socketNotes.asked.length = askedBefore
+}
 
+/** This script's own read of the backend: a GET, so a closed connection under it is asked again. */
 async function getJson(path, headers = {}) {
-  const res = await fetch(`${api}${path}`, { headers: { accept: 'application/json', ...headers } })
-  return { status: res.status, body: await res.json().catch(() => null) }
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await underFault(`GET ${path.split('?')[0]}`, () => fetch(`${api}${path}`, { headers: { accept: 'application/json', ...headers } }))
+      return { status: res.status, body: await res.json().catch(() => null) }
+    } catch (e) {
+      if (!socketClosed(e) || attempt >= SOCKET_RETRIES) throw e
+      askedAgain(`GET ${path.split('?')[0]}`, e, attempt + 1)
+      await pause(500 * (attempt + 1))
+    }
+  }
 }
 async function postVault(deployTx) {
   for (let attempt = 0; ; attempt++) {
@@ -982,13 +1108,15 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
           const gas = wallet.gasOnce ?? BigInt(tx.gas)
           wallet.gasOnce = null
           const raw = await owner.signTransaction({ type: 'eip1559', chainId: chain.evmChainId, nonce, ...(tx.to ? { to: tx.to } : {}), data: tx.data, value: 0n, gas, maxFeePerGas: BigInt(tx.maxFeePerGas), maxPriorityFeePerGas: BigInt(tx.maxPriorityFeePerGas) })
+          // The wallet's own broadcast, which rpc makes once: after a closed connection it asks anvil for the hash first.
           const hash = await rpc('eth_sendRawTransaction', [raw])
           wallet.sent.push({ hash, to: tx.to ?? null, data: tx.data })
           return hash
         }
         default:
           if (wallet.chainHex !== CHAIN_HEX) throw Object.assign(new Error(`read on ${wallet.chainHex} not served`), { code: 4200 })
-          return rpc(method, params ?? [])
+          // A read the page makes through its wallet: the page's request, so it is not asked again.
+          return rpc(method, params ?? [], { again: false })
       }
     }
     await ctx.exposeBinding('__walletBridge', async (_src, method, params) => {
@@ -1035,6 +1163,23 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
     // What the backend's own limiter answered the page, by route: a run that stops can then say so.
     const limited = {}
     const reads = { flows: 0, times: [], listTimes: [] }
+    /**
+     * A request the page made, carried once to where it goes, with its whole answer read. A connection that fails under
+     * it is the page's to hear, as from a host that dropped it: the route is failed, counted and said, and nothing asks
+     * it again. Null when it failed.
+     */
+    const carry = async (route, what, to, init) => {
+      try {
+        const res = to === anvilUrl ? await toAnvil(init) : await fetch(to, init)
+        return { status: res.status, type: res.headers.get('content-type'), bytes: Buffer.from(await res.arrayBuffer()) }
+      } catch (e) {
+        socketNotes.toPage++
+        socketNotes.lastToPage = `${what}: ${whyStopped(e)}`
+        say(`the page's ${what} failed on its way (${whyStopped(e)}): the page is told so, and it is not asked again`)
+        await route.abort('connectionclosed').catch(() => {})
+        return null
+      }
+    }
     await ctx.route('**/*', async (route, request) => {
       const url = new URL(request.url())
       const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' }
@@ -1049,13 +1194,13 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
           if (stand.vaultsOnFork) {
             if (asked.to < forkBlock) return route.fulfill({ status: 200, headers: { ...cors, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: call.id, result: [] }) })
             if (asked.from < forkBlock) {
-              const res = await fetch(anvilUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...call, params: [{ ...call.params[0], fromBlock: toHex(forkBlock) }] }) })
-              return route.fulfill({ status: res.status, headers: { ...cors, 'content-type': 'application/json' }, body: Buffer.from(await res.arrayBuffer()) })
+              const got = await carry(route, `eth_getLogs to ${url.host}`, anvilUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...call, params: [{ ...call.params[0], fromBlock: toHex(forkBlock) }] }) })
+              return got && route.fulfill({ status: got.status, headers: { ...cors, 'content-type': 'application/json' }, body: got.bytes })
             }
           }
         }
-        const res = await fetch(anvilUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: request.postData() })
-        return route.fulfill({ status: res.status, headers: { ...cors, 'content-type': 'application/json' }, body: Buffer.from(await res.arrayBuffer()) })
+        const got = await carry(route, `${call.method ?? 'batch'} to ${url.host}`, anvilUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: request.postData() })
+        return got && route.fulfill({ status: got.status, headers: { ...cors, 'content-type': 'application/json' }, body: got.bytes })
       }
       if (url.origin === base && (url.pathname.startsWith('/api/') || url.pathname === '/health')) {
         if (request.method() === 'POST' && url.pathname === '/api/arc/vaults') {
@@ -1102,21 +1247,22 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
           }
           reads.listTimes.push(Date.now())
         }
-        const res = await fetch(`${api}${url.pathname}${url.search}`, { method: request.method(), headers, body: request.method() === 'POST' ? request.postData() : undefined })
-        if (res.status === 429) {
-          const route = `${request.method()} ${url.pathname.replace(/0x[0-9a-f]{64}/i, ':flowId')}`
-          limited[route] = (limited[route] ?? 0) + 1
+        const got = await carry(route, `${request.method()} ${url.pathname}`, `${api}${url.pathname}${url.search}`, { method: request.method(), headers, body: request.method() === 'POST' ? request.postData() : undefined })
+        if (!got) return
+        if (got.status === 429) {
+          const key = `${request.method()} ${url.pathname.replace(/0x[0-9a-f]{64}/i, ':flowId')}`
+          limited[key] = (limited[key] ?? 0) + 1
         }
         if (request.method() === 'GET' && url.pathname.startsWith('/api/x402/gateway/flows') && (stand.rewrite || stand.extra)) {
-          const body = await res.json()
+          const body = JSON.parse(got.bytes.toString('utf8'))
           const swap = (f) => (stand.rewrite ? stand.rewrite(f) : f)
           if (body.flow) body.flow = swap(body.flow)
           if (Array.isArray(body.waiting)) body.waiting = [...body.waiting.map(swap), ...(stand.extra?.list ?? [])]
           const named = stand.extra?.byId?.[url.pathname.split('/').pop()]
           if (named) return route.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ flowId: named.flowId, flow: named }) })
-          return route.fulfill({ status: res.status, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+          return route.fulfill({ status: got.status, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
         }
-        return route.fulfill({ status: res.status, headers: { 'content-type': res.headers.get('content-type') ?? 'application/json' }, body: Buffer.from(await res.arrayBuffer()) })
+        return route.fulfill({ status: got.status, headers: { 'content-type': got.type ?? 'application/json' }, body: got.bytes })
       }
       if (url.origin === base || url.protocol === 'data:') return route.continue()
       refused.add(url.host)
@@ -1562,6 +1708,22 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
     const { ctx, owner, agent, wallet, logReads, stand, limited, reads, pageErrors, text, waitText, stopIf, connect } = b
     const stranger = acct(strangerIndex)
     const page = b.current()
+
+    // A request the page makes is the page's: one that fails on its way is failed to the page, and nothing asks it again.
+    {
+      await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' })
+      const was = { ...socketNotes }
+      Object.assign(fault, { method: 'web3_clientVersion', when: 'before', count: 0 })
+      const heard = await page.evaluate(
+        (u) => fetch(u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'web3_clientVersion', params: [] }) }).then((r) => `answered ${r.status}`, () => 'failed'),
+        chain.rpcUrls[0],
+      )
+      const count = fault.count
+      Object.assign(fault, { method: null, when: null })
+      check(heard === 'failed' && count === 1 && socketNotes.toPage === was.toPage + 1, `a request the page makes, under a closed connection, fails at the page and is not asked again (${heard}, ${count} sent)`)
+      // That one was this check's own, so the count said at the end is of the run's.
+      Object.assign(socketNotes, { toPage: was.toPage, lastToPage: was.lastToPage })
+    }
     stand.vaultsOnFork = true
     const { vault } = await deployVault(owner, agent.address)
     await setExpiry(owner, vault)
