@@ -67,6 +67,9 @@ test('with no verified caller registration is Forbidden, before the manifest is 
     assert.match(r.error, /^Forbidden: /, 'the refusal has to map to 403, like every other gate')
     assert.match(r.error, /verified session/)
     assert.match(r.error, /nothing was registered/)
+    // A guest who sent a Bearer gets this same answer, so it has to say why that was not enough.
+    assert.match(r.error, /guest token from the plain email login is not one/)
+    assert.match(r.error, /a-identity\.xyz\/auth\.md/, 'and where a token comes from')
   }
   // The caller is checked first: a stranger is not told what is wrong with their manifest.
   const nameless = registerAgentFromManifest({} as never, undefined)

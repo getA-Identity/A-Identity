@@ -223,9 +223,11 @@ export type RegistrationResult = {
 export type RegistrationRefusal = { error: string; resetAt?: string }
 
 /** The refusal for a registration with no verified caller. Starts with "Forbidden:" so every
- *  door maps it to 403, and says what to send, because the caller is usually an agent. */
+ *  door maps it to 403, and says what to send, because the caller is usually an agent. It
+ *  names the guest token because a caller who sent one sees this too and could not otherwise
+ *  tell why the Bearer it sent was not enough. */
 export const REGISTER_NEEDS_SESSION =
-  'Forbidden: registering an agent needs a verified session, and nothing was registered. Send Authorization: Bearer <token>, from OAuth or a wallet or email sign-in; how: https://a-identity.xyz/auth.md'
+  'Forbidden: registering an agent needs a verified session, and nothing was registered. A guest token from the plain email login is not one. Send Authorization: Bearer <token>, from OAuth, a wallet sign-in or an email link; how: https://a-identity.xyz/auth.md'
 
 /** A wallet a manifest may name: 0x and 40 hex characters, the rule POST /api/v1/agents/register applies. */
 const WALLET_ADDRESS = /^0x[0-9a-fA-F]{40}$/

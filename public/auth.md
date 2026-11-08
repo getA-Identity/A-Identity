@@ -72,8 +72,8 @@ Required for `register_agent` (and its REST doors, `POST /api/agents/register` a
 create an agent record, commit USDC to escrow, or read or change an agent's
 policy, so they require a **verified session**: it is the account a new agent is
 registered to, and the proof that a human owns an existing one. There is no
-separate API key to provision: the session is the credential, and it is the same
-one Option 4 (OAuth) produces.
+separate API key to provision: the session is the credential, whether it comes
+from OAuth (Option 4), a wallet signature or an email link.
 
 Registering writes a platform record, not an on-chain one. It comes back
 `onchain: queued` and stays queued until the owner anchors the agent from the
@@ -85,12 +85,47 @@ paid check does not need a registered agent.
 - **OAuth** (Option 4 below): run the standard flow against the authorization
   server and send `Authorization: Bearer <token>` on the `/mcp` request. This is
   the path for MCP clients.
+- **Wallet signature or email link**, from code: the steps are in the next
+  section, and both end in a token you send as a Bearer.
 - **Console** (`https://a-identity.xyz/app`): a human signs in with a wallet
   (SIWE) or a magic link; the browser session then owns the agents registered to
   that identity.
 
 A session grants ownership of the agents registered to its verified email or
 wallet, and nothing more. A guest with no session is read-only.
+
+### A Bearer token from a wallet or an email link
+
+Both sign-ins answer with a `token`. Send it as `Authorization: Bearer <token>`,
+on `/mcp` and on the REST routes alike. Tokens expire; on a `401`, sign in again.
+
+**Wallet**, signed by whoever holds its key:
+
+1. `POST https://a-identity.xyz/api/auth/nonce` with `{"address": "0x..."}`. The
+   answer carries a `message`, which works once and expires in ten minutes.
+   Stellar (`G...`) and Algorand addresses are accepted as well.
+2. Sign that exact message with the wallet: `personal_sign` (EIP-191) on an EVM
+   address. A Stellar or Algorand wallet signs the same text with its own key.
+3. `POST https://a-identity.xyz/api/auth/verify` with
+   `{"address": "0x...", "message": "<the message>", "signature": "0x..."}`. The
+   answer carries `token`.
+
+The marketplace SDK runs those steps in one call: `MarketplaceClient.withWallet`.
+
+**Email link**, for whoever reads that mailbox:
+
+1. `POST https://a-identity.xyz/api/auth/magic/request` with
+   `{"email": "you@example.com"}`. A sign-in link goes to that address; it works
+   once and expires in fifteen minutes.
+2. The link carries a `token` query parameter. Send that value to
+   `POST https://a-identity.xyz/api/auth/magic/verify` as `{"token": "<that value>"}`.
+   The answer carries the session `token`. Opening the link in a browser signs
+   that browser in instead, and uses the link up.
+
+`POST https://a-identity.xyz/api/auth/login` with only an email is **not** a
+sign-in. It proves nothing about the address, so the token it returns is a guest
+token: the tools and REST doors listed above refuse it, as does every other
+write that needs a session.
 
 ### What a session cannot do
 
@@ -103,19 +138,19 @@ vault to let more money through.
 ### Without a session
 
 The tools above return a `Forbidden` error telling you to sign in, and
-`register_agent` registers nothing. They do **not** silently succeed and they do
-**not** return a prepared no-op, so wire the session in before you test them
-rather than after. (The prepared-or-executed
-pattern elsewhere in this API is about a missing *server* signer key, not a
-missing caller session.)
+`register_agent` registers nothing. A guest token counts as no session here.
+They do **not** silently succeed and they do **not** return a prepared no-op, so
+wire the session in before you test them rather than after. (The
+prepared-or-executed pattern elsewhere in this API is about a missing *server*
+signer key, not a missing caller session.)
 
 ### Errors
 
 | Status | Meaning | What to do |
 | --- | --- | --- |
 | `402` | Payment required for a paid tool. | Settle the challenge in the body and replay the request. |
-| `401` | No session, or the token is expired or invalid. | Re-authenticate (Option 4), then retry. |
-| `403` | Signed in, but the action is outside this agent's policy or you do not own it. | Do not retry. Call `policy_get` to see the limit, then escalate to the human. |
+| `401` | No session, or the token is expired or invalid. | Sign in again (Option 4, or the wallet or email link steps above), then retry. |
+| `403` | Signed in, but the action is outside this agent's policy, you do not own it, or the token is a guest token from the plain email login. | Do not retry with the same token. A guest token: sign in with a wallet or an email link. Otherwise call `policy_get` to see the limit, then escalate to the human. |
 | `429` | Rate limited on the free tier. | Back off, honor `Retry-After`, or pay for the call. |
 
 ### Rotation and revocation
