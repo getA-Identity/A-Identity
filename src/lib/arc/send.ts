@@ -52,6 +52,8 @@ export type TxFailureCode =
   | 'handoff_held'
   | 'handoff_already_paid'
   | 'handoff_unreadable'
+  /** The vault's recent payments could not be read because no network node answered the page: nothing is offered. */
+  | 'handoff_blocked'
 
 /** `wallet`, on rpc_blocked: what the wallet did on the same read, which decides the way through. */
 export type TxFailure = { code: TxFailureCode; message: string; errorName?: string; wallet?: WalletReadState }

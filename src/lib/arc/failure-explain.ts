@@ -9,7 +9,7 @@
  * A module of its own, with only imports named by their .ts extension, so that
  * mcp/src/frontend-arc-copy.test.ts can drive a real send into it and read what the person is told.
  */
-import { BLOCKED_TITLE, USE_ANOTHER_ACCOUNT, blockedNext } from './deploy-copy.ts'
+import { BLOCKED_TITLE, SCAN_BLOCKED_NEXT, USE_ANOTHER_ACCOUNT, blockedNext } from './deploy-copy.ts'
 import type { TxFailure } from './send'
 
 /** The contract's custom errors, one sentence each. */
@@ -134,6 +134,8 @@ export function explainFailure(f: TxFailure): { title: string; body?: string; ne
       return { title: 'This has already been paid.', body: f.message, next: 'Nothing was sent. If you really mean to pay it again, ask your agent for a new check.', tone: 'warn' }
     case 'handoff_unreadable':
       return { title: 'This page could not make sure this is safe to send.', body: f.message, next: 'Nothing was sent. Wait a minute, then try again.', tone: 'danger' }
+    case 'handoff_blocked':
+      return { title: "This page cannot check the vault's recent payments from this browser.", body: f.message, next: `Nothing was sent. ${SCAN_BLOCKED_NEXT}`, tone: 'danger' }
     case 'wallet_error':
     default:
       // An error from the wallet does not prove nothing went out, and a second USDC transfer is real money.

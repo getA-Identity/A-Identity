@@ -6,9 +6,9 @@ import { decodeFunctionData, encodeFunctionResult, type Abi } from 'viem'
 
 /**
  * The Arc vault page reading through the person's wallet when no network node answers the page, run
- * from src/ as it ships: vault-read.ts, receipt.ts and vault-write.ts load straight from the
- * repository through Node's type stripping, against a fake network (global fetch, which viem's http
- * transport calls) and a fake EIP-1193 wallet that records every request it gets.
+ * from src/ as it ships: vault-read.ts, receipt.ts, vault-write.ts and vault-events.ts load straight
+ * from the repository through Node's type stripping, against a fake network (global fetch, which
+ * viem's http transport calls) and a fake EIP-1193 wallet that records every request it gets.
  *
  * What is held here is what the wallet may and may not do. With the RPCs answering it is sent
  * nothing. Its "not found" never counts toward how many hosts answered, so it can never help call a
@@ -49,14 +49,16 @@ type ReadModule = {
   READ_FAILURE_TITLE: Record<string, string>
 }
 type ReceiptModule = { advance: (chain: ChainLike, record: Rec, tick: number, now?: number) => Promise<{ record: Rec; answered: number; total: number }> }
+type EventsModule = { readPaidSince: (chain: ChainLike, vault: string, from: bigint) => Promise<{ ok: boolean; blocked?: boolean; reason?: string }> }
 type Explained = { title: string; body?: string; next: string }
 type Failure = { code: string; message: string; wallet?: string }
 type WriteModule = { prepareFund: (chain: ChainLike, v: Rec, from: string, amount: bigint) => Promise<unknown> }
-type CopyModule = { blockedNext: (w: string, again: string) => string; walletOnlyNext: (again: string) => string; BLOCKED_TITLE: string }
+type CopyModule = { blockedNext: (w: string, again: string) => string; walletOnlyNext: (again: string) => string; SCAN_BLOCKED_NEXT: string; BLOCKED_TITLE: string }
 
 const read = async () => (await import(repoUrl('src/lib/arc/vault-read.ts').href)) as ReadModule
 const receipt = async () => (await import(repoUrl('src/lib/arc/receipt.ts').href)) as ReceiptModule
 const write = async () => (await import(repoUrl('src/lib/arc/vault-write.ts').href)) as WriteModule
+const events = async () => (await import(repoUrl('src/lib/arc/vault-events.ts').href)) as EventsModule
 const hosts = async () => (await import(repoUrl('src/lib/arc/hosts.ts').href)) as { walletSaidNo: (e: unknown) => boolean }
 const copy = async () => (await import(repoUrl('src/lib/arc/deploy-copy.ts').href)) as CopyModule
 const explain = async () => (await import(repoUrl('src/lib/arc/failure-explain.ts').href)) as { explainFailure: (f: Failure) => Explained }
@@ -764,4 +766,41 @@ test('a read no network node answered is tried again by the page, and again once
   assert.match(page, /const blockedWithoutWallet = failedKind === 'blocked' && read\.failure\?\.wallet === 'none'/)
   assert.match(page, /if \(blockedWithoutWallet && wallet\.account\) void load\(\)/)
   assert.ok(page.indexOf('const wallet = useArcWallet()') < page.indexOf('const blockedWithoutWallet'))
+})
+
+test('a payments read no network node answered offers nothing, says why, and never asks the wallet', async () => {
+  const m = await read()
+  const e = await events()
+  const chain = m.ARC_MAINNET
+  const registry = m.rpcUrls(chain).map((u) => m.hostOf(u))
+  const wallet = emptyWallet(chain.chainId)
+  m.setWalletReadProvider(wallet.provider)
+  try {
+    const stopped = await withNet(() => BLOCKED, () => e.readPaidSince(chain, VAULT, 1n))
+    assert.equal(stopped.ok, false)
+    assert.equal(stopped.blocked, true)
+    const busy = await withNet((host) => (host === registry[0] ? BUSY : BLOCKED), () => e.readPaidSince(chain, VAULT, 1n))
+    assert.equal(busy.ok, false)
+    assert.equal(busy.blocked, false, 'a 429 is the network answering')
+    assert.deepEqual(wallet.calls, [], 'a payment missing from one wallet node must never free one')
+  } finally {
+    m.setWalletReadProvider(null)
+  }
+  const { explainFailure } = await explain()
+  const { SCAN_BLOCKED_NEXT } = await copy()
+  const told = explainFailure({ code: 'handoff_blocked', message: 'that read did not finish' })
+  assert.equal(told.title, "This page cannot check the vault's recent payments from this browser.")
+  assert.equal(told.next, `Nothing was sent. ${SCAN_BLOCKED_NEXT}`)
+  assert.match(told.next, /so it offers no payment/)
+  assert.match(told.next, /then reload this page/)
+  assert.match(told.next, /never your wallet/)
+  assert.match(told.next, /A lost connection looks the same/)
+  assert.doesNotMatch(told.next, /Wait a minute/)
+  // Both places that stop on that read say so.
+  const approvals = repo('src/components/app/arc/OwnerApprovals.tsx')
+  assert.match(approvals, /setScanBlocked\(got\.blocked === true\)/)
+  assert.match(approvals, /code: scanBlocked && scanFailed !== null \? 'handoff_blocked' : 'handoff_unreadable'/)
+  const handoff = repo('src/lib/arc/handoff-send.ts')
+  assert.equal([...handoff.matchAll(/if \(!r\.ok\) return \{ failed: r\.reason, blocked: r\.blocked === true \}/g)].length, 2)
+  assert.match(handoff, /if \('failed' in scan && scan\.blocked\) throw stop\('handoff_blocked', why\)/)
 })

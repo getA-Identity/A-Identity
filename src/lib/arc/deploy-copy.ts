@@ -186,3 +186,10 @@ export function blockedNext(wallet: WalletReadState, again: string): string {
 export function walletOnlyNext(again: string): string {
   return `Only your wallet answered, and one node's word is not enough to show this vault or to say there is none here. No answer from the network nodes reached this page. ${BLOCKED_WHY} ${TURN_IT_OFF}, then ${again}. Check the network and the address too: a vault on Arc testnet does not exist on Arc Mainnet, and the other way round.`
 }
+
+/**
+ * Said when the vault's recent payments could not be read because no network node answered this
+ * page. That read is what keeps a payment made elsewhere from being paid twice, so nothing is offered
+ * without it, and it never reads through the wallet: a payment missing from one node must not count.
+ */
+export const SCAN_BLOCKED_NEXT = `No network node answered this page, so it offers no payment: a payment is offered only after the vault's recent payments are read, so one made elsewhere is never paid twice. ${BLOCKED_WHY} ${TURN_IT_OFF}, then reload this page. This read uses the network nodes only, never your wallet.`
