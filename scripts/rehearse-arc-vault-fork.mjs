@@ -42,6 +42,13 @@
  *     and ownerBrowser. A 429 that still reaches the page is counted, and said at the end of the run.
  *   - Another device is the owner's key sending straight to the chain. A phone whose hash never comes back is a
  *     reload with the stand-in wallet's request still open. Its prompt stays open until this script answers it.
+ *   - anvil reads the real chain through a stand-in on this machine. A lookup anvil passes on of a transaction hash
+ *     this run made (replaced, dropped, unmined or made up) is answered null there, as the real chain would answer
+ *     it, the real host's rate limits are waited out a few times, and everything else goes on as it is: see forkVia.
+ *   - One of this script's own calls that meets a closed connection to anvil or the backend is asked again, a few
+ *     times at most and said each time, only where that cannot do anything twice: see rpc and getJson. A request the
+ *     page makes is never asked again: the page is told it failed, as from a host that dropped it, and the run counts
+ *     those and says how many at the end.
  *
  * Safety: the backend gets a built-from-scratch environment (no DATABASE_URL, nothing from your
  * shell, cwd in a temp dir so no .env is found) and a copy of mcp/dist under that temp dir, so its
@@ -60,6 +67,7 @@
  */
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { spawn, spawnSync } from 'node:child_process'
+import { createServer as createHttpServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { connect, createServer } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -90,7 +98,7 @@ const { generatePrivateKey, privateKeyToAccount, mnemonicToAccount } = await mod
 const { getChainById } = await mod('mcp/dist/chains/registry.js')
 const { committedOurKeys, OUR_KEY_PUBLIC_ADDRESSES } = await mod('mcp/dist/arc-owner-vault.js')
 const art = await mod('mcp/dist/contracts/AgentSpendPolicy.js')
-const { encodeDeployData, encodeFunctionData, decodeFunctionResult, getAddress, parseAbi, parseUnits, toFunctionSelector, toHex } = viem
+const { encodeDeployData, encodeFunctionData, decodeFunctionResult, getAddress, keccak256, parseAbi, parseUnits, toFunctionSelector, toHex } = viem
 const { randomBytes } = await import('node:crypto')
 
 const chain = getChainById('arc-mainnet')
@@ -110,17 +118,27 @@ const check = (ok, what) => {
 }
 const say = (s) => console.log(`      ${s}`)
 const section = (s) => console.log(`\n--- ${s}`)
+/** What closed connections did, said at the end: this script's own calls asked again, and the page's requests failed to it. */
+const socketNotes = { asked: [], toPage: 0, lastToPage: '' }
+/** What the fork's stand-in did: lookups of this run's own hashes it answered itself, the calls it passed on by method, rate limits it waited out, and failures it passed on. See forkVia. */
+const forkSaid = { nulls: 0, passedOn: {}, waited: 0, failed: 0, lastFailed: '' }
 
 // --- the processes, which only this run started and only this run stops, by pid --------------
 const work = mkdtempSync(join(tmpdir(), 'arc-vault-fork-'))
 const children = []
+let stopping = false
 function stopChildren() {
+  stopping = true
   for (const c of children) {
     if (c.exitCode === null && c.signalCode === null) c.kill('SIGTERM')
   }
 }
 function finish(code) {
   stopChildren()
+  const busiest = Object.entries(forkSaid.passedOn).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([m, n]) => `${m} ${n}`).join(', ')
+  console.log(`\nthe fork's stand-in: ${forkSaid.nulls} lookups of this run's own hashes answered null, ${Object.values(forkSaid.passedOn).reduce((a, b) => a + b, 0)} calls passed on to the real host (${busiest}), ${forkSaid.waited} rate limits waited out, ${forkSaid.failed} failures passed on to anvil${forkSaid.lastFailed ? `, the last ${forkSaid.lastFailed}` : ''}`)
+  if (socketNotes.asked.length) console.log(`this script's own calls asked again after a closed connection: ${socketNotes.asked.length} (${[...new Set(socketNotes.asked)].join(', ')})`)
+  if (socketNotes.toPage) console.log(`the page's requests failed to it after a failed connection: ${socketNotes.toPage}, the last ${socketNotes.lastToPage}`)
   const failed = results.filter((r) => !r.ok).length
   console.log(failed ? `\n${failed} of ${results.length} check(s) failed` : `\nALL ${results.length} CHECKS PASSED`)
   if (flag('--keep')) console.log('kept', work)
@@ -175,19 +193,191 @@ const anvilPort = await freePort()
 const anvilUrl = `http://127.0.0.1:${anvilPort}`
 let anvilOut = ''
 
+const pause = (ms) => new Promise((r) => setTimeout(r, ms))
+
+// What anvil reads from the real chain goes through this stand-in. anvil asks its upstream about any transaction hash
+// it does not hold, on every lookup: a hash a speed-up replaced, one dropped, one the stand-in wallet made up, and one
+// still waiting unmined. The page, the backend and this script ask about those every few seconds, the real host
+// behind the fork rate limits that, anvil backs off, and the page's own reads run out of time: in the run that failed
+// "the hash reads replaced" on 2026-11-06, after two minutes and 11 rounds none of the page's 4 hosts answered its
+// receipt check, so it rightly decided nothing. The real chain never saw a hash this run made, and a host answers null
+// for a hash it never saw, so that is what the stand-in answers for one of them. Everything else, a batch too, is passed
+// on as it is, at the pace the real host answers at, and a rate limit from it is waited out here, a few times at most: it
+// says nothing about the code under test.
+const runHashes = new Set()
+/** A transaction hash this run made: sent, signed or made up. */
+const ownHash = (h) => {
+  if (typeof h === 'string' && /^0x[0-9a-fA-F]{64}$/.test(h)) runHashes.add(h.toLowerCase())
+  return h
+}
+const BY_HASH = new Set(['eth_getTransactionByHash', 'eth_getTransactionReceipt'])
+/** How many times a read the real host refused is asked again, waiting 1, 2, 4, 8, 16, 30 and 30 seconds. anvil gives the stand-in 180. */
+const FORK_TRIES = 7
+const forkWait = (attempt) => Math.min(1000 * 2 ** attempt, 30000)
+/** The pace the primary kept answering at (see src/lib/arc/event-history.ts). This is one host, however many calls anvil has waiting. */
+const FORK_SPACING_MS = 400
+let forkUpstream = null
+let forkNextSend = 0
+const forkVia = await new Promise((resolve, reject) => {
+  const server = createHttpServer((req, res) => {
+    const chunks = []
+    req.on('data', (c) => chunks.push(c))
+    const reply = (status, type, payload) => {
+      if (res.headersSent) return
+      res.writeHead(status, { 'content-type': type })
+      res.end(payload)
+    }
+    const answer = async () => {
+      const body = Buffer.concat(chunks)
+      let call = null
+      try {
+        call = JSON.parse(body.toString('utf8'))
+      } catch {
+        call = null
+      }
+      if (call && !Array.isArray(call) && BY_HASH.has(call.method) && runHashes.has(String(call.params?.[0] ?? '').toLowerCase())) {
+        forkSaid.nulls++
+        return reply(200, 'application/json', JSON.stringify({ jsonrpc: '2.0', id: call.id ?? null, result: null }))
+      }
+      forkSaid.passedOn[call?.method ?? 'batch'] = (forkSaid.passedOn[call?.method ?? 'batch'] ?? 0) + 1
+      for (let attempt = 0; ; attempt++) {
+        let up = null
+        let why = ''
+        const sendAt = Math.max(Date.now(), forkNextSend)
+        forkNextSend = sendAt + FORK_SPACING_MS
+        await pause(sendAt - Date.now())
+        try {
+          const got = await fetch(forkUpstream, { method: 'POST', headers: { 'content-type': 'application/json' }, body, signal: AbortSignal.timeout(45000) })
+          up = { status: got.status, type: got.headers.get('content-type') ?? 'application/json', bytes: Buffer.from(await got.arrayBuffer()) }
+          if (got.status === 429 || /"error":\s*\{[^}]*(rate limit|too many requests)/i.test(up.bytes.toString('utf8', 0, 600))) why = `rate limited (${got.status})`
+        } catch (e) {
+          why = whyStopped(e)
+        }
+        if (why && attempt < FORK_TRIES) {
+          forkSaid.waited++
+          await pause(forkWait(attempt))
+          continue
+        }
+        if (why) {
+          forkSaid.failed++
+          forkSaid.lastFailed = `${call?.method ?? 'batch'}: ${why}`
+        }
+        // What the host said in the end, or that it did not answer, as anvil would have heard it from the host itself.
+        if (up) return reply(up.status, up.type, up.bytes)
+        return reply(502, 'application/json', JSON.stringify({ jsonrpc: '2.0', id: call?.id ?? null, error: { code: -32603, message: `the fork's host did not answer: ${why}` } }))
+      }
+    }
+    // Nothing in here may stop the run: anything unforeseen is a host that did not answer, to anvil.
+    req.on('end', () => void answer().catch((e) => reply(502, 'application/json', JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32603, message: `the fork's stand-in failed: ${whyStopped(e)}` } }))))
+  })
+  // anvil keeps its connections to the stand-in open far longer than the 5 seconds a Node server allows an idle one.
+  server.keepAliveTimeout = 0
+  server.on('error', reject)
+  server.listen(0, '127.0.0.1', () => resolve(`http://127.0.0.1:${server.address().port}`))
+})
+
+// A connection anvil or the backend closes under one of this script's own calls says nothing about the code under test.
+// Such a call is asked again, at most SOCKET_RETRIES times and said each time, only where that cannot do anything twice:
+// a read, a call that sets a value whatever was there, a raw transaction anvil is first asked about by its own hash, and a
+// mine checked against the block number. Any other call that changes the chain is not asked again, and its failure stops
+// the run. A request the page makes is never asked again: see ownerBrowser.
+const SOCKET_RETRIES = 3
+const socketClosed = (e) => ['UND_ERR_SOCKET', 'ECONNRESET'].includes(e?.cause?.code)
+const askedAgain = (what, e, n) => {
+  socketNotes.asked.push(what)
+  say(`a closed connection under this script's ${what} (${whyStopped(e)}): asking again, ${n} of ${SOCKET_RETRIES}`)
+}
+
+/**
+ * A closed connection this run can put on one call, to check the rules here against one: `method` names the call,
+ * 'before' closes the connection before the other end has it, and 'after' once it has answered, as if the answer
+ * were lost on the way back. `count` is how many calls of that name went out.
+ */
+const fault = { method: null, when: null, count: 0 }
+const closedConnection = () => Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('other side closed'), { code: 'UND_ERR_SOCKET' }) })
+async function underFault(name, send) {
+  if (fault.method === null || name !== fault.method) return send()
+  fault.count++
+  const when = fault.when
+  fault.when = null
+  if (when === 'before') throw closedConnection()
+  const res = await send()
+  if (when !== 'after') return res
+  await res.arrayBuffer()
+  throw closedConnection()
+}
+async function toAnvil(init) {
+  let method = null
+  try {
+    method = JSON.parse(init.body).method ?? null
+  } catch {
+    method = null
+  }
+  return underFault(method, () => fetch(anvilUrl, init))
+}
+/** A call of this run's with that fault on it: what it said or how it failed, and how many went out. */
+const under = async (method, when, call) => {
+  Object.assign(fault, { method, when, count: 0 })
+  try {
+    return { said: await call(), count: fault.count }
+  } catch (e) {
+    return { failed: socketClosed(e) ? 'a closed connection' : e.message, count: fault.count }
+  } finally {
+    Object.assign(fault, { method: null, when: null })
+  }
+}
+
+/** Long enough for anvil to outlast the stand-in's waiting on the real host, which its own timeout allows. */
+const RPC_TIMEOUT_MS = 200_000
 let rpcId = 1
-async function rpc(method, params = []) {
-  // A fork reads state it has not seen from its upstream, which rate limits it. That says nothing about
-  // this code, and anvil did nothing with a call it answered so, so the same call is asked again.
+/** One call to anvil. A fork's rate limit is anvil saying it did nothing with the call, so the same call is asked again. */
+async function rpcOnce(method, params) {
   for (let attempt = 0; ; attempt++) {
-    const res = await fetch(anvilUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: rpcId++, method, params }), signal: AbortSignal.timeout(60000) })
+    const res = await toAnvil({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: rpcId++, method, params }), signal: AbortSignal.timeout(RPC_TIMEOUT_MS) })
     const j = await res.json()
     if (j.error && /Fork Error|rate limit/i.test(j.error.message) && attempt < 8) {
-      await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)))
+      await pause(2000 * (attempt + 1))
       continue
     }
     if (j.error) throw Object.assign(new Error(j.error.message), { code: j.error.code, data: j.error.data })
     return j.result
+  }
+}
+/** Calls that set a value whatever was there: asked twice, they do what asking once does. */
+const SETS = new Set(['evm_setAutomine', 'anvil_setBalance', 'anvil_setCode', 'anvil_dropTransaction', 'anvil_impersonateAccount', 'anvil_stopImpersonatingAccount'])
+const SENDS = new Set(['eth_sendRawTransaction', 'eth_sendTransaction'])
+/**
+ * A call to anvil, from this script or from the stand-in wallet. `again: false` is for a read the page makes through
+ * that wallet: it is the page's request, so a closed connection under it is the page's to hear.
+ */
+async function rpc(method, params = [], { again = true } = {}) {
+  // How to tell, after a closed connection, whether a call that changes the chain already took.
+  let took = null
+  if (method === 'eth_sendRawTransaction') {
+    const hash = ownHash(keccak256(params[0]))
+    took = async () => ((await rpc('eth_getTransactionByHash', [hash])) ? { result: hash } : null)
+  } else if (method === 'evm_mine' || method === 'anvil_mine') {
+    const from = BigInt(await rpc('eth_blockNumber'))
+    const n = method === 'anvil_mine' && params[0] !== undefined ? BigInt(params[0]) : 1n
+    took = async () => (BigInt(await rpc('eth_blockNumber')) >= from + n ? { result: null } : null)
+  }
+  const safe = again && (took !== null || SETS.has(method) || (method.startsWith('eth_') && !SENDS.has(method)))
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const result = await rpcOnce(method, params)
+      if (SENDS.has(method)) ownHash(result)
+      return result
+    } catch (e) {
+      if (!socketClosed(e) || !safe || attempt >= SOCKET_RETRIES) throw e
+      const already = took ? await took() : null
+      if (already) {
+        socketNotes.asked.push(method)
+        say(`a closed connection under this script's ${method} (${whyStopped(e)}): it had taken, so it is not asked again`)
+        return already.result
+      }
+      askedAgain(method, e, attempt + 1)
+      await pause(500 * (attempt + 1))
+    }
   }
 }
 // Any registry host can serve the fork. anvil exits at once when its host rate limits it, which
@@ -200,7 +390,8 @@ for (const upstream of chain.rpcUrls) {
     say(`${host} gave no block number: trying the next host`)
     continue
   }
-  const anvil = spawn('anvil', ['--fork-url', upstream, '--fork-block-number', head.toString(), '--port', String(anvilPort), '--host', '127.0.0.1', '--hardfork', 'prague', '--no-storage-caching'], { stdio: ['ignore', 'pipe', 'pipe'] })
+  forkUpstream = upstream
+  const anvil = spawn('anvil', ['--fork-url', forkVia, '--fork-block-number', head.toString(), '--port', String(anvilPort), '--host', '127.0.0.1', '--hardfork', 'prague', '--no-storage-caching', '--timeout', '180000'], { stdio: ['ignore', 'pipe', 'pipe'] })
   children.push(anvil)
   anvil.stdout.on('data', (d) => (anvilOut = (anvilOut + d).slice(-4000)))
   anvil.stderr.on('data', (d) => (anvilOut = (anvilOut + d).slice(-4000)))
@@ -211,6 +402,10 @@ for (const upstream of chain.rpcUrls) {
   )
   if (await Promise.race([answering, exited])) {
     forkBlock = head
+    // anvil going away mid-run leaves only "connection refused" on the next call, so it says why it went.
+    anvil.once('exit', (code, signal) => {
+      if (!stopping) say(`anvil exited (${signal ?? code}), and its last words were:\n${anvilOut.slice(-2500)}`)
+    })
     break
   }
   say(`${host} could not serve the fork (${anvilOut.split('\n').find((l) => /429|rate limit|error/i.test(l))?.slice(0, 120) ?? 'anvil did not answer'}): trying the next host`)
@@ -233,6 +428,7 @@ const foreignDeployer = acct(4)
 
 const chainHex = await rpc('eth_chainId')
 section(`Arc Mainnet forked at block ${forkBlock} on anvil port ${anvilPort}`)
+say(`anvil reads ${new URL(forkUpstream).host} through the stand-in at ${forkVia}, which answers null for this run's own hashes`)
 check(Number(chainHex) === chain.evmChainId, `the fork answers the registry's chain id ${chain.evmChainId} (${chainHex})`)
 
 // --- USDC: the precompile-backed token cannot run here, so the mock stands at its address ---------
@@ -273,6 +469,31 @@ if (!mock) throw new Error(`the token did not compile: ${JSON.stringify(solOut.e
 const mockStopped = solOut.contracts[tokensSol].ForkUSDCStopped
 await rpc('anvil_setCode', [USDC, `0x${mock.evm.deployedBytecode.object}`])
 say(`MockUSDC runtime, plus symbol() and decimals(), etched at ${USDC}`)
+
+section("this script's own calls: the fork's stand-in, and a closed connection")
+{
+  const probe = ownHash(toHex(randomBytes(32)))
+  const nulls = forkSaid.nulls
+  const askedBefore = socketNotes.asked.length
+  check((await rpc('eth_getTransactionReceipt', [probe])) === null && forkSaid.nulls === nulls + 1, "a lookup of a hash this run made is answered null by the fork's stand-in, and the real host is not asked")
+  const read = await under('eth_blockNumber', 'before', () => rpc('eth_blockNumber'))
+  check(/^0x[0-9a-f]+$/.test(read.said ?? '') && read.count === 2, `a read under a closed connection is asked again, once (${read.count} calls${read.failed ? `, failed: ${read.failed}` : ''})`)
+  const tester = privateKeyToAccount(generatePrivateKey())
+  await rpc('anvil_setBalance', [tester.address, toHex(10n ** 18n)])
+  const nonce = Number(await rpc('eth_getTransactionCount', [tester.address, 'latest']))
+  const raw = await tester.signTransaction({ type: 'eip1559', chainId: chain.evmChainId, nonce, to: tester.address, value: 0n, gas: 21000n, maxFeePerGas: BigInt(await rpc('eth_gasPrice')) * 2n + 1_000_000_000n, maxPriorityFeePerGas: 1_000_000_000n })
+  const sent = await under('eth_sendRawTransaction', 'after', () => rpc('eth_sendRawTransaction', [raw]))
+  const moved = Number(await rpc('eth_getTransactionCount', [tester.address, 'latest'])) - nonce
+  check(sent.said === keccak256(raw) && sent.count === 1 && moved === 1, `a transaction whose answer was lost is found by its own hash and not sent again (${sent.count} sent, the nonce moved ${moved}${sent.failed ? `, failed: ${sent.failed}` : ''})`)
+  const mined = BigInt(await rpc('eth_blockNumber'))
+  const mine1 = await under('evm_mine', 'after', () => rpc('evm_mine'))
+  const minedNow = BigInt(await rpc('eth_blockNumber')) - mined
+  check(mine1.count === 1 && minedNow === 1n && !mine1.failed, `a mine whose answer was lost is read from the block number and not asked again (${mine1.count} asked, ${minedNow} mined)`)
+  const changes = await under('evm_snapshot', 'after', () => rpc('evm_snapshot'))
+  check(changes.failed === 'a closed connection' && changes.count === 1, `a call that changes the chain, with no way to read whether it took, is not asked again (${changes.count} asked, ${changes.failed ?? 'answered'})`)
+  // Those closed connections were these checks' own, so what is said at the end is the run's.
+  socketNotes.asked.length = askedBefore
+}
 
 async function send(account, tx) {
   const nonce = Number(await rpc('eth_getTransactionCount', [account.address, 'pending']))
@@ -442,10 +663,25 @@ async function startBackend() {
 }
 await startBackend()
 say(`backend on port ${backendPort}, store ${databaseUrl ? 'a throwaway Postgres' : storeFile}`)
+{
+  const askedBefore = socketNotes.asked.length
+  const got = await under('GET /api/arc/vaults', 'before', () => getJson('/api/arc/vaults'))
+  check(got.said?.status === 200 && got.count === 2, `this script's own read of the backend, under a closed connection, is asked again, once (${got.count} calls${got.failed ? `, failed: ${got.failed}` : ''})`)
+  socketNotes.asked.length = askedBefore
+}
 
+/** This script's own read of the backend: a GET, so a closed connection under it is asked again. */
 async function getJson(path, headers = {}) {
-  const res = await fetch(`${api}${path}`, { headers: { accept: 'application/json', ...headers } })
-  return { status: res.status, body: await res.json().catch(() => null) }
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await underFault(`GET ${path.split('?')[0]}`, () => fetch(`${api}${path}`, { headers: { accept: 'application/json', ...headers } }))
+      return { status: res.status, body: await res.json().catch(() => null) }
+    } catch (e) {
+      if (!socketClosed(e) || attempt >= SOCKET_RETRIES) throw e
+      askedAgain(`GET ${path.split('?')[0]}`, e, attempt + 1)
+      await pause(500 * (attempt + 1))
+    }
+  }
 }
 async function postVault(deployTx) {
   for (let attempt = 0; ; attempt++) {
@@ -863,7 +1099,7 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
           if (String(tx.from).toLowerCase() !== owner.address.toLowerCase()) throw Object.assign(new Error('from is not the account'), { code: 4100 })
           if (wallet.holdSend) await wallet.holdSend
           if (wallet.handBack) {
-            const hash = wallet.handBack
+            const hash = ownHash(wallet.handBack)
             wallet.handBack = null
             wallet.sent.push({ hash, to: tx.to ?? null, data: tx.data })
             return hash
@@ -872,13 +1108,15 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
           const gas = wallet.gasOnce ?? BigInt(tx.gas)
           wallet.gasOnce = null
           const raw = await owner.signTransaction({ type: 'eip1559', chainId: chain.evmChainId, nonce, ...(tx.to ? { to: tx.to } : {}), data: tx.data, value: 0n, gas, maxFeePerGas: BigInt(tx.maxFeePerGas), maxPriorityFeePerGas: BigInt(tx.maxPriorityFeePerGas) })
+          // The wallet's own broadcast, which rpc makes once: after a closed connection it asks anvil for the hash first.
           const hash = await rpc('eth_sendRawTransaction', [raw])
           wallet.sent.push({ hash, to: tx.to ?? null, data: tx.data })
           return hash
         }
         default:
           if (wallet.chainHex !== CHAIN_HEX) throw Object.assign(new Error(`read on ${wallet.chainHex} not served`), { code: 4200 })
-          return rpc(method, params ?? [])
+          // A read the page makes through its wallet: the page's request, so it is not asked again.
+          return rpc(method, params ?? [], { again: false })
       }
     }
     await ctx.exposeBinding('__walletBridge', async (_src, method, params) => {
@@ -925,6 +1163,23 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
     // What the backend's own limiter answered the page, by route: a run that stops can then say so.
     const limited = {}
     const reads = { flows: 0, times: [], listTimes: [] }
+    /**
+     * A request the page made, carried once to where it goes, with its whole answer read. A connection that fails under
+     * it is the page's to hear, as from a host that dropped it: the route is failed, counted and said, and nothing asks
+     * it again. Null when it failed.
+     */
+    const carry = async (route, what, to, init) => {
+      try {
+        const res = to === anvilUrl ? await toAnvil(init) : await fetch(to, init)
+        return { status: res.status, type: res.headers.get('content-type'), bytes: Buffer.from(await res.arrayBuffer()) }
+      } catch (e) {
+        socketNotes.toPage++
+        socketNotes.lastToPage = `${what}: ${whyStopped(e)}`
+        say(`the page's ${what} failed on its way (${whyStopped(e)}): the page is told so, and it is not asked again`)
+        await route.abort('connectionclosed').catch(() => {})
+        return null
+      }
+    }
     await ctx.route('**/*', async (route, request) => {
       const url = new URL(request.url())
       const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' }
@@ -939,13 +1194,13 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
           if (stand.vaultsOnFork) {
             if (asked.to < forkBlock) return route.fulfill({ status: 200, headers: { ...cors, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: call.id, result: [] }) })
             if (asked.from < forkBlock) {
-              const res = await fetch(anvilUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...call, params: [{ ...call.params[0], fromBlock: toHex(forkBlock) }] }) })
-              return route.fulfill({ status: res.status, headers: { ...cors, 'content-type': 'application/json' }, body: Buffer.from(await res.arrayBuffer()) })
+              const got = await carry(route, `eth_getLogs to ${url.host}`, anvilUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...call, params: [{ ...call.params[0], fromBlock: toHex(forkBlock) }] }) })
+              return got && route.fulfill({ status: got.status, headers: { ...cors, 'content-type': 'application/json' }, body: got.bytes })
             }
           }
         }
-        const res = await fetch(anvilUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: request.postData() })
-        return route.fulfill({ status: res.status, headers: { ...cors, 'content-type': 'application/json' }, body: Buffer.from(await res.arrayBuffer()) })
+        const got = await carry(route, `${call.method ?? 'batch'} to ${url.host}`, anvilUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: request.postData() })
+        return got && route.fulfill({ status: got.status, headers: { ...cors, 'content-type': 'application/json' }, body: got.bytes })
       }
       if (url.origin === base && (url.pathname.startsWith('/api/') || url.pathname === '/health')) {
         if (request.method() === 'POST' && url.pathname === '/api/arc/vaults') {
@@ -992,21 +1247,22 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
           }
           reads.listTimes.push(Date.now())
         }
-        const res = await fetch(`${api}${url.pathname}${url.search}`, { method: request.method(), headers, body: request.method() === 'POST' ? request.postData() : undefined })
-        if (res.status === 429) {
-          const route = `${request.method()} ${url.pathname.replace(/0x[0-9a-f]{64}/i, ':flowId')}`
-          limited[route] = (limited[route] ?? 0) + 1
+        const got = await carry(route, `${request.method()} ${url.pathname}`, `${api}${url.pathname}${url.search}`, { method: request.method(), headers, body: request.method() === 'POST' ? request.postData() : undefined })
+        if (!got) return
+        if (got.status === 429) {
+          const key = `${request.method()} ${url.pathname.replace(/0x[0-9a-f]{64}/i, ':flowId')}`
+          limited[key] = (limited[key] ?? 0) + 1
         }
         if (request.method() === 'GET' && url.pathname.startsWith('/api/x402/gateway/flows') && (stand.rewrite || stand.extra)) {
-          const body = await res.json()
+          const body = JSON.parse(got.bytes.toString('utf8'))
           const swap = (f) => (stand.rewrite ? stand.rewrite(f) : f)
           if (body.flow) body.flow = swap(body.flow)
           if (Array.isArray(body.waiting)) body.waiting = [...body.waiting.map(swap), ...(stand.extra?.list ?? [])]
           const named = stand.extra?.byId?.[url.pathname.split('/').pop()]
           if (named) return route.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ flowId: named.flowId, flow: named }) })
-          return route.fulfill({ status: res.status, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+          return route.fulfill({ status: got.status, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
         }
-        return route.fulfill({ status: res.status, headers: { 'content-type': res.headers.get('content-type') ?? 'application/json' }, body: Buffer.from(await res.arrayBuffer()) })
+        return route.fulfill({ status: got.status, headers: { 'content-type': got.type ?? 'application/json' }, body: got.bytes })
       }
       if (url.origin === base || url.protocol === 'data:') return route.continue()
       refused.add(url.host)
@@ -1452,6 +1708,22 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
     const { ctx, owner, agent, wallet, logReads, stand, limited, reads, pageErrors, text, waitText, stopIf, connect } = b
     const stranger = acct(strangerIndex)
     const page = b.current()
+
+    // A request the page makes is the page's: one that fails on its way is failed to the page, and nothing asks it again.
+    {
+      await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' })
+      const was = { ...socketNotes }
+      Object.assign(fault, { method: 'web3_clientVersion', when: 'before', count: 0 })
+      const heard = await page.evaluate(
+        (u) => fetch(u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'web3_clientVersion', params: [] }) }).then((r) => `answered ${r.status}`, () => 'failed'),
+        chain.rpcUrls[0],
+      )
+      const count = fault.count
+      Object.assign(fault, { method: null, when: null })
+      check(heard === 'failed' && count === 1 && socketNotes.toPage === was.toPage + 1, `a request the page makes, under a closed connection, fails at the page and is not asked again (${heard}, ${count} sent)`)
+      // That one was this check's own, so the count said at the end is of the run's.
+      Object.assign(socketNotes, { toPage: was.toPage, lastToPage: was.lastToPage })
+    }
     stand.vaultsOnFork = true
     const { vault } = await deployVault(owner, agent.address)
     await setExpiry(owner, vault)
@@ -1608,7 +1880,9 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
     await page.goto(vaultUrl, { waitUntil: 'domcontentloaded' })
     await stopIf(await waitText(/1 other check names this vault/, 60000), "the owner's list says only that one other check names this vault")
     const onList = await text()
-    check(/A check your agent paid for from a separate key reads this way too, and this page offers nothing for it/.test(onList), 'and that one from a separate key of the agent would read so too, with no way promised')
+    check(/A check your agent paid for from a separate key reads this way too, and this page offers nothing for it/.test(onList), 'and that one from a separate key of the agent would read so too, with no way on this page promised')
+    const guideLink = page.locator('a', { hasText: 'the guide shows how to send ownerPay from the owner key' })
+    check((await guideLink.count()) === 1 && /\/chains\/arc-integration#when-a-payment-waits-for-its-owner$/.test((await guideLink.getAttribute('href')) ?? ''), "and it links the guide's way to pay one from the owner key")
     check(!onList.includes(payeeS), "the stranger's payee is nowhere on the page")
     check((await page.locator(`[data-flow="${s.flowId}"]`).count()) === 0, 'and it is not a card on the list')
     await page.goto(`${vaultUrl}&flow=${s.flowId}`, { waitUntil: 'domcontentloaded' })
@@ -1907,6 +2181,9 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
     await waitFor('its hash on the record', async () => (await recordHere(n.flowId))?.tx?.hash === lateN, 30000)
     await waitFor('the card to take it', async () => (await cardN.innerText()).includes(lateN), 30000).catch(() => {})
     check(!/Confirm this in your wallet now/.test(await cardN.innerText()), 'with a hash back from the first prompt, the page stops telling the person to confirm the other one')
+    const declineN = /A prompt for this may still be open in your wallet\. (Another transaction your wallet sent for this request is on its way|This payment already left the vault), so decline it/
+    const saidN = await waitFor('the line about the open one', async () => declineN.test((await cardN.innerText()).replace(/\s+/g, ' ')), 30000).then(() => true, () => false)
+    check(saidN, 'and says the one still open in this tab has no reason left: decline it, or both pay')
     wallet.holdSend = null
     signSecond()
     await waitFor('the second prompt to be signed', () => wallet.sent.length === sentBeforeN + 2, 60000)
@@ -2060,6 +2337,9 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
       await checkCard(card, said, 'a page with no run of its own still says to decline it: it comes from the record, which has no hash back')
       wallet.holdSend = null
       held.decline()
+      // That no went to a run the reload ended, so only the person can say it.
+      await card.getByRole('button', { name: /I checked: no prompt for this is open in my wallet/ }).click({ timeout: 30000 })
+      await checkCard(card, await soon('the line to go', async () => !/may still be open in your wallet/.test(await says(card)), 30000), 'the owner says no prompt is open, and the line goes')
     }
 
     section('the page: the same on an older check, whose payment the server links to a newer one, so its flow stays open')
@@ -2100,10 +2380,242 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
       await checkCard(card, await button.waitFor({ timeout: 150000 }).then(() => true, () => false), 'after two minutes the way out of it is there, so the record holds nothing for good')
       shown = await says(card)
       await checkCard(card, !/you can answer it there/.test(shown) && /decline it: signing it pays this amount again/.test(shown), 'with no line inviting a signature')
-      await signAnyway(open)
+      check((await recordO(f.flowId))?.agentPaid === paidByAgent.hash.toLowerCase(), "the record keeps the agent's payment, because the prompt can still be signed")
+      const signed = await signAnyway(open)
       const moved = await soon('the second payment', async () => before - (await balO()) === amt * 2n, 60000)
       check(moved, 'a signature after all of that does pay again, as the card said')
       await soon('the answer', async () => (await recordO(f.flowId))?.server, 60000)
+      const both = async () => {
+        const t = await says(card)
+        return /Your agent's key paid this amount to this payee after this check, and your wallet sent a payment for it too/.test(t) && t.includes(paidByAgent.hash.toLowerCase()) && t.includes(signed.toLowerCase())
+      }
+      await checkCard(card, await soon('the card to name both payments', both), "the card says the vault paid twice, and names the agent's payment beside the one signed")
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      await card.waitFor({ timeout: 60000 })
+      await checkCard(card, await soon('both after a reload', both), 'and a reload still says so, though the flow reads settled')
+    }
+
+    /** A hash no host ever saw can only read most likely replaced, so the owner is who lets go of it, and that frees the page's own controls. */
+    const letGoOf = async (card, flowId, hash) => {
+      await soon('that hash to read most likely replaced', async () => (await recordO(flowId))?.alsoSent?.some((t) => t.hash.toLowerCase() === hash.toLowerCase() && (t.likelyReplaced || t.outcome === 'replaced')), 120000, 1000)
+      const letGo = card.getByRole('button', { name: /I checked: it is dropped or cancelled/ })
+      await letGo.waitFor({ timeout: 30000 }).catch(() => {})
+      if (await letGo.count()) await letGo.click()
+      await checkCard(card, await soon('the page to be free', async () => !/still pending/.test(await text()), 30000), "a hash that never reached a host, let go of, holds none of the page's own controls")
+    }
+
+    /** A hash the wallet hands back that no host ever sees, as one under Arc's fee floor, tracked until the card offers to stop, and let go of as the card advises. */
+    const ghostLetGo = async (card, flowId) => {
+      const confirm = await confirmOn(card)
+      const ghost = toHex(randomBytes(32))
+      wallet.handBack = ghost
+      await confirm.click()
+      await waitFor('the hash nobody sees on the record', async () => (await recordO(flowId))?.tx?.hash === ghost, 30000)
+      await card.getByRole('button', { name: 'Stop tracking this transaction' }).waitFor({ timeout: 260000 })
+      await card.getByRole('button', { name: 'Stop tracking this transaction' }).click()
+      await card.getByRole('button', { name: /I checked: it is dropped or cancelled/ }).click({ timeout: 30000 })
+      await stopIf(await waitText(/You said nothing is on its way/, 30000), 'the owner lets go of a hash no host ever saw, as the card advises')
+      return ghost
+    }
+
+    section('the page: the same payment from another device closes the flow, and the owner then declines the prompt')
+    {
+      const p = payee()
+      const amt = parseUnits('0.017', 6)
+      const f = await buyCheck(agent, p, amt, { vault: vaultO })
+      const { card, before, held } = await promptOn(f.flowId)
+      await directO(p, amt)
+      const said = await soon('the paid card', async () => {
+        const t = await says(card)
+        return /Paid\. Our server read this payment/.test(t) && /decline it: signing it pays this amount again/.test(t)
+      }, 120000)
+      await checkCard(card, said, 'the flow closes, and the paid card says to decline the prompt still open')
+      wallet.holdSend = null
+      held.decline()
+      await checkCard(card, await soon('the line to go', async () => !/may still be open in your wallet/.test(await says(card)), 30000), 'the owner declines it, the run that asked hears that, and the line goes')
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      await card.waitFor({ timeout: 60000 })
+      await page.waitForTimeout(3000)
+      const shown = await says(card)
+      await checkCard(card, /Paid\. Our server read this payment/.test(shown) && !/may still be open in your wallet/.test(shown), 'and a reload does not bring it back')
+      check(before - (await balO()) === amt, `the vault paid once (${before - (await balO())} units)`)
+    }
+
+    section('the page: one prompt, the tab reloaded while it was open, and that prompt signed on the phone')
+    {
+      const p = payee()
+      const amt = parseUnits('0.0175', 6)
+      const f = await buyCheck(agent, p, amt, { vault: vaultO })
+      const { card, before, held, sentBefore } = await promptOn(f.flowId)
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      await stopIf(await waitText(/this page has not heard back/, 60000), 'after a reload the page has not heard back')
+      await signAnyway({ held, sentBefore })
+      const paid = await soon('the paid card', async () => /Paid\. Our server read this payment/.test(await says(card)), 120000)
+      await checkCard(card, paid && /may still be open in your wallet/.test(await says(card)), 'the read finds the payment and the server reads it, and the page cannot know that prompt was the payment, so it says one may be open')
+      await card.getByRole('button', { name: /I checked: no prompt for this is open in my wallet/ }).click({ timeout: 30000 })
+      await checkCard(card, await soon('the line to go', async () => !/may still be open in your wallet/.test(await says(card)), 30000), 'the owner says none is open, and the line goes')
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      await card.waitFor({ timeout: 60000 })
+      await page.waitForTimeout(3000)
+      await checkCard(card, !/may still be open in your wallet/.test(await says(card)), 'and stays gone after a reload')
+      check(before - (await balO()) === amt, `the vault paid once (${before - (await balO())} units)`)
+    }
+
+    section("the page: another device's call reverts and closes the flow while the prompt is open here")
+    {
+      const p = payee()
+      const amt = parseUnits('0.0185', 6)
+      const f = await buyCheck(agent, p, amt, { vault: vaultO })
+      const { card, before, held } = await promptOn(f.flowId)
+      const failing = await directO(p, amt, { gas: 40000n })
+      check(failing.receipt.status === '0x0', "the other device's call reverts, out of gas")
+      const closed = await postElsewhere(f.flowId, failing.hash)
+      check(closed.status === 200 && closed.body.outcome === 'failed', `and its post ends the flow (${closed.status} ${closed.body.outcome})`)
+      const told = await soon('the card to say the request is over', async () => {
+        const t = await says(card)
+        return !/Confirm this in your wallet now/.test(t) && /This request is over, so decline it: signing it still sends this amount from the vault/.test(t)
+      }, 60000)
+      await checkCard(card, told, 'a revert leaves no payment for the read to find, so the flow is read on the same tick: the card stops asking and says to decline')
+      wallet.holdSend = null
+      held.decline()
+      check(before === (await balO()), 'nothing moved')
+    }
+
+    section('the page: two prompts open, the first signed and its hash back the ordinary way, and the second still open in this tab')
+    {
+      const p = payee()
+      const amt = parseUnits('0.0165', 6)
+      const f = await buyCheck(agent, p, amt, { vault: vaultO })
+      const card = cardOf(f.flowId)
+      await page.goto(`${urlO}&flow=${f.flowId}`, { waitUntil: 'domcontentloaded' })
+      const before = await balO()
+      const { first, confirm } = await promptLeftOpen(card)
+      const second = holdPrompt()
+      await confirm.click()
+      await stopIf(await waitText(/Confirm this in your wallet now/, 60000), 'a second prompt is open')
+      await rpc('evm_setAutomine', [false])
+      const sentBefore = wallet.sent.length
+      first.sign()
+      await waitFor('the first prompt to be signed', () => wallet.sent.length === sentBefore + 1, 60000)
+      const h1 = wallet.sent[sentBefore].hash
+      await waitFor('its hash on the record', async () => (await recordO(f.flowId))?.tx?.hash === h1, 30000)
+      const onItsWay = await soon('the line', async () => {
+        const t = await says(card)
+        return !/Confirm this in your wallet now/.test(t) && /Another transaction your wallet sent for this request is on its way, so decline it: if both land, the vault pays this amount twice/.test(t)
+      }, 30000)
+      await checkCard(card, onItsWay, "the first prompt's hash is on its way, and the card says the prompt still open has no reason left")
+      await rpc('evm_mine')
+      await rpc('evm_setAutomine', [true])
+      const paidCard = await soon('the paid card', async () => {
+        const t = await says(card)
+        return /Paid\. Our server read this payment/.test(t) && /already left the vault, so decline it/.test(t)
+      }, 120000)
+      await checkCard(card, paidCard, 'once it lands and the server reads it, the paid card says the same of the prompt still open')
+      wallet.holdSend = null
+      second.decline()
+      await checkCard(card, await soon('the line to go', async () => !/may still be open in your wallet/.test(await says(card)), 30000), 'the second prompt declined, and the line goes')
+      check(before - (await balO()) === amt, `the vault paid once (${before - (await balO())} units)`)
+    }
+
+    section("the page: two prompts open, the read finds the payment, and the first prompt's own hash then comes back to its run")
+    {
+      const p = payee()
+      const amt = parseUnits('0.016', 6)
+      const f = await buyCheck(agent, p, amt, { vault: vaultO })
+      const card = cardOf(f.flowId)
+      await page.goto(`${urlO}&flow=${f.flowId}`, { waitUntil: 'domcontentloaded' })
+      const before = await balO()
+      const { first, confirm } = await promptLeftOpen(card)
+      const second = holdPrompt()
+      await confirm.click()
+      await stopIf(await waitText(/Confirm this in your wallet now/, 60000), 'a second prompt is open')
+      // The server is slow, so the card this tab asks from stays up when the first prompt's hash comes back.
+      stand.failReceipt = true
+      const other = await directO(p, amt)
+      check(await soon('the read to find it', async () => (await recordO(f.flowId))?.paidBy, 90000), "the read finds the payment, as it would the first prompt's speed-up")
+      const late = toHex(randomBytes(32))
+      wallet.handBack = late
+      first.sign()
+      await waitFor('the first hash on the record', async () => (await recordO(f.flowId))?.alsoSent?.some((t) => t.hash.toLowerCase() === late), 30000)
+      await page.waitForTimeout(1500)
+      const shown = await says(card)
+      await checkCard(card, !/Confirm this in your wallet now/.test(shown) && /decline it: signing it pays this amount again/.test(shown), "the first prompt's own hash is no answer to the second: the card keeps saying to decline it, and does not ask for it")
+      wallet.holdSend = null
+      second.decline()
+      await checkCard(card, await soon('the line to go', async () => !/may still be open in your wallet/.test(await says(card)), 30000), 'the second prompt declined, its run hears it, and the line goes')
+      stand.failReceipt = false
+      await soon('the answer', async () => (await recordO(f.flowId))?.server, 120000)
+      check(before - (await balO()) === amt, `the vault paid once (${before - (await balO())} units)`)
+      check((await flowOf(f.flowId)).payment?.txHash === other.hash.toLowerCase(), 'and the flow reads that payment')
+      await letGoOf(card, f.flowId, late)
+    }
+
+    section("the page: a hash no host saw, let go of and carried, and the agent's key pays while the next prompt is open")
+    {
+      const p = payee()
+      const amt = parseUnits('0.0155', 6)
+      const f = await buyCheck(agent, p, amt, { vault: vaultO })
+      const card = cardOf(f.flowId)
+      await page.goto(`${urlO}&flow=${f.flowId}`, { waitUntil: 'domcontentloaded' })
+      const before = await balO()
+      const ghost = await ghostLetGo(card, f.flowId)
+      const confirm = await confirmOn(card)
+      const held = holdPrompt()
+      const sentBefore = wallet.sent.length
+      await confirm.click()
+      await stopIf(await waitText(/Confirm this in your wallet now/, 60000), 'a new claim opens a prompt')
+      check((await recordO(f.flowId))?.alsoSent?.[0]?.hash === ghost, 'and carries the hash that was let go of')
+      await rpc('anvil_setBalance', [agent.address, toHex(10n ** 20n)])
+      const byAgent = await send(agent, vaultCall(vaultO, 'pay', [p, amt]))
+      check(byAgent.receipt.status === '0x1', "the agent's key pays it while that prompt is open")
+      const told = await soon('the card to say so', async () => {
+        const t = await says(card)
+        return !/Confirm this in your wallet now/.test(t) && /decline it: signing it pays this amount again/.test(t) && /It came from your agent's key/.test(t)
+      }, 60000)
+      await checkCard(card, told, 'the read goes on beside the carried hash: the card stops asking, says to decline, and says whose key paid')
+      check((await recordO(f.flowId))?.agentPaid === byAgent.hash.toLowerCase(), "and the record keeps the agent's payment")
+      const signed = await signAnyway({ held, sentBefore })
+      await soon('the answer', async () => (await recordO(f.flowId))?.server, 120000)
+      const both = async () => {
+        const t = await says(card)
+        return /Your agent's key paid this amount to this payee after this check, and your wallet sent a payment for it too/.test(t) && t.includes(byAgent.hash.toLowerCase()) && t.includes(signed.toLowerCase())
+      }
+      await checkCard(card, await soon('the card to name both payments', both), "signed anyway, the card names the agent's payment and the one signed, not the hash that never landed alone")
+      check(before - (await balO()) === amt * 2n, `and that is what happened on the chain: the vault paid twice (${before - (await balO())} units of ${amt})`)
+      await letGoOf(card, f.flowId, ghost)
+      await checkCard(card, await soon('the alert to stay', both), 'the carried hash let go of, the two payments that did land are still named')
+    }
+
+    section('the page: a hash no host saw, let go of and carried, and a second send that lands alone')
+    {
+      const p = payee()
+      const amt = parseUnits('0.018', 6)
+      const f = await buyCheck(agent, p, amt, { vault: vaultO })
+      const card = cardOf(f.flowId)
+      await page.goto(`${urlO}&flow=${f.flowId}`, { waitUntil: 'domcontentloaded' })
+      const before = await balO()
+      await ghostLetGo(card, f.flowId)
+      const confirm = await confirmOn(card)
+      const sentBefore = wallet.sent.length
+      await confirm.click()
+      await waitFor('the second send', () => wallet.sent.length === sentBefore + 1, 60000)
+      const second = wallet.sent[sentBefore].hash
+      await stopIf(await soon('the answer', async () => (await recordO(f.flowId))?.server, 120000), 'the second lands, and the server answers about it')
+      await soon('the carried hash to read most likely replaced', async () => (await recordO(f.flowId))?.alsoSent?.[0]?.likelyReplaced === true, 120000, 1000)
+      const letGo = card.getByRole('button', { name: /I checked: it is dropped or cancelled/ })
+      await checkCard(card, await letGo.waitFor({ timeout: 60000 }).then(() => true, () => false), 'no host ever saw the carried hash, so only the owner can say it is gone, and the way to is there')
+      await letGo.click()
+      const one = await soon('the card to read as one payment', async () => {
+        const t = await says(card)
+        return !/more than one transaction/.test(t) && t.includes(second.toLowerCase())
+      }, 30000)
+      await checkCard(card, one, 'once the owner says it is dropped, the alert goes: the vault paid once')
+      check(await soon('the page to be free', async () => !/still pending/.test(await text()), 30000), "and the page's own controls are free")
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      await card.waitFor({ timeout: 60000 })
+      await page.waitForTimeout(3000)
+      await checkCard(card, !/more than one transaction/.test(await says(card)), 'and a reload does not bring the alert back')
+      check(before - (await balO()) === amt, `the vault paid once (${before - (await balO())} units)`)
     }
 
     section("the page: another device paid and closed the flow, and this browser's send lands too")
@@ -2275,7 +2787,7 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
       await page.waitForTimeout(1500)
       const shown = await says(card)
       await checkCard(card, !/Your wallet sent more than one transaction/.test(shown) && /Paid\. Our server read this payment/.test(shown) && shown.includes(second.toLowerCase()), 'and the card reads as the one payment it was')
-      await checkCard(card, /what replaced it can still pay/.test(shown), 'and says what a replaced hash leaves open')
+      await checkCard(card, /what replaced it can pay this amount as well, and may already have/.test(shown), 'and says what a replaced hash leaves open, and that it may already have paid')
       check(before - (await balO()) === amt, `the vault paid once (${before - (await balO())} units)`)
       check(!/still pending/.test(await text()), "and the page's own controls are free, with nothing for a person to let go of again")
     }
@@ -2457,6 +2969,8 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
       await checkCard(card, /A payment your agent asked for/.test(shown) && !/Your agent asks you to pay this/.test(shown), 'the card does not ask')
       await checkCard(card, !/It can be approved for 24 hours/.test(shown) && !/counts toward today's budget/.test(shown), 'and says nothing of approving, or what approving does to the budget')
       await checkCard(card, /send ownerPay from the owner key: the guide has a sample/.test(shown), 'and gives the next step, with no button to press')
+      const sample = card.locator('a', { hasText: 'See the sample' })
+      check((await sample.count()) === 1 && /\/chains\/arc-integration#when-a-payment-waits-for-its-owner$/.test((await sample.getAttribute('href')) ?? ''), 'and the sample it names is a link to the guide')
       check((await card.getByRole('button', { name: 'Review this payment' }).count()) === 0, 'there is none')
     }
 
