@@ -21,7 +21,9 @@
  * for a snapshot, a balance or a simulation: its own node answers the same calls, and it is asked its
  * chain id first like every other host, so a wallet on another network is never read as this one. Its
  * answers are stamped "your wallet", never a registry host, and only an answer it HAS counts: its "no
- * code here" never makes two hosts agree that a vault is absent.
+ * code here" never makes two hosts agree that a vault is absent. A read that fails anyway is told in
+ * the registry hosts' own words: the wallet is not listed among them, and its failure never becomes
+ * the reason, since viem can word a node's -32603 as a revert.
  *
  * A receipt or a transaction is stricter still, because "nobody has it" can end a watch with
  * "replaced": the registry's hosts alone say how many answered. The wallet is asked only on a check
@@ -314,16 +316,18 @@ export class RpcUnreachableError extends Error {
   /**
    * Every registry RPC failed and no HTTP answer from any of them reached this page: most often
    * something in the browser stopped the requests, and a lost connection looks the same. The message
-   * then names only the hosts, never the last error, which may be a wallet's words ("reverted").
+   * then names only the hosts, never the last error.
    */
   readonly blocked: boolean
   readonly wallet: WalletReadState
+  /** `hosts` may hold the wallet; the message never lists it, and `reason` is a registry host's failure. */
   constructor(chain: Chain, hosts: string[], reason: string, opts: { blocked?: boolean; wallet?: WalletReadState } = {}) {
     const blocked = opts.blocked ?? false
+    const registry = hosts.filter((h) => !isWalletHost(h)).join(', ')
     super(
       blocked
-        ? `No ${networkName(chain)} network node answered this page (${hosts.filter((h) => !isWalletHost(h)).join(', ')}).`
-        : `No ${networkName(chain)} RPC answered (${hosts.join(', ')})${reason ? `: ${reason}` : ''}.`,
+        ? `No ${networkName(chain)} network node answered this page (${registry}).`
+        : `No ${networkName(chain)} RPC answered (${registry})${reason ? `: ${reason}` : ''}.`,
     )
     this.name = 'RpcUnreachableError'
     this.hosts = hosts
@@ -387,7 +391,10 @@ export async function onFirstHost<T>(chain: Chain, fn: (client: ArcClient, host:
   } catch (e) {
     if (e instanceof NoHostAnswered) {
       const judged = judgeFailures(chain, e.failures)
-      throw new RpcUnreachableError(chain, e.tried, e.last ? shortReason(e.last) : '', judged)
+      // Never the wallet's failure: its node may be one of these hosts, limited too, and viem can word that as a revert.
+      const registry = e.failures.filter((f) => !isWalletHost(f.host))
+      const last = registry[registry.length - 1]
+      throw new RpcUnreachableError(chain, e.tried, last ? shortReason(last.error) : '', judged)
     }
     throw e
   }
@@ -517,6 +524,8 @@ export async function readVault(
   const answered: string[] = []
   let walletSaid = ''
   let lastReason = ''
+  // The last thing a registry host said: a failed read's reason is never the wallet's words.
+  let registryLast = ''
   const fails: { host: string; error: unknown }[] = []
   let wrongChain: string | null = null
   // Only the registry's hosts can agree that a vault is absent: the wallet adds only a vault it has.
@@ -636,14 +645,16 @@ export async function readVault(
     } catch (e) {
       lastReason = `${host}: ${shortReason(e)}`
       fails.push({ host, error: e })
+    } finally {
+      if (!viaWallet) registryLast = lastReason
     }
   }
   if (wrongChain) return failed('wrong_chain', wrongChain)
   // Blocked only when no host gave any answer at all: one that answered, the wallet included, shows
   // this browser does reach the network, and what it said is named.
   const judged = judgeFailures(chain, fails)
+  const registry = tried.filter((h) => !isWalletHost(h)).join(', ')
   if (judged.blocked) {
-    const registry = tried.filter((h) => !isWalletHost(h)).join(', ')
     // Every registry host failed unanswered, so whoever answered was the wallet: one node's word,
     // which never says a vault is absent, so it is named and the page reads again.
     if (answered.length)
@@ -652,7 +663,7 @@ export async function readVault(
     const wallet = judged.wallet === 'other_chain' && mine ? `; ${shortReason(mine.error)}` : judged.wallet === 'failed' ? '; your wallet could not read for this page either' : ''
     return failed('blocked', `tried ${registry}; no answer from any of them reached this page${wallet}`, { wallet: judged.wallet })
   }
-  return failed('unreachable', `tried ${tried.join(', ')}${lastReason ? `; last: ${lastReason}` : ''}`)
+  return failed('unreachable', `tried ${registry}${registryLast ? `; last: ${registryLast}` : ''}`)
 }
 
 /** The chain's latest block: its number, its time and its base fee. */

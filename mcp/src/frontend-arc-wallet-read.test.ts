@@ -709,6 +709,63 @@ test('a blocked read says what was seen, the way through follows what the wallet
   }
 })
 
+test('a read the network was too busy to answer gives the registry hosts and the last of their failures, never the wallet', async () => {
+  const m = await read()
+  const chain = m.ARC_MAINNET
+  const registry = m.rpcUrls(chain).map((u) => m.hostOf(u))
+  const list = registry.join(', ')
+  const lastHost = registry[registry.length - 1]
+  // The node a wallet reads through is often the one this page added to it, a registry host limited
+  // just the same: it answers -32603, which viem words as a revert.
+  const limited = fakeWallet((method) => {
+    if (method === 'eth_chainId') return hex(chain.chainId)
+    if (method === 'eth_getBlockByNumber') return block(100n)
+    if (method === 'eth_getCode') return '0x6080'
+    throw Object.assign(new Error('Internal JSON-RPC error.'), { code: -32603 })
+  })
+  m.setWalletReadProvider(limited.provider)
+  try {
+    await withNet(
+      () => BUSY,
+      async () => {
+        const facts = await m.readUsdcFacts(chain)
+        assert.equal(facts.ok, false)
+        assert.equal(facts.blocked, false, 'a 429 is the network answering')
+        assert.ok(limited.calls.includes('eth_call'), 'the wallet was asked and failed, or this proves nothing')
+        const said = String(facts.reason)
+        assert.doesNotMatch(said, /revert/i)
+        assert.doesNotMatch(said, /your wallet/i, 'the wallet is not one of the RPCs')
+        assert.ok(said.includes(`No Arc Mainnet RPC answered (${list}): HTTP request failed`), said)
+
+        limited.calls.length = 0
+        const v = await m.readVault(chain, VAULT)
+        assert.ok(!v.ok)
+        assert.equal(v.failure.kind, 'unreachable')
+        assert.ok(limited.calls.includes('eth_call'), 'the wallet was asked and failed, or this proves nothing')
+        assert.doesNotMatch(v.failure.reason, /revert/i)
+        assert.equal(v.failure.reason, `tried ${list}; last: ${lastHost}: HTTP request failed.`)
+      },
+    )
+    // A wallet on another network, or one that has no code there, is not the reason a busy read failed.
+    const elsewhere = fakeWallet((method) => (method === 'eth_chainId' ? hex(1) : null))
+    const noCode = fakeWallet((method) => (method === 'eth_chainId' ? hex(chain.chainId) : method === 'eth_getBlockByNumber' ? block(100n) : method === 'eth_getCode' ? '0x' : null))
+    for (const wallet of [elsewhere, noCode]) {
+      m.setWalletReadProvider(wallet.provider)
+      const v = await withNet(() => BUSY, () => m.readVault(chain, VAULT))
+      assert.ok(!v.ok)
+      assert.equal(v.failure.kind, 'unreachable')
+      assert.equal(v.failure.reason, `tried ${list}; last: ${lastHost}: HTTP request failed.`)
+      assert.ok(wallet.calls.includes('eth_chainId'), 'the wallet was asked')
+    }
+    m.setWalletReadProvider(elsewhere.provider)
+    const facts = await withNet(() => BUSY, () => m.readUsdcFacts(chain))
+    assert.doesNotMatch(String(facts.reason), /your wallet/i)
+    assert.ok(String(facts.reason).includes(`(${list}): HTTP request failed`), String(facts.reason))
+  } finally {
+    m.setWalletReadProvider(null)
+  }
+})
+
 test('a write prepared while no node answers stops before the wallet, with the way through its state allows', async () => {
   const m = await read()
   const w = await write()
