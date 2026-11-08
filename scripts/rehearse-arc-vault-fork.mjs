@@ -203,8 +203,8 @@ const pause = (ms) => new Promise((r) => setTimeout(r, ms))
 // "the hash reads replaced" on 2026-11-06, after two minutes and 11 rounds none of the page's 4 hosts answered its
 // receipt check, so it rightly decided nothing. The real chain never saw a hash this run made, and a host answers null
 // for a hash it never saw, so that is what the stand-in answers for one of them. Everything else, a batch too, is passed
-// on as it is, at the pace the real host answers at, and a rate limit from it is waited out here, a few times at most: it
-// says nothing about the code under test.
+// on as it is, and a rate limit from the real host is waited out here, a few times at most: it says nothing about the
+// code under test.
 const runHashes = new Set()
 /** A transaction hash this run made: sent, signed or made up. */
 const ownHash = (h) => {
@@ -224,10 +224,7 @@ const onlyCuratedLogs = (call) => {
 /** How many times a read the real host refused is asked again, waiting 1, 2, 4, 8, 16, 30 and 30 seconds. anvil gives the stand-in 180. */
 const FORK_TRIES = 7
 const forkWait = (attempt) => Math.min(1000 * 2 ** attempt, 30000)
-/** The pace the primary kept answering at (see src/lib/arc/event-history.ts). This is one host, however many calls anvil has waiting. */
-const FORK_SPACING_MS = 400
 let forkUpstream = null
-let forkNextSend = 0
 const forkVia = await new Promise((resolve, reject) => {
   const server = createHttpServer((req, res) => {
     const chunks = []
@@ -257,9 +254,6 @@ const forkVia = await new Promise((resolve, reject) => {
       for (let attempt = 0; ; attempt++) {
         let up = null
         let why = ''
-        const sendAt = Math.max(Date.now(), forkNextSend)
-        forkNextSend = sendAt + FORK_SPACING_MS
-        await pause(sendAt - Date.now())
         try {
           const got = await fetch(forkUpstream, { method: 'POST', headers: { 'content-type': 'application/json' }, body, signal: AbortSignal.timeout(45000) })
           up = { status: got.status, type: got.headers.get('content-type') ?? 'application/json', bytes: Buffer.from(await got.arrayBuffer()) }
