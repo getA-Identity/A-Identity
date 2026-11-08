@@ -27,7 +27,7 @@ import { AlertTriangle, CheckCircle2, Clock, ExternalLink, XCircle } from 'lucid
 import type { TxRecord } from '../../../lib/arc/pending'
 import { FAST_FOR_MS, POLL_FAST_MS, POLL_FOR_MS, POLL_SLOW_MS, advance, feeLine } from '../../../lib/arc/receipt'
 import { retracked, saidNothing, untracked, walletRepriced } from '../../../lib/arc/tx-rules'
-import { arcChainFor, localTime, networkName, readUrls, txUrl } from '../../../lib/arc/vault-read'
+import { arcChainFor, localTime, networkName, rpcUrls, txUrl } from '../../../lib/arc/vault-read'
 import { formatUnitsExact, sameAddress } from '../../../lib/arc/vault-rules'
 import { CopyButton, Mono } from '../stellar/bits'
 
@@ -69,9 +69,10 @@ export default function TxReceipt(props: ReceiptProps) {
 function ReceiptOf({ record, onUpdate, onSettled, serverJudges, oneOfSeveral }: ReceiptProps) {
   const chain = arcChainFor(record.network)
   const [gaveUp, setGaveUp] = useState(false)
+  // The registry's hosts only: the wallet is never counted as a network node that answered.
   const [asked, setAsked] = useState<{ answered: number; total: number; checks: number }>({
     answered: 0,
-    total: chain ? readUrls(chain).length : 0,
+    total: chain ? rpcUrls(chain).length : 0,
     checks: 0,
   })
   const [round, setRound] = useState(0)

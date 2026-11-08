@@ -113,14 +113,16 @@ export function useArcWallet(): ArcWalletState {
     void read(w)
   }, [read])
 
-  // The wallet's node is the page's last place to read the chain from, for a browser whose blocker
-  // stops every request to the registry's RPCs. Reads only: nothing here can open a prompt.
+  // The wallet's node is the page's last place to read the chain from, for a browser that reaches
+  // none of the registry's RPCs. Only while it holds an account here: a locked wallet, or one this
+  // site is not connected to, can open its own Unlock or Connect window for a read. A new wallet or
+  // account registers it again, which is also what lets a wallet that said no to a read be asked again.
   useEffect(() => {
-    if (!wallet) return
+    if (!wallet || !account) return
     const p = wallet.provider
-    setWalletReadProvider(p)
+    setWalletReadProvider(p, { walletConnect: wallet.name === 'WalletConnect' })
     return () => clearWalletReadProvider(p)
-  }, [wallet])
+  }, [wallet, account])
 
   // The provider's own events, when it emits them, and focus for the ones that do not.
   useEffect(() => {

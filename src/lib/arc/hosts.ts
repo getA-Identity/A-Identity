@@ -58,14 +58,15 @@ export class NoHostAnswered extends Error {
 type FetchWalked = { name?: unknown; status?: unknown; message?: unknown; cause?: unknown }
 
 /**
- * True when a request never got an HTTP answer at all: the browser refused to send it or could not
- * finish it. viem raises HttpRequestError with no status for that (with fetch's TypeError as its
- * cause), and with a status when the host did answer, a 429 rate limit included. A timeout is not
- * this: the request went out and the host was slow.
+ * True when no HTTP answer from the host reached this page: the browser refused to send the request
+ * or could not finish it. viem raises HttpRequestError with no status for that (with fetch's
+ * TypeError as its cause), and with a status when the page could read the host's answer, a 429 rate
+ * limit included. A timeout is not this: the request went out and the host was slow.
  *
  * Brave Shields, an ad or tracker blocker, a VPN or a filtering DNS all end a request this way, and
- * so does a lost connection. A busy host does not: it answers 429. So when every host fails like
- * this at once, the cause is on this side, and "wait a minute" would not help. Known by name, so
+ * so does a lost connection. So can an error page a host's proxy sends without the header that lets
+ * this page read it. This is what was seen, not proof of why: when every host fails like this at
+ * once, the likeliest cause is on this side, and "wait a minute" is not the advice. Known by name, so
  * this file needs no viem.
  */
 export function neverAnswered(e: unknown): boolean {
@@ -84,16 +85,36 @@ export function noneAnswered(failures: readonly { error: unknown }[]): boolean {
   return failures.length > 0 && failures.every((f) => neverAnswered(f.error))
 }
 
+type WalletWalked = { code?: unknown; message?: unknown; shortMessage?: unknown; details?: unknown; cause?: unknown }
+
+/**
+ * True when a wallet said no to a read instead of failing it: this site is not authorized (EIP-1193
+ * 4100), the person closed a window the wallet opened for it (4001), or the wallet is locked. Asking
+ * again would only open that window again, so such a wallet is not asked for reads until it or its
+ * account changes. Walks the cause chain, since viem wraps the wallet's own error. Known by code and
+ * words, so this file needs no viem.
+ */
+export function walletSaidNo(e: unknown): boolean {
+  let x = e as WalletWalked | null | undefined
+  for (let i = 0; i < 12 && x && typeof x === 'object'; i += 1) {
+    if (x.code === 4100 || x.code === 4001) return true
+    for (const m of [x.message, x.shortMessage, x.details]) if (typeof m === 'string' && /unauthori[sz]ed|not (?:been )?authori[sz]ed|\blocked\b/i.test(m)) return true
+    x = x.cause as WalletWalked | null | undefined
+  }
+  return false
+}
+
 /**
  * Run `fn` on the hosts in order until one answers. `isFinal` says which errors from `fn` are a
  * verdict rather than a host's fault (a revert, a decision `fn` made itself): those are thrown at
- * once, because the next host would only give the same answer later.
+ * once, because the next host would only give the same answer later. The answer carries the failures
+ * of the hosts asked before it, so the caller can tell a blocked browser from a busy network.
  */
 export async function onHosts<C, T>(
   hosts: readonly { host: string; client: C }[],
   x: { chainId: number; askChainId: (client: C) => Promise<number>; isFinal: (e: unknown) => boolean },
   fn: (client: C, host: string) => Promise<T>,
-): Promise<{ value: T; host: string }> {
+): Promise<{ value: T; host: string; failures: readonly { host: string; error: unknown }[] }> {
   const tried: string[] = []
   const failures: { host: string; error: unknown }[] = []
   let last: unknown = null
@@ -113,7 +134,7 @@ export async function onHosts<C, T>(
       continue
     }
     try {
-      return { value: await fn(client, host), host }
+      return { value: await fn(client, host), host, failures }
     } catch (e) {
       if (x.isFinal(e)) throw e
       last = e

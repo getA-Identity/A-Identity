@@ -16,10 +16,18 @@
  * to the receipt's own block, on the host that returned the receipt first, so a host one block
  * behind cannot make a landed write look as if it did nothing.
  *
- * When the browser reaches none of those RPCs (Brave Shields, an ad blocker, a VPN or a filtering
- * DNS cut them off), a connected wallet is asked last, as one more host: its own node answers the
- * same calls, and it is asked its chain id first like every other host, so a wallet on another
- * network is never read as this one. Its answers are stamped "your wallet", never a registry host.
+ * When the browser reaches none of those RPCs (most often Brave Shields, an ad blocker, a VPN or a
+ * filtering DNS), a wallet that holds an account on this page is asked after them, as one more host
+ * for a snapshot, a balance or a simulation: its own node answers the same calls, and it is asked its
+ * chain id first like every other host, so a wallet on another network is never read as this one. Its
+ * answers are stamped "your wallet", never a registry host, and only an answer it HAS counts: its "no
+ * code here" never makes two hosts agree that a vault is absent.
+ *
+ * A receipt or a transaction is stricter still, because "nobody has it" can end a watch with
+ * "replaced": the registry's hosts alone say how many answered. The wallet is asked only on a check
+ * where every one of them failed without an HTTP answer, and it can only add a receipt or a
+ * transaction it has. So while the RPCs answer, a receipt check sends the wallet nothing, and a
+ * locked wallet that would open a window for such a read is never woken by this page.
  *
  * A failed read is a result, not an exception, and it carries when and why it failed, so the
  * page can say so instead of showing the previous numbers as if they were current. Every runtime
@@ -46,12 +54,13 @@ import {
 import { CHAIN_BY_ID, CHAIN_RPC_URLS, CHAIN_USDC, type Chain } from '../chains.ts'
 import { AGENT_SPEND_POLICY_ABI, AGENT_SPEND_POLICY_IMMUTABLES, AGENT_SPEND_POLICY_RUNTIME } from '../contracts/agent-spend-policy.ts'
 import type { Eip1193 } from '../evm-chain'
-import { BLOCKED_NEXT } from './deploy-copy.ts'
-import { NoHostAnswered, agreedAbsence, isContractAnswer, noneAnswered, onHosts } from './hosts.ts'
+import { BLOCKED_TITLE, blockedNext, walletOnlyNext, type WalletReadState } from './deploy-copy.ts'
+import { NoHostAnswered, agreedAbsence, isContractAnswer, noneAnswered, onHosts, walletSaidNo } from './hosts.ts'
 import { firstFound, heardEnough, missingFrom, type DecodedLog, type Expectation } from './tx-rules.ts'
 import { isKnownBuild, readableDate, sameAddress } from './vault-rules.ts'
 
 export { isContractAnswer }
+export type { WalletReadState }
 export type { Expectation, VaultEventName } from './tx-rules'
 
 // --- which chains ---
@@ -137,8 +146,8 @@ export function clientFor(chain: Chain, url: string): ArcClient {
   let c = clients.get(key)
   if (!c) {
     if (url === WALLET_URL) {
-      if (!walletProvider) throw new Error('no wallet is connected to read through')
-      c = createPublicClient({ chain: viemChainOf(chain), transport: custom(timedProvider(walletProvider), { retryCount: 0 }) }) as unknown as ArcClient
+      if (!walletProvider) throw new WalletNotAsked('no wallet is connected to read through')
+      c = createPublicClient({ chain: viemChainOf(chain), transport: custom(gatedProvider(walletProvider), { retryCount: 0 }) }) as unknown as ArcClient
     } else c = makeClient(chain, url)
     clients.set(key, c)
   }
@@ -151,20 +160,42 @@ export function clientFor(chain: Chain, url: string): ArcClient {
 export const WALLET_HOST = 'your wallet'
 /** The pseudo URL that stands for the wallet in a host list. clientFor and hostOf know it. */
 const WALLET_URL = 'wallet:connected'
-/** After every registry host failed and the wallet answered, the wallet is asked first for this long. */
+/** After every registry host failed without an answer and the wallet answered, the wallet is asked first on that chain for this long. */
 const WALLET_FIRST_MS = 60_000
 
 let walletProvider: Eip1193 | null = null
-let walletFirstUntil = 0
+/**
+ * A phone wallet over WalletConnect. Its reads are not relayed to the phone: they leave from this
+ * page for the registry's own first host, so a read no registry host answered is never asked of it.
+ * It is kept only so the page can say why connecting it did not help.
+ */
+let walletRelays = false
+/** The wallet said no to a read (walletSaidNo): it is not asked again until it or its account changes. */
+let walletRefused = false
+/** Per chain id: until when the wallet is asked first. */
+const walletFirstUntil = new Map<string, number>()
+
+/** A wallet read that was never sent: the wallet was forgotten, or it said no to an earlier read. */
+class WalletNotAsked extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'WalletNotAsked'
+  }
+}
 
 /**
- * The connected wallet's provider, used for reads only: chain id, calls, blocks, code, balances and
- * receipts, none of which opens a prompt. Set by the wallet hook on connect, cleared on disconnect.
+ * The wallet's provider, used for reads only, and only while the wallet hook holds an account from
+ * it: a locked wallet, or one this site is not connected to, can open its own Unlock or Connect
+ * window for a read, so it is never registered. Set again whenever the wallet or its account
+ * changes, which is also what lets a wallet that said no be asked again.
  */
-export function setWalletReadProvider(p: Eip1193 | null): void {
-  if (p === walletProvider) return
+export function setWalletReadProvider(p: Eip1193 | null, o: { walletConnect?: boolean } = {}): void {
+  const relays = Boolean(p && o.walletConnect)
+  if (p === walletProvider && relays === walletRelays) return
   walletProvider = p
-  walletFirstUntil = 0
+  walletRelays = relays
+  walletRefused = false
+  walletFirstUntil.clear()
   for (const key of [...clients.keys()]) if (key.endsWith(`|${WALLET_URL}`)) clients.delete(key)
 }
 
@@ -173,13 +204,29 @@ export function clearWalletReadProvider(p: Eip1193): void {
   if (walletProvider === p) setWalletReadProvider(null)
 }
 
-/** A wallet request that gives up after the same time an RPC does, so a sleeping phone wallet cannot hang a read. */
-function timedProvider(p: Eip1193): Eip1193 {
+/** True when a read may be sent to the wallet at all. */
+function walletAskable(): boolean {
+  return walletProvider !== null && !walletRelays && !walletRefused
+}
+
+/**
+ * A wallet request that gives up after the same time an RPC does, so a sleeping phone wallet cannot
+ * hang a read. The timer is cleared however the request ends, a provider that throws at once included.
+ */
+export function timedProvider(p: Eip1193): Eip1193 {
   return {
     request: (a) =>
       new Promise((resolve, reject) => {
         const t = setTimeout(() => reject(new Error(`your wallet did not answer ${a.method} within ${RPC_TIMEOUT_MS / 1000} seconds`)), RPC_TIMEOUT_MS)
-        p.request(a).then(
+        let sent: Promise<unknown>
+        try {
+          sent = Promise.resolve(p.request(a))
+        } catch (e) {
+          clearTimeout(t)
+          reject(e)
+          return
+        }
+        sent.then(
           (v) => {
             clearTimeout(t)
             resolve(v)
@@ -194,14 +241,36 @@ function timedProvider(p: Eip1193): Eip1193 {
 }
 
 /**
- * Every place this page reads from: the registry's RPCs in order, then the connected wallet. When
- * the registry's hosts all failed a moment ago and the wallet answered, the wallet goes first for a
- * minute, so a blocked browser does not wait on four dead hosts for every read.
+ * The wallet as a read host: nothing is sent once it was forgotten or said no to a read, and a "no"
+ * (4100, 4001, locked) stops every later read until the wallet or its account changes.
+ */
+function gatedProvider(p: Eip1193): Eip1193 {
+  const timed = timedProvider(p)
+  return {
+    request: async (a) => {
+      if (walletProvider !== p) throw new WalletNotAsked('your wallet is no longer connected to this page')
+      if (walletRefused) throw new WalletNotAsked('your wallet said no to an earlier read, so it is not asked again until it or its account changes')
+      try {
+        return await timed.request(a)
+      } catch (e) {
+        if (walletProvider === p && walletSaidNo(e)) walletRefused = true
+        throw e
+      }
+    },
+  }
+}
+
+/**
+ * Every place this page reads a snapshot, a balance or a simulation from: the registry's RPCs in
+ * order, then the wallet, when one may be asked. On a chain where every registry host failed without
+ * an answer a moment ago and the wallet answered, the wallet goes first for a minute, so a blocked
+ * browser does not wait on four dead hosts for every read. Receipts and transactions do not use this
+ * list: see pollReceipt.
  */
 export function readUrls(chain: Chain): readonly string[] {
   const urls = rpcUrls(chain)
-  if (!walletProvider) return urls
-  return Date.now() < walletFirstUntil ? [WALLET_URL, ...urls] : [...urls, WALLET_URL]
+  if (!walletAskable()) return urls
+  return Date.now() < (walletFirstUntil.get(chain.id) ?? 0) ? [WALLET_URL, ...urls] : [...urls, WALLET_URL]
 }
 
 /** True when `host` is the wallet's node rather than a registry RPC. */
@@ -209,34 +278,83 @@ export function isWalletHost(host: string): boolean {
   return host === WALLET_HOST
 }
 
-/** A read the wallet answered after a registry host failed: ask it first for a while. */
-function noteAnswered(host: string, failedBefore: readonly string[]): void {
-  if (isWalletHost(host) && failedBefore.some((h) => !isWalletHost(h))) walletFirstUntil = Date.now() + WALLET_FIRST_MS
+/** Every registry host failed, and not one of them with an HTTP answer that reached this page. */
+function noRegistryAnswer(chain: Chain, failures: readonly { host?: string; error: unknown }[]): boolean {
+  const registry = failures.filter((f) => f.host === undefined || !isWalletHost(f.host))
+  return registry.length === rpcUrls(chain).length && noneAnswered(registry)
 }
 
-/** What became of the wallet when no host answered, for the error's next step. */
-export type WalletReadState = 'none' | 'other_chain' | 'failed'
+/**
+ * The wallet answered a read that every registry host failed without an answer: on this chain it is
+ * asked first for a minute. A registry host that answered anything (a 429 included) keeps them first.
+ */
+function noteWalletAnswered(chain: Chain, host: string, failures: readonly { host: string; error: unknown }[]): void {
+  if (isWalletHost(host) && noRegistryAnswer(chain, failures)) walletFirstUntil.set(chain.id, Date.now() + WALLET_FIRST_MS)
+}
+
+/**
+ * One lookup through the wallet, for a check on which every registry host failed without an HTTP
+ * answer. It is asked its chain id first, and only an answer it HAS comes back: a wallet that has
+ * nothing, is on another network, said no or failed gives null, which says nothing about the chain
+ * and never counts as a host that answered.
+ */
+async function walletHas<T>(chain: Chain, ask: (c: ArcClient) => Promise<T>): Promise<T | null> {
+  if (!walletAskable()) return null
+  try {
+    const c = clientFor(chain, WALLET_URL)
+    if ((await c.getChainId()) !== chain.chainId) return null
+    return await ask(c)
+  } catch {
+    return null
+  }
+}
 
 export class RpcUnreachableError extends Error {
   readonly hosts: string[]
-  /** Every registry RPC failed without an HTTP answer: the browser stopped the requests (a blocker, a VPN, a filtering DNS) or is offline. */
+  /**
+   * Every registry RPC failed and no HTTP answer from any of them reached this page: most often
+   * something in the browser stopped the requests, and a lost connection looks the same. The message
+   * then names only the hosts, never the last error, which may be a wallet's words ("reverted").
+   */
   readonly blocked: boolean
   readonly wallet: WalletReadState
   constructor(chain: Chain, hosts: string[], reason: string, opts: { blocked?: boolean; wallet?: WalletReadState } = {}) {
-    super(`No ${networkName(chain)} RPC answered (${hosts.join(', ')})${reason ? `: ${reason}` : ''}.`)
+    const blocked = opts.blocked ?? false
+    super(
+      blocked
+        ? `No ${networkName(chain)} network node answered this page (${hosts.filter((h) => !isWalletHost(h)).join(', ')}).`
+        : `No ${networkName(chain)} RPC answered (${hosts.join(', ')})${reason ? `: ${reason}` : ''}.`,
+    )
     this.name = 'RpcUnreachableError'
     this.hosts = hosts
-    this.blocked = opts.blocked ?? false
+    this.blocked = blocked
     this.wallet = opts.wallet ?? 'none'
   }
 }
 
-/** Whether the registry's hosts never got an HTTP answer, and what the wallet did, from each host's failure. */
-function judgeFailures(failures: readonly { host: string; error: unknown }[]): { blocked: boolean; wallet: WalletReadState } {
-  const registry = failures.filter((f) => !isWalletHost(f.host))
+/** True when `e` is, or was caused by, a wallet read that was never sent (viem wraps it). */
+function notAsked(e: unknown): boolean {
+  let x = e as { cause?: unknown } | null | undefined
+  for (let i = 0; i < 12 && x && typeof x === 'object'; i += 1) {
+    if (x instanceof WalletNotAsked) return true
+    x = x.cause as { cause?: unknown } | null | undefined
+  }
+  return false
+}
+
+/** What became of the wallet on a read that failed, from its own failure if it was asked. */
+function walletStateOf(failures: readonly { host: string; error: unknown }[]): WalletReadState {
+  if (walletProvider && walletRelays) return 'walletconnect'
   const mine = failures.find((f) => isWalletHost(f.host))
-  const wallet: WalletReadState = !mine ? 'none' : mine.error instanceof Error && /answered for chain/.test(mine.error.message) ? 'other_chain' : 'failed'
-  return { blocked: noneAnswered(registry), wallet }
+  if (!mine) return walletProvider && walletRefused ? 'failed' : 'none'
+  // Forgotten while the read was under way: there is no wallet now.
+  if (notAsked(mine.error) && !walletProvider) return 'none'
+  return mine.error instanceof Error && /answered for chain/.test(mine.error.message) ? 'other_chain' : 'failed'
+}
+
+/** Whether no registry host's answer reached this page at all, and what the wallet did, from each host's failure. */
+function judgeFailures(chain: Chain, failures: readonly { host: string; error: unknown }[]): { blocked: boolean; wallet: WalletReadState } {
+  return { blocked: noRegistryAnswer(chain, failures), wallet: walletStateOf(failures) }
 }
 
 function shortReason(e: unknown): string {
@@ -264,10 +382,13 @@ export async function onFirstHost<T>(chain: Chain, fn: (client: ArcClient, host:
       },
       fn,
     )
-    noteAnswered(r.host, hosts.slice(0, hosts.findIndex((h) => h.host === r.host)).map((h) => h.host))
-    return r
+    noteWalletAnswered(chain, r.host, r.failures)
+    return { value: r.value, host: r.host }
   } catch (e) {
-    if (e instanceof NoHostAnswered) throw new RpcUnreachableError(chain, e.tried, e.last ? shortReason(e.last) : '', judgeFailures(e.failures))
+    if (e instanceof NoHostAnswered) {
+      const judged = judgeFailures(chain, e.failures)
+      throw new RpcUnreachableError(chain, e.tried, e.last ? shortReason(e.last) : '', judged)
+    }
     throw e
   }
 }
@@ -318,10 +439,18 @@ export type VaultSnapshot = {
 }
 
 export type ReadFailureKind = 'bad_address' | 'no_usdc' | 'no_contract' | 'not_a_vault' | 'wrong_chain' | 'unreachable' | 'blocked'
-export type ReadFailure = { kind: ReadFailureKind; reason: string; at: string }
+/**
+ * `wallet` is set on 'blocked': what the wallet did on the same read, which decides the way through.
+ * `walletOnly` is set on 'unreachable' when no registry host's answer reached the page and only the
+ * wallet answered, with no vault: one node's word, which the reason names and nothing decides on.
+ */
+export type ReadFailure = { kind: ReadFailureKind; reason: string; at: string; wallet?: WalletReadState; walletOnly?: boolean }
 export type ReadResult<T> = { ok: true; data: T } | { ok: false; failure: ReadFailure }
 
-const failed = <T>(kind: ReadFailureKind, reason: string): ReadResult<T> => ({ ok: false, failure: { kind, reason, at: new Date().toISOString() } })
+const failed = <T>(kind: ReadFailureKind, reason: string, more: { wallet?: WalletReadState; walletOnly?: boolean } = {}): ReadResult<T> => ({
+  ok: false,
+  failure: { kind, reason, at: new Date().toISOString(), ...more },
+})
 
 export const READ_FAILURE_TITLE: Record<ReadFailureKind, string> = {
   bad_address: 'That is not an EVM address',
@@ -330,7 +459,7 @@ export const READ_FAILURE_TITLE: Record<ReadFailureKind, string> = {
   not_a_vault: 'This contract does not answer like an AgentSpendPolicy vault',
   wrong_chain: 'An RPC answered for a different chain',
   unreachable: 'The network did not answer',
-  blocked: 'Your browser did not let this page reach the network',
+  blocked: BLOCKED_TITLE,
 }
 
 export const READ_FAILURE_NEXT: Record<ReadFailureKind, string> = {
@@ -342,7 +471,23 @@ export const READ_FAILURE_NEXT: Record<ReadFailureKind, string> = {
   wrong_chain: 'Nothing was read from that host. Press Refresh; if it persists, the registry entry for this chain needs a look.',
   unreachable:
     'This says nothing about the vault: network nodes limit how fast a page can ask, and they may be busy. This page tries again by itself, and Refresh does the same. Nothing is shown in place of the values until a read succeeds.',
-  blocked: BLOCKED_NEXT,
+  // Shown through readFailureNext, which knows what the wallet did: this is the case with no wallet.
+  blocked: blockedNext('none', 'press Refresh'),
+}
+
+/** The title of a failed read: one only the wallet answered is said as that, not as no answer at all. */
+export function readFailureTitle(f: Pick<ReadFailure, 'kind' | 'walletOnly'>): string {
+  return f.kind === 'unreachable' && f.walletOnly ? 'Only your wallet answered' : READ_FAILURE_TITLE[f.kind]
+}
+
+/**
+ * The next step for a failed read. One no network node answered depends on what the wallet did on
+ * that read, and `again` says how this page tries again where the person reads it.
+ */
+export function readFailureNext(f: Pick<ReadFailure, 'kind' | 'wallet' | 'walletOnly'>, again: string): string {
+  if (f.kind === 'blocked') return blockedNext(f.wallet ?? 'none', again)
+  if (f.kind === 'unreachable' && f.walletOnly) return walletOnlyNext(again)
+  return READ_FAILURE_NEXT[f.kind]
 }
 
 /**
@@ -362,27 +507,37 @@ export async function readVault(
   if (!usdc) return failed('no_usdc', `${chain.name} has no USDC entry in the registry`)
   const tried: string[] = []
   const said: { kind: 'no_contract' | 'not_a_vault'; reason: string }[] = []
+  // Hosts that answered for this chain: a chain id that matched, then any answer at all, "no code"
+  // and "not yet at that block" included. One of them is enough to say this browser is not blocked.
+  const answered: string[] = []
+  let walletSaid = ''
   let lastReason = ''
   const fails: { host: string; error: unknown }[] = []
-  let registryWrongChain = false
+  let wrongChain: string | null = null
+  // Only the registry's hosts can agree that a vault is absent: the wallet adds only a vault it has.
+  const registryCount = rpcUrls(chain).length
   const urls = [...readUrls(chain)]
   if (opts.preferHost) urls.sort((a, b) => Number(hostOf(b) === opts.preferHost) - Number(hostOf(a) === opts.preferHost))
   for (const url of urls) {
     const host = hostOf(url)
+    const viaWallet = isWalletHost(host)
     tried.push(host)
-    const client = clientFor(chain, url)
     try {
+      // Inside the try: a wallet forgotten while earlier hosts were asked is one more host that failed.
+      const client = clientFor(chain, url)
       const id = await client.getChainId()
       if (id !== chain.chainId) {
         lastReason = `${host} answered for chain ${id}, not ${chain.chainId}`
         // A wallet on another network is the person's choice, not a fault in the registry's entry.
-        if (!isWalletHost(host)) registryWrongChain = true
+        if (!viaWallet) wrongChain = lastReason
         fails.push({ host, error: new Error(lastReason) })
         continue
       }
       const latest = await client.getBlock({ blockTag: 'latest' })
       if (opts.blockNumber !== undefined && latest.number < opts.blockNumber) {
         lastReason = `${host} is at block ${latest.number}, not yet at ${opts.blockNumber}`
+        answered.push(host)
+        if (viaWallet) walletSaid = lastReason
         continue
       }
       const head = opts.blockNumber === undefined || latest.number === opts.blockNumber ? latest : await client.getBlock({ blockNumber: opts.blockNumber })
@@ -390,8 +545,11 @@ export async function readVault(
       const code = await client.getCode({ address: vault, blockNumber })
       if (!code || code === '0x') {
         lastReason = `${host} has no code at ${vault} at block ${blockNumber}`
+        answered.push(host)
+        if (viaWallet) walletSaid = lastReason
+        if (viaWallet) continue
         said.push({ kind: 'no_contract', reason: lastReason })
-        const agreed = agreedAbsence(said, urls.length)
+        const agreed = agreedAbsence(said, registryCount)
         if (agreed) return failed(agreed.kind, agreed.reason)
         continue
       }
@@ -414,15 +572,28 @@ export async function readVault(
       } catch (e) {
         if (!isContractAnswer(e)) throw e
         lastReason = `${host}: one of its views reverted or returned nothing`
+        answered.push(host)
+        if (viaWallet) walletSaid = lastReason
+        if (viaWallet) continue
         said.push({ kind: 'not_a_vault', reason: 'one of its views reverted or returned nothing, so it is not an AgentSpendPolicy vault' })
-        const agreed = agreedAbsence(said, urls.length)
+        const agreed = agreedAbsence(said, registryCount)
         if (agreed) return failed(agreed.kind, agreed.reason)
         continue
+      }
+      // A wallet can change network while it is read, and then every later call was answered by the
+      // other chain: its snapshot is kept only if it still answers for this one.
+      if (viaWallet) {
+        const after = await client.getChainId()
+        if (after !== chain.chainId) {
+          lastReason = `${host} answered for chain ${after}, not ${chain.chainId}, by the end of the read`
+          fails.push({ host, error: new Error(lastReason) })
+          continue
+        }
       }
       const [ownerRaw, operator, tokenRaw, dailyCap, autoApproveMax, frozen, allowlistEnabled, sessionKeyExpiry, today, spentToday, balance] = views
       const owner = getAddress(ownerRaw)
       const token = getAddress(tokenRaw)
-      noteAnswered(host, tried.slice(0, -1))
+      noteWalletAnswered(chain, host, fails)
       const remainingToday = dailyCap === 0n ? null : dailyCap > spentToday ? dailyCap - spentToday : 0n
       return {
         ok: true,
@@ -462,8 +633,20 @@ export async function readVault(
       fails.push({ host, error: e })
     }
   }
-  if (registryWrongChain) return failed('wrong_chain', lastReason)
-  if (judgeFailures(fails).blocked) return failed('blocked', `tried ${tried.join(', ')}; none of the network nodes got an answer back to this browser${lastReason ? `; last: ${lastReason}` : ''}`)
+  if (wrongChain) return failed('wrong_chain', wrongChain)
+  // Blocked only when no host gave any answer at all: one that answered, the wallet included, shows
+  // this browser does reach the network, and what it said is named.
+  const judged = judgeFailures(chain, fails)
+  if (judged.blocked) {
+    const registry = tried.filter((h) => !isWalletHost(h)).join(', ')
+    // Every registry host failed unanswered, so whoever answered was the wallet: one node's word,
+    // which never says a vault is absent, so it is named and the page reads again.
+    if (answered.length)
+      return failed('unreachable', `tried ${registry}; no answer from any of them reached this page, and only your wallet answered: ${walletSaid}`, { walletOnly: true })
+    const mine = fails.find((f) => isWalletHost(f.host))
+    const wallet = judged.wallet === 'other_chain' && mine ? `; ${shortReason(mine.error)}` : judged.wallet === 'failed' ? '; your wallet could not read for this page either' : ''
+    return failed('blocked', `tried ${registry}; no answer from any of them reached this page${wallet}`, { wallet: judged.wallet })
+  }
   return failed('unreachable', `tried ${tried.join(', ')}${lastReason ? `; last: ${lastReason}` : ''}`)
 }
 
@@ -498,7 +681,9 @@ export async function readUsdcBalance(chain: Chain, address: string): Promise<bi
  * The USDC contract's own symbol and decimals, read live and checked against the registry,
  * failing closed: a mismatch would make every amount on the page wrong by a power of ten.
  */
-export async function readUsdcFacts(chain: Chain): Promise<{ ok: true; symbol: string; decimals: number } | { ok: false; reason: string; noAnswer?: boolean; blocked?: boolean }> {
+export async function readUsdcFacts(
+  chain: Chain,
+): Promise<{ ok: true; symbol: string; decimals: number } | { ok: false; reason: string; noAnswer?: boolean; blocked?: boolean; wallet?: WalletReadState }> {
   const usdc = usdcOf(chain)
   if (!usdc) return { ok: false, reason: `${chain.name} has no USDC entry in the registry.` }
   try {
@@ -515,7 +700,13 @@ export async function readUsdcFacts(chain: Chain): Promise<{ ok: true; symbol: s
     return { ok: true, symbol, decimals: Number(decimals) }
   } catch (e) {
     // No host answering says nothing about the contract, or about what the person typed.
-    return { ok: false, reason: `The USDC contract could not be read: ${shortReason(e)}`, noAnswer: e instanceof RpcUnreachableError, blocked: e instanceof RpcUnreachableError && e.blocked }
+    return {
+      ok: false,
+      reason: `The USDC contract could not be read: ${shortReason(e)}`,
+      noAnswer: e instanceof RpcUnreachableError,
+      blocked: e instanceof RpcUnreachableError && e.blocked,
+      ...(e instanceof RpcUnreachableError && e.blocked ? { wallet: e.wallet } : {}),
+    }
   }
 }
 
@@ -573,30 +764,42 @@ export type SentTx = {
   host: string
 }
 
+/** A transaction as this page keeps it, from the host that returned it. */
+function sentOf(tx: Awaited<ReturnType<ArcClient['getTransaction']>>, host: string): SentTx {
+  return {
+    from: getAddress(tx.from),
+    nonce: tx.nonce,
+    chainId: typeof tx.chainId === 'number' ? tx.chainId : null,
+    maxFeePerGas: tx.maxFeePerGas ?? null,
+    maxPriorityFeePerGas: tx.maxPriorityFeePerGas ?? null,
+    gasPrice: tx.gasPrice ?? null,
+    gas: tx.gas,
+    to: tx.to ? getAddress(tx.to) : null,
+    host,
+  }
+}
+
 /**
  * The transaction from the first host that has it; null when enough hosts answered and none does;
  * undefined when too few answered to say. A host that errored or was rate limited said nothing.
+ * Only the registry's hosts are counted. The wallet is asked only when every one of them failed
+ * without an HTTP answer, and only a transaction it has is taken: its "not found" says nothing.
  */
 export async function readTransaction(chain: Chain, hash: Hex): Promise<SentTx | null | undefined> {
-  const urls = readUrls(chain)
+  const urls = rpcUrls(chain)
   let answered = 0
+  const failures: { error: unknown }[] = []
   for (const url of urls) {
     try {
-      const tx = await clientFor(chain, url).getTransaction({ hash })
-      return {
-        from: getAddress(tx.from),
-        nonce: tx.nonce,
-        chainId: typeof tx.chainId === 'number' ? tx.chainId : null,
-        maxFeePerGas: tx.maxFeePerGas ?? null,
-        maxPriorityFeePerGas: tx.maxPriorityFeePerGas ?? null,
-        gasPrice: tx.gasPrice ?? null,
-        gas: tx.gas,
-        to: tx.to ? getAddress(tx.to) : null,
-        host: hostOf(url),
-      }
+      return sentOf(await clientFor(chain, url).getTransaction({ hash }), hostOf(url))
     } catch (e) {
       if (e instanceof TransactionNotFoundError) answered += 1
+      else failures.push({ error: e })
     }
+  }
+  if (answered === 0 && noRegistryAnswer(chain, failures)) {
+    const mine = await walletHas(chain, (c) => c.getTransaction({ hash }))
+    if (mine) return sentOf(mine, WALLET_HOST)
   }
   return heardEnough(answered, urls.length) ? null : undefined
 }
@@ -606,17 +809,32 @@ export type ReceiptPoll =
   | { found: false; answered: number; total: number }
 
 /**
- * Ask EVERY host for the receipt at once; the first receipt found decides. A host saying
- * "not found" decides nothing, and neither does a host that did not answer: they only count
- * toward how many hosts were asked.
+ * Ask EVERY registry host for the receipt at once; the first receipt found decides. A host saying
+ * "not found" decides nothing, and neither does a host that did not answer: they only count toward
+ * how many hosts were asked, and only the registry's hosts are counted, so `total` is always their
+ * number. The wallet is asked only on a check where every one of them failed without an HTTP answer,
+ * after its chain id matched, and only a receipt it has is taken: its "not found" is never an answer.
  */
 export async function pollReceipt(chain: Chain, hash: Hex): Promise<ReceiptPoll> {
-  const urls = readUrls(chain)
+  const urls = rpcUrls(chain)
+  const failures: { error: unknown }[] = []
   const r = await firstFound(
-    urls.map((url) => clientFor(chain, url).getTransactionReceipt({ hash })),
+    urls.map((url) =>
+      clientFor(chain, url)
+        .getTransactionReceipt({ hash })
+        .catch((e: unknown) => {
+          failures.push({ error: e })
+          throw e
+        }),
+    ),
     (e) => e instanceof TransactionReceiptNotFoundError,
   )
-  return r.found ? { found: true, receipt: r.value, host: hostOf(urls[r.index]), answered: r.answered, total: r.total } : r
+  if (r.found) return { found: true, receipt: r.value, host: hostOf(urls[r.index]), answered: r.answered, total: r.total }
+  if (noRegistryAnswer(chain, failures)) {
+    const mine = await walletHas(chain, (c) => c.getTransactionReceipt({ hash }))
+    if (mine) return { found: true, receipt: mine, host: WALLET_HOST, answered: r.answered, total: r.total }
+  }
+  return r
 }
 
 // --- what a receipt carries ---
