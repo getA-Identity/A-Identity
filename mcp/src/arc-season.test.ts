@@ -1,8 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { privateKeyToAccount } from 'viem/accounts'
 import {
   ARC_OUR_PAYEES,
@@ -2176,7 +2177,8 @@ test('every curated link names two or more wallets and a transaction for each th
   // Every wallet is in one group: two groups that overlapped would silently be one party.
   const every = ARC_WALLET_LINKS.flatMap((l) => l.wallets.map((w) => w.toLowerCase()))
   assert.equal(new Set(every).size, every.length, 'a wallet appears in two groups')
-  // The two agents the trace found by their platform listing stay unnamed here, and so does every person on the team.
+  // The two agents the trace found by their platform listing stay unnamed here, and so does every person on the team. A team
+  // that has not agreed to be named is held by the next test, which does not write the name either.
   for (const notNamed of [/yaman/i, /antigravity/i, /meric/i, /aybars/i, /m[uü]ge/i, /ezgin/i, /mert\b/i]) {
     assert.doesNotMatch(allText, notNamed, `${notNamed} is named outside consent`)
   }
@@ -2198,6 +2200,39 @@ test('every curated link names two or more wallets and a transaction for each th
   for (const a of shortForms) {
     const [head, tail] = a.toLowerCase().split('...')
     assert.ok(full.some((w) => w.startsWith(head) && w.endsWith(tail)), `${a} is written short and held in full nowhere`)
+  }
+})
+
+/**
+ * Teams that have not agreed to be named. Their names are not written in this repo: it is public, and a test that wrote them
+ * would be the first place to name them. They are read from .private/names-outside-consent.txt, which is gitignored, in the
+ * nearest .private/ above this file, one name per line. Null where there is none, as in CI, and the test below is then
+ * reported as skipped, with the reason.
+ */
+function namesOutsideConsent(): { line: number; name: string }[] | null {
+  for (let dir = dirname(fileURLToPath(import.meta.url)); ; dir = dirname(dir)) {
+    const path = join(dir, '.private', 'names-outside-consent.txt')
+    if (existsSync(path)) {
+      return readFileSync(path, 'utf8')
+        .split(/\r?\n/)
+        .map((text, i) => ({ line: i + 1, name: text.trim().toLowerCase() }))
+        .filter((l) => l.name !== '' && !l.name.startsWith('#'))
+    }
+    if (dirname(dir) === dir) return null
+  }
+}
+const OUTSIDE_CONSENT = namesOutsideConsent()
+
+test('the season trace, its report and their source name no team that has not agreed to be named', { skip: OUTSIDE_CONSENT ? false : 'the names are kept out of this public repo, in a gitignored .private/names-outside-consent.txt that this checkout does not have' }, async () => {
+  const names = OUTSIDE_CONSENT ?? []
+  assert.ok(names.length > 0, 'the private list names no one, so this test would hold nothing')
+  const curated = { ARC_PARTNERS, ARC_OWNER_HELD_VAULTS, ARC_REFUSALS, ARC_VERIFY_THEN_PAY_FLOWS, ARC_NOT_TEAM_PAYERS, ARC_WALLET_LINKS, ARC_OUR_SIDE_LINKS, ARC_LINK_TRACE, ARC_GAS_SUPPORT }
+  const sources = ['../src/arc-season.ts', '../src/arc-season-links.ts', '../src/arc-season.test.ts', '../../src/components/proof/ArcSeasonProgress.tsx'].map((p) => readFileSync(new URL(p, import.meta.url), 'utf8'))
+  const text = [JSON.stringify({ curated, report: await liveShape() }), ...sources].join('\n').toLowerCase()
+  for (const { line, name } of names) {
+    // Said by its line and never by the name, because a failure prints in a log that someone may paste.
+    assert.ok(name.length >= 3, `line ${line} of the private list is too short to be a name`)
+    assert.ok(!text.includes(name), `the name on line ${line} of the private list is written in the season trace, its report or their source`)
   }
 })
 
