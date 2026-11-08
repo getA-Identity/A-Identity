@@ -5,10 +5,10 @@
  * with current numbers, links to on-chain evidence and usage so far, with external
  * activity counted separately from our own. This module is that report, and it is
  * computed rather than written: every count comes from the two settlement logs, the
- * verify-then-pay flow log and the admitted vault list on every request, and the four lists a
+ * verify-then-pay flow log and the admitted vault list on every request, and the lists a
  * human has to curate (owner-held vaults admitted by hand, inspectable refusals, partner wallets,
- * verify-then-pay flows recorded anywhere else) are exported here as data, and fill only when the
- * evidence exists.
+ * verify-then-pay flows recorded anywhere else, and the links between wallets that a hand trace
+ * found, in arc-season-links.ts) are exported here as data, and fill only when the evidence exists.
  *
  * What counts, stated once:
  *   - A check is a settled row on Arc Mainnet. On the Gateway log that is an outcome of
@@ -73,6 +73,29 @@ import { internalPayers as gatewayInternalPayers, railStatus as gatewayRailStatu
 import { internalPayers as facilitatorInternalPayers, railStatus as facilitatorRailStatus } from './x402-3009/rail.js'
 import { holdsNoFlow } from './verify-then-pay/context.js'
 import { toSeasonFlow } from './verify-then-pay/season.js'
+import {
+  ARC_GAS_SUPPORT,
+  ARC_LINK_TRACE,
+  ARC_NOT_TEAM_PAYERS,
+  ARC_OUR_SIDE_LINKS,
+  ARC_WALLET_LINKS,
+  type ArcLinkEvidence,
+  type ArcOurSideKind,
+  type ArcOurSideLink,
+  type ArcWalletLink,
+} from './arc-season-links.js'
+
+export {
+  ARC_GAS_SUPPORT,
+  ARC_LINK_TRACE,
+  ARC_NOT_TEAM_PAYERS,
+  ARC_OUR_SIDE_LINKS,
+  ARC_WALLET_LINKS,
+  type ArcLinkEvidence,
+  type ArcOurSideKind,
+  type ArcOurSideLink,
+  type ArcWalletLink,
+}
 
 export const ARC_SEASON_CHAIN = ADMISSION_CHAIN
 
@@ -110,6 +133,8 @@ export type ArcPartner = {
   team: string
   /** True once the team has agreed to be named in public as an integration. */
   publicReference: boolean
+  /** How the team agreed to be named, so the public reference row can say what the reference is. */
+  namedWith?: string
 }
 
 /**
@@ -123,13 +148,13 @@ export const ARC_PARTNERS: ArcPartner[] = [
   // Named on the team's own written OK of 2026-11-03: as an integration, on this page and in the
   // Milestone 2 report. Its wallet paid risk_check on Arc Mainnet from its own Gateway balance:
   // transfer 824da778-5018-4b39-893a-7d2f5d7955f9, the row the team quoted, read back from the log.
-  { wallet: '0x40BC51511ad79166FCc3506bea745A928f7E2708', team: 'Trustless Work', publicReference: true },
+  { wallet: '0x40BC51511ad79166FCc3506bea745A928f7E2708', team: 'Trustless Work', publicReference: true, namedWith: 'its own written OK of 2026-11-03' },
   // Named with the team's OK, confirmed by Meric on 2026-11-06, in the same scope: as an integration,
   // on this page and in the Milestone 2 report. Both wallets are the team's own and paid from their
   // own Gateway balances, 5 checks and 2 on 2026-10-19 and 2026-10-20. The first row of each is named
   // in the commit that added them.
-  { wallet: '0x94a2f2f914862f99bf122b9a932ebc4ae3e555c6', team: 'Slippay', publicReference: true },
-  { wallet: '0xe75d597f414eba88bf4226a3ad8e0fae46b1edc1', team: 'Slippay', publicReference: true },
+  { wallet: '0x94a2f2f914862f99bf122b9a932ebc4ae3e555c6', team: 'Slippay', publicReference: true, namedWith: 'its OK, confirmed by our founder on 2026-11-06' },
+  { wallet: '0xe75d597f414eba88bf4226a3ad8e0fae46b1edc1', team: 'Slippay', publicReference: true, namedWith: 'its OK, confirmed by our founder on 2026-11-06' },
 ]
 
 /**
@@ -308,10 +333,16 @@ export const ARC_VERIFY_THEN_PAY_FLOWS: ArcVerifyThenPayFlow[] = []
 
 export type ArcSeasonRailTotals = { checks: number; usd: number }
 
+/** What is known of whose an external wallet is: named by a partner entry, said by the founder not to be the team's, or neither. */
+export type ArcSeasonWalletIdentity = 'team' | 'not-team' | 'not-identified'
+
 export type ArcSeasonWallet = {
   wallet: string
   /** The partner team, when the wallet is attributed to one. */
   team?: string
+  identity: ArcSeasonWalletIdentity
+  /** The other paying wallets a link or a shared team ties to this one. Absent when none does. */
+  linkedWith?: string[]
   checks: number
   usd: number
   firstTs: string
@@ -333,6 +364,75 @@ export type ArcSeasonUsageSide = {
 /** A flow row the report could not map. flowId is null when the row does not carry one. */
 export type ArcSeasonSkippedRow = { flowId: string | null; reason: string }
 export type ArcSeasonLogRead = { readable: boolean; rows: number; reason?: string; skipped?: ArcSeasonSkippedRow[] }
+
+/** One transaction or public record behind a link, with the link a reader opens. */
+export type ArcSeasonLinkEvidence = ArcLinkEvidence & { explorerUrl: string | null }
+
+/** A curated link as the report shows it: only the linked wallets that own a counted vault, and those vaults. */
+export type ArcSeasonOwnerLinkItem = {
+  /** The linked wallets that own a counted vault, as the counted vaults spell them. Two or more. */
+  owners: string[]
+  /** The counted vaults those owners deployed. */
+  vaults: string[]
+  tracedOn: string
+  confidence: string
+  note: string
+  evidence: ArcSeasonLinkEvidence[]
+}
+/** Who stands behind the vault count, as far as the chain and the curated links say. */
+export type ArcSeasonVaultOwners = {
+  /** Distinct owner wallets behind the counted vaults. */
+  distinct: number
+  /** At most this many parties stand behind those wallets: the chain can merge wallets but cannot prove that two are different people.
+   *  null when the list of admitted vaults could not be read, because a ceiling from a short list would be a guess. */
+  parties: number | null
+  /** Owner wallets a curated link ties to each other, among the counted vaults' owners. */
+  linked: ArcSeasonOwnerLinkItem[]
+  /** A party behind a counted vault that also paid external checks. Those count under Milestone 2, never here. */
+  alsoPaid: { vaults: string[]; wallets: string[]; checks: number; note: string }[]
+  /** "6 vaults from 6 owner wallets; two of the owner wallets are linked on chain, so they may be one party: at most 5 parties." */
+  summary: string
+}
+
+/** A curated link among external wallets that paid checks. */
+export type ArcSeasonPayerLinkItem = {
+  /** The linked wallets that paid, lowercased as byWallet spells them. Two or more. */
+  wallets: string[]
+  checks: number
+  /** Set when every one of them is attributed to one partner team. */
+  team?: string
+  tracedOn: string
+  confidence: string
+  note: string
+  evidence: ArcSeasonLinkEvidence[]
+}
+/** Who stands behind the external checks, as far as the links and the attributions say. */
+export type ArcSeasonPayers = {
+  /** Distinct external wallets that paid. */
+  wallets: number
+  /** At most this many parties stand behind those wallets. A ceiling, as for vault owners, and null when a settlement log could
+   *  not be read, because then more wallets may have paid. */
+  parties: number | null
+  linked: ArcSeasonPayerLinkItem[]
+  /** By what anyone has said of whose wallets they are. */
+  whoPaid: Record<ArcSeasonWalletIdentity, { wallets: number; checks: number }>
+  /** "33 checks from 8 wallets, at most 6 parties: two wallets linked on chain paid 20, and Slippay's two wallets paid 7." */
+  summary: string
+}
+export type ArcSeasonLinkGroup = Omit<ArcWalletLink, 'evidence'> & { evidence: ArcSeasonLinkEvidence[] }
+export type ArcSeasonOurSideItem = Omit<ArcOurSideLink, 'evidence'> & { evidence: ArcSeasonLinkEvidence[] }
+/** The whole hand trace behind the links, in the open: every group it found outside a named team's own wallets, every link to
+ *  our own side, and how far it goes. */
+export type ArcSeasonLinkedWallets = {
+  tracedOn: string
+  /** What was read and when. Said by hand: nothing here is read on a request. */
+  reads: string
+  groups: ArcSeasonLinkGroup[]
+  /** What the trace found between what is counted and our own side, labeled as ours or disclosed. */
+  ourSide: ArcSeasonOurSideItem[]
+  /** What the trace cannot say. */
+  limits: readonly string[]
+}
 
 /** A row the admitted vault list could not count. vault is null when the row names none. */
 export type ArcSeasonSkippedVault = { vault: string | null; reason: string }
@@ -363,6 +463,13 @@ export type ArcSeasonFlowItem = Omit<ArcVerifyThenPayFlow, 'check'> & {
   vaultKind: ArcFlowVaultKind
   checkSettlement: ArcSeasonFlowCheck
   payeeInternal?: string
+  /** On an external flow: the payee is tied to the wallet that paid for the check. Set only when the two are both keys of the
+   *  flow's vault, or a curated link holds both. A payee that is only the vault's own key is not tied to a payer outside the
+   *  vault, because anyone can buy a check that names any vault. */
+  payeeTiedToPayer?: true
+  /** How, when payeeTiedToPayer is set: 'vault-keys' when the payer and the payee are each the vault's owner or operator, so
+   *  the flow is one party paying itself; 'link' when a curated link holds both, so they may be one party. */
+  payeeTiedBy?: 'vault-keys' | 'link'
 }
 /** One UTC week, Monday to Sunday, of external use. A week with no check is listed too, so a gap shows. */
 export type ArcSeasonWeek = {
@@ -414,6 +521,8 @@ export type ArcSeasonReport = {
       byKind: Record<ArcOwnerKind, number>
       /** The hashes of what owners signed, summed over the items, and how many vaults are not fully read. */
       ownerActions: { freezes: number; withdrawals: number; vaultsNotFullyRead: number }
+      /** How many owner wallets stand behind the count, and which of them the chain links. The count itself does not move. */
+      owners: ArcSeasonVaultOwners
       note: string
     }
     checks: {
@@ -462,7 +571,7 @@ export type ArcSeasonReport = {
     title: string
     due: string
     externalTeamsLive: { count: number; target: number; incomplete?: true; teams: ArcSeasonTeam[]; note: string }
-    externalChecks: { count: number; target: number; incomplete?: true; mayIncludeTeamKeys?: true; note: string }
+    externalChecks: { count: number; target: number; incomplete?: true; mayIncludeTeamKeys?: true; payers: ArcSeasonPayers; note: string }
     teamActiveOnSeveralDays: {
       count: number
       target: number
@@ -481,7 +590,20 @@ export type ArcSeasonReport = {
     unattributed: { wallets: number; checks: number; mayIncludeTeamKeys?: true; note: string }
   }
   afterProgram: {
-    activeExternalWallets: { count: number; target: number; incomplete?: true; mayIncludeTeamKeys?: true; windowDays: number; since: string; wallets: string[] }
+    activeExternalWallets: {
+      count: number
+      target: number
+      incomplete?: true
+      mayIncludeTeamKeys?: true
+      windowDays: number
+      since: string
+      wallets: string[]
+      /** At most this many parties stand behind those wallets: a team or a linked party with two wallets counts twice in count.
+       *  null when a settlement log could not be read. */
+      parties: number | null
+      /** Which of those wallets are linked, in one sentence. */
+      linkedSummary: string
+    }
     /** External use per UTC week, Monday first, from the first external check to this read. */
     weekly: {
       incomplete?: true
@@ -495,6 +617,8 @@ export type ArcSeasonReport = {
     }
     note: string
   }
+  /** The curated hand trace behind every link above, and how far it goes. */
+  linkedWallets: ArcSeasonLinkedWallets
   note: string
 }
 
@@ -517,6 +641,12 @@ export type ArcSeasonDeps = {
   partners?: ArcPartner[]
   /** The curated vaults. Default ARC_OWNER_HELD_VAULTS. */
   vaults?: ArcOwnerHeldVault[]
+  /** The curated links between wallets. Default ARC_WALLET_LINKS. */
+  walletLinks?: ArcWalletLink[]
+  /** External payers the founder confirmed are not team wallets. Default ARC_NOT_TEAM_PAYERS. Any case. */
+  notTeamPayers?: string[]
+  /** The curated links to our own side. Default ARC_OUR_SIDE_LINKS. */
+  ourSideLinks?: ArcOurSideLink[]
   /** Vaults POST /api/arc/vaults admitted. May throw: an unreadable list is reported in
    *  logs.admittedVaults, and the count is then the curated list alone and says so. A row it
    *  cannot count goes to onSkip and on into logs.admittedVaults. */
@@ -775,13 +905,14 @@ function side(checks: Check[]): ArcSeasonUsageSide {
   }
 }
 
-function byWallet(checks: Check[], teamOf: Map<string, string>): ArcSeasonWallet[] {
+function byWallet(checks: Check[], teamOf: Map<string, string>, notTeam: ReadonlySet<string>, linkGroups: readonly (readonly string[])[]): ArcSeasonWallet[] {
   const groups = new Map<string, Check[]>()
   for (const c of checks) {
     const g = groups.get(c.payer) ?? []
     g.push(c)
     groups.set(c.payer, g)
   }
+  const partyOf = new Map(partiesAmong(groups.keys(), linkGroups).flatMap((party) => party.map((w) => [w, party] as const)))
   const rows: ArcSeasonWallet[] = []
   for (const [wallet, own] of groups) {
     // Ordered in time, not as strings: a timestamp with a zone offset sorts wrongly as text.
@@ -790,9 +921,12 @@ function byWallet(checks: Check[], teamOf: Map<string, string>): ArcSeasonWallet
       .filter((t) => Number.isFinite(Date.parse(t)))
       .sort((x, y) => Date.parse(x) - Date.parse(y))
     const team = teamOf.get(wallet)
+    const linkedWith = (partyOf.get(wallet) ?? []).filter((w) => w !== wallet)
     rows.push({
       wallet,
       ...(team ? { team } : {}),
+      identity: team ? 'team' : notTeam.has(wallet) ? 'not-team' : 'not-identified',
+      ...(linkedWith.length ? { linkedWith } : {}),
       checks: own.length,
       usd: usd6(own.reduce((s, c) => s + c.usd, 0)),
       firstTs: times[0] ?? own[0].ts,
@@ -845,6 +979,162 @@ async function vaultItemsWithActions(vaults: ArcOwnerHeldVault[], chain: ChainDe
     }
   })
 }
+
+const NUMBER_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten']
+const inWords = (n: number) => NUMBER_WORDS[n] ?? String(n)
+const withUnit = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+/** An address the way the curated notes write it. */
+const shortAddress = (a: string) => `${a.slice(0, 6)}...${a.slice(-4)}`
+
+/** A link's transactions with the link a reader opens: an explorer link derived from the registry, or the record's own URL. */
+function linkEvidence(rows: readonly ArcLinkEvidence[], chain: ChainDescriptor): ArcSeasonLinkEvidence[] {
+  return rows.map((e) => ({ ...e, explorerUrl: e.txHash ? txUrl(chain, e.txHash) : (e.url ?? null) }))
+}
+
+/**
+ * The parties these wallets can be at most: each wallet starts alone, and a group that holds two or more of them joins them.
+ * A ceiling, because the chain can merge wallets and can never show that two of them are different people. Lowercased.
+ */
+export function partiesAmong(wallets: Iterable<string>, groups: readonly (readonly string[])[]): string[][] {
+  const parent = new Map<string, string>()
+  for (const w of wallets) parent.set(w.toLowerCase(), w.toLowerCase())
+  const find = (w: string): string => {
+    let root = w
+    while (parent.get(root) !== root) root = parent.get(root) as string
+    return root
+  }
+  for (const group of groups) {
+    const here = [...new Set(group.map((w) => w.toLowerCase()))].filter((w) => parent.has(w))
+    for (const w of here.slice(1)) parent.set(find(w), find(here[0]))
+  }
+  const byRoot = new Map<string, string[]>()
+  for (const w of parent.keys()) byRoot.set(find(w), [...(byRoot.get(find(w)) ?? []), w])
+  return [...byRoot.values()]
+}
+
+/** How many owner wallets stand behind the counted vaults, and which of them a curated link ties together. A link counts here
+ *  only through the wallets that own a counted vault, and only when two or more of them do: a link to a wallet that owns no
+ *  counted vault says nothing about this count. With the list of admitted vaults unreadable the list is short, so the summary
+ *  says so and states no ceiling. */
+export function vaultOwners(
+  vaults: readonly ArcOwnerHeldVault[],
+  links: readonly ArcWalletLink[],
+  chain: ChainDescriptor,
+  context: { teams: readonly (readonly string[])[]; external: readonly ArcSeasonWallet[]; incomplete: boolean },
+): ArcSeasonVaultOwners {
+  const byOwner = new Map<string, { spelled: string; vaults: string[] }>()
+  for (const v of vaults) {
+    const key = v.owner.toLowerCase()
+    const seen = byOwner.get(key) ?? { spelled: v.owner, vaults: [] }
+    seen.vaults.push(v.address)
+    byOwner.set(key, seen)
+  }
+  const linked: ArcSeasonOwnerLinkItem[] = links.flatMap((l) => {
+    const owners = [...new Set(l.wallets.map((w) => w.toLowerCase()))].filter((w) => byOwner.has(w))
+    if (owners.length < 2) return []
+    return [
+      {
+        owners: owners.map((w) => byOwner.get(w)!.spelled),
+        vaults: owners.flatMap((w) => byOwner.get(w)!.vaults),
+        tracedOn: l.tracedOn,
+        confidence: l.confidence,
+        note: l.note,
+        evidence: linkEvidence(l.evidence, chain),
+      },
+    ]
+  })
+  const groups = [...links.map((l) => l.wallets), ...context.teams]
+  const distinct = byOwner.size
+  const parties = partiesAmong(byOwner.keys(), groups).length
+  const lead = `${withUnit(vaults.length, 'vault', 'vaults')} from ${withUnit(distinct, 'owner wallet', 'owner wallets')}`
+  const linkClauses = linked.map((l) => `${inWords(l.owners.length)} of the owner wallets are linked on chain, so they may be one party`)
+  const ceiling = linked.length > 0 && !context.incomplete ? `: at most ${withUnit(parties, 'party', 'parties')}` : ''
+  const short = context.incomplete ? ' The list of admitted vaults could not be read, so there may be more.' : ''
+
+  // A party that both stands behind a counted vault and paid checks: the same wallets read through the same groups.
+  const paying = new Map(context.external.map((w) => [w.wallet, w]))
+  const alsoPaid = partiesAmong([...byOwner.keys(), ...paying.keys()], groups).flatMap((party) => {
+    const owners = party.filter((w) => byOwner.has(w))
+    const payers = party.filter((w) => paying.has(w))
+    if (owners.length === 0 || payers.length === 0) return []
+    const vaultsOfParty = owners.flatMap((w) => byOwner.get(w)!.vaults)
+    const checks = payers.reduce((n, w) => n + paying.get(w)!.checks, 0)
+    return [
+      {
+        vaults: vaultsOfParty,
+        wallets: payers,
+        checks,
+        note: `The party behind ${vaultsOfParty.length === 1 ? 'vault' : 'vaults'} ${vaultsOfParty.map(shortAddress).join(' and ')} also paid ${withUnit(checks, 'external check', 'external checks')}, counted under Milestone 2 and never here.`,
+      },
+    ]
+  })
+  return { distinct, parties: context.incomplete ? null : parties, linked, alsoPaid, summary: `${[lead, ...linkClauses].join('; ')}${ceiling}.${short}` }
+}
+
+/** Who stands behind the external checks: distinct wallets, the parties they can be at most, and what anyone has said of them. */
+function externalPayers(
+  external: readonly ArcSeasonWallet[],
+  links: readonly ArcWalletLink[],
+  chain: ChainDescriptor,
+  context: { teams: readonly (readonly string[])[]; incomplete: boolean },
+): ArcSeasonPayers {
+  const paying = new Map(external.map((w) => [w.wallet, w]))
+  const totalChecks = external.reduce((n, w) => n + w.checks, 0)
+  const linked: ArcSeasonPayerLinkItem[] = links.flatMap((l) => {
+    const wallets = [...new Set(l.wallets.map((w) => w.toLowerCase()))].filter((w) => paying.has(w))
+    if (wallets.length < 2) return []
+    const teamNames = [...new Set(wallets.map((w) => paying.get(w)!.team))]
+    return [
+      {
+        wallets,
+        checks: wallets.reduce((n, w) => n + paying.get(w)!.checks, 0),
+        ...(teamNames.length === 1 && teamNames[0] ? { team: teamNames[0] } : {}),
+        tracedOn: l.tracedOn,
+        confidence: l.confidence,
+        note: l.note,
+        evidence: linkEvidence(l.evidence, chain),
+      },
+    ]
+  })
+  const parties = partiesAmong(paying.keys(), [...links.map((l) => l.wallets), ...context.teams])
+  const whoPaid = {
+    team: { wallets: 0, checks: 0 },
+    'not-team': { wallets: 0, checks: 0 },
+    'not-identified': { wallets: 0, checks: 0 },
+  }
+  for (const w of external) {
+    whoPaid[w.identity].wallets += 1
+    whoPaid[w.identity].checks += w.checks
+  }
+  const clusters = parties
+    .filter((party) => party.length >= 2)
+    .map((party) => {
+      const checks = party.reduce((n, w) => n + paying.get(w)!.checks, 0)
+      const teamNames = [...new Set(party.map((w) => paying.get(w)!.team))]
+      return { size: party.length, checks, team: teamNames.length === 1 ? teamNames[0] : undefined }
+    })
+    .sort((a, b) => b.checks - a.checks)
+  const lead = `${withUnit(totalChecks, 'check', 'checks')} from ${withUnit(external.length, 'wallet', 'wallets')}`
+  // A log that could not be read is said first: with it down, no wallet found is not the same as none paid.
+  const summary = context.incomplete
+    ? external.length === 0
+      ? 'No external wallet was found in the logs that could be read on this request, and that says nothing about a log that could not be read.'
+      : `${lead} in the logs that could be read, so more wallets may have paid.`
+    : external.length === 0
+      ? 'No external wallet has paid a check yet.'
+      : clusters.length === 0
+        ? `${lead}${external.length > 1 ? ', and no two of them are linked by a trace or a shared team' : ''}.`
+        : `${lead}, at most ${withUnit(parties.length, 'party', 'parties')}: ${clusters
+            .map((c) => (c.team ? `${c.team}'s ${inWords(c.size)} wallets paid ${c.checks}` : `${inWords(c.size)} wallets linked on chain paid ${c.checks}`))
+            .join(', and ')}.`
+  return { wallets: external.length, parties: context.incomplete ? null : parties.length, linked, whoPaid, summary }
+}
+
+/** Said on the vault count, because a vault that stopped after its deploy never counts and an owner should know why. */
+const VAULT_COUNTS_ONCE = 'A vault counts once its agent key has an end date, the second confirmation on /app/vault/arc: a deploy that stopped before that, or a deploy on Arc Testnet, is not counted.'
+
+/** Who has received gas support is curated from the operating wallet's own sends. Said with its date, so it reads as what it is. */
+const GAS_SUPPORT_NOTE = `Owners without USDC on Arc can receive up to 0.08 USDC from our operating wallet for the network fees. ${ARC_GAS_SUPPORT.owners === 0 ? 'None has so far' : `${ARC_GAS_SUPPORT.owners} owner(s) have so far`}, as read from that wallet's sends on ${ARC_GAS_SUPPORT.readOn}, and any such transfer is public on chain; the deploy is still signed by the owner's own wallet.`
 
 /** A season can hold dozens of recorded DENYs. The report lists a few here and counts them all. */
 const REFUSAL_ITEMS_SHOWN = 5
@@ -909,7 +1199,13 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   const externalChecks = checks.filter((c) => !mine.has(c.payer))
 
   const teamOf = new Map(partners.map((p) => [p.wallet.toLowerCase(), p.team]))
-  const external = byWallet(externalChecks, teamOf)
+  const walletLinks = deps.walletLinks ?? ARC_WALLET_LINKS
+  const ourSideLinks = deps.ourSideLinks ?? ARC_OUR_SIDE_LINKS
+  const notTeamPayers = new Set((deps.notTeamPayers ?? ARC_NOT_TEAM_PAYERS).map((a) => a.toLowerCase()))
+  // One team under one name is one party, whether or not anyone traced a link between its wallets.
+  const teamGroups = [...new Set(partners.map((p) => p.team))].map((team) => partners.filter((p) => p.team === team).map((p) => p.wallet.toLowerCase()))
+  const linkGroups = [...walletLinks.map((l) => l.wallets), ...teamGroups]
+  const external = byWallet(externalChecks, teamOf, notTeamPayers, linkGroups)
   const walletStats = new Map(external.map((w) => [w.wallet, w]))
   // What a log that could not be read does to the rest of the report: every number it feeds is a
   // lower limit, and no sentence may say that nothing happened.
@@ -922,6 +1218,17 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   const settlementsCaveat = settlementsIncomplete
     ? `The ${unreadableSettlementLogs.join(' and the ')} could not be read on this request, so this is a lower limit and not a statement that nothing more happened. `
     : ''
+
+  const vaultListUnread = Boolean(admittedVaults && !admittedVaults.read.readable)
+  const owners = vaultOwners(vaults, walletLinks, chain, { teams: teamGroups, external, incomplete: vaultListUnread })
+  const payers = externalPayers(external, walletLinks, chain, { teams: teamGroups, incomplete: settlementsIncomplete })
+  // Linked wallets nobody has identified, said apart from the rest: a share of the checks that large is one party.
+  const unidentifiedParties = payers.linked.filter((l) => !l.team && l.wallets.every((w) => walletStats.get(w)?.identity === 'not-identified'))
+  const whoPaidClauses = [
+    ...(payers.whoPaid.team.wallets > 0 ? [`${withUnit(payers.whoPaid.team.checks, 'check', 'checks')} from ${withUnit(payers.whoPaid.team.wallets, 'wallet', 'wallets')} of named teams`] : []),
+    ...(payers.whoPaid['not-team'].wallets > 0 ? [`${withUnit(payers.whoPaid['not-team'].checks, 'check', 'checks')} from ${withUnit(payers.whoPaid['not-team'].wallets, 'wallet', 'wallets')} the founder confirmed on 2026-11-06 are not team wallets`] : []),
+    ...(payers.whoPaid['not-identified'].wallets > 0 ? [`${withUnit(payers.whoPaid['not-identified'].checks, 'check', 'checks')} from ${withUnit(payers.whoPaid['not-identified'].wallets, 'wallet', 'wallets')} nobody has identified`] : []),
+  ]
 
   // Partners, each with what its wallet actually paid. A team can pay from more than one
   // wallet, so team-level metrics count distinct team names.
@@ -1037,6 +1344,21 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
       ...(why ? { payeeInternal: why } : {}),
     }
   }
+  // How a payee is tied to the wallet that paid for its check, read from the check row itself: the two are both keys of the
+  // flow's vault, or a curated link holds both. A payee that is only the vault's own key is not tied to a payer outside the
+  // vault: anyone can buy a check that names any vault. Said on external flows, where a reader would otherwise take the
+  // payment for one to somebody else.
+  const vaultKeysOf = (f: ArcVerifyThenPayFlow) => (f.vaultKeys ? [f.vaultKeys.owner.toLowerCase(), f.vaultKeys.operator.toLowerCase()] : [])
+  const payeeTie = ({ flow: f, check }: { flow: ArcVerifyThenPayFlow; check: Check }): 'vault-keys' | 'link' | null => {
+    const payee = f.payee.toLowerCase()
+    const keys = vaultKeysOf(f)
+    if (keys.includes(payee) && keys.includes(check.payer)) return 'vault-keys'
+    const linked = walletLinks.some((l) => {
+      const inLink = new Set(l.wallets.map((w) => w.toLowerCase()))
+      return inLink.has(payee) && inLink.has(check.payer)
+    })
+    return linked ? 'link' : null
+  }
   const linkedList = [...linkedFlows.values()]
   const flowsByVault: Record<ArcFlowVaultKind, number> = { 'launch-day': 0, 'owner-held': 0, other: 0, 'not-recorded': 0 }
   for (const f of linkedList) flowsByVault[vaultKindOf(f)] += 1
@@ -1057,7 +1379,32 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   const flagTeamKeys = (count: number) => (teamKeysUnknown && count > 0 ? { mayIncludeTeamKeys: true as const } : {})
   const teamKeysCaveat = (count: number) =>
     teamKeysUnknown && count > 0 ? ` The verify-then-pay flow log could not be read on this request, so the agent key of ${keysOf} could be counted as external until it answers.` : ''
-  const externalFlowItems = [...externalRows.values()].map(flowItem)
+  const externalFlowItems = [...externalRows.values()].map((row): ArcSeasonFlowItem => {
+    const tie = payeeTie(row)
+    return { ...flowItem(row), ...(tie ? { payeeTiedToPayer: true as const, payeeTiedBy: tie } : {}) }
+  })
+  const teamFlowCount = externalFlowItems.filter((f) => f.payer && teamOf.has(f.payer.toLowerCase())).length
+  // Only a flow that paid is a payment: a refused one moved nothing, so it is said apart. Each paid flow is said once, by its
+  // payee: ours first, then one party for certain (both keys of the vault), then perhaps one party (a curated link), then the
+  // vault's own key paid from a check someone outside the vault bought, then anyone else.
+  const externalPaid = externalFlowItems.filter((f) => f.outcome === 'paid')
+  const externalRefused = externalFlowItems.filter((f) => f.outcome === 'refused').length
+  const paidTo = { ours: 0, oneParty: 0, mayBeOneParty: 0, vaultKeyFromOutside: 0, other: 0 }
+  for (const f of externalPaid) {
+    const payee = f.payee.toLowerCase()
+    if (ourAddresses.has(payee)) paidTo.ours += 1
+    else if (f.payeeTiedBy === 'vault-keys') paidTo.oneParty += 1
+    else if (f.payeeTiedBy === 'link') paidTo.mayBeOneParty += 1
+    else if (vaultKeysOf(f).includes(payee)) paidTo.vaultKeyFromOutside += 1
+    else paidTo.other += 1
+  }
+  const paidClauses = [
+    ...(paidTo.oneParty > 0 ? [`${paidTo.oneParty} paid the vault's own owner or operator from a check one of the same vault's keys paid for, so ${paidTo.oneParty === 1 ? 'it is' : 'each is'} one party paying itself`] : []),
+    ...(paidTo.mayBeOneParty > 0 ? [`${paidTo.mayBeOneParty} paid a wallet a traced link ties to the wallet that paid for the check, so ${paidTo.mayBeOneParty === 1 ? 'it' : 'they'} may be one party paying itself`] : []),
+    ...(paidTo.vaultKeyFromOutside > 0 ? [`${paidTo.vaultKeyFromOutside} paid the vault's own owner or operator from a check a wallet outside the vault's keys paid for`] : []),
+    ...(paidTo.ours > 0 ? [`${paidTo.ours} paid one of our own wallets or agents`] : []),
+    ...(paidTo.other > 0 ? [`${paidTo.other} paid a wallet that neither the vault's keys nor a traced link ties to the wallet that paid for the check`] : []),
+  ]
   const weekly = weeklyUsage(externalChecks, now(), teamOf)
   // A wallet that paid and also owns a vault nobody identified, or runs as its agent key, could be
   // one of ours, and the chain cannot say. It still counts as external, and it is said. Not of a wallet
@@ -1069,6 +1416,18 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   const externalVaultOwners = external.filter((w) => !w.team && unstatedOwners.has(w.wallet)).length
   const externalAgentKeys = external.filter((w) => !w.team && unstatedAgentKeys.has(w.wallet) && !unstatedOwners.has(w.wallet)).length
   const internalPayeeFlows = linkedList.filter((f) => payeeInternal(f) !== null).length
+  // The after-program count is wallets. A team or a linked party with two wallets is said once, and which ones, in one sentence.
+  const activeParties = partiesAmong(activeWallets, linkGroups)
+  const activeClusters = activeParties.filter((party) => party.length >= 2)
+  const activeClauses = activeClusters.map((party) => {
+    const teamNames = [...new Set(party.map((w) => teamOf.get(w)))]
+    return teamNames.length === 1 && teamNames[0] ? `${teamNames[0]}'s ${inWords(party.length)} wallets are one team` : `${inWords(party.length)} wallets are linked on chain`
+  })
+  const activeLinkedSummary = settlementsIncomplete
+    ? 'It counts wallets, not parties, and a log that could not be read leaves the parties unknown.'
+    : activeClusters.length === 0
+      ? `It counts wallets, not parties: ${withUnit(activeWallets.length, 'wallet', 'wallets')}${activeWallets.length > 1 ? ', and no two of them are linked by a trace or a shared team' : ''}.`
+      : `It counts wallets, not parties: ${withUnit(activeWallets.length, 'wallet', 'wallets')}, at most ${withUnit(activeParties.length, 'party', 'parties')}, because ${activeClauses.join(' and ')}.`
   const refusedPayees = new Set(linkedList.filter((f) => f.outcome === 'refused').map((f) => f.payee.toLowerCase())).size
 
   // A recorded DENY is an inspectable refusal: it has a public record, and it is what the metric
@@ -1135,14 +1494,15 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
         items: vaultItems,
         byKind: vaultsByKind,
         ownerActions,
+        owners,
         note:
           (admittedVaults && !admittedVaults.read.readable ? 'The list of admitted vaults could not be read on this request, so any vault it holds is missing from this count until it answers. ' : '') +
           (skippedVaults.length ? `${skippedVaults.length} admitted vault row(s) are not counted; logs.admittedVaults names them and says why. ` : '') +
           (vaults.length === 0
-            ? `${admittedVaults && !admittedVaults.read.readable ? '' : 'No owner-held vault yet. '}The launch-day vault${launchVault ? ` ${launchVault}` : ''} was deployed from our server key with our operating wallet as its owner, so it is not owner-held and is not counted. This count fills from vaults deployed by the owner's own wallet, whose owner key A-Identity never holds, each listed with its deploy hash. The deploy page at /app/vault/arc is one way to do that. Owners without USDC on Arc can receive up to 0.08 USDC from our operating wallet for the network fees; those transfers are public on chain, and the deploy is still signed by the owner's own wallet.`
-            : `${vaults.length} of ${ARC_SEASON_TARGETS.ownerHeldVaults} vaults deployed by the owner's own wallet, with an owner key A-Identity's servers never held. By whose wallet: ${vaultsByKind.team} of them someone on our own team, in their own wallet; ${vaultsByKind.external} someone outside the team; ${vaultsByKind.unstated} not identified as either. The chain cannot show which tool sent a deploy, so this count rests on the deploy transaction and the vault's code, not on proof that the page at /app/vault/arc was used. The launch-day vault${launchVault ? ` ${launchVault}` : ''} is owned by our operating wallet and is not among them. Owners without USDC on Arc can receive up to 0.08 USDC from our operating wallet for the network fees; those transfers are public on chain, and the deploy is still signed by the owner's own wallet.` +
+            ? `${admittedVaults && !admittedVaults.read.readable ? '' : 'No owner-held vault yet. '}The launch-day vault${launchVault ? ` ${launchVault}` : ''} was deployed from our server key with our operating wallet as its owner, so it is not owner-held and is not counted. This count fills from vaults deployed by the owner's own wallet, each listed with its deploy hash. ${VAULT_COUNTS_ONCE} The deploy page at /app/vault/arc is one way to do that. ${GAS_SUPPORT_NOTE}`
+            : `${vaults.length} of ${ARC_SEASON_TARGETS.ownerHeldVaults} vaults deployed by the owner's own wallet, which is none of the keys of ours it was compared with; GET /api/arc/vaults names any key it could not be compared with. ${VAULT_COUNTS_ONCE} ${owners.summary}${owners.linked.length > 0 ? ' Each link was traced by hand, not read live on this request, and the transactions behind it are named with it; the count does not move for it.' : ''}${owners.alsoPaid.length > 0 ? ` ${owners.alsoPaid.map((p) => p.note).join(' ')}` : ''} By whose wallet: ${vaultsByKind.team} of them someone on our own team, in their own wallet; ${vaultsByKind.external} someone outside the team; ${vaultsByKind.unstated} not identified as either. The chain cannot show which tool sent a deploy, so this count rests on the deploy transaction and the vault's code, not on proof that the page at /app/vault/arc was used. The launch-day vault${launchVault ? ` ${launchVault}` : ''} is owned by our operating wallet and is not among them. ${GAS_SUPPORT_NOTE}` +
               (unstatedVaults > 0
-                ? ` ${unstatedVaults} of them were admitted automatically after every check passed, with the owner not identified: the checks prove the owner's wallet sent the deploy and is none of the keys it was compared with, and the chain cannot say whose wallet it is, so one could be a team member's.`
+                ? ` ${unstatedVaults} of them were admitted automatically after every check passed, with the owner not identified: the checks prove the owner's wallet sent the deploy and is none of the keys it was compared with, and the chain cannot say whose wallet it is, so one could be a team member's. The founder's statement of 2026-11-06 does not cover these.`
                 : '') +
               ` Owner wallets have signed ${ownerActions.freezes} freeze(s) and ${ownerActions.withdrawals} withdrawal(s), each hash on its vault.` +
               (ownerActions.vaultsNotFullyRead > 0 ? ` ${ownerActions.vaultsNotFullyRead} vault(s) are not fully read yet, so there may be more; each says why on actionsRead.` : '')),
@@ -1216,20 +1576,23 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
           settlementsCaveat +
           (liveTeams.length === 0
             ? `${settlementsIncomplete ? '' : 'No external team live yet. '}A team is listed only after its wallet has paid a check on Arc Mainnet; the wallet is then attributed here by name.`
-            : `${liveTeams.length} of ${ARC_SEASON_TARGETS.externalTeamsLive} external teams have paid at least one check on Arc Mainnet from a wallet attributed to them.`),
+            : `${liveTeams.length} of ${ARC_SEASON_TARGETS.externalTeamsLive} external teams have paid at least one check on Arc Mainnet from a wallet attributed to them: ${teamDays
+                .map((d) => `${d.team}, ${withUnit(teams.filter((t) => t.team === d.team).reduce((n, t) => n + t.checks, 0), 'check', 'checks')} from ${withUnit(teams.filter((t) => t.team === d.team).length, 'wallet', 'wallets')}`)
+                .join('; ')}. That is all this row means: a team counts once one of its wallets has paid one check, and it says nothing about how much a team uses it.${teamFlowCount === 0 && !flowsIncomplete ? ' No named team has run a verify-then-pay flow yet.' : ''}`),
       },
       externalChecks: {
         count: externalChecks.length,
         target: ARC_SEASON_TARGETS.externalChecks,
         ...flagIncomplete(settlementsIncomplete),
         ...flagTeamKeys(externalChecks.length),
+        payers,
         note:
           settlementsCaveat +
           (externalChecks.length === 0
             ? settlementsIncomplete
               ? 'A check counts here when a wallet outside our own paid it, on either rail.'
               : 'No paid check from a wallet outside our own yet. Every check settled so far came from our own buyer wallets, labeled internal above.'
-            : `${externalChecks.length} of ${ARC_SEASON_TARGETS.externalChecks} paid checks from wallets A-Identity does not control, on either rail.`) +
+            : `${externalChecks.length} of ${ARC_SEASON_TARGETS.externalChecks} paid checks from wallets A-Identity does not control, on either rail. ${payers.summary} By who stands behind them: ${whoPaidClauses.join('; ')}.${unidentifiedParties.map((l) => ` ${l.checks} of the ${externalChecks.length} come from one party nobody has identified: ${l.wallets.map(shortAddress).join(' and ')}, linked on chain; the other ${externalChecks.length - l.checks} come from ${withUnit(external.length - l.wallets.length, 'wallet', 'wallets')}.`).join('')}`) +
           (externalVaultOwners > 0
             ? ` ${externalVaultOwners} of these wallet(s) also own a vault admitted with the owner not identified, so one could be a team member's: the chain cannot say, and each counts as external until someone says otherwise.`
             : '') +
@@ -1269,21 +1632,23 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
           settlementsCaveat +
           (publicNames.length === 0
             ? `${settlementsIncomplete ? '' : 'No external integration can be named in public yet. '}A team is counted here only when it has paid and has agreed to be referenced.`
-            : `${publicNames.length} external integration(s) that paid and agreed to be referenced in public.`),
+            : `${publicNames.length} external integration(s) that paid and agreed to be referenced in public: ${publicNames
+                .map((name) => {
+                  const namedWith = partners.find((p) => p.team === name && p.namedWith)?.namedWith
+                  return namedWith ? `${name}, with ${namedWith}` : name
+                })
+                .join('; ')}. The reference is this page and the Milestone 2 report, where each is named as an integration; no other public page is linked here.`),
       },
       externalFlows: {
         count: externalFlowItems.length,
-        linked: {
-          paid: externalFlowItems.filter((f) => f.outcome === 'paid').length,
-          refused: externalFlowItems.filter((f) => f.outcome === 'refused').length,
-        },
+        linked: { paid: externalPaid.length, refused: externalRefused },
         items: externalFlowItems,
         ...flagIncomplete(flowsIncomplete),
         note:
           (flowsIncomplete ? 'The Circle Gateway settlement log or the verify-then-pay flow log could not be read on this request, so this list may be short. ' : '') +
           (externalFlowItems.length === 0
             ? `${flowsIncomplete ? '' : 'No external verify-then-pay flow has reached a vault payment or a refusal yet. '}A flow appears here when a wallet outside our own pays a Circle Gateway check and the route then records its vault payment or a refusal. A payment waiting for its owner has a public record at its flow URL and counts as neither until the owner acts. An external check with no flow here still counts as a paid check above.`
-            : `${externalFlowItems.length} verify-then-pay flow(s) opened by a check from a wallet A-Identity does not control, by the same linking rules as Milestone 1 and counted apart from it.`),
+            : `${withUnit(externalFlowItems.length, 'verify-then-pay flow', 'verify-then-pay flows')} opened by a check from a wallet A-Identity does not control, by the same linking rules as Milestone 1 and counted apart from it: ${externalPaid.length} paid and ${externalRefused} refused${externalRefused > 0 ? ', and a refused flow paid nothing' : ''}.${paidClauses.length > 0 ? ` Of the flows that paid: ${paidClauses.join('; ')}.` : ''}`),
       },
       unattributed: {
         wallets: unattributed.length,
@@ -1294,7 +1659,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
             ? settlementsIncomplete
               ? `The ${unreadableSettlementLogs.join(' and the ')} could not be read on this request, so this says nothing about wallets it holds.`
               : 'Every external wallet that paid is attributed to a team, or none has paid.'
-            : `${unattributed.length} external wallet(s) paid ${unattributed.reduce((s, w) => s + w.checks, 0)} check(s) without being attributed to a team. They count as external checks, external wallets and external flows, and toward no team metric.${teamKeysCaveat(unattributed.length)}`,
+            : `${unattributed.length} external wallet(s) paid ${unattributed.reduce((s, w) => s + w.checks, 0)} check(s) without being attributed to a team. They count as external checks, external wallets and external flows, and toward no team metric.${payers.whoPaid['not-team'].wallets > 0 ? ` ${payers.whoPaid['not-team'].wallets} of them (${withUnit(payers.whoPaid['not-team'].checks, 'check', 'checks')}) the founder confirmed on 2026-11-06 are not team wallets; ${payers.whoPaid['not-identified'].wallets} (${withUnit(payers.whoPaid['not-identified'].checks, 'check', 'checks')}) nobody has identified, each counted as external until someone says otherwise.` : ''}${teamKeysCaveat(unattributed.length)}`,
       },
     },
     afterProgram: {
@@ -1306,6 +1671,8 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
         windowDays: ARC_SEASON_TARGETS.activeWindowDays,
         since,
         wallets: activeWallets,
+        parties: settlementsIncomplete ? null : activeParties.length,
+        linkedSummary: activeLinkedSummary,
       },
       weekly: {
         ...flagIncomplete(settlementsIncomplete),
@@ -1315,10 +1682,17 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
           settlementsCaveat +
           (weekly.weeks.length === 0
             ? `${settlementsIncomplete ? '' : 'No external check to report by week yet. '}Each UTC week will list its external checks, active wallets, active days and the wallets that came back from an earlier week.`
-            : `External use per UTC week, Monday to Sunday, from the first external check to this read, on either rail. A wallet is a repeat wallet when it paid in two or more different weeks, and a team when its wallets did: ${weekly.repeatWallets.length} wallet(s) and ${weekly.repeatTeams.length} team(s) so far.${teamKeysCaveat(weekly.weeks.length)}`),
+            : `External use per UTC week, Monday to Sunday, from the first external check to this read, on either rail. Active wallets are wallets, not parties: a team or a linked party that pays from two wallets counts twice. A wallet is a repeat wallet when it paid in two or more different weeks, and a team when its wallets did: ${weekly.repeatWallets.length} wallet(s) and ${weekly.repeatTeams.length} team(s) so far.${teamKeysCaveat(weekly.weeks.length)}`),
       },
-      note: `After the program the reference is ${ARC_SEASON_TARGETS.activeExternalWallets} external wallets with a settled check inside the last ${ARC_SEASON_TARGETS.activeWindowDays} days, measured on a rolling window from the time of each read.${teamKeysCaveat(activeWallets.length)}`,
+      note: `After the program the reference is ${ARC_SEASON_TARGETS.activeExternalWallets} external wallets with a settled check inside the last ${ARC_SEASON_TARGETS.activeWindowDays} days, measured on a rolling window from the time of each read. This number is that window as of this read, not the measurement itself, which starts after ${ARC_SEASON_PROGRAM.measuredThrough}. ${activeLinkedSummary}${teamKeysCaveat(activeWallets.length)}`,
     },
-    note: `Targets are the Deliverable 1 commitments as revised by Circle on 2026-10-19; counts are read from the settlement logs and the admitted vault list on every request, and the curated lists (vaults, refusals, partners) fill only when the evidence exists. The date on each milestone is the target the team set; the program measures them through ${ARC_SEASON_PROGRAM.measuredThrough}, its last day, and traction can extend past that.`,
+    linkedWallets: {
+      tracedOn: ARC_LINK_TRACE.tracedOn,
+      reads: ARC_LINK_TRACE.reads,
+      groups: walletLinks.map((l) => ({ ...l, evidence: linkEvidence(l.evidence, chain) })),
+      ourSide: ourSideLinks.map((x) => ({ ...x, evidence: linkEvidence(x.evidence ?? [], chain) })),
+      limits: ARC_LINK_TRACE.limits,
+    },
+    note: `Targets are the Deliverable 1 commitments as revised by Circle on 2026-10-19; counts are read from the settlement logs and the admitted vault list on every request, and the curated lists (vaults, refusals, partners) fill only when the evidence exists. Links between wallets are curated as well: traced by hand on a date, not read live, and they move no count. The date on each milestone is the target the team set; the program measures them through ${ARC_SEASON_PROGRAM.measuredThrough}, its last day, and traction can extend past that.`,
   }
 }

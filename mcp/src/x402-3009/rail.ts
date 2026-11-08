@@ -754,7 +754,8 @@ export type RailProof = {
   gas: { byNetwork: Record<string, { total: string; unit: string; decimals: number; settles: number }>; settles: number; note: string }
   byTool: Record<string, { count: number; usd: number }>
   /** Per-chain breakdown. Two chains summed into one figure is a number about nothing. */
-  byNetwork: Record<string, { count: number; usd: number; assetSymbol: string }>
+  /** Per network, with how many of the settled rows and how many dollars came from our own wallets, so a headline can show the split. */
+  byNetwork: Record<string, { count: number; usd: number; assetSymbol: string; internal: number; internalUsd: number }>
   recent: ReturnType<typeof publicSettlementRow>[]
   note: string
 }
@@ -769,7 +770,12 @@ export type RailProof = {
  * a credential, and it cannot be quietly unset the way a variable can. Same decision the
  * Celo rail already records. X402_3009_INTERNAL_PAYERS adds more without a deploy.
  */
-const KNOWN_INTERNAL_PAYERS = ['0x8c8d9cd12d8896a40cf2115ee731258bb4983349']
+const KNOWN_INTERNAL_PAYERS = [
+  '0x8c8d9cd12d8896a40cf2115ee731258bb4983349',
+  // A team member's own wallet, listed so a check it paid could never read as external on either rail; see the same entry in
+  // x402-gateway/rail.ts.
+  '0x432bd8bb5b9e199677e6a3fa72ac9739030953fd',
+]
 
 /** Buyer wallets that are ours. Labeled, never filtered out: hiding our own traffic would
  *  overstate external demand, and removing it would understate that the rail works. */
@@ -800,7 +806,7 @@ export async function railProof(
   const mine = new Set(internalPayers(env))
   const settled = rows.filter((r) => r.outcome === 'settled')
   const byTool: Record<string, { count: number; usd: number }> = {}
-  const byNetwork: Record<string, { count: number; usd: number; assetSymbol: string }> = {}
+  const byNetwork: Record<string, { count: number; usd: number; assetSymbol: string; internal: number; internalUsd: number }> = {}
   let totalUsd = 0
   let internalSettlements = 0
   let internalUsd = 0
@@ -821,12 +827,14 @@ export async function railProof(
     const t = (byTool[r.tool] ??= { count: 0, usd: 0 })
     t.count += 1
     t.usd = Number((t.usd + r.amountUsd).toFixed(6))
-    const n = (byNetwork[r.network] ??= { count: 0, usd: 0, assetSymbol: r.assetSymbol })
+    const n = (byNetwork[r.network] ??= { count: 0, usd: 0, assetSymbol: r.assetSymbol, internal: 0, internalUsd: 0 })
     n.count += 1
     n.usd = Number((n.usd + r.amountUsd).toFixed(6))
     if (mine.has(r.payer.toLowerCase())) {
       internalSettlements += 1
       internalUsd += r.amountUsd
+      n.internal += 1
+      n.internalUsd = Number((n.internalUsd + r.amountUsd).toFixed(6))
     }
   }
   return {

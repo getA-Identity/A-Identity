@@ -26,7 +26,7 @@ import { ArrowLeft, CheckCircle2, Loader2, ShieldAlert } from 'lucide-react'
 import type { Chain } from '../../../lib/chains'
 import { track } from '../../../lib/analytics'
 import { countableDeploy, endDateFromRead, setupStage, type Listing } from '../../../lib/arc/vault-count'
-import { AFTER_SETUP, AGENT_KEY_CAN, AGENT_KEY_CANNOT, AGENT_KEY_FEES, CALL_FEE_ABOUT, CONFIRMATIONS, DAILY_LIMIT_TWICE, FEES_LINE, GIVE_THE_AGENT, IF_A_STEP_FAILS, NO_HASH_LINE, OWNER_KEY_LINE, OWNER_PAYMENT_COUNTS, REVIEW_LINE, SAVE_LINK_LINE, USE_ANOTHER_ACCOUNT, WALLET_GONE, WALLET_MAY_REPRICE, WHAT_IS_A_VAULT, WRONG_ACCOUNT, WRONG_OWNER_WAY_OUT, networkPrompt } from '../../../lib/arc/deploy-copy'
+import { AFTER_SETUP, AGENT_KEY_CAN, AGENT_KEY_CANNOT, AGENT_KEY_FEES, CALL_FEE_ABOUT, CONFIRMATIONS, COUNTS_ONCE_END_DATE, DAILY_LIMIT_TWICE, FEES_LINE, GIVE_THE_AGENT, IF_A_STEP_FAILS, NO_HASH_LINE, OWNER_KEY_LINE, OWNER_PAYMENT_COUNTS, REVIEW_LINE, SAVE_LINK_LINE, USE_ANOTHER_ACCOUNT, WALLET_GONE, WALLET_MAY_REPRICE, WHAT_IS_A_VAULT, WRONG_ACCOUNT, WRONG_OWNER_WAY_OUT, networkPrompt } from '../../../lib/arc/deploy-copy'
 import { walletChainName } from '../../../lib/evm-chain'
 import { loadSetup, loadTx, saveTx, type SetupState, type TxRecord } from '../../../lib/arc/pending'
 import { FUND_RISK } from '../../../lib/arc/ours'
@@ -879,7 +879,7 @@ export default function DeployFlow({
                 <div className="font-semibold text-foreground">Your vault exists, but its agent key has no time bound yet.</div>
                 <div className="mt-1 text-foreground/80">
                   Vault <Mono>{setup.vault}</Mono>. Until confirmation 2 lands, the agent's key can pay within your limits with no end date. Set the
-                  end date now. No USDC goes in before it. This moves no USDC and costs {CALL_FEE_ABOUT} in network fees.
+                  end date now. No USDC goes in before it. This moves no USDC and costs {CALL_FEE_ABOUT} in network fees. {COUNTS_ONCE_END_DATE}
                 </div>
               </div>
             </div>

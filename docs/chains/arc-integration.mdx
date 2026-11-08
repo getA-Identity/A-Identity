@@ -398,6 +398,10 @@ to our `payTo`, for the price.
   a team active on more than one day, a publicly referenceable integration). Each owner-held
   vault under `milestone1.vaults.items` lists the freezes and withdrawals its owner's wallet
   signed, with hashes, and `actionsRead` says how far the chain was read.
+  `milestone1.vaults.owners` and `milestone2.externalChecks.payers` say how many owner and
+  paying wallets stand behind those counts and how many of them are linked on chain, so a
+  wallet is not read as a separate user; `linkedWallets` is the hand trace behind them, with
+  its transactions and how far it goes.
 - `POST https://a-identity.xyz/api/arc/vaults` with `{"deployTx": "0x..."}` admits an
   owner-held vault on Arc Mainnet by its deploy transaction, or refuses with the reasons. It
   signs nothing, needs no session, and the same hash twice is a no-op. The vault page at

@@ -581,6 +581,10 @@ const KNOWN_INTERNAL_PAYERS = [
   // counted that self-funded call as external demand, which is the exact error this list
   // exists to make impossible.
   '0x8c8d9cd12d8896a40cf2115ee731258bb4983349',
+  // A team member's own wallet, listed so a check it paid could never read as external: it funded the operating wallet
+  // with 3 USDC on 2026-11-02 (tx 0x437f31171291c797516d28bfea583cf6324285060c3f8b481deecf13156899cf), and the
+  // founder confirmed whose it is on 2026-11-06. It has paid no check and owns no vault.
+  '0x432bd8bb5b9e199677e6a3fa72ac9739030953fd',
   // The agent key of the founder's own approval test on Arc Mainnet. It pays one check from a
   // deposit we fund, so that check is our own traffic and must never read as external demand.
   '0x86dc9716eb00164183d43f8e1273888c7eba3cb4',
@@ -614,7 +618,8 @@ export type GatewayRailProof = {
   failed: number
   unconfirmed: number
   byTool: Record<string, { count: number; usd: number }>
-  byNetwork: Record<string, { count: number; usd: number; assetSymbol: string }>
+  /** Per network, with how many of the settled rows and how many dollars came from our own wallets, so a headline can show the split. */
+  byNetwork: Record<string, { count: number; usd: number; assetSymbol: string; internal: number; internalUsd: number }>
   recent: GatewaySettlementRecord[]
   note: string
 }
@@ -627,7 +632,7 @@ export async function railProof(status: GatewayRailStatus, deps: RailDeps = {}):
   const mine = new Set(internalPayers(env))
   const settled = rows.filter((r) => SETTLED.has(r.outcome))
   const byTool: Record<string, { count: number; usd: number }> = {}
-  const byNetwork: Record<string, { count: number; usd: number; assetSymbol: string }> = {}
+  const byNetwork: Record<string, { count: number; usd: number; assetSymbol: string; internal: number; internalUsd: number }> = {}
   let totalUsd = 0
   let internalSettlements = 0
   let internalUsd = 0
@@ -636,12 +641,14 @@ export async function railProof(status: GatewayRailStatus, deps: RailDeps = {}):
     const t = (byTool[r.tool] ??= { count: 0, usd: 0 })
     t.count += 1
     t.usd = Number((t.usd + r.amountUsd).toFixed(6))
-    const n = (byNetwork[r.network] ??= { count: 0, usd: 0, assetSymbol: r.assetSymbol })
+    const n = (byNetwork[r.network] ??= { count: 0, usd: 0, assetSymbol: r.assetSymbol, internal: 0, internalUsd: 0 })
     n.count += 1
     n.usd = Number((n.usd + r.amountUsd).toFixed(6))
     if (mine.has(r.payer.toLowerCase())) {
       internalSettlements += 1
       internalUsd += r.amountUsd
+      n.internal += 1
+      n.internalUsd = Number((n.internalUsd + r.amountUsd).toFixed(6))
     }
   }
   return {

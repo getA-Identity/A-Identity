@@ -25,6 +25,7 @@ export const ARC_LEDGER_KEYS: Readonly<Record<string, readonly string[]>> = {
   "eip155:5042": [
     "0xd305607510e0db2c95807173c7a05bea53c1ed36",
     "0x03f1fb189e461b88f3e8ba7100b29b594e5f98a9",
+    "0x432bd8bb5b9e199677e6a3fa72ac9739030953fd",
     "0x4e26ae66840134ac5979c56ba2509f3956b93431",
     "0x86dc9716eb00164183d43f8e1273888c7eba3cb4",
     "0x8c8d9cd12d8896a40cf2115ee731258bb4983349",
@@ -34,6 +35,7 @@ export const ARC_LEDGER_KEYS: Readonly<Record<string, readonly string[]>> = {
   "eip155:5042002": [
     "0xd305607510e0db2c95807173c7a05bea53c1ed36",
     "0x03f1fb189e461b88f3e8ba7100b29b594e5f98a9",
+    "0x432bd8bb5b9e199677e6a3fa72ac9739030953fd",
     "0x4e26ae66840134ac5979c56ba2509f3956b93431",
     "0x86dc9716eb00164183d43f8e1273888c7eba3cb4",
     "0x8c8d9cd12d8896a40cf2115ee731258bb4983349",

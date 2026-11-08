@@ -5,7 +5,7 @@ order. Dates appear on things that already happened and on the program milestone
 signed, nowhere else. Every shipped item names the day it landed and a place to check it.
 The same data renders https://a-identity.xyz/roadmap.
 
-Updated 2026-11-04.
+Updated 2026-11-09.
 
 ## How to read this
 
@@ -87,8 +87,8 @@ Newest first. Each item names the day it landed and where to check it.
 
   The three lists a human curates (owner-held vaults, inspectable refusals, partner
   wallets) are exported as data and were empty on 2026-10-19: a vault counts only when its
-  owner key is one we never held, a refusal only when a reviewer can inspect it, and a
-  team only after its wallet has paid a check.
+  owner key is none of the keys of ours it was compared with, a refusal only when a
+  reviewer can inspect it, and a team only after its wallet has paid a check.
 
   Chains: Arc Mainnet. Evidence: [The live report](https://a-identity.xyz/api/arc/season), [Arc proof](https://a-identity.xyz/proof/arc), [Partner guide](https://a-identity.mintlify.site/chains/arc-integration).
 
@@ -487,13 +487,13 @@ promised here.
   nanopayments, and two refusals anyone can inspect: a vault-policy revert with a hash,
   and a DENY that stopped a payment before signing.
 
-  A vault counts only when its owner key is one we never held, so the launch-day vault,
-  owned by our operating wallet, does not. The browser deployer is live at /app/vault/arc.
-  The 100 flows and the two refusals are done, on our own wallets and labeled so; the five
-  vaults wait on their owners, and /proof/arc has the live count. Targets are the
-  Deliverable 1 commitments as Circle revised them on 2026-10-19; the counts are read from
-  the settlement logs on every request, and the curated lists fill only when the evidence
-  exists.
+  A vault counts only when its owner key is none of the keys of ours it was compared with,
+  so the launch-day vault, owned by our operating wallet, does not. The browser deployer
+  is live at /app/vault/arc. The 100 flows and the two refusals are done, on our own
+  wallets and labeled so; the vaults count as their owners deploy them, and /proof/arc has
+  the live count and who stands behind it. Targets are the Deliverable 1 commitments as
+  Circle revised them on 2026-10-19; the counts are read from the settlement logs on every
+  request, and the curated lists fill only when the evidence exists.
 
   Chains: Arc Mainnet. Evidence: [Live progress](https://a-identity.xyz/proof/arc), [The computed report](https://a-identity.xyz/api/arc/season), [Partner guide](https://a-identity.mintlify.site/chains/arc-integration).
 

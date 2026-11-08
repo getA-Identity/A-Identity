@@ -13,17 +13,19 @@ import { SectionShell, SectionIntro, reveal, revealAt } from '../components/ui/s
 import { track } from '../lib/analytics'
 import { apiFetch } from '../lib/api'
 import { ago } from '../lib/format'
+import { CHAINS } from '../lib/chains'
 import { usePageMeta } from '../lib/head'
-import { BACKEND_UNREACHABLE } from '../lib/mcpBase'
-import { sumPaidChecks, type ByNetwork } from '../lib/paidChecks'
+import { ownRailSplit, sumPaidChecks, type ByNetwork } from '../lib/paidChecks'
 
 /**
  * /proof/:rail: what we actually did on a chain, with the transaction that proves it.
  *
  * The page leads with three numbers anyone can read (payments settled, the dollars behind
  * them, the latest one with its link) and keeps the full ledger one click down: the agent,
- * the contracts, every transaction, and how to check it yourself. Nothing was removed from
- * the ledger; it is folded, and it is still in the prerendered HTML.
+ * the contracts, every transaction, and how to check it yourself. The numbers and the ledger
+ * come from the backend, so the prerendered snapshot holds neither and says they load live,
+ * with no claim about the backend being down. What the ledger does not prove is shown in the
+ * open, above the fold, for every network.
  *
  * Settlements come from the rail that actually carries them. Algorand, Stellar and Celo keep
  * their own logs; the EIP-3009 chains share the facilitator's, filtered to this rail's
@@ -211,6 +213,8 @@ type Sales = {
   counters: { label: string; value: string }[]
   /** True only when every log read says no payment came from outside our own wallets. */
   allInternal: boolean
+  /** The count by who paid, for the headline. Null when a log does not publish it. The dollars are null on a rail that does not split them. */
+  split: { internal: number; external: number; internalUsd: number | null; externalUsd: number | null } | null
   /** Set when the log has hit its row cap, so the count is a window rather than all time. */
   window?: { keepsLatest: number; since: string | null }
 }
@@ -267,6 +271,13 @@ function Chip({ tone, children }: { tone: 'ok' | 'warn' | 'danger' | 'muted'; ch
       {children}
     </span>
   )
+}
+
+/** A testnet's chip says so: a green 'live' on it reads as real money. */
+const isTestnet = (net: Network) => CHAINS.find((c) => c.caip2 === net.caip2)?.testnet ?? false
+
+function NetworkChip({ net }: { net: Network }) {
+  return isTestnet(net) ? <Chip tone="warn">testnet</Chip> : <Chip tone={net.status === 'live' ? 'ok' : 'warn'}>{net.status}</Chip>
 }
 
 function ExplorerLink({ href, children }: { href: string | null | undefined; children: React.ReactNode }) {
@@ -332,6 +343,7 @@ function fromOwnRail(p: OwnRailProof, source: string, basis: string, explorer: s
     sales: newestFirst(sales),
     counters: [],
     allInternal: p.externalSettlements === 0,
+    split: ownRailSplit(p.totalSettlements, p.externalSettlements),
     ...(p.window?.capped ? { window: { keepsLatest: p.window.keepsLatest, since: p.window.since } } : {}),
   }
 }
@@ -400,6 +412,7 @@ function fromEvmRails(fac: FacilitatorProof, gw: GatewayProof | null, railNets: 
     sales: newestFirst(sales),
     counters,
     allInternal: fac.externalSettlements === 0 && (!gatewayHere || gw?.externalSettlements === 0),
+    split: totals?.split ?? null,
   }
 }
 
@@ -419,7 +432,7 @@ export default function ChainProof() {
   usePageMeta({
     title: proof ? `${proof.title}: every claim, with its transaction | A-Identity` : 'On-chain proof | A-Identity',
     description:
-      'The provenance ledger for one rail: the agent we minted, the contracts we verified, and every transaction behind them, re-read live from the chain on each load.',
+      'The provenance ledger for one rail: the agent we minted, the contracts we verified and the transactions behind them. Agent ownership and contract code are re-read live from the chain on each load; payments come from the settlement logs.',
     canonical: `https://a-identity.xyz/proof/${rail}`,
   })
 
@@ -499,7 +512,8 @@ export default function ChainProof() {
       ? fromEvmRails(facilitator, gateway, railNets)
       : null
   const latest = sales?.sales[0]
-  const liveNet = proof?.networks.find((n) => n.status === 'live') ?? proof?.networks[0]
+  const liveNet = proof?.networks.find((n) => n.status === 'live' && !isTestnet(n)) ?? proof?.networks[0]
+  const notLoaded = `The numbers on this page load live from GET /api/proof/${rail} and the settlement logs, and they have not loaded yet. Give it a few seconds, or use the button to try again.`
 
   return (
     <ThemeScope surface="background" className="w-full" style={{ fontFamily: 'var(--font-body)' }}>
@@ -514,7 +528,7 @@ export default function ChainProof() {
                 Every claim, with its transaction.
               </DisplayHeading>
             }
-            lede={<Lede>Real payments on {proof?.title ?? 'this chain'}. Click any number to see it on-chain.</Lede>}
+            lede={<Lede>Real payments on {proof?.title ?? 'this chain'}. Open a transaction link on this page to see it on-chain.</Lede>}
           />
 
           {failure && !proof && (
@@ -525,7 +539,7 @@ export default function ChainProof() {
               <p className="text-sm text-foreground/60">
                 {failure === 'missing'
                   ? `No published proof for "${rail}" yet. This page reads the backend's own rail index, so it starts working the moment one is published.`
-                  : BACKEND_UNREACHABLE}
+                  : notLoaded}
               </p>
               <button
                 type="button"
@@ -546,13 +560,17 @@ export default function ChainProof() {
                   {sales?.count === 1 ? 'payment' : 'payments'} settled
                   {sales?.window ? ` in the log's latest ${sales.window.keepsLatest.toLocaleString('en-US')} rows` : ''}
                   {sales?.allInternal && sales.count ? ', all from our own wallets' : ''}
+                  {sales && !sales.allInternal && sales.count && sales.split ? `: ${sales.split.internal} from our own wallets, ${sales.split.external} from other wallets` : ''}
                 </div>
               </div>
               <div className="bg-card p-5">
                 <div className="text-3xl font-bold tabular-nums tracking-tight text-foreground">
                   {sales?.usd != null ? `$${sales.usd}` : <Skeleton />}
                 </div>
-                <div className="mt-1 text-sm text-foreground/60">paid {sales?.assetSymbol ? `in ${sales.assetSymbol}` : 'on-chain'}</div>
+                <div className="mt-1 text-sm text-foreground/60">
+                  paid {sales?.assetSymbol ? `in ${sales.assetSymbol}` : 'on-chain'}
+                  {sales && !sales.allInternal && sales.split?.internalUsd != null ? `: $${sales.split.internalUsd} from our own wallets, $${sales.split.externalUsd} from other wallets` : ''}
+                </div>
               </div>
               <div className="bg-card p-5">
                 <div className="text-3xl font-bold tracking-tight text-foreground">{latest?.ts ? ago(latest.ts) : sales ? '-' : <Skeleton />}</div>
@@ -564,7 +582,7 @@ export default function ChainProof() {
                   ) : (
                     'latest payment'
                   )}
-                  {liveNet && <Chip tone={liveNet.status === 'live' ? 'ok' : 'warn'}>{liveNet.status}</Chip>}
+                  {liveNet && <NetworkChip net={liveNet} />}
                 </div>
               </div>
             </motion.div>
@@ -586,7 +604,7 @@ export default function ChainProof() {
           {/* The Arc Acceleration Season block, in the open and above the folded ledger: the
               success metrics Circle set, each counted from the settlement logs on every load.
               It reads its own endpoint and renders before the backend answers, so the page
-              (and its prerendered snapshot) says where the numbers come from. */}
+              (and its prerendered snapshot) says the numbers load live and where from. */}
           {rail === 'arc' && (
             <div className="mt-8">
               <ArcSeasonProgress />
@@ -630,8 +648,29 @@ export default function ChainProof() {
             </div>
           )}
 
-          {/* The full ledger, folded. A <details> keeps every word in the prerendered HTML
-              for crawlers and for anyone who wants it, while the page itself stays short. */}
+          {/* What the ledger does not prove, in the open for every network: 'Not audited' and the rest are the
+              first thing a reader should not have to go looking for. The caveats come from GET /api/proof/:rail,
+              and chains/provenance.test.ts fails the build on an empty list. */}
+          {proof && proof.networks.some((n) => n.caveats.length > 0) && (
+            <motion.section {...revealAt(4)} className="mt-8 rounded-3xl border border-border bg-card p-6 sm:p-8">
+              <h2 className="text-lg font-bold tracking-tight text-foreground">What this does not prove</h2>
+              {proof.networks.filter((n) => n.caveats.length > 0).map((net) => (
+                <div key={net.chain} className="mt-4">
+                  <h3 className="text-sm font-semibold text-foreground">{net.name}</h3>
+                  <ul className="mt-2 flex list-disc flex-col gap-2 pl-5">
+                    {net.caveats.map((c) => (
+                      <li key={c} className="text-xs leading-relaxed text-foreground/60">
+                        {c}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </motion.section>
+          )}
+
+          {/* The full ledger, folded. It arrives from the backend, so it is not in the prerendered
+              HTML; the page itself stays short, and a reader opens it to see every row. */}
           {proof && (
             <details className="group mt-8">
               <summary className="inline-flex cursor-pointer list-none items-center gap-2 rounded-full border border-border bg-card px-5 py-2.5 text-sm font-semibold text-foreground/75 transition-colors hover:bg-foreground/[0.04] [&::-webkit-details-marker]:hidden">
@@ -651,7 +690,7 @@ export default function ChainProof() {
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <h2 className="text-lg font-bold tracking-tight text-foreground">{net.name}</h2>
                       <div className="flex flex-wrap items-center gap-2">
-                        <Chip tone={net.status === 'live' ? 'ok' : 'warn'}>{net.status}</Chip>
+                        <NetworkChip net={net} />
                         <span className="font-mono text-[11px] text-foreground/45">{net.caip2}</span>
                       </div>
                     </div>
@@ -745,9 +784,6 @@ export default function ChainProof() {
                       </div>
                     </div>
 
-                    {/* The caveats box is intentionally not rendered (maintainer decision,
-                        2026-08-25). `net.caveats` still arrives from GET /api/proof/:rail and
-                        chains/provenance.test.ts still fails the build on an empty list. */}
                   </motion.section>
                 ))}
 

@@ -8,14 +8,13 @@
  * copied into the frontend, so there is no second number to go stale.
  *
  * The cost of that is stated rather than hidden: the prerendered snapshot cannot reach the
- * backend, so the snapshot and a cold backend both show the waiting state below instead of
- * an invented row.
+ * backend, so the snapshot and a cold backend both say that the numbers load live and where
+ * from, instead of an invented row or a claim about the backend that is not true when it is read.
  */
 import { useCallback, useEffect, useState } from 'react'
 import { ArrowUpRight, RefreshCw } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import { short } from '../../lib/format'
-import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
 import { Skeleton } from '../ui/skeleton'
 
 // incomplete: a log this number reads could not be read, so the count is a lower limit.
@@ -32,6 +31,9 @@ type UsageSide = {
 type WalletRow = {
   wallet: string
   team?: string
+  // Whether anyone has said whose it is, and which other paying wallets are tied to it. A backend from before these sends neither.
+  identity?: 'team' | 'not-team' | 'not-identified'
+  linkedWith?: string[]
   checks: number
   usd: number
   firstTs: string
@@ -54,6 +56,27 @@ type VaultItem = {
   actionsRead?: { state: 'complete' | 'reading' | 'unreadable'; scannedToBlock: string | null; reason?: string }
 }
 type ActionTx = { txHash: string; block: string; explorerUrl: string }
+type LinkEvidence = { txHash?: string; url?: string; what: string; explorerUrl: string | null }
+/** Who stands behind the vault count. A backend from before it sends none, and the line does not appear. */
+type VaultOwners = {
+  distinct: number
+  // null when a list or log behind it could not be read: then it is no ceiling.
+  parties: number | null
+  summary: string
+  linked: { owners: string[]; vaults: string[]; tracedOn: string; confidence: string; note: string; evidence: LinkEvidence[] }[]
+  alsoPaid: { vaults: string[]; wallets: string[]; checks: number; note: string }[]
+}
+/** Who stands behind the external checks. A backend from before it sends none, and the line does not appear. */
+type Payers = {
+  wallets: number
+  parties: number | null
+  summary: string
+  linked: { wallets: string[]; checks: number; team?: string; tracedOn: string; confidence: string; note: string; evidence: LinkEvidence[] }[]
+}
+type LinkGroup = { wallets: string[]; tracedOn: string; confidence: string; note: string; evidence: LinkEvidence[] }
+type OurSideLink = { kind: 'ours' | 'disclosed' | 'none-found'; note: string; evidence: LinkEvidence[] }
+/** The hand trace behind the links. A backend from before it sends none, and the section does not appear. */
+type LinkedWallets = { tracedOn: string; reads: string; groups: LinkGroup[]; ourSide: OurSideLink[]; limits: string[] }
 type RefusalItem = {
   kind: string
   txHash?: string
@@ -73,6 +96,8 @@ type FlowItem = {
   at: string
   explorerUrl: string | null
   payeeInternal?: string
+  /** On an external flow: the payee is tied to the wallet that paid for the check. */
+  payeeTiedToPayer?: boolean
   // A backend from before these sends none of them, and the row then shows what it has.
   recordUrl?: string
   vaultKind?: 'launch-day' | 'owner-held' | 'other' | 'not-recorded'
@@ -95,11 +120,13 @@ type SeasonReport = {
   program: { name: string; deliverable2Due: string; milestone1Due: string; milestone2Due: string }
   // flows is the verify-then-pay flow log; a backend from before it sends no such field.
   logs: { gateway: LogRead; facilitator: LogRead; flows?: LogRead }
+  // A backend from before the trace sends no such field.
+  linkedWallets?: LinkedWallets
   usage: { basis: string; internal: UsageSide; external: UsageSide & { byWallet: WalletRow[]; mayIncludeTeamKeys?: boolean } }
   milestone1: {
     title: string
     due: string
-    vaults: Metric & { items: VaultItem[]; ownerActions?: { freezes: number; withdrawals: number; vaultsNotFullyRead: number } }
+    vaults: Metric & { items: VaultItem[]; ownerActions?: { freezes: number; withdrawals: number; vaultsNotFullyRead: number }; owners?: VaultOwners }
     // linked and unlinked arrive with the flow count; a backend from before it sends neither,
     // and its count is every Gateway check, so the row is labeled by which one answered.
     // unlinked is null when a log it needs could not be read, because then nobody can say.
@@ -112,7 +139,7 @@ type SeasonReport = {
     title: string
     due: string
     externalTeamsLive: Metric
-    externalChecks: Metric
+    externalChecks: Metric & { payers?: Payers }
     teamActiveOnSeveralDays: Metric
     publicReference: Metric
     unattributed: { wallets: number; checks: number; note: string }
@@ -120,7 +147,7 @@ type SeasonReport = {
     externalFlows?: { count: number; items: FlowItem[]; note: string }
   }
   afterProgram: {
-    activeExternalWallets: Metric & { windowDays: number }
+    activeExternalWallets: Metric & { windowDays: number; parties?: number | null; linkedSummary?: string }
     // A backend from before it sends no such field, and the table does not appear.
     weekly?: { incomplete?: boolean; weeks: WeekRow[]; repeatWallets: string[]; repeatTeams: string[]; note: string }
     note: string
@@ -144,8 +171,8 @@ const countLabel = (m: Metric) => {
   return m.mayIncludeTeamKeys ? `at most ${m.count}` : String(m.count)
 }
 
-/** One metric: label, count over target, a thin bar, and the reason while the count is 0 or cannot be trusted (with keepNote, always). */
-function MetricRow({ label, metric, detail, keepNote }: { label: string; metric: Metric; detail?: string; keepNote?: boolean }) {
+/** One metric: label, count over target, a thin bar, then the sentence a reader needs first (lead), then the reason while the count is 0 or cannot be trusted (with keepNote, always). */
+function MetricRow({ label, metric, lead, detail, keepNote }: { label: string; metric: Metric; lead?: string; detail?: string; keepNote?: boolean }) {
   const pct = metric.target > 0 ? Math.min(100, Math.round((metric.count / metric.target) * 100)) : 0
   const met = metric.count >= metric.target && !metric.mayIncludeTeamKeys
   return (
@@ -166,6 +193,7 @@ function MetricRow({ label, metric, detail, keepNote }: { label: string; metric:
       >
         <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
       </div>
+      {lead && <p className="mt-1.5 text-[11px] font-semibold leading-relaxed text-foreground/80">{lead}</p>}
       {detail && <p className="mt-1.5 font-mono text-[11px] text-foreground/50">{detail}</p>}
       {(metric.count === 0 || metric.incomplete || keepNote) && metric.note && (
         <p className="mt-1.5 text-[11px] leading-relaxed text-foreground/50">{metric.note}</p>
@@ -224,6 +252,116 @@ function VaultOwnerActions({ vault }: { vault: VaultItem }) {
   )
 }
 
+/** A link's note and how strong it is, in the open, and the transactions behind it one click down, each one a reader can open. */
+function LinkLine({ tracedOn, confidence, note, evidence }: { tracedOn: string; confidence: string; note: string; evidence: LinkEvidence[] }) {
+  return (
+    <div className="mt-0.5 pl-3 text-foreground/55">
+      <p>
+        {note} {confidence} Traced by hand on {tracedOn}, not read live.
+      </p>
+      <details className="mt-0.5">
+        <summary className="cursor-pointer font-semibold text-foreground/65">
+          {evidence.length === 1 ? 'The transaction behind this link' : `The ${evidence.length} transactions behind this link`}
+        </summary>
+        <ul className="mt-1 flex flex-col gap-0.5">
+          {evidence.map((e, i) => (
+            <li key={e.txHash ?? e.url ?? i}>
+              {e.what} {e.explorerUrl ? <OutLink href={e.explorerUrl}>{e.txHash ? short(e.txHash) : 'open'}</OutLink> : null}
+            </li>
+          ))}
+        </ul>
+      </details>
+    </div>
+  )
+}
+
+/** Which owner wallets the chain links, each link with what it rests on. The count of vaults and wallets is the row's own lead, above its note. */
+function VaultOwnersLine({ owners }: { owners: VaultOwners }) {
+  if (owners.linked.length === 0 && owners.alsoPaid.length === 0) return null
+  return (
+    <div className="mb-1 mt-1 text-[11px] leading-relaxed text-foreground/65">
+      {owners.linked.map((l) => (
+        <LinkLine key={l.owners.join(',')} tracedOn={l.tracedOn} confidence={l.confidence} note={l.note} evidence={l.evidence} />
+      ))}
+      {owners.alsoPaid.map((p) => (
+        <p key={p.wallets.join(',')} className="mt-1 pl-3 text-foreground/55">
+          {p.note}
+        </p>
+      ))}
+    </div>
+  )
+}
+
+/** Which paying wallets are linked, so no one wallet reads as one person. The count of wallets and parties is the row's own lead, above its note. */
+function PayersLine({ payers }: { payers: Payers }) {
+  if (payers.linked.length === 0) return null
+  return (
+    <div className="mb-1 mt-1 text-[11px] leading-relaxed text-foreground/65">
+      {payers.linked.map((l) => (
+        <div key={l.wallets.join(',')} className="mt-1">
+          <p className="pl-3 font-mono text-foreground/70">
+            {l.wallets.map((w) => short(w)).join(' and ')}
+            {l.team && <span className="font-sans font-semibold text-foreground/80"> {l.team}</span>}
+            <span className="font-sans">, {plural(l.checks, 'check', 'checks')}</span>
+          </p>
+          <LinkLine tracedOn={l.tracedOn} confidence={l.confidence} note={l.note} evidence={l.evidence} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+const OUR_SIDE_LABEL: Record<OurSideLink['kind'], string> = {
+  ours: 'Ours, labeled',
+  disclosed: 'Disclosed',
+  'none-found': 'Looked for and not found',
+}
+
+/** What the hand trace found between what is counted and our own side, and everything else it tied together. */
+function LinkedWalletsSection({ data }: { data: LinkedWallets }) {
+  return (
+    <div className="mt-6">
+      <h3 className="text-sm font-semibold text-foreground">Linked wallets, and links to our side</h3>
+      <p className="mt-1 max-w-[80ch] text-xs leading-relaxed text-foreground/55">{data.reads}</p>
+      <ul className="mt-3 flex flex-col gap-2">
+        {data.ourSide.map((item) => (
+          <li key={item.note} className="text-[11px] leading-relaxed text-foreground/70">
+            <span className="font-semibold text-foreground/85">{OUR_SIDE_LABEL[item.kind]}:</span> {item.note}{' '}
+            {item.evidence.map((e, i) => (
+              <span key={e.txHash ?? e.url ?? i}>
+                {i > 0 && '; '}
+                {e.what} {e.explorerUrl ? <OutLink href={e.explorerUrl}>{e.txHash ? short(e.txHash) : 'open'}</OutLink> : null}
+              </span>
+            ))}
+          </li>
+        ))}
+      </ul>
+      <ul className="mt-3 flex list-disc flex-col gap-1 pl-4">
+        {data.limits.map((l) => (
+          <li key={l} className="text-[11px] leading-relaxed text-foreground/55">
+            {l}
+          </li>
+        ))}
+      </ul>
+      {data.groups.length > 0 && (
+        <details className="mt-3">
+          <summary className="cursor-pointer text-[11px] font-semibold text-foreground/70">
+            Every group of wallets the trace tied together, outside the named teams' own wallets ({data.groups.length})
+          </summary>
+          <ul className="mt-2 flex flex-col gap-3">
+            {data.groups.map((g) => (
+              <li key={g.wallets.join(',')} className="text-[11px] leading-relaxed text-foreground/65">
+                <div className="font-mono text-foreground/70">{g.wallets.map((w) => short(w)).join(', ')}</div>
+                <LinkLine tracedOn={g.tracedOn} confidence={g.confidence} note={g.note} evidence={g.evidence} />
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  )
+}
+
 function OutLink({ href, children }: { href: string; children: React.ReactNode }) {
   return (
     <a
@@ -253,7 +391,11 @@ function FlowLine({ f }: { f: FlowItem }) {
     <li className="text-[11px] text-foreground/65">
       <span className="font-mono text-foreground/50">{f.at.slice(0, 16).replace('T', ' ')} UTC</span>{' '}
       <span className={`font-semibold ${f.outcome === 'paid' ? 'text-ok' : 'text-foreground/80'}`}>{f.outcome}</span> payee {short(f.payee)}
-      {f.payeeInternal && <span className="font-semibold text-foreground/80"> (payee is ours)</span>}
+      {f.payeeInternal ? (
+        <span className="font-semibold text-foreground/80"> ({f.payeeInternal})</span>
+      ) : (
+        f.payeeTiedToPayer && <span className="font-semibold text-foreground/80"> (the payee is tied to the wallet that paid for the check)</span>
+      )}
       {f.vaultKind && <span>, {FLOW_VAULT_LABEL[f.vaultKind]}</span>}{' '}
       {record && <OutLink href={record}>flow record</OutLink>}{' '}
       {check?.batchExplorerUrl ? (
@@ -315,11 +457,11 @@ function WeeklyTable({ weeks }: { weeks: WeekRow[] }) {
   )
 }
 
-function UsageCell({ title, caption, side }: { title: string; caption: string; side: UsageSide }) {
+function UsageCell({ title, caption, side, parties }: { title: string; caption: string; side: UsageSide; parties?: number | null }) {
   const rows: [string, string][] = [
     ['Checks', `${side.checks} (Gateway ${side.byRail.gateway.checks}, facilitator ${side.byRail.facilitator.checks})`],
     ['USD', usd(side.usd)],
-    ['Wallets', String(side.wallets.length)],
+    ['Wallets', typeof parties === 'number' && parties < side.wallets.length ? `${side.wallets.length}, at most ${parties} parties` : String(side.wallets.length)],
     ['Active days', String(side.activeDays.length)],
   ]
   return (
@@ -360,7 +502,12 @@ function WalletLine({ w }: { w: WalletRow }) {
     <li className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 border-b border-border/60 py-2 last:border-0">
       <span className="font-mono text-xs text-foreground/80" title={w.wallet}>
         {short(w.wallet)}
-        {w.team && <span className="ml-2 font-sans font-semibold text-foreground/70">{w.team}</span>}
+        {w.team && <span className="ml-2 font-sans font-semibold text-foreground/70"> {w.team}</span>}
+        {w.identity === 'not-team' && <span className="ml-2 font-sans text-foreground/55"> not a team wallet, on the founder's word of 2026-11-06</span>}
+        {w.identity === 'not-identified' && <span className="ml-2 font-sans text-foreground/55"> not identified</span>}
+        {w.linkedWith && w.linkedWith.length > 0 && (
+          <span className="ml-2 font-sans text-foreground/55"> linked with {w.linkedWith.map((a) => short(a)).join(', ')}</span>
+        )}
       </span>
       <span className="font-mono text-[11px] tabular-nums text-foreground/55">
         {plural(w.checks, 'check', 'checks')}, {usd(w.usd)}, {plural(w.activeDays.length, 'day', 'days')}
@@ -447,7 +594,7 @@ export default function ArcSeasonProgress() {
           <p className="text-sm leading-relaxed text-foreground/60">
             {state === 'missing'
               ? 'The backend answered without this endpoint, so it is running an older build. Nothing is shown rather than a copy that could be stale.'
-              : `${BACKEND_UNREACHABLE} Nothing here is cached in the page, so until it answers this section stays empty rather than showing old numbers.`}
+              : 'The numbers in this section load live from GET /api/arc/season, and they have not loaded yet. Nothing here is cached in the page, so until they load this section stays empty rather than showing old numbers.'}
           </p>
           {state === 'unreachable' && (
             <button
@@ -492,7 +639,9 @@ export default function ArcSeasonProgress() {
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             <MilestoneCard id={1} title={m1.title} due={m1.due}>
               {/* The note names the launch-day vault and why it is not counted, which stays true at any count. */}
-              <MetricRow label="Owner-held vaults deployed by the owner's own wallet" metric={m1.vaults} keepNote detail={ownerActionsLine(m1.vaults.ownerActions)} />
+              {/* The lead says it first: how many vaults, how many owner wallets and how many of them are linked, without hiding the count. */}
+              <MetricRow label="Owner-held vaults deployed by the owner's own wallet" metric={m1.vaults} keepNote lead={m1.vaults.items.length > 0 ? m1.vaults.owners?.summary : undefined} detail={ownerActionsLine(m1.vaults.ownerActions)} />
+              {m1.vaults.owners && m1.vaults.items.length > 0 && <VaultOwnersLine owners={m1.vaults.owners} />}
               {m1.checks.linked ? (
                 // The note says these are our own runs and through which vault, which stays true at any count.
                 <MetricRow label="Verify-then-pay flows through Circle Gateway" metric={m1.checks} keepNote detail={flowDetail(m1.checks)} />
@@ -543,12 +692,15 @@ export default function ArcSeasonProgress() {
             </MilestoneCard>
 
             <MilestoneCard id={2} title={m2.title} due={m2.due}>
-              <MetricRow label="External teams live on Arc Mainnet" metric={m2.externalTeamsLive} />
-              {/* The note says when a paying wallet also owns an unidentified vault, so it stays past 0. */}
-              <MetricRow label="Paid checks from wallets we do not control" metric={m2.externalChecks} keepNote />
+              {/* Every note stays: each says what its row means, which reads stronger than it is without it. */}
+              <MetricRow label="External teams live on Arc Mainnet" metric={m2.externalTeamsLive} keepNote />
+              {/* The note says who stands behind the checks and when a paying wallet also owns a vault, so it stays past 0. */}
+              <MetricRow label="Paid checks from wallets we do not control" metric={m2.externalChecks} keepNote lead={m2.externalChecks.count > 0 ? m2.externalChecks.payers?.summary : undefined} />
+              {m2.externalChecks.payers && m2.externalChecks.count > 0 && <PayersLine payers={m2.externalChecks.payers} />}
               {/* The note states the dates, because two UTC dates can be hours apart. */}
               <MetricRow label="External team active on several days" metric={m2.teamActiveOnSeveralDays} keepNote />
-              <MetricRow label="External integration referenced in public" metric={m2.publicReference} />
+              {/* The note says what the reference is, because a count with nothing to open reads stronger than it is. */}
+              <MetricRow label="External integration referenced in public" metric={m2.publicReference} keepNote />
               {m2.externalFlows && (
                 <div className="mt-3">
                   <p className="text-[11px] leading-relaxed text-foreground/50">{m2.externalFlows.note}</p>
@@ -566,6 +718,7 @@ export default function ArcSeasonProgress() {
               title="External"
               caption={external.mayIncludeTeamKeys ? 'Wallets A-Identity does not control, and possibly the agent key of a vault labeled team, or of the launch-day vault, until the flow log answers.' : 'Wallets A-Identity does not control.'}
               side={external}
+              parties={m2.externalChecks.incomplete ? undefined : m2.externalChecks.payers?.parties}
             />
           </div>
 
@@ -589,9 +742,12 @@ export default function ArcSeasonProgress() {
             )}
           </div>
 
+          {report.linkedWallets && <LinkedWalletsSection data={report.linkedWallets} />}
+
           <p className="mt-4 text-xs leading-relaxed text-foreground/55">
             After the program: {countLabel(after)} / {after.target} external wallets active in the last {after.windowDays} days.
           </p>
+          <p className="mt-1 max-w-[80ch] text-[11px] leading-relaxed text-foreground/50">{report.afterProgram.note}</p>
           {weekly && (
             <div className="mt-3">
               <div className="text-[11px] uppercase tracking-wide text-foreground/45">Weekly usage</div>

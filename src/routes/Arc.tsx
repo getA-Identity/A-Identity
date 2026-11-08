@@ -11,7 +11,7 @@ import { DisplayHeading, Eyebrow, Lede } from '../components/ui/display'
 import { SectionShell, reveal, revealAt } from '../components/ui/section'
 import { CHAIN_BY_ID } from '../lib/chains'
 import { usePageMeta } from '../lib/head'
-import { sumPaidChecks, type ByNetwork } from '../lib/paidChecks'
+import { sumPaidChecks, type ByNetwork, type PaidChecks } from '../lib/paidChecks'
 import { getJson, useCountUp } from '../lib/rail'
 
 /** Arc's own mark on Arc's own gradient, the same tile the Built On wall uses. */
@@ -76,7 +76,7 @@ const QUESTIONS = [
 
 function useArcData() {
   const [proof, setProof] = useState<ProofNetwork | null>(null)
-  const [paidChecks, setPaidChecks] = useState<{ count: number; usd: number } | null>(null)
+  const [paidChecks, setPaidChecks] = useState<PaidChecks | null>(null)
   const [gatewayPrices, setGatewayPrices] = useState<Record<string, number> | null>(null)
   const [directFee, setDirectFee] = useState<number | null>(null)
   const [failed, setFailed] = useState(false)
@@ -98,7 +98,7 @@ function useArcData() {
     ]).then(([gateway, direct]) => {
       if (!alive) return
       const sum = sumPaidChecks([gateway, direct], new Set([NETWORK]))
-      if (sum) setPaidChecks({ count: sum.count, usd: sum.usd })
+      if (sum) setPaidChecks(sum)
     })
     void getJson<GatewayStatus>('/api/x402/gateway/status').then((s) => {
       if (alive && s?.prices) setGatewayPrices(s.prices)
@@ -135,7 +135,7 @@ function ReceiptLink({ artifact, label = 'receipt' }: { artifact?: Artifact; lab
   )
 }
 
-function DayOneNumbers({ proof, paidChecks, failed }: { proof: ProofNetwork | null; paidChecks: { count: number; usd: number } | null; failed: boolean }) {
+function DayOneNumbers({ proof, paidChecks, failed }: { proof: ProofNetwork | null; paidChecks: PaidChecks | null; failed: boolean }) {
   const checks = useCountUp(paidChecks ? paidChecks.count : null)
   const mint = receipt(proof, 'mint')
   const cells = [
@@ -144,7 +144,11 @@ function DayOneNumbers({ proof, paidChecks, failed }: { proof: ProofNetwork | nu
       label: "the first identity Arc Mainnet's ERC-8004 registry minted",
       link: mint,
     },
-    { value: paidChecks ? String(Math.round(checks)) : '-', label: 'paid checks settled in production', link: undefined },
+    {
+      value: paidChecks ? String(Math.round(checks)) : '-',
+      label: paidChecks?.split ? `paid checks settled in production: ${paidChecks.split.internal} from our own wallets, ${paidChecks.split.external} from other wallets` : 'paid checks settled in production',
+      link: undefined,
+    },
     { value: '2', label: 'payment rails live, both in USDC', link: undefined },
     { value: '$1', label: 'daily cap the vault enforces on-chain', link: receipt(proof, 'deploy') },
   ]

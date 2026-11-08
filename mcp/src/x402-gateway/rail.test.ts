@@ -458,6 +458,14 @@ test('the proof counts credits, separates on-chain batches, labels internal paye
   assert.ok(!mine.includes('nope'))
 })
 
+test('each network says how many settled rows came from our own wallets, so a headline can show the split', async () => {
+  const row = (payer: string, usd: number, n: number): GatewaySettlementRecord => ({ ts: '2026-09-10T00:00:00Z', outcome: 'credited', tool: 'risk_check', resource: '/r', network: base.caip2, asset: 'a', assetSymbol: 'USDC', assetDecimals: 6, value: '1', amountUsd: usd, payer, payTo: PAY_TO, authNonce: '0x' + String(n).padStart(64, '0'), confirmedBy: 'gateway-transfers-api', facilitator: 'f' })
+  const env = { ...configured } as NodeJS.ProcessEnv
+  const ours = '0xd305607510e0db2c95807173c7a05bea53c1ed36'
+  const p = await railProof(railStatus(env), { env, load: async () => [row(ours, 0.005, 1), row(ours, 0.005, 2), row(PAYER, 0.005, 3)] })
+  assert.deepEqual(p.byNetwork[base.caip2], { count: 3, usd: 0.015, assetSymbol: 'USDC', internal: 2, internalUsd: 0.01 })
+})
+
 test('the refresh upgrades a credited row to completed once Gateway reports the batch, and leaves the rest alone', async () => {
   const credited: GatewaySettlementRecord = { ts: '2026-09-10T00:00:00Z', outcome: 'credited', tool: 'verify_agent', resource: '/r', network: base.caip2, asset: 'a', assetSymbol: 'USDC', assetDecimals: 6, value: '1000', amountUsd: 0.001, payer: PAYER, payTo: PAY_TO, authNonce: NONCE, gatewayStatus: 'received', confirmedBy: 'gateway-transfers-api', facilitator: 'f' }
   const still: GatewaySettlementRecord = { ...credited, authNonce: '0x' + 'ee'.repeat(32) }

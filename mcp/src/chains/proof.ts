@@ -183,6 +183,13 @@ const VERIFY_BY_ECOSYSTEM: Record<ChainDescriptor['ecosystem'], (chains: ChainDe
   algorand: algorandVerifyLines,
 }
 
+/**
+ * Mainnets where Circle Gateway carries nearly all counted payments, so "How to check this" describes that rail first and does
+ * not call it the exception. A fact about what has settled, named by chain id on purpose: on Arc Mainnet 136 of the 137 payments
+ * counted on 2026-11-08 went through Gateway and one through our facilitator. Elsewhere our facilitator leads.
+ */
+const GATEWAY_LED_CHAINS = new Set(['arc-mainnet'])
+
 /** "A, B and C", for a sentence. */
 function listNames(names: string[]): string {
   return names.length <= 1 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
@@ -197,7 +204,8 @@ const THIRD_PARTY_RAIL: Record<string, { operator: string; log: string }> = {
 }
 
 function evmVerifyLines(chains: ChainDescriptor[]): string[] {
-  const lines = ['Open any transaction link below: each is a real transaction in the block named, on the chain named.']
+  // The ledger rows name their block; the payment rows do not, so the line promises only the transaction and the chain.
+  const lines = ['Open any transaction link below: each is a real transaction on the chain it names. The rows of the ledger also name their block when it is recorded; a payment row links the transaction only.']
 
   if (chains.some((c) => c.contracts.identityRegistry && provenanceFor(c.id)?.agent)) {
     lines.push(
@@ -230,19 +238,21 @@ function evmVerifyLines(chains: ChainDescriptor[]): string[] {
   }
 
   const ours = chains.filter((c) => !c.testnet && (c.settlementTokens ?? []).some((t) => t.authorization === 'eip3009'))
+  const gateway = chains.filter((c) => !c.testnet && c.gateway)
+  const gatewayLed = gateway.filter((c) => GATEWAY_LED_CHAINS.has(c.id))
+  const gatewaySays =
+    "Circle broadcasts the batch, so a Gateway payment counts only once Circle's transfers API returns that transfer for the payment's own authorization nonce. It links to Circle's batch transaction once that lands, and a batch proves that Gateway settled a net position on chain, which can include other parties' transfers, so it is not a one-to-one payment. See GET /api/x402/gateway/proof."
+  if (gatewayLed.length) {
+    lines.push(`On ${listNames(gatewayLed.map((c) => c.name))} both of our rails are offered, and nearly all counted payments there went through Circle Gateway. ${gatewaySays}`)
+  }
   if (ours.length) {
+    const facilitatorOpens = ours.every((c) => gatewayLed.includes(c)) ? `The other rail on ${listNames(ours.map((c) => c.name))} is` : `Payments on ${listNames(ours.map((c) => c.name))} go through`
     lines.push(
-      `Payments on ${listNames(ours.map((c) => c.name))} go through the EIP-3009 facilitator we run: the buyer signs, we broadcast, and a payment counts only on a receipt carrying a matching Transfer log, never on a third party reporting success. A payment from a wallet we own is labeled internal, not hidden. See GET /api/facilitator/proof.`,
+      `${facilitatorOpens} the EIP-3009 facilitator we run: the buyer signs, we broadcast, and a payment counts only on a receipt carrying a matching Transfer log, never on a third party reporting success. A payment from a wallet we own is labeled internal, not hidden. See GET /api/facilitator/proof.`,
     )
   }
-
-  // Only where a mainnet network on this rail sells through Circle Gateway: there Circle,
-  // not we, broadcasts the batch, and the line above would be true of our rail but silent
-  // about theirs.
-  if (chains.some((c) => !c.testnet && c.gateway)) {
-    lines.push(
-      'Circle Gateway sales are the exception: Circle broadcasts the batch, so one counts only once Circle\'s transfers API returns that transfer for the payment\'s own authorization nonce, and it links to Circle\'s batch transaction once that lands. See GET /api/x402/gateway/proof.',
-    )
+  if (gateway.length > gatewayLed.length) {
+    lines.push(`Circle Gateway sales are the exception: ${gatewaySays}`)
   }
 
   // A mainnet that takes x402 payments with no settlement token of ours: someone else's

@@ -9,13 +9,31 @@
  * same payments.
  */
 
-export type ByNetwork = Record<string, { count: number; usd: number; assetSymbol?: string }>
+export type ByNetwork = Record<string, { count: number; usd: number; assetSymbol?: string; internal?: number; internalUsd?: number }>
+
+/** How many of the settled payments came from our own wallets. Null when a log read does not publish it, a backend from before it. */
+export type PaidChecksSplit = { internal: number; external: number; internalUsd: number; externalUsd: number }
 
 export type PaidChecks = {
   count: number
   usd: number
   /** The asset each counted network settled in, deduplicated. Empty when nothing settled. */
   assetSymbols: string[]
+  split: PaidChecksSplit | null
+}
+
+/** A split by count alone: a rail with its own log says how many settlements came from outside our wallets, and no dollars. */
+export type CountSplit = { internal: number; external: number; internalUsd: null; externalUsd: null }
+
+/**
+ * The split for a rail with its own log (Stellar, Algorand, Celo), which publishes how many settlements it counted and how
+ * many of those came from outside our own wallets. Ours are the rest. Null when the log does not say how many were external,
+ * or says what no count can be (a negative, a fraction, or more external than settled), so the headline shows nothing
+ * rather than a guess. /proof/:rail reads its own-rail headline from here.
+ */
+export function ownRailSplit(total: number, external: number | null | undefined): CountSplit | null {
+  if (typeof external !== 'number' || !Number.isInteger(external) || !Number.isInteger(total) || external < 0 || external > total) return null
+  return { internal: total - external, external, internalUsd: null, externalUsd: null }
 }
 
 /**
@@ -30,6 +48,10 @@ export function sumPaidChecks(
   if (readable.length === 0) return null
   let count = 0
   let usd = 0
+  let internal = 0
+  let internalUsd = 0
+  // A network whose log says nothing about who paid leaves the split unknown, rather than reading as all external.
+  let splitKnown = true
   const symbols = new Set<string>()
   for (const s of readable) {
     for (const [caip, v] of Object.entries(s.byNetwork)) {
@@ -37,7 +59,19 @@ export function sumPaidChecks(
       count += v.count
       usd += v.usd
       if (v.assetSymbol && v.count > 0) symbols.add(v.assetSymbol)
+      if (typeof v.internal === 'number' && typeof v.internalUsd === 'number') {
+        internal += v.internal
+        internalUsd += v.internalUsd
+      } else if (v.count > 0) {
+        splitKnown = false
+      }
     }
   }
-  return { count, usd: Number(usd.toFixed(6)), assetSymbols: [...symbols] }
+  const round = (n: number) => Number(n.toFixed(6))
+  return {
+    count,
+    usd: round(usd),
+    assetSymbols: [...symbols],
+    split: splitKnown ? { internal, external: count - internal, internalUsd: round(internalUsd), externalUsd: round(usd - internalUsd) } : null,
+  }
 }

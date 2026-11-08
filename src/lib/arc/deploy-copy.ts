@@ -29,6 +29,12 @@ export const AGENT_PAYMENT_FEE_AT_MOST = 'about 0.006 USDC'
 export const WHAT_IS_A_VAULT =
   'A vault is a small contract that holds USDC for your agent. Your agent can spend from it only within the limits you set here. While you hold the account that owns it, you can freeze it or take the USDC back at any time.'
 
+/**
+ * Said at the second confirmation and at step 2 of the setup, the place an owner can stop: why a deploy alone never counts.
+ * GET /api/arc/season says the same on the count (VAULT_COUNTS_ONCE in mcp/src/arc-season.ts). Held together in arc-season.test.ts.
+ */
+export const COUNTS_ONCE_END_DATE = 'A vault counts on /proof/arc only on Arc Mainnet, and only once this end date is set: a deploy alone does not count.'
+
 /** The three confirmations, in order. Your wallet asks for each one separately. */
 export const CONFIRMATIONS: readonly { title: string; does: string; cost: string }[] = [
   {
@@ -38,7 +44,7 @@ export const CONFIRMATIONS: readonly { title: string; does: string; cost: string
   },
   {
     title: "Set when the agent's key ends",
-    does: "Gives the agent's key an end date, so it cannot keep spending forever. No USDC moves.",
+    does: `Gives the agent's key an end date, so it cannot keep spending forever. No USDC moves. ${COUNTS_ONCE_END_DATE}`,
     cost: `Network fee: ${CALL_FEE_ABOUT}.`,
   },
   {
@@ -91,7 +97,7 @@ export const IF_A_STEP_FAILS: readonly { when: string; then: string }[] = [
   { when: 'You reloaded the page or closed the tab', then: 'Your place is saved in this browser. Open this page again. If your setup does not show, press Deploy a vault you own and it carries on. A phone wallet may need connecting again.' },
   { when: 'The page keeps waiting and nothing seems to happen', then: "Open your wallet and look at its activity list. Do not sign a new transaction until you have looked: the first one may still go through." },
   { when: 'A transaction failed on the network', then: 'Its network fee is spent. The USDC you meant to send is still in your wallet. The page says what to do next.' },
-  { when: 'Your vault exists but you stopped before step 2', then: "Come back and finish step 2 before you put USDC in. Until then the agent's key has no end date." },
+  { when: 'Your vault exists but you stopped before step 2', then: "Come back and finish step 2 before you put USDC in. Until then the agent's key has no end date, and the vault does not count on /proof/arc." },
 ]
 
 /** Said when a step needs the wallet and the page has none: after a reload with a phone wallet, or a locked wallet. */

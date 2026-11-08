@@ -219,6 +219,16 @@ test('proof counts only settled rows, labels internal payers, and never hides fa
   assert.match(p.gas.note, /Native units only/)
 })
 
+test('each network says how many settled rows came from our own wallets, so a headline can show the split', async () => {
+  const rows: X402SettlementRecord[] = [
+    row('settled', '0x8c8d9cd12d8896a40cf2115ee731258bb4983349', 0.021, 'risk_check'),
+    row('settled', '0xbbb0000000000000000000000000000000000002', 0.021, 'risk_check'),
+    row('reverted', '0x8c8d9cd12d8896a40cf2115ee731258bb4983349', 0.021, 'risk_check'),
+  ]
+  const p = await railProof(railStatus(configured), { load: async () => rows, env: configured })
+  assert.deepEqual(p.byNetwork[chain.caip2], { count: 2, usd: 0.042, assetSymbol: chain.settlementTokens?.[0]?.symbol ?? 'USDC', internal: 1, internalUsd: 0.021 })
+})
+
 test('proof gas is per network in its own unit, and never one total across chains', async () => {
   const arc = getChainById('arc-mainnet')!
   const rows: X402SettlementRecord[] = [

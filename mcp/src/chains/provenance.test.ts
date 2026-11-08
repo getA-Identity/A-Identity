@@ -539,6 +539,26 @@ test('every rail tells a reviewer to check only what exists on its own chains', 
   assert.match((await howToVerify(['celo'])).join('\n'), /GET \/api\/celo\/proof/)
 })
 
+test('how to check Arc Mainnet says what actually carries its payments, and a Gateway batch is not one payment', async () => {
+  const arc = await howToVerify(['arc-mainnet', 'arc'])
+  const text = arc.join('\n')
+  const gatewayLine = arc.findIndex((l) => l.startsWith('On Arc Mainnet both of our rails are offered, and nearly all counted payments there went through Circle Gateway.'))
+  const facilitatorLine = arc.findIndex((l) => l.startsWith('The other rail on Arc Mainnet is the EIP-3009 facilitator we run:'))
+  assert.ok(gatewayLine >= 0, 'Gateway leads on Arc Mainnet')
+  assert.ok(facilitatorLine > gatewayLine, 'and the facilitator is the other rail')
+  assert.match(arc[gatewayLine], /a batch proves that Gateway settled a net position on chain, which can include other parties' transfers, so it is not a one-to-one payment/)
+  assert.doesNotMatch(text, /Circle Gateway sales are the exception/, 'not the exception here')
+  assert.doesNotMatch(text, /go through the EIP-3009 facilitator/)
+  // The rows that have no block number are not promised one.
+  assert.doesNotMatch(text, /in the block named/)
+  assert.match(text, /a payment row links the transaction only/)
+  // Where our facilitator leads, Gateway is still the exception, so a rail is described by what carries it.
+  const baseText = (await howToVerify(['base'])).join('\n')
+  assert.match(baseText, /Payments on Base go through the EIP-3009 facilitator we run/)
+  assert.match(baseText, /Circle Gateway sales are the exception: Circle broadcasts the batch/)
+  assert.doesNotMatch(baseText, /nearly all counted payments/)
+})
+
 test('the registry line is derived from the registry and admits that mainnet and testnet differ', async () => {
   for (const rail of PROOF_RAILS) {
     const chains = rail.chains.map((id) => getChainById(id)!)
