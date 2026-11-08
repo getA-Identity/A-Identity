@@ -36,7 +36,8 @@ export const POLL_FOR_MS = 3 * 60_000
 /** Every this many checks, the transaction and its nonce are read as well as the receipt. */
 const DEEP_EVERY = 6
 
-export type Advance = { record: TxRecord; answered: number; total: number }
+/** `blocked`: no receipt, and no answer from any registry host reached this page on this check. */
+export type Advance = { record: TxRecord; answered: number; total: number; blocked?: boolean }
 
 /**
  * What a deployed vault reads back as against what the setup asked, at `blockNumber` when given
@@ -108,7 +109,7 @@ export async function advance(chain: Chain, record: TxRecord, tick: number, now:
       }
     }
   }
-  return { record: decideUnseen(record, f), answered: poll.answered, total: poll.total }
+  return { record: decideUnseen(record, f), answered: poll.answered, total: poll.total, blocked: poll.blocked === true }
 }
 
 /** The transaction fee in USDC wei as a short decimal, for a receipt line. */

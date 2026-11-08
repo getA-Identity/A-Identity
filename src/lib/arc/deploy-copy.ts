@@ -188,6 +188,14 @@ export function walletOnlyNext(again: string): string {
 }
 
 /**
+ * Said beside a pending transaction when no answer from any network node reached this page on the
+ * last check: what was seen, the likely cause hedged, and never a reason to sign again.
+ */
+export function receiptBlocked(total: number): string {
+  return `No answer from any of the ${total} network nodes reached this page on the last check. ${BLOCKED_WHY} This says nothing about your transaction: it may well have landed. ${TURN_IT_OFF}. This page keeps asking by itself. Do not sign it again.`
+}
+
+/**
  * Said when the vault's recent payments could not be read because no network node answered this
  * page. That read is what keeps a payment made elsewhere from being paid twice, so nothing is offered
  * without it, and it never reads through the wallet: a payment missing from one node must not count.

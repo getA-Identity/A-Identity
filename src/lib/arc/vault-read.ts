@@ -809,9 +809,10 @@ export async function readTransaction(chain: Chain, hash: Hex): Promise<SentTx |
   return heardEnough(answered, urls.length) ? null : undefined
 }
 
+/** `blocked`: no receipt, and no answer from any registry host reached this page on this check. */
 export type ReceiptPoll =
   | { found: true; receipt: TransactionReceipt; host: string; answered: number; total: number }
-  | { found: false; answered: number; total: number }
+  | { found: false; answered: number; total: number; blocked?: boolean }
 
 /**
  * Ask EVERY registry host for the receipt at once; the first receipt found decides. A host saying
@@ -835,11 +836,12 @@ export async function pollReceipt(chain: Chain, hash: Hex): Promise<ReceiptPoll>
     (e) => e instanceof TransactionReceiptNotFoundError,
   )
   if (r.found) return { found: true, receipt: r.value, host: hostOf(urls[r.index]), answered: r.answered, total: r.total }
-  if (noRegistryAnswer(chain, failures)) {
+  const blocked = noRegistryAnswer(chain, failures)
+  if (blocked) {
     const mine = await walletHas(chain, (c) => c.getTransactionReceipt({ hash }))
     if (mine) return { found: true, receipt: mine, host: WALLET_HOST, answered: r.answered, total: r.total }
   }
-  return r
+  return { found: false, answered: r.answered, total: r.total, blocked }
 }
 
 // --- what a receipt carries ---

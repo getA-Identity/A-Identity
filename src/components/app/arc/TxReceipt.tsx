@@ -18,16 +18,18 @@
  *
  * Rate limited or no answer is never a verdict about the chain: while too few hosts answer and no
  * receipt is in, the receipt says the network did not answer and keeps asking, however long that
- * takes. A receipt that is in is an answer, however few hosts had spoken when it came. Only a
+ * takes. When no answer from any of them reached the page at all, it says that, not that they are
+ * busy. A receipt that is in is an answer, however few hosts had spoken when it came. Only a
  * check that was answered can end the watch. Its state belongs to one hash, so a new transaction
  * starts clean: TxReceipt is keyed by the hash.
  */
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Clock, ExternalLink, XCircle } from 'lucide-react'
+import { receiptBlocked } from '../../../lib/arc/deploy-copy'
 import type { TxRecord } from '../../../lib/arc/pending'
 import { FAST_FOR_MS, POLL_FAST_MS, POLL_FOR_MS, POLL_SLOW_MS, advance, feeLine } from '../../../lib/arc/receipt'
 import { retracked, saidNothing, untracked, walletRepriced } from '../../../lib/arc/tx-rules'
-import { arcChainFor, localTime, networkName, rpcUrls, txUrl } from '../../../lib/arc/vault-read'
+import { arcChainFor, isWalletHost, localTime, networkName, rpcUrls, txUrl } from '../../../lib/arc/vault-read'
 import { formatUnitsExact, sameAddress } from '../../../lib/arc/vault-rules'
 import { CopyButton, Mono } from '../stellar/bits'
 
@@ -42,6 +44,7 @@ function changed(a: TxRecord, b: TxRecord): boolean {
     a.block !== b.block ||
     a.sent?.nonce !== b.sent?.nonce ||
     a.sent?.belowFloor !== b.sent?.belowFloor ||
+    a.sent?.host !== b.sent?.host ||
     a.nonceUsedAt !== b.nonceUsedAt ||
     a.unseen !== b.unseen ||
     a.likelyReplaced !== b.likelyReplaced ||
@@ -70,10 +73,12 @@ function ReceiptOf({ record, onUpdate, onSettled, serverJudges, oneOfSeveral }: 
   const chain = arcChainFor(record.network)
   const [gaveUp, setGaveUp] = useState(false)
   // The registry's hosts only: the wallet is never counted as a network node that answered.
-  const [asked, setAsked] = useState<{ answered: number; total: number; checks: number }>({
+  // `blocked`: on the last check no answer from any of them reached this page.
+  const [asked, setAsked] = useState<{ answered: number; total: number; checks: number; blocked: boolean }>({
     answered: 0,
     total: chain ? rpcUrls(chain).length : 0,
     checks: 0,
+    blocked: false,
   })
   const [round, setRound] = useState(0)
   const latest = useRef({ record, onUpdate, onSettled })
@@ -100,7 +105,9 @@ function ReceiptOf({ record, onUpdate, onSettled, serverJudges, oneOfSeveral }: 
       }
       if (!alive) return
       tick += 1
-      setAsked((a) => (out ? { answered: out.answered, total: out.total, checks: a.checks + 1 } : { ...a, answered: 0, checks: a.checks + 1 }))
+      setAsked((a) =>
+        out ? { answered: out.answered, total: out.total, checks: a.checks + 1, blocked: out.blocked === true } : { ...a, answered: 0, checks: a.checks + 1, blocked: false },
+      )
       if (out) {
         if (changed(cur.record, out.record)) cur.onUpdate(out.record)
         if (out.record.outcome !== 'pending') {
@@ -203,7 +210,13 @@ function ReceiptOf({ record, onUpdate, onSettled, serverJudges, oneOfSeveral }: 
         <div className="mt-1 text-xs text-foreground/75">Network fee charged: {fee}.</div>
       )}
       {record.note && !record.unseen && <div className="mt-1 text-xs text-foreground/80">{record.note}</div>}
-      {record.outcome === 'pending' && silent && (
+      {record.outcome === 'pending' && silent && asked.blocked && (
+        <div className="mt-2 rounded-xl border border-warn/40 bg-warn/15 p-3 text-xs text-foreground">
+          <div className="font-semibold">No network node answered this page just now, so it does not know yet.</div>
+          <p className="mt-1">{receiptBlocked(asked.total)}</p>
+        </div>
+      )}
+      {record.outcome === 'pending' && silent && !asked.blocked && (
         <div className="mt-2 rounded-xl border border-warn/40 bg-warn/15 p-3 text-xs text-foreground">
           <div className="font-semibold">The network did not answer just now, so this page does not know yet.</div>
           <p className="mt-1">
@@ -249,7 +262,7 @@ function ReceiptOf({ record, onUpdate, onSettled, serverJudges, oneOfSeveral }: 
         <div className={`mt-2 text-xs ${record.sent.belowFloor ? 'font-semibold text-danger' : 'text-foreground/70'}`}>
           {record.sent.belowFloor
             ? `Your wallet sent this with a max fee of ${gwei(record.sent.maxFeePerGas ?? record.sent.gasPrice ?? 0n)}, under the 20 gwei Arc needs${walletRepriced(record) && record.proposedMaxFee !== undefined ? ` (this page asked for ${gwei(record.proposedMaxFee)}, so your wallet changed it)` : ''}. Arc drops such a transaction without a receipt: speed it up in your wallet to at least 20 gwei, or cancel it. Once the replacement lands, this page sees that and stops waiting on this hash.`
-            : `Read back from the network: your wallet sent it with a max fee of ${gwei(record.sent.maxFeePerGas ?? record.sent.gasPrice ?? 0n)}${walletRepriced(record) && record.proposedMaxFee !== undefined ? ` (this page asked for ${gwei(record.proposedMaxFee)}, so your wallet changed it)` : ''}, at or above the 20 gwei Arc needs.`}
+            : `Read back from ${record.sent.host !== undefined && isWalletHost(record.sent.host) ? 'your wallet' : 'the network'}: your wallet sent it with a max fee of ${gwei(record.sent.maxFeePerGas ?? record.sent.gasPrice ?? 0n)}${walletRepriced(record) && record.proposedMaxFee !== undefined ? ` (this page asked for ${gwei(record.proposedMaxFee)}, so your wallet changed it)` : ''}, at or above the 20 gwei Arc needs.`}
           {!sameAddress(record.sent.from, record.from) && (
             <span className="block font-semibold text-danger">It was sent from {record.sent.from}, not the account this page prepared it for.</span>
           )}

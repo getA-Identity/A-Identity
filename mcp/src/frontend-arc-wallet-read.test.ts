@@ -26,7 +26,7 @@ type Call = { method: string; params?: readonly unknown[] }
 type Provider = { request: (a: Call) => Promise<unknown> }
 type ChainLike = { id: string; caip2: string; chainId: number; name: string; testnet: boolean }
 type ReadFailure = { kind: string; reason: string; wallet?: string; walletOnly?: boolean }
-type Poll = { found: boolean; host?: string; answered: number; total: number }
+type Poll = { found: boolean; host?: string; answered: number; total: number; blocked?: boolean }
 type Rec = Record<string, unknown>
 type ReadModule = {
   ARC_MAINNET: ChainLike
@@ -48,17 +48,18 @@ type ReadModule = {
   readTriesAgain: (kind: string | undefined) => boolean
   READ_FAILURE_TITLE: Record<string, string>
 }
-type ReceiptModule = { advance: (chain: ChainLike, record: Rec, tick: number, now?: number) => Promise<{ record: Rec; answered: number; total: number }> }
+type ReceiptModule = { advance: (chain: ChainLike, record: Rec, tick: number, now?: number) => Promise<{ record: Rec; answered: number; total: number; blocked?: boolean }> }
 type EventsModule = { readPaidSince: (chain: ChainLike, vault: string, from: bigint) => Promise<{ ok: boolean; blocked?: boolean; reason?: string }> }
 type Explained = { title: string; body?: string; next: string }
 type Failure = { code: string; message: string; wallet?: string }
 type WriteModule = { prepareFund: (chain: ChainLike, v: Rec, from: string, amount: bigint) => Promise<unknown> }
-type CopyModule = { blockedNext: (w: string, again: string) => string; walletOnlyNext: (again: string) => string; SCAN_BLOCKED_NEXT: string; BLOCKED_TITLE: string }
+type CopyModule = { blockedNext: (w: string, again: string) => string; walletOnlyNext: (again: string) => string; receiptBlocked: (total: number) => string; SCAN_BLOCKED_NEXT: string; BLOCKED_TITLE: string }
 
 const read = async () => (await import(repoUrl('src/lib/arc/vault-read.ts').href)) as ReadModule
 const receipt = async () => (await import(repoUrl('src/lib/arc/receipt.ts').href)) as ReceiptModule
 const write = async () => (await import(repoUrl('src/lib/arc/vault-write.ts').href)) as WriteModule
 const events = async () => (await import(repoUrl('src/lib/arc/vault-events.ts').href)) as EventsModule
+const rules = async () => (await import(repoUrl('src/lib/arc/tx-rules.ts').href)) as { decideUnseen: (record: Rec, f: Rec) => Rec }
 const hosts = async () => (await import(repoUrl('src/lib/arc/hosts.ts').href)) as { walletSaidNo: (e: unknown) => boolean }
 const copy = async () => (await import(repoUrl('src/lib/arc/deploy-copy.ts').href)) as CopyModule
 const explain = async () => (await import(repoUrl('src/lib/arc/failure-explain.ts').href)) as { explainFailure: (f: Failure) => Explained }
@@ -119,6 +120,29 @@ function fakeWallet(plan: (method: string, params: readonly unknown[]) => unknow
 
 const block = (n: bigint) => ({ number: hex(n), hash: `0x${'cd'.repeat(32)}`, timestamp: hex(1_800_000_000n), baseFeePerGas: hex(20_000_000_000n), transactions: [] })
 const receiptJson = { blockHash: `0x${'cd'.repeat(32)}`, blockNumber: hex(100n), contractAddress: null, cumulativeGasUsed: '0x5208', effectiveGasPrice: hex(20_000_000_000n), from: OWNER, gasUsed: '0x5208', logs: [], logsBloom: `0x${'00'.repeat(256)}`, status: '0x1', to: VAULT, transactionHash: HASH, transactionIndex: '0x0', type: '0x2' }
+/** The transaction itself, as a wallet that has it in its own history answers for it: not mined yet. */
+const txJson = (chainId: number) => ({
+  hash: HASH,
+  nonce: '0x7',
+  from: OWNER,
+  to: VAULT,
+  gas: '0x5208',
+  maxFeePerGas: hex(40_000_000_000n),
+  maxPriorityFeePerGas: hex(1_000_000_000n),
+  value: '0x0',
+  input: '0x',
+  type: '0x2',
+  chainId: hex(chainId),
+  blockHash: null,
+  blockNumber: null,
+  transactionIndex: null,
+  accessList: [],
+  v: '0x0',
+  yParity: '0x0',
+  r: `0x${'01'.repeat(32)}`,
+  s: `0x${'02'.repeat(32)}`,
+})
+
 /** A wallet's node on `chainId` that has no receipt and no transaction for anything. */
 const emptyWallet = (chainId: number) =>
   fakeWallet((method) => {
@@ -803,4 +827,57 @@ test('a payments read no network node answered offers nothing, says why, and nev
   const handoff = repo('src/lib/arc/handoff-send.ts')
   assert.equal([...handoff.matchAll(/if \(!r\.ok\) return \{ failed: r\.reason, blocked: r\.blocked === true \}/g)].length, 2)
   assert.match(handoff, /if \('failed' in scan && scan\.blocked\) throw stop\('handoff_blocked', why\)/)
+})
+
+test('the receipt says when no answer reached the page, and a transaction read from the wallet is said to come from it', async () => {
+  const m = await read()
+  const r = await receipt()
+  const t = await rules()
+  const { receiptBlocked } = await copy()
+  const chain = m.ARC_MAINNET
+  const registry = m.rpcUrls(chain).map((u) => m.hostOf(u))
+  try {
+    const stopped = await withNet(() => BLOCKED, () => r.advance(chain, funding(m), 1, 2_000_000))
+    assert.deepEqual([stopped.answered, stopped.total, stopped.blocked], [0, registry.length, true])
+    // One host answering, a 429 included, is the network answering: busy, not blocked.
+    const busy = await withNet((host) => (host === registry[0] ? BUSY : BLOCKED), () => r.advance(chain, funding(m), 1, 2_000_000))
+    assert.equal(busy.blocked, false)
+    // A wallet that has the transaction in its own history: what it sent, read from the wallet.
+    const has = fakeWallet((method) => {
+      if (method === 'eth_chainId') return hex(chain.chainId)
+      if (method === 'eth_getTransactionByHash') return txJson(chain.chainId)
+      if (method === 'eth_getTransactionCount') return '0x7'
+      return null
+    })
+    m.setWalletReadProvider(has.provider)
+    const seen = await withNet(() => BLOCKED, () => r.advance(chain, { ...funding(m), sent: undefined }, 0, 2_000_000))
+    assert.equal((seen.record.sent as Rec | undefined)?.host, m.WALLET_HOST)
+    assert.equal((seen.record.sent as Rec | undefined)?.nonce, 7)
+    assert.equal(seen.blocked, true, 'the wallet having the transaction is no node answering for its receipt')
+    assert.equal(seen.record.outcome, 'pending')
+  } finally {
+    m.setWalletReadProvider(null)
+  }
+  // The rule keeps the host it is told, and a transaction from before it was kept stays as it was.
+  const heard = { now: 2_000_000, receipts: { answered: 4, total: 4 } }
+  const tx = { maxFeePerGas: 40_000_000_000n, gasPrice: null, nonce: 7, from: OWNER }
+  const fresh = { ...funding(m), sent: undefined }
+  assert.equal((t.decideUnseen(fresh, { ...heard, tx: { ...tx, host: m.WALLET_HOST } }).sent as Rec).host, m.WALLET_HOST)
+  assert.equal('host' in (t.decideUnseen(fresh, { ...heard, tx }).sent as Rec), false)
+
+  const said = receiptBlocked(4)
+  assert.match(said, /^No answer from any of the 4 network nodes reached this page on the last check\./)
+  assert.match(said, /Most often something in this browser stops the requests/)
+  assert.match(said, /A lost connection looks the same/)
+  assert.match(said, /it may well have landed/)
+  assert.match(said, /Do not sign it again\.$/)
+  assert.doesNotMatch(said, /limit how fast|busy/, 'a page no answer reached is not told the nodes are busy')
+  // The receipt box says it on such a check, and names the wallet as where a transaction was read.
+  const box = repo('src/components/app/arc/TxReceipt.tsx')
+  assert.match(box, /blocked: out\.blocked === true/)
+  assert.match(box, /record\.outcome === 'pending' && silent && asked\.blocked && \(/)
+  assert.match(box, /\{receiptBlocked\(asked\.total\)\}/)
+  assert.match(box, /record\.outcome === 'pending' && silent && !asked\.blocked && \(/)
+  assert.match(box, /Read back from \$\{record\.sent\.host !== undefined && isWalletHost\(record\.sent\.host\) \? 'your wallet' : 'the network'\}/)
+  assert.match(box, /a\.sent\?\.host !== b\.sent\?\.host/)
 })

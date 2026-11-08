@@ -1623,7 +1623,8 @@ test('the receipt says the network did not answer and keeps asking, and its stat
   assert.match(page, /elapsed < FAST_FOR_MS && !quiet \? POLL_FAST_MS : POLL_SLOW_MS/, 'hammering hosts that are already limiting this page')
   // The advice for a hash nobody has seen, and its way out, wait for an answer.
   assert.match(page, /record\.outcome === 'pending' && record\.unseen && !silent && \(/)
-  assert.match(page, /record\.outcome === 'pending' && silent && \(/)
+  // The no-answer box, in both its forms (no answer reached the page, or too few answered), waits on that too.
+  assert.equal([...page.matchAll(/record\.outcome === 'pending' && silent && !?asked\.blocked && \(/g)].length, 2)
   assert.match(page, /record\.unseen && !silent && \(/)
   // A receipt that is in is never "no receipt after 3 minutes".
   assert.match(page, /record\.outcome === 'pending' && receiptIn \?/)
