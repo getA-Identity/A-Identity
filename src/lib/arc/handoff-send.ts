@@ -79,10 +79,10 @@ export async function scanPaid(
   from: bigint,
   held: PaidScan | null,
   o: { topUpOnly?: boolean; onProgress?: (scan: PaidScan) => void } = {},
-): Promise<PaidScan | { failed: string }> {
+): Promise<PaidScan | { failed: string; blocked?: boolean }> {
   if (held && (held.from <= from || o.topUpOnly)) {
     const r = await readPaidSince(chain, vault, held.through + 1n)
-    if (!r.ok) return { failed: r.reason }
+    if (!r.ok) return { failed: r.reason, blocked: r.blocked === true }
     if (r.short) return { failed: r.short }
     const joined = joinScans(held, { from: r.from, through: r.through, paid: r.paid, short: held.short })
     return joined ?? { failed: 'the read of new blocks did not meet the one before it' }
@@ -94,7 +94,7 @@ export async function scanPaid(
       if (seen) o.onProgress?.(seen)
     },
   })
-  if (!r.ok) return { failed: r.reason }
+  if (!r.ok) return { failed: r.reason, blocked: r.blocked === true }
   const fresh: PaidScan = { from: r.from, through: r.through, paid: r.paid, short: r.short }
   const joined = held ? joinScans(held, fresh) : fresh
   if (joined) return joined
@@ -134,7 +134,12 @@ export async function recheckHandoff(
   const scan = await scanPaid(chain, v.address, need, o.scan ?? null)
   // A read that came back short is not "no payment" for a block below where it stopped.
   const notRead = 'failed' in scan ? scan.failed : scan.from > need ? (scan.short ?? 'the read stopped before it reached the block it needed') : null
-  if (notRead !== null || 'failed' in scan) throw stop('handoff_unreadable', `This page reads the vault's recent payments before it offers this, so a payment made elsewhere is not made twice, and that read did not finish: ${notRead}.`)
+  if (notRead !== null || 'failed' in scan) {
+    const why = `This page reads the vault's recent payments before it offers this, so a payment made elsewhere is not made twice, and that read did not finish: ${notRead}.`
+    // No network node answered the page: waiting a minute will not help, and the wallet is never read instead.
+    if ('failed' in scan && scan.blocked) throw stop('handoff_blocked', why)
+    throw stop('handoff_unreadable', why)
+  }
   const paid = paidAfter(flow, scan.paid)
   if (paid) throw stop('handoff_already_paid', `The vault paid this amount to this payee in block ${paid.block}, after this check, in ${paid.txHash}.`)
 

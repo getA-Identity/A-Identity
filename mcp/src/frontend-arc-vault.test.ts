@@ -128,7 +128,7 @@ type HostsModule = {
     hosts: readonly { host: string; client: C }[],
     x: { chainId: number; askChainId: (client: C) => Promise<number>; isFinal: (e: unknown) => boolean },
     fn: (client: C, host: string) => Promise<T>,
-  ) => Promise<{ value: T; host: string }>
+  ) => Promise<{ value: T; host: string; failures: readonly { host: string; error: unknown }[] }>
 }
 type ChainLike = { id: string; caip2: string; chainId: number | null; name: string; testnet: boolean }
 type ChainsModule = { CHAIN_BY_ID: Record<string, ChainLike> }
@@ -207,7 +207,10 @@ test('a host is asked its chain id once, and a host on another chain is a host t
   // The wrong chain never runs the call, and the next host answers.
   const wrong = fake('wrong', 7)
   const right = fake('right', 5)
-  assert.deepEqual(await run([wrong, right]), { value: 'answer from right', host: 'right' })
+  const got = await run([wrong, right])
+  assert.deepEqual([got.value, got.host], ['answer from right', 'right'])
+  // The hosts that failed before the answer come with it, so a blocked browser can be told from a busy network.
+  assert.deepEqual(got.failures.map((f) => f.host), ['wrong'])
   assert.equal(wrong.ran, 0, 'nothing is asked of a host on another chain')
   assert.deepEqual([wrong.asked, right.asked], [1, 1], 'once per host')
 
@@ -1018,7 +1021,7 @@ test('a revoke writes the named past second, and no operator is preset', () => {
     assert.match(repo(rel), /const \[operator, setOperator\] = useState\(''\)/, `${rel} presets an operator`)
   }
   // The page sends through send.ts, the module the wallet tests below drive, and nothing else.
-  assert.match(write, /export \{[^}]*\bsendPrepared\b[^}]*\} from '\.\/send'/, 'vault-write.ts no longer sends through send.ts')
+  assert.match(write, /export \{[^}]*\bsendPrepared\b[^}]*\} from '\.\/send\.ts'/, 'vault-write.ts no longer sends through send.ts')
   for (const rel of arcPageFiles()) {
     if (rel === 'src/lib/arc/send.ts') continue
     assert.doesNotMatch(codeOnly(repo(rel)), /'eth_sendTransaction'/, `${rel} sends a transaction outside send.ts`)
@@ -1620,7 +1623,8 @@ test('the receipt says the network did not answer and keeps asking, and its stat
   assert.match(page, /elapsed < FAST_FOR_MS && !quiet \? POLL_FAST_MS : POLL_SLOW_MS/, 'hammering hosts that are already limiting this page')
   // The advice for a hash nobody has seen, and its way out, wait for an answer.
   assert.match(page, /record\.outcome === 'pending' && record\.unseen && !silent && \(/)
-  assert.match(page, /record\.outcome === 'pending' && silent && \(/)
+  // The no-answer box, in both its forms (no answer reached the page, or too few answered), waits on that too.
+  assert.equal([...page.matchAll(/record\.outcome === 'pending' && silent && !?asked\.blocked && \(/g)].length, 2)
   assert.match(page, /record\.unseen && !silent && \(/)
   // A receipt that is in is never "no receipt after 3 minutes".
   assert.match(page, /record\.outcome === 'pending' && receiptIn \?/)
@@ -1721,6 +1725,9 @@ test('a host fault is not a revert: -32603 and rate limits move on to the next h
   assert.equal(neverAnswered(asContract(busy)), false)
   assert.equal(neverAnswered(new TimeoutError({ body: {}, url })), false, 'a slow host got the request')
   assert.equal(neverAnswered(new Error('x answered for chain 1, not 5042')), false)
+  // fetch's own TypeError, should one ever come unwrapped: Chrome's, Safari's and Firefox's words.
+  for (const words of ['Failed to fetch', 'Load failed', 'NetworkError when attempting to fetch resource.']) assert.equal(neverAnswered(new TypeError(words)), true, words)
+  assert.equal(neverAnswered(new TypeError('x is not a function')), false, 'a bug in the page is not a stopped request')
   assert.equal(noneAnswered([]), false, 'no failure is not a blocked browser')
   assert.equal(noneAnswered([{ error: blockedFetch }, { error: asContract(blockedFetch) }]), true)
   assert.equal(noneAnswered([{ error: blockedFetch }, { error: busy }]), false, 'one host answering means the browser reaches the network')
@@ -1759,7 +1766,9 @@ test('a host fault is not a revert: -32603 and rate limits move on to the next h
   // readVault asks them, and returns neither verdict from one host.
   const read = codeOnly(repo('src/lib/arc/vault-read.ts'))
   const body = fnBody(read, 'readVault')
-  assert.equal([...body.matchAll(/agreedAbsence\(said, urls\.length\)/g)].length, 2)
+  // Only the registry's hosts can agree on an absence: the wallet adds only a vault it has.
+  assert.equal([...body.matchAll(/agreedAbsence\(said, registryCount\)/g)].length, 2)
+  assert.match(body, /const registryCount = rpcUrls\(chain\)\.length/)
   assert.doesNotMatch(body, /return failed\('no_contract'/)
   assert.doesNotMatch(body, /return failed\('not_a_vault'/)
   // A rate limit never asks the owner to change the values they typed.
@@ -1767,18 +1776,25 @@ test('a host fault is not a revert: -32603 and rate limits move on to the next h
   const flow = codeOnly(repo('src/components/app/arc/DeployFlow.tsx'))
   assert.match(flow, /code: facts\.noAnswer \? \(facts\.blocked \? 'rpc_blocked' : 'rpc_unreachable'\) : 'refused'/)
   assert.match(fnBody(read, 'readUsdcFacts'), /blocked: e instanceof RpcUnreachableError && e\.blocked/)
-  // When no registry RPC answers, the connected wallet is the last host, asked its chain id first
-  // like the others, and a wallet on another network never makes the registry entry look wrong.
+  // When no registry RPC answers, a wallet holding an account here is the last host for a snapshot,
+  // asked its chain id first like the others, and a wallet on another network never makes the
+  // registry entry look wrong. Receipts and transactions count the registry's hosts alone: what the
+  // wallet may add there is held by frontend-arc-wallet-read.test.ts, against a fake network.
   assert.match(fnBody(read, 'onFirstHost'), /readUrls\(chain\)/)
-  assert.match(fnBody(read, 'onFirstHost'), /judgeFailures\(e\.failures\)/)
-  for (const fn of ['readTransaction', 'pollReceipt']) assert.match(fnBody(read, fn), /const urls = readUrls\(chain\)/, fn)
+  assert.match(fnBody(read, 'onFirstHost'), /judgeFailures\(chain, e\.failures\)/)
+  for (const fn of ['readTransaction', 'pollReceipt']) {
+    assert.match(fnBody(read, fn), /const urls = rpcUrls\(chain\)/, fn)
+    assert.doesNotMatch(fnBody(read, fn), /readUrls/, `${fn} counts the wallet as a host`)
+  }
   assert.match(body, /const urls = \[\.\.\.readUrls\(chain\)\]/)
-  assert.match(body, /if \(!isWalletHost\(host\)\) registryWrongChain = true/)
-  assert.match(body, /if \(registryWrongChain\) return failed\('wrong_chain'/)
+  assert.match(body, /if \(!viaWallet\) wrongChain = lastReason/)
+  assert.match(body, /if \(wrongChain\) return failed\('wrong_chain', wrongChain\)/)
   const urlsFn = read.slice(read.indexOf('export function readUrls'), read.indexOf('export function isWalletHost'))
-  assert.match(urlsFn, /\[\.\.\.urls, WALLET_URL\]/, 'the wallet comes after the registry hosts by default')
-  const hook = codeOnly(repo('src/components/app/arc/useArcWallet.ts'))
-  assert.match(hook, /setWalletReadProvider\(p\)\s*return \(\) => clearWalletReadProvider\(p\)/)
+  assert.match(urlsFn, /: \[\.\.\.urls, WALLET_URL\]$/m, 'the wallet comes after the registry hosts by default')
+  // The receipt names how many network nodes it asks: the registry's, never the wallet.
+  const receiptBox = codeOnly(repo('src/components/app/arc/TxReceipt.tsx'))
+  assert.match(receiptBox, /total: chain \? rpcUrls\(chain\)\.length : 0/)
+  assert.doesNotMatch(receiptBox, /readUrls/)
   // "No vault there yet" only on an answer that says so.
   const line = flow.slice(flow.indexOf('function lookedLine'), flow.indexOf('const STEPS'))
   assert.ok(line.indexOf("l.status === 'unreadable'") < line.indexOf('no vault there yet'))
@@ -1854,8 +1870,9 @@ test('a vault read older than a settled write is said to be old, is read again, 
   assert.match(page, /const readBehind = Boolean\(v && landedBlock !== undefined && v\.block < landedBlock\)/)
   assert.match(page, /if \(!readBehind\) return\s*const t = setInterval\(\(\) => void load\(\), BEHIND_MS\)/)
   assert.match(page, /const held = shownTx\?\.outcome === 'pending' \|\| setupTx !== null \|\| readBehind/)
-  // A read no host answered is tried again by itself.
-  assert.match(page, /if \(failedKind !== 'unreachable'\) return\s*const t = setInterval/)
+  // A read no host answered is tried again by itself, one that no answer reached the page for
+  // included: a lost connection lands there too (frontend-arc-wallet-read.test.ts holds which kinds).
+  assert.match(page, /if \(!readTriesAgain\(failedKind\)\) return\s*const t = setInterval/)
   // A transaction pending in the setup holds this page's controls, and is watched from here.
   const net = ARC_MAINNET?.caip2 ?? ''
   const pendingFund = setupOf({ vault: VAULT, fundTx: record({ action: 'fund', amount: 500_000n }) })

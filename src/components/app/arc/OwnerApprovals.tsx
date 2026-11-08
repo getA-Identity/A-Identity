@@ -126,6 +126,8 @@ export default function OwnerApprovals({ chain, vault: pageVault, wallet, canAct
   const [declined, setDeclined] = useState<string[]>(() => loadDeclined(network, address))
   const [scan, setScan] = useState<PaidScan | null>(null)
   const [scanFailed, setScanFailed] = useState<string | null>(null)
+  // The failed read got no answer from any network node: waiting will not help, and the wallet is never read instead.
+  const [scanBlocked, setScanBlocked] = useState(false)
   const scanRef = useRef<PaidScan | null>(null)
   scanRef.current = scan
 
@@ -196,14 +198,19 @@ export default function OwnerApprovals({ chain, vault: pageVault, wallet, canAct
         return
       }
       scanBusy.current = true
-      if (!topUpOnly) setScanFailed(null)
+      if (!topUpOnly) {
+        setScanFailed(null)
+        setScanBlocked(false)
+      }
       try {
         const got = await scanPaid(chain, address, scanFrom, scanRef.current, { topUpOnly, onProgress: setScan })
         if ('failed' in got) {
           setScanFailed(got.failed)
+          setScanBlocked(got.blocked === true)
           return
         }
         setScanFailed(null)
+        setScanBlocked(false)
         setScan(got)
         // What the read says about anything this browser sent and has no answer for.
         for (const r of loadHandoffs(network, address)) {
@@ -306,6 +313,7 @@ export default function OwnerApprovals({ chain, vault: pageVault, wallet, canAct
       records={records}
       scan={scan}
       scanFailed={scanFailed}
+      scanBlocked={scanBlocked}
       onRecords={refreshRecords}
       onLanded={landed}
       onVaultRead={setReadHere}
@@ -438,6 +446,8 @@ type CardProps = {
   records: HandoffSend[]
   scan: PaidScan | null
   scanFailed: string | null
+  /** The failed payments read got no answer from any network node. */
+  scanBlocked: boolean
   onRecords: () => void
   onLanded: () => void
   /** A read of the vault from here: the card's figures come from the newest there is. */
@@ -581,7 +591,7 @@ function SettledCard({ chain, vault, flow, decline, onNoPrompt, replaced }: { ch
 /** What Review showed the person, with the call it came to: what Confirm is held to. */
 type Reviewed = { tx: PreparedTx; payee: string; amount: bigint; data: string }
 
-function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, records, scan, scanFailed, onRecords, onLanded, onVaultRead, onReadAgain, onDecline, record }: CardProps & { record: HandoffSend | null }) {
+function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, records, scan, scanFailed, scanBlocked, onRecords, onLanded, onVaultRead, onReadAgain, onDecline, record }: CardProps & { record: HandoffSend | null }) {
   const [reviewed, setReviewed] = useState<Reviewed | null>(null)
   const [saying, setSaying] = useState(false)
   const { busy, step, failure, setFailure, run, release } = useArcTx()
@@ -821,7 +831,12 @@ function RequestCard({ chain, vault, wallet, flow, standing, canAct, held, recor
       )}
       {canAct && offer && read === 'failed' && (
         <div className="mt-3">
-          <FailureNotice failure={{ code: 'handoff_unreadable', message: `This page reads the vault's recent payments before it offers this, and that read did not finish: ${scanFailed ?? scan?.short ?? 'it stopped short'}.` }} />
+          <FailureNotice
+            failure={{
+              code: scanBlocked && scanFailed !== null ? 'handoff_blocked' : 'handoff_unreadable',
+              message: `This page reads the vault's recent payments before it offers this, and that read did not finish: ${scanFailed ?? scan?.short ?? 'it stopped short'}.`,
+            }}
+          />
         </div>
       )}
       {offer && earlier && (

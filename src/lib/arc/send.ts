@@ -10,6 +10,7 @@
  */
 import type { Hex } from 'viem'
 import { ChainStop, ensureEvmChain, isWalletRejection, type ChainStopKind, type Eip1193 } from '../evm-chain.ts'
+import type { WalletReadState } from './deploy-copy.ts'
 import type { PreparedTx } from './vault-write'
 import { FEE_FLOOR_WEI, sameAddress } from './vault-rules.ts'
 
@@ -30,7 +31,7 @@ export type TxFailureCode =
   | 'insufficient_gas'
   | 'funding_too_high'
   | 'rpc_unreachable'
-  /** Every RPC failed without an HTTP answer: something in the browser stopped the requests. */
+  /** Every RPC failed and no HTTP answer reached the page: most often something in the browser stopped the requests. */
   | 'rpc_blocked'
   | 'no_wallet'
   | 'rejected'
@@ -51,8 +52,13 @@ export type TxFailureCode =
   | 'handoff_held'
   | 'handoff_already_paid'
   | 'handoff_unreadable'
+  /** The vault's recent payments could not be read because no network node answered the page: nothing is offered. */
+  | 'handoff_blocked'
 
-export type TxFailure = { code: TxFailureCode; message: string; errorName?: string }
+/** `wallet`, on rpc_blocked: what the wallet did on the same read, which decides the way through. */
+export type TxFailure = { code: TxFailureCode; message: string; errorName?: string; wallet?: WalletReadState }
+
+const WALLET_READ_STATES: readonly string[] = ['none', 'other_chain', 'failed', 'walletconnect']
 
 /** A stop with a typed reason. Thrown by the page's own modules and turned into a TxFailure by the page. */
 export class TxStop extends Error {
@@ -89,8 +95,11 @@ function codeOf(e: unknown): number | undefined {
 export function failureOf(e: unknown): TxFailure {
   if (e instanceof TxStop) return e.failure
   // vault-read.ts's RpcUnreachableError, known by its name so this file needs no network module.
-  if (e instanceof Error && e.name === 'RpcUnreachableError')
-    return { code: (e as { blocked?: unknown }).blocked === true ? 'rpc_blocked' : 'rpc_unreachable', message: e.message }
+  if (e instanceof Error && e.name === 'RpcUnreachableError') {
+    const x = e as { blocked?: unknown; wallet?: unknown }
+    if (x.blocked !== true) return { code: 'rpc_unreachable', message: e.message }
+    return { code: 'rpc_blocked', message: e.message, wallet: WALLET_READ_STATES.includes(String(x.wallet)) ? (x.wallet as WalletReadState) : 'none' }
+  }
   if (isWalletRejection(e) || codeOf(e) === 4001) return { code: 'rejected', message: 'You declined in your wallet. Nothing was sent.' }
   const msg = messageOf(e)
   const code = codeOf(e)

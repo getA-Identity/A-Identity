@@ -62,8 +62,11 @@ export type TxRecord = {
   host?: string
   contractAddress?: string
   note?: string
-  /** Read back from the transaction after the wallet signed it: what the wallet actually sent. */
-  sent?: { maxFeePerGas: bigint | null; gasPrice: bigint | null; nonce: number; belowFloor: boolean; from: string }
+  /**
+   * Read back from the transaction after the wallet signed it: what the wallet actually sent. `host`
+   * is where it was read, absent on a record from before it was kept.
+   */
+  sent?: { maxFeePerGas: bigint | null; gasPrice: bigint | null; nonce: number; belowFloor: boolean; from: string; host?: string }
   /** When this hash's own nonce was first seen used with no receipt for the hash (ISO). */
   nonceUsedAt?: string
   /** Read-backs tried since the receipt arrived. */

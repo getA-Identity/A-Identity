@@ -256,8 +256,12 @@ export type Unseen = {
   now: number
   /** How many hosts said "no receipt" on this check, of how many were asked. Missing counts as nobody. */
   receipts?: { answered: number; total: number }
-  /** The transaction itself, when a host returned it; null when enough hosts answered and none has it; missing when nothing is known. */
-  tx?: { maxFeePerGas: bigint | null; gasPrice: bigint | null; nonce: number; from: string } | null
+  /**
+   * The transaction itself, when a host returned it; null when enough hosts answered and none has it;
+   * missing when nothing is known. `host` is the one that returned it: the wallet's own node or history
+   * is said as the wallet, never as the network.
+   */
+  tx?: { maxFeePerGas: bigint | null; gasPrice: bigint | null; nonce: number; from: string; host?: string } | null
   /** The sender's mined nonce ('latest'), when read on this check. */
   latestNonce?: number | null
   /** A deploy: what the address its nonce creates reads back as, when read on this check. */
@@ -296,7 +300,14 @@ export function decideUnseen(record: TxRecord, f: Unseen): TxRecord {
     const fee = f.tx.maxFeePerGas ?? f.tx.gasPrice
     next = {
       ...next,
-      sent: { maxFeePerGas: f.tx.maxFeePerGas, gasPrice: f.tx.gasPrice, nonce: f.tx.nonce, belowFloor: fee !== null && fee < FEE_FLOOR_WEI, from: f.tx.from },
+      sent: {
+        maxFeePerGas: f.tx.maxFeePerGas,
+        gasPrice: f.tx.gasPrice,
+        nonce: f.tx.nonce,
+        belowFloor: fee !== null && fee < FEE_FLOOR_WEI,
+        from: f.tx.from,
+        ...(f.tx.host !== undefined ? { host: f.tx.host } : {}),
+      },
       unseen: undefined,
       note: record.unseen ? undefined : record.note,
     }

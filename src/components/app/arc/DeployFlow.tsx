@@ -40,8 +40,8 @@ import {
   localTime,
   networkName,
   networkWord,
-  READ_FAILURE_NEXT,
   READ_FAILURE_TITLE,
+  readFailureNext,
   readUsdcFacts,
   readVault,
   usdcOf,
@@ -246,7 +246,8 @@ export default function DeployFlow({
     } else if (r.failure.kind === 'unreachable') {
       setSnapshotNote(`The network did not answer just now, which says nothing about your vault. This page reads it again every ${REREAD_MS / 1000} seconds.`)
     } else if (r.failure.kind === 'blocked') {
-      setSnapshotNote(`${READ_FAILURE_TITLE.blocked}, which says nothing about your vault. ${READ_FAILURE_NEXT.blocked}`)
+      // The way through depends on what the wallet did on this read; the flow reads again by itself.
+      setSnapshotNote(`${READ_FAILURE_TITLE.blocked}, which says nothing about your vault. ${readFailureNext(r.failure, `wait: this page reads it again by itself every ${REREAD_MS / 1000} seconds`)}`)
     } else {
       setSnapshotNote(`The vault could not be read just now (${r.failure.reason}). Its state is shown once a read succeeds.`)
     }
@@ -381,7 +382,7 @@ export default function DeployFlow({
       onStep('checking')
       const facts = await readUsdcFacts(on)
       // A rate limit says nothing about the values typed, so it never asks to change them.
-      if (!facts.ok) throw new TxStop({ code: facts.noAnswer ? (facts.blocked ? 'rpc_blocked' : 'rpc_unreachable') : 'refused', message: facts.reason })
+      if (!facts.ok) throw new TxStop({ code: facts.noAnswer ? (facts.blocked ? 'rpc_blocked' : 'rpc_unreachable') : 'refused', message: facts.reason, wallet: facts.wallet })
       onStep('simulating')
       const p = await prepareDeploy(on, input)
       setPrepared(p)

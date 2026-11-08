@@ -58,12 +58,13 @@ import { fundingUnresolved, predictedVault, setupAlert, setupFundEndedOn, setupF
 import {
   ARC_CHAINS,
   ARC_MAINNET,
-  READ_FAILURE_NEXT,
-  READ_FAILURE_TITLE,
   arcChainFor,
   localTime,
   networkName,
   networkWord,
+  readFailureNext,
+  readFailureTitle,
+  readTriesAgain,
   readVault,
   type ReadFailure,
   type VaultSnapshot,
@@ -73,7 +74,11 @@ import type { TxAction } from '../../lib/arc/vault-write'
 
 /** How soon a read from before a settled write's block is tried again: a host catches up in seconds. */
 const BEHIND_MS = 3_000
-/** How often a read no host answered is tried again. No answer is not a verdict, so nobody has to press Refresh. */
+/**
+ * How often a read no host answered is tried again, a read whose every request was stopped before an
+ * answer reached the page included: a lost connection ends there too. No answer is not a verdict, so
+ * nobody has to press Refresh.
+ */
 const UNANSWERED_RETRY_MS = 10_000
 
 type ReadState = {
@@ -259,12 +264,20 @@ export default function ArcVault() {
   }, [readBehind, load])
 
   useEffect(() => {
-    if (failedKind !== 'unreachable') return
+    if (!readTriesAgain(failedKind)) return
     const t = setInterval(() => {
       if (!document.hidden) void load()
     }, UNANSWERED_RETRY_MS)
     return () => clearInterval(t)
   }, [failedKind, load])
+
+  // A read no node answered, made before a wallet held an account here (the first read of a page
+  // load is): read again as soon as one does, so the page reads through it at once instead of saying
+  // to connect a wallet that is connected. The wallet hook registers it first, in the same commit.
+  const blockedWithoutWallet = failedKind === 'blocked' && read.failure?.wallet === 'none'
+  useEffect(() => {
+    if (blockedWithoutWallet && wallet.account) void load()
+  }, [blockedWithoutWallet, wallet.account, load])
 
   return (
     <AppPage
@@ -454,12 +467,12 @@ export default function ArcVault() {
             {read.failure && read.key === key && (
               <div role="alert" className="rounded-2xl border border-danger/25 bg-danger/[0.07] p-4 text-sm">
                 <div className="font-semibold text-foreground">
-                  Read failed at {localTime(read.failure.at)}: {READ_FAILURE_TITLE[read.failure.kind]}.
+                  Read failed at {localTime(read.failure.at)}: {readFailureTitle(read.failure)}.
                 </div>
                 <div className="mt-1 break-words text-foreground/80">{read.failure.reason}.</div>
                 <div className="mt-2 text-foreground/80">
                   <span className="font-semibold text-foreground">Next step: </span>
-                  {READ_FAILURE_NEXT[read.failure.kind]}
+                  {readFailureNext(read.failure, 'press Refresh, or wait: this page tries again by itself')}
                 </div>
                 {read.lastGood && (
                   <div className="mt-2 text-xs text-foreground/60">

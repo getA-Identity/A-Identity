@@ -107,7 +107,8 @@ export function planWindows(top: bigint, count: number, size: bigint = LOG_WINDO
 
 // --- which hosts ---
 
-export type HostHead = { host: string; chainId: number | null; block: bigint | null; reason?: string }
+/** `noAnswer`: the host failed and no HTTP answer from it reached this page (hosts.ts neverAnswered). */
+export type HostHead = { host: string; chainId: number | null; block: bigint | null; reason?: string; noAnswer?: boolean }
 
 /**
  * The hosts to read from and the block to read down from: the lowest head among hosts on this

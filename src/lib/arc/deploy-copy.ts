@@ -138,8 +138,66 @@ export const AFTER_SETUP =
 export const GIVE_THE_AGENT = `Next, give your agent this vault's address. ${AGENT_KEY_FEES} If your agent uses verify-then-pay (A-Identity checks a payee, then your agent pays), it also needs a Circle Gateway balance. A check bought on its own can be paid from plain USDC the agent holds, with no Gateway balance.`
 
 /**
- * What to do when the browser stopped every request to the network. Said for a read and for a write
- * that stopped before the wallet was asked (failure-explain.ts), so it lives here once.
+ * What became of the connected wallet on a read no network node answered: there was none to ask (or
+ * it holds no account here), it is on another network, it could not read either, or it is a phone
+ * wallet over WalletConnect, whose reads leave from this page for the same nodes and so cannot get
+ * past whatever stopped them.
  */
-export const BLOCKED_NEXT =
-  'None of the network nodes got the request, which means something in this browser stopped it: most often Brave Shields, an ad or tracker blocker, a VPN or a filtering DNS. Turn it off for this site and press the button again. Or connect your wallet and put it on this network: this page then reads through your wallet instead. If you use none of these, check your internet connection.'
+export type WalletReadState = 'none' | 'other_chain' | 'failed' | 'walletconnect'
+
+/**
+ * Said when no answer from any network node reached this page. Only that is stated as fact: what
+ * stops the requests is most often in the browser, and a lost connection looks the same. Said for a
+ * read and for a write that stopped before the wallet was asked (failure-explain.ts), so it lives here.
+ */
+export const BLOCKED_TITLE = 'No network node answered this page'
+
+/** What most often stops every request, said as likely and never as known. */
+const BLOCKED_WHY =
+  'Most often something in this browser stops the requests: Brave Shields, an ad or tracker blocker, a VPN or a filtering DNS. A lost connection looks the same.'
+
+const TURN_IT_OFF = 'If you use one of these, turn it off for this site or let it reach the network nodes'
+
+/**
+ * The next step after a read no network node answered, from what the wallet did on that same read.
+ * `again` is how this page tries again where the person reads it: the button they see, or that it
+ * reads again by itself. Connecting a wallet is offered only where it can help: a browser wallet
+ * reads through its own connection, a phone wallet over WalletConnect does not.
+ */
+export function blockedNext(wallet: WalletReadState, again: string): string {
+  switch (wallet) {
+    case 'other_chain':
+      return `${BLOCKED_WHY} Your wallet is on another network, so this page could not read through it. Press Switch in the wallet strip at the top of this page, or turn off whichever of these you use for this site, then ${again}.`
+    case 'failed':
+      return `${BLOCKED_WHY} Your wallet could not read for this page either: a VPN or a filtering DNS can stop it too. ${TURN_IT_OFF}, then ${again}.`
+    case 'walletconnect':
+      return `${BLOCKED_WHY} A phone wallet connected with WalletConnect does not get past it: this page sends that wallet's reads to these same network nodes. ${TURN_IT_OFF}, then ${again}.`
+    case 'none':
+    default:
+      return `${BLOCKED_WHY} ${TURN_IT_OFF}, then ${again}. Or connect a browser wallet such as MetaMask or Rabby with Connect wallet at the top of this page and put it on this network: this page can then read through it, unless a VPN or a filtering DNS stops it too.`
+  }
+}
+
+/**
+ * The next step after a vault read on which no answer from the network nodes reached this page and
+ * only the wallet answered, with no vault: one node's word, which never shows a vault's values and
+ * never says that there is none.
+ */
+export function walletOnlyNext(again: string): string {
+  return `Only your wallet answered, and one node's word is not enough to show this vault or to say there is none here. No answer from the network nodes reached this page. ${BLOCKED_WHY} ${TURN_IT_OFF}, then ${again}. Check the network and the address too: a vault on Arc testnet does not exist on Arc Mainnet, and the other way round.`
+}
+
+/**
+ * Said beside a pending transaction when no answer from any network node reached this page on the
+ * last check: what was seen, the likely cause hedged, and never a reason to sign again.
+ */
+export function receiptBlocked(total: number): string {
+  return `No answer from any of the ${total} network nodes reached this page on the last check. ${BLOCKED_WHY} This says nothing about your transaction: it may well have landed. ${TURN_IT_OFF}. This page keeps asking by itself. Do not sign it again.`
+}
+
+/**
+ * Said when the vault's recent payments could not be read because no network node answered this
+ * page. That read is what keeps a payment made elsewhere from being paid twice, so nothing is offered
+ * without it, and it never reads through the wallet: a payment missing from one node must not count.
+ */
+export const SCAN_BLOCKED_NEXT = `No network node answered this page, so it offers no payment: a payment is offered only after the vault's recent payments are read, so one made elsewhere is never paid twice. ${BLOCKED_WHY} ${TURN_IT_OFF}, then reload this page. This read uses the network nodes only, never your wallet.`
