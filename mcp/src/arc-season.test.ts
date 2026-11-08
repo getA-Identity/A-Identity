@@ -2131,6 +2131,12 @@ test('a log that could not be read leaves no sentence saying that no team ran a 
   assert.doesNotMatch(flowLogDown.milestone2.externalTeamsLive.note, /No named team has run a verify-then-pay flow/)
   const flowLogEmpty = await arcSeasonReport({ ...deps({ partners, gateway: [gw({ payer: TEAM })] }), flowRows: async () => [] })
   assert.match(flowLogEmpty.milestone2.externalTeamsLive.note, /No named team has run a verify-then-pay flow yet\./)
+  // The Gateway log is down and the flow log answers: the team counts from a check it paid on the facilitator rail, and a
+  // flow links only through a Gateway row, so nobody can say it ran no flow either.
+  const gatewayDown = await arcSeasonReport({ ...deps({ partners, facilitator: [fac({ payer: TEAM })] }), gatewayRows: down, flowRows: async () => [] })
+  assert.deepEqual([gatewayDown.logs.gateway.readable, gatewayDown.logs.flows?.readable], [false, true])
+  assert.equal(gatewayDown.milestone2.externalTeamsLive.count, 1)
+  assert.doesNotMatch(gatewayDown.milestone2.externalTeamsLive.note, /No named team has run/)
   // Both settlement logs are down: the payers line says what was not read, not that no wallet has paid.
   const bothDown = await arcSeasonReport({ ...deps({}), gatewayRows: down, facilitatorRows: down })
   assert.equal(bothDown.milestone2.externalChecks.incomplete, true)
