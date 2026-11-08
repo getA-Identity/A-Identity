@@ -22,7 +22,9 @@
  * network is never read as this one. Its answers are stamped "your wallet", never a registry host.
  *
  * A failed read is a result, not an exception, and it carries when and why it failed, so the
- * page can say so instead of showing the previous numbers as if they were current.
+ * page can say so instead of showing the previous numbers as if they were current. Every runtime
+ * import is named with its .ts extension, so the suite in mcp/src loads this file straight from
+ * src/ and drives it against a fake network.
  */
 import {
   BaseError,
@@ -41,13 +43,13 @@ import {
   type Hex,
   type TransactionReceipt,
 } from 'viem'
-import { CHAIN_BY_ID, CHAIN_RPC_URLS, CHAIN_USDC, type Chain } from '../chains'
-import { AGENT_SPEND_POLICY_ABI, AGENT_SPEND_POLICY_IMMUTABLES, AGENT_SPEND_POLICY_RUNTIME } from '../contracts/agent-spend-policy'
+import { CHAIN_BY_ID, CHAIN_RPC_URLS, CHAIN_USDC, type Chain } from '../chains.ts'
+import { AGENT_SPEND_POLICY_ABI, AGENT_SPEND_POLICY_IMMUTABLES, AGENT_SPEND_POLICY_RUNTIME } from '../contracts/agent-spend-policy.ts'
 import type { Eip1193 } from '../evm-chain'
-import { BLOCKED_NEXT } from './deploy-copy'
-import { NoHostAnswered, agreedAbsence, isContractAnswer, noneAnswered, onHosts } from './hosts'
-import { firstFound, heardEnough, missingFrom, type DecodedLog, type Expectation } from './tx-rules'
-import { isKnownBuild, readableDate, sameAddress } from './vault-rules'
+import { BLOCKED_NEXT } from './deploy-copy.ts'
+import { NoHostAnswered, agreedAbsence, isContractAnswer, noneAnswered, onHosts } from './hosts.ts'
+import { firstFound, heardEnough, missingFrom, type DecodedLog, type Expectation } from './tx-rules.ts'
+import { isKnownBuild, readableDate, sameAddress } from './vault-rules.ts'
 
 export { isContractAnswer }
 export type { Expectation, VaultEventName } from './tx-rules'
@@ -643,7 +645,7 @@ export function missingFromReceipt(receipt: TransactionReceipt, expect: readonly
 // --- formatting ---
 
 /** "14:02:11" in the viewer's own clock. */
-export { localTime, localDateTime, viewerTimeZone } from '../stellar/vault-read'
+export { localTime, localDateTime, viewerTimeZone } from '../local-time.ts'
 
 /** UNIX seconds as "2026-11-08 14:02 UTC". */
 export function utcDateTime(unixSeconds: bigint): string {

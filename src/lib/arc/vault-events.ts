@@ -1,11 +1,12 @@
 /**
  * A vault's recent events, read live from the registry's Arc RPCs with no wallet and no backend.
  * The rules (the windows, the union of hosts, what may be said about the range) are in
- * event-history.ts; this file gives them real hosts.
+ * event-history.ts; this file gives them real hosts. Runtime imports are named with their .ts
+ * extension, so the suite in mcp/src loads this file straight from src/.
  */
 import { BaseError, getAbiItem, getAddress } from 'viem'
 import type { Chain } from '../chains'
-import { AGENT_SPEND_POLICY_ABI } from '../contracts/agent-spend-policy'
+import { AGENT_SPEND_POLICY_ABI } from '../contracts/agent-spend-policy.ts'
 import {
   WINDOW_PAUSE_MS,
   emptyHistory,
@@ -17,9 +18,9 @@ import {
   type EventHistory,
   type HostHead,
   type HostReader,
-} from './event-history'
+} from './event-history.ts'
 import type { PaidEvent } from './handoff-rules'
-import { clientFor, hostOf, rpcUrls } from './vault-read'
+import { clientFor, hostOf, rpcUrls } from './vault-read.ts'
 
 /** The three events, named by the generated ABI, so a contract that renamed one fails the build. */
 const VAULT_EVENTS = [

@@ -17,13 +17,16 @@
  * A transaction Arc dropped under its floor never shows up in that read, so neither its fee nor
  * its nonce can be read back. For that case decideUnseen says so after 30 seconds, and the nonce
  * read while preparing stands in for the one the chain would have named.
+ *
+ * Runtime imports are named with their .ts extension, so the suite in mcp/src can run advance()
+ * against a fake network.
  */
 import { getAddress, getContractAddress, isAddress, type Hex } from 'viem'
 import type { Chain } from '../chains'
 import type { DeployArgs, TxRecord } from './pending'
-import { READ_BACK_TRIES, decideLanded, decideUnseen, deployNonce, guessedNonce, needsReadBack, type DeployBack, type ReadBack, type Unseen } from './tx-rules'
-import { missingFromReceipt, pollReceipt, readNonce, readTransaction, readVault } from './vault-read'
-import { sameAddress } from './vault-rules'
+import { READ_BACK_TRIES, decideLanded, decideUnseen, deployNonce, guessedNonce, needsReadBack, type DeployBack, type ReadBack, type Unseen } from './tx-rules.ts'
+import { missingFromReceipt, pollReceipt, readNonce, readTransaction, readVault } from './vault-read.ts'
+import { sameAddress } from './vault-rules.ts'
 
 /** How often a pending transaction is asked about, and for how long before the page stops asking on its own. */
 export const POLL_FAST_MS = 1500

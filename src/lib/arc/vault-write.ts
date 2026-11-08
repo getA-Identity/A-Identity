@@ -19,6 +19,8 @@
  *
  * Every prepared write is a plain object (contract, function, arguments, network, fee) that
  * the page shows before the wallet is asked, the browser's version of prepared-or-executed.
+ * Runtime imports are named with their .ts extension, so the suite in mcp/src can run a preparation
+ * against a fake network and read the stop it ends in.
  */
 import {
   BaseError,
@@ -34,9 +36,9 @@ import {
   type Hex,
 } from 'viem'
 import type { Chain } from '../chains'
-import { AGENT_SPEND_POLICY_ABI, AGENT_SPEND_POLICY_BYTECODE, AGENT_SPEND_POLICY_IMMUTABLES, AGENT_SPEND_POLICY_RUNTIME } from '../contracts/agent-spend-policy'
-import { ownerPayCalldata } from './handoff-rules'
-import { messageOf, TxStop, txStop as stop } from './send'
+import { AGENT_SPEND_POLICY_ABI, AGENT_SPEND_POLICY_BYTECODE, AGENT_SPEND_POLICY_IMMUTABLES, AGENT_SPEND_POLICY_RUNTIME } from '../contracts/agent-spend-policy.ts'
+import { ownerPayCalldata } from './handoff-rules.ts'
+import { messageOf, TxStop, txStop as stop } from './send.ts'
 import {
   RpcUnreachableError,
   isContractAnswer,
@@ -47,7 +49,7 @@ import {
   type Expectation,
   type VaultEventName,
   type VaultSnapshot,
-} from './vault-read'
+} from './vault-read.ts'
 import {
   OWNER_ACTION_GAS,
   capsRefusal,
@@ -65,11 +67,11 @@ import {
   sessionExpiryFor,
   sessionSecondsRefusal,
   withdrawRefusal,
-} from './vault-rules'
+} from './vault-rules.ts'
 
 // The send path and its typed failures live in send.ts, where the suite can drive them; the
 // page's components keep importing them from here.
-export { STEP_LABEL, TxStop, failureOf, sendPrepared, type TxFailure, type TxFailureCode, type TxStep } from './send'
+export { STEP_LABEL, TxStop, failureOf, sendPrepared, type TxFailure, type TxFailureCode, type TxStep } from './send.ts'
 
 export type TxAction = 'deploy' | 'expiry' | 'fund' | 'freeze' | 'unfreeze' | 'policy' | 'withdraw' | 'extend' | 'revoke' | 'operator' | 'ownerPay'
 

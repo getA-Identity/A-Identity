@@ -1018,7 +1018,7 @@ test('a revoke writes the named past second, and no operator is preset', () => {
     assert.match(repo(rel), /const \[operator, setOperator\] = useState\(''\)/, `${rel} presets an operator`)
   }
   // The page sends through send.ts, the module the wallet tests below drive, and nothing else.
-  assert.match(write, /export \{[^}]*\bsendPrepared\b[^}]*\} from '\.\/send'/, 'vault-write.ts no longer sends through send.ts')
+  assert.match(write, /export \{[^}]*\bsendPrepared\b[^}]*\} from '\.\/send\.ts'/, 'vault-write.ts no longer sends through send.ts')
   for (const rel of arcPageFiles()) {
     if (rel === 'src/lib/arc/send.ts') continue
     assert.doesNotMatch(codeOnly(repo(rel)), /'eth_sendTransaction'/, `${rel} sends a transaction outside send.ts`)
