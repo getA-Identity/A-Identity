@@ -2421,7 +2421,7 @@ const v6Flow = (payer: string, payee: string, outcome: 'paid' | 'refused', at = 
 const externalFlowsOf = async (rows: { check: GatewaySettlementRecord; flow: ArcVerifyThenPayFlow }[], over: Over = {}) =>
   (await arcSeasonReport(deps({ gateway: rows.map((x) => x.check), flows: rows.map((x) => x.flow), now: () => LIVE_READ, ...over }))).milestone2.externalFlows
 
-test('an external flow counts as a payment only when it paid, and one party is said as fact only through the vault keys', async () => {
+test('an external flow counts as a payment only when it paid, and one party is said as fact only through the vault keys and a traced link together', async () => {
   // The seven external flows of 2026-11-08 in their shape: the one refused names the vault's owner, and four pay 0x2442...77c4.
   const rows = [
     v6Flow(V6_OPERATOR, V6_OWNER, 'paid', '2026-11-07T22:41:32.000Z'),
@@ -2435,22 +2435,27 @@ test('an external flow counts as a payment only when it paid, and one party is s
   rows[0].check.ts = '2026-11-07T22:41:28.193Z'
   const ef = await externalFlowsOf(rows, { walletLinks: ARC_WALLET_LINKS })
   assert.deepEqual([ef.count, ef.linked], [7, { paid: 6, refused: 1 }])
+  // The first is the vault's agent key paying its owner, and the first traced group holds both, so it is tied both ways.
   assert.deepEqual(ef.items.map((i) => [i.outcome, i.payeeTiedBy]), [
-    ['paid', 'vault-keys'],
-    ['paid', 'link'],
+    ['paid', ['vault-keys', 'link']],
+    ['paid', ['link']],
     ['paid', undefined],
-    ['paid', 'link'],
-    ['refused', 'vault-keys'],
-    ['paid', 'link'],
-    ['paid', 'link'],
+    ['paid', ['link']],
+    ['refused', ['vault-keys', 'link']],
+    ['paid', ['link']],
+    ['paid', ['link']],
   ])
   assert.deepEqual(ef.items.map((i) => i.payeeTiedToPayer), [true, true, undefined, true, true, true, true])
   assert.deepEqual(ef.items.map((i) => i.payeeInternal), ["the payee is this vault's owner", undefined, ARC_OUR_PAYEES[1].why, undefined, "the payee is this vault's owner", undefined, undefined])
   assert.equal(
     ef.note,
-    "7 verify-then-pay flows opened by a check from a wallet A-Identity does not control, by the same linking rules as Milestone 1 and counted apart from it: 6 paid and 1 refused, and a refused flow paid nothing. Of the flows that paid: 1 paid the vault's own owner or operator from a check one of the same vault's keys paid for, so it is one party paying itself; 4 paid a wallet a traced link ties to the wallet that paid for the check, so they may be one party paying itself; 1 paid one of our own wallets or agents.",
+    "7 verify-then-pay flows opened by a check from a wallet A-Identity does not control, by the same linking rules as Milestone 1 and counted apart from it: 6 paid and 1 refused, and a refused flow paid nothing. Of the flows that paid: 1 paid the vault's own owner or operator from a check one of the same vault's keys paid for, and a traced link ties the two, so it is one party paying itself; 4 paid a wallet a traced link ties to the wallet that paid for the check, so they may be one party paying itself; 1 paid one of our own wallets or agents.",
   )
   assert.doesNotMatch(ef.note, /6 of them pay|they are one party|our own agent\./)
+  // Without the trace, the same first flow is tied by the vault's keys alone, and that is not said as fact.
+  const untraced = await externalFlowsOf(rows.slice(0, 1))
+  assert.deepEqual(untraced.items.map((i) => i.payeeTiedBy), [['vault-keys']])
+  assert.match(untraced.note, /Of the flows that paid: 1 paid the vault's own owner or operator from a check one of the same vault's keys paid for, and no traced link ties the two, so it may be one party paying itself, since a vault's owner can name anyone's wallet as its operator\.$/)
 })
 
 test('a check a stranger paid for ties nothing to the stranger, even when the flow names the vault owner', async () => {
@@ -2471,13 +2476,34 @@ test('a check a stranger paid for ties nothing to the stranger, even when the fl
   assert.doesNotMatch(toLinked.note, /one party/)
 })
 
-test("the vault's operator paid from a check its owner bought is one party, and so is the owner paid from the operator's", async () => {
-  const ef = await externalFlowsOf([v6Flow(V6_OWNER, V6_OPERATOR, 'paid'), v6Flow(V6_OPERATOR, V6_OWNER, 'paid')])
-  assert.deepEqual(ef.items.map((i) => [i.payeeTiedBy, i.payeeInternal]), [
-    ['vault-keys', "the payee is this vault's operator"],
-    ['vault-keys', "the payee is this vault's owner"],
+test("a vault's keys paying each other are one party only when a traced link holds both, because an owner can name anyone's wallet as its operator", async () => {
+  // An owner names a merchant's wallet as its vault's operator, buys a check on the vault, and the vault pays the merchant:
+  // the two key slots hold two parties, and only a trace can say otherwise.
+  const OWNER = '0x' + 'a7'.repeat(20)
+  const MERCHANT = '0x' + 'b8'.repeat(20)
+  const merchantRow = v6Flow(OWNER, MERCHANT, 'paid')
+  merchantRow.flow.vault = '0x' + 'c9'.repeat(20)
+  merchantRow.flow.vaultKeys = { owner: OWNER, operator: MERCHANT }
+  const merchant = await externalFlowsOf([merchantRow])
+  assert.deepEqual(merchant.items.map((i) => [i.payeeTiedToPayer, i.payeeTiedBy, i.payeeInternal]), [[true, ['vault-keys'], "the payee is this vault's operator"]])
+  assert.match(merchant.note, /Of the flows that paid: 1 paid the vault's own owner or operator from a check one of the same vault's keys paid for, and no traced link ties the two, so it may be one party paying itself, since a vault's owner can name anyone's wallet as its operator\.$/)
+  assert.doesNotMatch(merchant.note, /it is one party|each is one party/)
+  // Both ways round, with no trace: each may be one party.
+  const both = () => [v6Flow(V6_OWNER, V6_OPERATOR, 'paid'), v6Flow(V6_OPERATOR, V6_OWNER, 'paid')]
+  const untraced = await externalFlowsOf(both())
+  assert.deepEqual(untraced.items.map((i) => [i.payeeTiedBy, i.payeeInternal]), [
+    [['vault-keys'], "the payee is this vault's operator"],
+    [['vault-keys'], "the payee is this vault's owner"],
   ])
-  assert.match(ef.note, /Of the flows that paid: 2 paid the vault's own owner or operator from a check one of the same vault's keys paid for, so each is one party paying itself\.$/)
+  assert.match(untraced.note, /Of the flows that paid: 2 paid the vault's own owner or operator from a check one of the same vault's keys paid for, and no traced link ties the two, so they may be one party paying itself, since a vault's owner can name anyone's wallet as its operator\.$/)
+  // With the trace that holds the owner and its agent key, each is one party paying itself.
+  const traced = await externalFlowsOf(both(), { walletLinks: [ARC_WALLET_LINKS[0]] })
+  assert.deepEqual(traced.items.map((i) => i.payeeTiedBy), [['vault-keys', 'link'], ['vault-keys', 'link']])
+  assert.match(traced.note, /Of the flows that paid: 2 paid the vault's own owner or operator from a check one of the same vault's keys paid for, and a traced link ties the two, so each is one party paying itself\.$/)
+  // A link that holds the payee and some other wallet, and not the payer, ties nothing more: the keys alone still say may be.
+  const other = await externalFlowsOf([v6Flow(V6_OWNER, V6_OPERATOR, 'paid')], { walletLinks: [{ ...ARC_WALLET_LINKS[0], wallets: [V6_OPERATOR, V6_PAYEE] }] })
+  assert.deepEqual(other.items.map((i) => i.payeeTiedBy), [['vault-keys']])
+  assert.match(other.note, /so it may be one party paying itself/)
 })
 
 test('an external flow that pays our receiving wallet is said to pay one of our own wallets, not an agent', async () => {

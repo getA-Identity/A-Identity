@@ -458,6 +458,8 @@ export type ArcFlowVaultKind = 'launch-day' | 'owner-held' | 'other' | 'not-reco
  *  batch hash appears once Gateway reports it. From 'flow-record' the row has aged out of the log,
  *  so it is what the flow's record held when the check settled. */
 export type ArcSeasonFlowCheck = { outcome: string; readFrom: 'gateway-log' | 'flow-record'; batchTx?: string; batchExplorerUrl?: string }
+/** What ties an external flow's payee to the wallet that paid for its check: both are keys of the flow's vault, or a curated link holds both. */
+export type ArcPayeeTie = 'vault-keys' | 'link'
 export type ArcSeasonFlowItem = Omit<ArcVerifyThenPayFlow, 'check'> & {
   explorerUrl: string | null
   vaultKind: ArcFlowVaultKind
@@ -467,9 +469,11 @@ export type ArcSeasonFlowItem = Omit<ArcVerifyThenPayFlow, 'check'> & {
    *  flow's vault, or a curated link holds both. A payee that is only the vault's own key is not tied to a payer outside the
    *  vault, because anyone can buy a check that names any vault. */
   payeeTiedToPayer?: true
-  /** How, when payeeTiedToPayer is set: 'vault-keys' when the payer and the payee are each the vault's owner or operator, so
-   *  the flow is one party paying itself; 'link' when a curated link holds both, so they may be one party. */
-  payeeTiedBy?: 'vault-keys' | 'link'
+  /** What ties them, when payeeTiedToPayer is set: 'vault-keys' when the payer and the payee are each the vault's owner or
+   *  operator, and 'link' when a curated link holds both. Only the two together make the flow one party paying itself. Either
+   *  alone says they may be one party: a vault's owner can name anyone's wallet as its operator, and a link can be of medium
+   *  strength. */
+  payeeTiedBy?: ArcPayeeTie[]
 }
 /** One UTC week, Monday to Sunday, of external use. A week with no check is listed too, so a gap shows. */
 export type ArcSeasonWeek = {
@@ -1345,19 +1349,19 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
     }
   }
   // How a payee is tied to the wallet that paid for its check, read from the check row itself: the two are both keys of the
-  // flow's vault, or a curated link holds both. A payee that is only the vault's own key is not tied to a payer outside the
-  // vault: anyone can buy a check that names any vault. Said on external flows, where a reader would otherwise take the
-  // payment for one to somebody else.
+  // flow's vault, a curated link holds both, or both are true. A payee that is only the vault's own key is not tied to a payer
+  // outside the vault: anyone can buy a check that names any vault. Said on external flows, where a reader would otherwise
+  // take the payment for one to somebody else.
   const vaultKeysOf = (f: ArcVerifyThenPayFlow) => (f.vaultKeys ? [f.vaultKeys.owner.toLowerCase(), f.vaultKeys.operator.toLowerCase()] : [])
-  const payeeTie = ({ flow: f, check }: { flow: ArcVerifyThenPayFlow; check: Check }): 'vault-keys' | 'link' | null => {
+  const payeeTie = ({ flow: f, check }: { flow: ArcVerifyThenPayFlow; check: Check }): ArcPayeeTie[] => {
     const payee = f.payee.toLowerCase()
     const keys = vaultKeysOf(f)
-    if (keys.includes(payee) && keys.includes(check.payer)) return 'vault-keys'
-    const linked = walletLinks.some((l) => {
+    const byKeys = keys.includes(payee) && keys.includes(check.payer)
+    const byLink = walletLinks.some((l) => {
       const inLink = new Set(l.wallets.map((w) => w.toLowerCase()))
       return inLink.has(payee) && inLink.has(check.payer)
     })
-    return linked ? 'link' : null
+    return [...(byKeys ? ['vault-keys' as const] : []), ...(byLink ? ['link' as const] : [])]
   }
   const linkedList = [...linkedFlows.values()]
   const flowsByVault: Record<ArcFlowVaultKind, number> = { 'launch-day': 0, 'owner-held': 0, other: 0, 'not-recorded': 0 }
@@ -1381,26 +1385,31 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
     teamKeysUnknown && count > 0 ? ` The verify-then-pay flow log could not be read on this request, so the agent key of ${keysOf} could be counted as external until it answers.` : ''
   const externalFlowItems = [...externalRows.values()].map((row): ArcSeasonFlowItem => {
     const tie = payeeTie(row)
-    return { ...flowItem(row), ...(tie ? { payeeTiedToPayer: true as const, payeeTiedBy: tie } : {}) }
+    return { ...flowItem(row), ...(tie.length > 0 ? { payeeTiedToPayer: true as const, payeeTiedBy: tie } : {}) }
   })
   const teamFlowCount = externalFlowItems.filter((f) => f.payer && teamOf.has(f.payer.toLowerCase())).length
   // Only a flow that paid is a payment: a refused one moved nothing, so it is said apart. Each paid flow is said once, by its
-  // payee: ours first, then one party for certain (both keys of the vault), then perhaps one party (a curated link), then the
-  // vault's own key paid from a check someone outside the vault bought, then anyone else.
+  // payee: ours first; then one party, when the payer and the payee are both keys of the vault and a curated link holds both;
+  // then perhaps one party, through the vault's keys alone, because a vault's owner can name anyone's wallet as its operator,
+  // or through a curated link alone; then the vault's own key paid from a check someone outside the vault bought; then anyone
+  // else.
   const externalPaid = externalFlowItems.filter((f) => f.outcome === 'paid')
   const externalRefused = externalFlowItems.filter((f) => f.outcome === 'refused').length
-  const paidTo = { ours: 0, oneParty: 0, mayBeOneParty: 0, vaultKeyFromOutside: 0, other: 0 }
+  const paidTo = { ours: 0, oneParty: 0, keysOnly: 0, linkOnly: 0, vaultKeyFromOutside: 0, other: 0 }
   for (const f of externalPaid) {
     const payee = f.payee.toLowerCase()
+    const by = f.payeeTiedBy ?? []
     if (ourAddresses.has(payee)) paidTo.ours += 1
-    else if (f.payeeTiedBy === 'vault-keys') paidTo.oneParty += 1
-    else if (f.payeeTiedBy === 'link') paidTo.mayBeOneParty += 1
+    else if (by.includes('vault-keys') && by.includes('link')) paidTo.oneParty += 1
+    else if (by.includes('vault-keys')) paidTo.keysOnly += 1
+    else if (by.includes('link')) paidTo.linkOnly += 1
     else if (vaultKeysOf(f).includes(payee)) paidTo.vaultKeyFromOutside += 1
     else paidTo.other += 1
   }
   const paidClauses = [
-    ...(paidTo.oneParty > 0 ? [`${paidTo.oneParty} paid the vault's own owner or operator from a check one of the same vault's keys paid for, so ${paidTo.oneParty === 1 ? 'it is' : 'each is'} one party paying itself`] : []),
-    ...(paidTo.mayBeOneParty > 0 ? [`${paidTo.mayBeOneParty} paid a wallet a traced link ties to the wallet that paid for the check, so ${paidTo.mayBeOneParty === 1 ? 'it' : 'they'} may be one party paying itself`] : []),
+    ...(paidTo.oneParty > 0 ? [`${paidTo.oneParty} paid the vault's own owner or operator from a check one of the same vault's keys paid for, and a traced link ties the two, so ${paidTo.oneParty === 1 ? 'it is' : 'each is'} one party paying itself`] : []),
+    ...(paidTo.keysOnly > 0 ? [`${paidTo.keysOnly} paid the vault's own owner or operator from a check one of the same vault's keys paid for, and no traced link ties the two, so ${paidTo.keysOnly === 1 ? 'it' : 'they'} may be one party paying itself, since a vault's owner can name anyone's wallet as its operator`] : []),
+    ...(paidTo.linkOnly > 0 ? [`${paidTo.linkOnly} paid a wallet a traced link ties to the wallet that paid for the check, so ${paidTo.linkOnly === 1 ? 'it' : 'they'} may be one party paying itself`] : []),
     ...(paidTo.vaultKeyFromOutside > 0 ? [`${paidTo.vaultKeyFromOutside} paid the vault's own owner or operator from a check a wallet outside the vault's keys paid for`] : []),
     ...(paidTo.ours > 0 ? [`${paidTo.ours} paid one of our own wallets or agents`] : []),
     ...(paidTo.other > 0 ? [`${paidTo.other} paid a wallet that neither the vault's keys nor a traced link ties to the wallet that paid for the check`] : []),
