@@ -193,6 +193,50 @@ test('POST /api/agents/register answers 429 with a Retry-After once the row ledg
   assert.equal(fine.body?.erc8004Status && (fine.body.erc8004Status as { onchain?: string }).onchain, 'queued')
 })
 
+/** Public, so it passes the SSRF filter, and not an explorer page, so no chain is read. */
+const MANIFEST_URL = 'https://example.com/agent.json'
+
+test('POST /api/agents/register-url answers 429 with a Retry-After on a spent ledger, 400 for a bad wallet, and 201 to the session', async () => {
+  // The route fetches the manifest itself; here fetch serves whatever `served` holds.
+  let served: Record<string, unknown> = {}
+  const fetched: string[] = []
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    fetched.push(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url)
+    return new Response(JSON.stringify(served), { status: 200, headers: { 'content-type': 'application/json' } })
+  }) as typeof fetch
+  try {
+    const owner = account('url-rate')
+    const { max } = agentCreateVolume('default')
+    for (let i = 0; i < max; i++) chargeAgentCreate(owner, 'default')
+    const before = count()
+    served = { name: 'URL over budget' }
+    const limited = await post('/api/agents/register-url', { url: MANIFEST_URL }, owner)
+    assert.equal(limited.status, 429, 'the answer POST /api/agents/register gives for the same spent ledger')
+    assert.ok(Number(limited.headers['Retry-After']) >= 1, 'with a real Retry-After')
+    assert.match(String(limited.body?.error), /^Too many agents registered too quickly/)
+    assert.equal(typeof limited.body?.resetAt, 'string')
+
+    served = { name: 'URL bad wallet', walletAddress: '0x<KENDI_ADRESIN>' }
+    const badWallet = await post('/api/agents/register-url', { url: MANIFEST_URL }, account('url-wallet'))
+    assert.equal(badWallet.status, 400)
+    assert.match(String(badWallet.body?.error), /walletAddress/)
+    assert.equal(count(), before, 'neither refusal left a row')
+
+    // The console's Quick register calls this door with the signed-in session, and the record
+    // has to land on that account.
+    const signedIn = account('url-ok')
+    served = { name: 'URL fine' }
+    const fine = await post('/api/agents/register-url', { url: MANIFEST_URL }, signedIn)
+    assert.equal(fine.status, 201, JSON.stringify(fine.body).slice(0, 200))
+    assert.equal(count(), before + 1)
+    assert.equal(listPlatformAgents().find((a) => a.id === fine.body?.agentId)?.owner, signedIn, 'owned by the session that registered it')
+    assert.deepEqual([...new Set(fetched)], [MANIFEST_URL], 'the route fetched the pasted URL and nothing else')
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
+
 // ── every door, by source ────────────────────────────────────────────────────────
 
 function sourceFiles(dir: string, prefix = ''): string[] {
