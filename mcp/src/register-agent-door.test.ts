@@ -26,8 +26,9 @@ import { MAX_AGENTS_PER_OWNER, agentQuotaComplaint, type Task } from './marketpl
 import { agentCreateVolume, chargeAgentCreate } from './rate-budget.js'
 import { getChainById } from './chains/index.js'
 import { buildServer, type ServerData } from './server.js'
+import { issueToken, verifyToken } from './auth.js'
 import { handleGuardrailRoutes } from './http/guardrail-routes.js'
-import { publicAgents, type RouteCtx } from './http/shared.js'
+import { mcpCallerFor, publicAgents, type RouteCtx } from './http/shared.js'
 
 /**
  * The manifest door, and every other MCP tool that writes or reads an owner's records.
@@ -341,6 +342,26 @@ test('http.ts hands every MCP hook that needs a session the verified caller, nev
     const next = Math.min(...starts.map((s) => s.at).filter((x) => x > at), region.length)
     assert.ok(region.slice(at, next).includes('mcpCaller'), `the ${h} hook must be handed mcpCaller`)
   }
+  // And mcpCaller has to BE the verified caller. `const mcpCaller = callerId` passed every
+  // check above while a guest token, which the plain email login mints for any address,
+  // registered agents to that address and acted as the owner of its agents.
+  const assigned = src.split('\n').filter((line) => /\bmcpCaller\s*=(?!=)/.test(line)).map((line) => line.trim())
+  assert.deepEqual(assigned, ['const mcpCaller = mcpCallerFor(caller)'], 'mcpCaller is derived once, through mcpCallerFor, from the whole caller')
+  assert.ok(src.indexOf('const mcpCaller = mcpCallerFor(caller)') < from, 'and before the hooks are built')
+})
+
+test('mcpCallerFor hands the MCP hooks a verified subject only: no token and a guest token are both no one', () => {
+  assert.equal(mcpCallerFor(null), undefined, 'no token')
+  // The token POST /api/auth/login answers with, for an address nobody proved.
+  const guest = verifyToken(issueToken('victim@register-door.test', 'guest'))
+  assert.equal(guest?.method, 'guest')
+  assert.equal(mcpCallerFor(guest), undefined, 'a guest token acts as no one, whatever address it names')
+  const wallet = `0x${'ab'.repeat(20)}`
+  assert.equal(mcpCallerFor(verifyToken(issueToken(wallet, 'wallet'))), wallet, 'a wallet signature')
+  assert.equal(mcpCallerFor(verifyToken(issueToken('owner@register-door.test', 'email'))), 'owner@register-door.test', 'an email link')
+  // OAuth callers reach http.ts as method 'email' (the issuer verified the address).
+  assert.equal(mcpCallerFor({ subject: 'oauth@register-door.test', method: 'email' }), 'oauth@register-door.test', 'an OAuth token')
+  assert.equal(mcpCallerFor({ subject: 'other@register-door.test', method: 'oauth' as never }), undefined, 'a method this build does not know is not verified')
 })
 
 test('a task row with no client is still closed to a caller with no session', async () => {

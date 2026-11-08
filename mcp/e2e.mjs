@@ -413,6 +413,18 @@ async function main() {
   check('MCP register_agent without a verified session is Forbidden', /^Forbidden/.test(mcpRegNoAuth.data?.error || ''), mcpRegNoAuth.data?.error)
   const agentsAfterT = (await api('GET', '/api/agents')).json?.total
   check('and registers nothing', typeof agentsBeforeT === 'number' && agentsAfterT === agentsBeforeT, `${agentsBeforeT} -> ${agentsAfterT}`)
+  // A guest token is no session either, and this is the case that matters: the plain email
+  // login proves nothing, so it mints a token for any address, an owner's included. If MCP
+  // took a guest token's subject, anyone could register agents to that account and act as
+  // the owner of its agents.
+  const mcpRegGuest = await mcp('register_agent', { name: `E2E MCP Guest ${Date.now()}` }, guest)
+  check('MCP register_agent with a guest token is Forbidden', /^Forbidden/.test(mcpRegGuest.data?.error || ''), JSON.stringify(mcpRegGuest.data).slice(0, 200))
+  const agentsAfterGuestT = (await api('GET', '/api/agents')).json?.total
+  check('and the guest token registers nothing', agentsAfterGuestT === agentsAfterT, `${agentsAfterT} -> ${agentsAfterGuestT}`)
+  // Minted for alice's own address, so the only thing between it and her agent is that it is a guest.
+  const guestAsAlice = await login(acct.address)
+  const mcpPolicyGuest = await mcp('policy_get', { agentId }, guestAsAlice)
+  check('MCP policy_get on the owner\'s agent with a guest token naming the owner is Forbidden', /^Forbidden/.test(mcpPolicyGuest.data?.error || '') && !mcpPolicyGuest.data?.policy, JSON.stringify(mcpPolicyGuest.data).slice(0, 200))
   // With a verified session it registers, to that session's account, as a platform record.
   const mcpRegT = await mcp('register_agent', { name: `E2E MCP Reg ${Date.now()}`, walletAddress: privateKeyToAccount(generatePrivateKey()).address }, alice)
   check('MCP register_agent with a verified session registers, onchain queued', typeof mcpRegT.data?.agentId === 'string' && mcpRegT.data?.erc8004Status?.onchain === 'queued', JSON.stringify(mcpRegT.data).slice(0, 200))

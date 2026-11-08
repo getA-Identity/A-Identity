@@ -30,7 +30,7 @@ import { verifyToken, isVerified } from './auth.js'
 import { clientIpFromXff, clientIpDiagnostic } from './client-ip.js'
 import { jsonRpcMessageCount, rateBudget, rateLimited } from './rate-budget.js'
 import { oauthEnabled, verifyAccessToken } from './oauth.js'
-import { SESSION_COOKIE, parseCookies, publicAgents, readBody, sendJson, type RouteCtx } from './http/shared.js'
+import { SESSION_COOKIE, mcpCallerFor, parseCookies, publicAgents, readBody, sendJson, type RouteCtx } from './http/shared.js'
 import { handleAuthRoutes } from './http/auth-routes.js'
 import { handlePublicRoutes } from './http/public-routes.js'
 import { handleCeloRoutes } from './http/celo-routes.js'
@@ -308,7 +308,8 @@ const server = http.createServer(async (req, res) => {
       // with no owner here). MCP never bypasses the verified-session gate. The verify-then-pay
       // pair is the one exception, on purpose and on the same terms as its REST routes: the
       // check is bought with a Gateway payment and the receipt records only what the chain proves.
-      const mcpCaller = isVerified(caller) ? callerId : undefined
+      // Derived through mcpCallerFor, never from callerId: a guest token carries a subject too.
+      const mcpCaller = mcpCallerFor(caller)
       const mcp = buildServer({
         listAgents: publicAgents,
         getReputation: (id) => reputationForQuery(id),
