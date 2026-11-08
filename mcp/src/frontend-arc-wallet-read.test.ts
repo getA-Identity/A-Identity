@@ -80,6 +80,8 @@ const turns = async (n: number, until: () => boolean = () => false) => {
 
 const BLOCKED = Symbol('no answer reached the page')
 const BUSY = Symbol('429')
+/** The request went out and the host never answered, so viem's own time limit ends it. */
+const SILENT = Symbol('timed out')
 type Reply = unknown
 type Net = (host: string, method: string, params: readonly unknown[]) => Reply | Promise<Reply>
 
@@ -87,13 +89,14 @@ type Net = (host: string, method: string, params: readonly unknown[]) => Reply |
 async function withNet<T>(net: Net, fn: (asked: { host: string; method: string }[]) => Promise<T>): Promise<T> {
   const asked: { host: string; method: string }[] = []
   const original = globalThis.fetch
-  globalThis.fetch = (async (input: unknown, init?: { body?: unknown }) => {
+  globalThis.fetch = (async (input: unknown, init?: { body?: unknown; signal?: AbortSignal | null }) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as { url: string }).url
     const host = new URL(url).host
     const body = JSON.parse(String(init?.body)) as { id: number; method: string; params?: unknown[] }
     asked.push({ host, method: body.method })
     const reply = await net(host, body.method, body.params ?? [])
     if (reply === BLOCKED) throw new TypeError('Failed to fetch')
+    if (reply === SILENT) await new Promise((_, reject) => init?.signal?.addEventListener('abort', () => reject(new DOMException('This operation was aborted', 'AbortError'))))
     const json = { 'Content-Type': 'application/json' }
     if (reply === BUSY) return new Response(JSON.stringify({ error: 'Too Many Requests' }), { status: 429, headers: json })
     if (reply === undefined) return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, error: { code: -32601, message: `not in this fake: ${body.method}` } }), { status: 200, headers: json })
@@ -761,6 +764,55 @@ test('a read the network was too busy to answer gives the registry hosts and the
     const facts = await withNet(() => BUSY, () => m.readUsdcFacts(chain))
     assert.doesNotMatch(String(facts.reason), /your wallet/i)
     assert.ok(String(facts.reason).includes(`(${list}): HTTP request failed`), String(facts.reason))
+  } finally {
+    m.setWalletReadProvider(null)
+  }
+})
+
+test('a receipt or a transaction is not asked of the wallet after four 429s or four timeouts: the hosts did get the request', async () => {
+  const m = await read()
+  const chain = m.ARC_MAINNET
+  const total = m.rpcUrls(chain).length
+  const wallet = emptyWallet(chain.chainId)
+  m.setWalletReadProvider(wallet.provider)
+  try {
+    await withNet(
+      () => BUSY,
+      async () => {
+        const poll = await m.pollReceipt(chain, HASH)
+        assert.deepEqual([poll.found, poll.answered, poll.total, poll.blocked], [false, 0, total, false])
+        assert.equal(await m.readTransaction(chain, HASH), undefined, 'none of the four said anything')
+      },
+    )
+    assert.deepEqual(wallet.calls, [], 'a host that answered 429 did answer, so the wallet is not asked')
+
+    // Four hosts that time out are the same: the request went out, and a slow network is not a blocked browser.
+    mock.timers.enable({ apis: ['setTimeout'] })
+    try {
+      await withNet(
+        () => SILENT,
+        async () => {
+          /** Runs the clock past each host's time limit until the read is done: the hosts are asked one after another. */
+          const finish = async <T>(asked: Promise<T>): Promise<T> => {
+            let done = false
+            void asked.finally(() => (done = true))
+            for (let i = 0; i < 20 && !done; i += 1) {
+              await turns(100)
+              mock.timers.tick(8_000)
+              await turns(100, () => done)
+            }
+            assert.ok(done, 'the read ended at the time limit')
+            return asked
+          }
+          const poll = await finish(m.pollReceipt(chain, HASH))
+          assert.deepEqual([poll.found, poll.answered, poll.total, poll.blocked], [false, 0, total, false])
+          assert.equal(await finish(m.readTransaction(chain, HASH)), undefined)
+        },
+      )
+    } finally {
+      mock.timers.reset()
+    }
+    assert.deepEqual(wallet.calls, [], 'a host that timed out was sent the request, so the wallet is not asked')
   } finally {
     m.setWalletReadProvider(null)
   }
