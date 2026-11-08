@@ -1226,8 +1226,34 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   const vaultListUnread = Boolean(admittedVaults && !admittedVaults.read.readable)
   const owners = vaultOwners(vaults, walletLinks, chain, { teams: teamGroups, external, incomplete: vaultListUnread })
   const payers = externalPayers(external, walletLinks, chain, { teams: teamGroups, incomplete: settlementsIncomplete })
-  // Linked wallets nobody has identified, said apart from the rest: a share of the checks that large is one party.
+  // Linked wallets nobody has identified, said apart from the rest, because a share of the checks that large may be one party.
   const unidentifiedParties = payers.linked.filter((l) => !l.team && l.wallets.every((w) => walletStats.get(w)?.identity === 'not-identified'))
+  // Each vault's keys as this read knows them: the owner a counted vault carries or a flow's own record names, and every
+  // operator the flow log or a flow's record names. Linked wallets are said to be one party as fact only when they are one
+  // vault's owner and its agent keys: a link alone can be of medium strength, and two owners may be one party or two.
+  const keysByVault = new Map<string, { vault: string; owners: Set<string>; operators: Set<string> }>()
+  const keysOfVault = (vault: string) => {
+    const known = keysByVault.get(vault.toLowerCase()) ?? { vault, owners: new Set<string>(), operators: new Set<string>() }
+    keysByVault.set(vault.toLowerCase(), known)
+    return known
+  }
+  for (const v of vaults) keysOfVault(v.address).owners.add(v.owner.toLowerCase())
+  for (const f of flows) if (f.vault && f.vaultKeys) keysOfVault(f.vault).owners.add(f.vaultKeys.owner.toLowerCase())
+  for (const k of flowKeys) keysOfVault(k.vault).operators.add(k.operator.toLowerCase())
+  /** The vault whose owner is one of these wallets and whose agent keys are all the others, or null. */
+  const oneVaultOf = (wallets: readonly string[]) =>
+    [...keysByVault.values()].find((k) => {
+      const owners = wallets.filter((w) => k.owners.has(w))
+      return owners.length === 1 && wallets.every((w) => owners.includes(w) || k.operators.has(w))
+    }) ?? null
+  const unidentifiedLine = (l: ArcSeasonPayerLinkItem): string => {
+    const rest = `the other ${externalChecks.length - l.checks} come from ${withUnit(external.length - l.wallets.length, 'wallet', 'wallets')}.`
+    const vault = oneVaultOf(l.wallets)
+    if (!vault) return ` ${l.checks} of the ${externalChecks.length} come from wallets linked on chain, which may be one party nobody has identified: ${l.wallets.map(shortAddress).join(' and ')}; ${rest}`
+    const keys = [...l.wallets.filter((w) => vault.owners.has(w)), ...l.wallets.filter((w) => !vault.owners.has(w))]
+    const agentKeys = keys.length === 2 ? 'agent key' : `${inWords(keys.length - 1)} agent keys`
+    return ` ${l.checks} of the ${externalChecks.length} come from one party nobody has identified: ${keys.map(shortAddress).join(' and ')}, the owner and ${agentKeys} of vault ${shortAddress(vault.vault)}, linked on chain; ${rest}`
+  }
   const whoPaidClauses = [
     ...(payers.whoPaid.team.wallets > 0 ? [`${withUnit(payers.whoPaid.team.checks, 'check', 'checks')} from ${withUnit(payers.whoPaid.team.wallets, 'wallet', 'wallets')} of named teams`] : []),
     ...(payers.whoPaid['not-team'].wallets > 0 ? [`${withUnit(payers.whoPaid['not-team'].checks, 'check', 'checks')} from ${withUnit(payers.whoPaid['not-team'].wallets, 'wallet', 'wallets')} the founder confirmed on 2026-11-06 are not team wallets`] : []),
@@ -1601,7 +1627,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
             ? settlementsIncomplete
               ? 'A check counts here when a wallet outside our own paid it, on either rail.'
               : 'No paid check from a wallet outside our own yet. Every check settled so far came from our own buyer wallets, labeled internal above.'
-            : `${externalChecks.length} of ${ARC_SEASON_TARGETS.externalChecks} paid checks from wallets A-Identity does not control, on either rail. ${payers.summary} By who stands behind them: ${whoPaidClauses.join('; ')}.${unidentifiedParties.map((l) => ` ${l.checks} of the ${externalChecks.length} come from one party nobody has identified: ${l.wallets.map(shortAddress).join(' and ')}, linked on chain; the other ${externalChecks.length - l.checks} come from ${withUnit(external.length - l.wallets.length, 'wallet', 'wallets')}.`).join('')}`) +
+            : `${externalChecks.length} of ${ARC_SEASON_TARGETS.externalChecks} paid checks from wallets A-Identity does not control, on either rail. ${payers.summary} By who stands behind them: ${whoPaidClauses.join('; ')}.${unidentifiedParties.map(unidentifiedLine).join('')}`) +
           (externalVaultOwners > 0
             ? ` ${externalVaultOwners} of these wallet(s) also own a vault admitted with the owner not identified, so one could be a team member's: the chain cannot say, and each counts as external until someone says otherwise.`
             : '') +

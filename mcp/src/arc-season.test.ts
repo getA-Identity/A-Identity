@@ -1951,9 +1951,17 @@ const sixStoredVaults = () =>
     note: ADMITTED_NOTE,
   }))
 
+const V6_VAULT = '0xcb7e3b8b323b897e7e4303245dc98de130b2ed41'
 const V6_OWNER = '0x56755b84a0825d82f9be97c8ab057ccdc3dc1a43'
 const V6_OPERATOR = '0x1d54499fa6cff560f217a2cd1013b4e12c8d7f5f'
 const LIVE_READ = Date.parse('2026-11-08T18:57:15Z')
+
+/** What the flow log names for vault 0xcB7e...Ed41 on 2026-11-08: its agent key, on flows that key and the owner paid for. The
+ *  flows themselves are in the test of the seven external flows below; here only the keys, which is all a party line reads. */
+const liveFlowKeys = (): ArcFlowKeys[] => [
+  { vault: V6_VAULT, operator: V6_OPERATOR, payer: V6_OPERATOR },
+  { vault: V6_VAULT, operator: V6_OPERATOR, payer: V6_OWNER },
+]
 
 /** The 33 external rows as the Gateway log held them on 2026-11-08, by wallet and time. */
 const liveExternalRows = () => [
@@ -1975,6 +1983,10 @@ const liveShape = () =>
       ourSideLinks: ARC_OUR_SIDE_LINKS,
       partners: ARC_PARTNERS,
       gateway: liveExternalRows(),
+      flowRows: async (_onSkip, onKeys) => {
+        for (const keys of liveFlowKeys()) onKeys?.(keys)
+        return []
+      },
       now: () => LIVE_READ,
     }),
   )
@@ -2072,7 +2084,8 @@ test('the external checks say how many wallets and parties stand behind them, wi
   assert.deepEqual([[...p.linked[0].wallets].sort(), p.linked[0].checks, p.linked[0].team], [[V6_OPERATOR, V6_OWNER].sort(), 20, undefined])
   // Slippay's two wallets are one party on the team list alone: no traced group of theirs is published.
   // The 20 are the crux: a reader must not take them for 20 separate users, or the 33 for the program's demand.
-  assert.match(m2.externalChecks.note, /20 of the 33 come from one party nobody has identified: 0x5675\.\.\.1a43 and 0x1d54\.\.\.7f5f, linked on chain; the other 13 come from 6 wallets\./)
+  // They are said to be one party because they are one vault's owner and its agent key, which the flow log names.
+  assert.match(m2.externalChecks.note, /20 of the 33 come from one party nobody has identified: 0x5675\.\.\.1a43 and 0x1d54\.\.\.7f5f, the owner and agent key of vault 0xcb7e\.\.\.ed41, linked on chain; the other 13 come from 6 wallets\./)
   assert.match(m2.externalChecks.note, /By who stands behind them: 9 checks from 3 wallets of named teams; 4 checks from 3 wallets the founder confirmed on 2026-11-06 are not team wallets; 20 checks from 2 wallets nobody has identified\./)
   // Each wallet row says it too, so a list of wallets does not read as a list of people.
   const row = (w: string) => r.usage.external.byWallet.find((x) => x.wallet === w)!
@@ -2318,11 +2331,54 @@ test('a linked party is said to be one nobody has identified only when none of i
   const mixed = await arcSeasonReport(deps({ gateway: rows, walletLinks: [link], notTeamPayers: [a] }))
   assert.doesNotMatch(mixed.milestone2.externalChecks.note, /one party nobody has identified/)
   assert.match(mixed.milestone2.externalChecks.note, /By who stands behind them: 2 checks from 1 wallet the founder confirmed on 2026-11-06 are not team wallets; 2 checks from 2 wallets nobody has identified\.$/)
+  // Two wallets a link ties, and nothing else known of them: they may be one party, and that is all a link says.
   const unknown = await arcSeasonReport(deps({ gateway: rows, walletLinks: [link] }))
-  assert.match(unknown.milestone2.externalChecks.note, /By who stands behind them: 4 checks from 3 wallets nobody has identified\. 3 of the 4 come from one party nobody has identified: 0xa1a1\.\.\.a1a1 and 0xb2b2\.\.\.b2b2, linked on chain; the other 1 come from 1 wallet\.$/)
+  assert.match(unknown.milestone2.externalChecks.note, /By who stands behind them: 4 checks from 3 wallets nobody has identified\. 3 of the 4 come from wallets linked on chain, which may be one party nobody has identified: 0xa1a1\.\.\.a1a1 and 0xb2b2\.\.\.b2b2; the other 1 come from 1 wallet\.$/)
   // Only named teams paid: the line names them and no other kind.
   const teams = await arcSeasonReport(deps({ partners: ARC_PARTNERS, gateway: seasonRows(), now: () => SEASON_READ }))
   assert.match(teams.milestone2.externalChecks.note, /By who stands behind them: 9 checks from 3 wallets of named teams\.$/)
+})
+
+test("linked payers are said to be one party only when they are one vault's owner and its agent key, and may be one otherwise", async () => {
+  const note = async (over: Over) => (await arcSeasonReport(deps({ now: () => LIVE_READ, ...over }))).milestone2.externalChecks.note
+  // The medium group of the trace: two vault owners, one of whom paid the other its only USDC. Each pays, and the line says
+  // they may be one party, as the group's own confidence and the owners line do.
+  const [A, B] = ['0x39aefbc8388da12907a21d9de888b288a9fa5794', '0xed701ba695fbbaa7f0cd1d4cbe540e86f55c677b']
+  const medium = ARC_WALLET_LINKS.find((l) => l.wallets.map(lower).includes(A))!
+  assert.match(medium.confidence, /medium for 0x39AE\.\.\.5794 with 0xeD70\.\.\.677b/)
+  const twoOwners = await note({ gateway: [gw({ payer: A }), gw({ payer: A }), gw({ payer: B }), gw({ payer: EXT_C })], walletLinks: ARC_WALLET_LINKS, vaults: ARC_OWNER_HELD_VAULTS })
+  assert.match(twoOwners, / 3 of the 4 come from wallets linked on chain, which may be one party nobody has identified: 0x39ae\.\.\.5794 and 0xed70\.\.\.677b; the other 1 come from 1 wallet\.$/)
+  assert.doesNotMatch(twoOwners, /come from one party/)
+
+  // A vault's owner and the agent key the flow log names for it are one party, owner first whatever order the link holds them.
+  const [OWNER, KEY, KEY2] = ['0x' + 'd1'.repeat(20), '0x' + 'd2'.repeat(20), '0x' + 'd3'.repeat(20)]
+  const VAULT = '0x' + 'e1'.repeat(20)
+  const traced = (wallets: string[]): ArcWalletLink => ({ wallets, tracedOn: '2026-11-08', confidence: 'High.', note: 'traced by hand, a test row', evidence: [{ txHash: '0x' + '9a'.repeat(32), what: 'a transfer in a test' }] })
+  const keysRead = (keys: ArcFlowKeys[]) => async (_onSkip?: unknown, onKeys?: (k: ArcFlowKeys) => void) => {
+    for (const k of keys) onKeys?.(k)
+    return []
+  }
+  const pair = { gateway: [gw({ payer: OWNER }), gw({ payer: KEY }), gw({ payer: KEY }), gw({ payer: EXT_C })], walletLinks: [traced([KEY, OWNER])], vaults: [vaultEntry(VAULT, { owner: OWNER })] }
+  const onePair = await note({ ...pair, flowRows: keysRead([{ vault: VAULT, operator: KEY, payer: KEY }]) })
+  assert.match(onePair, / 3 of the 4 come from one party nobody has identified: 0xd1d1\.\.\.d1d1 and 0xd2d2\.\.\.d2d2, the owner and agent key of vault 0xe1e1\.\.\.e1e1, linked on chain; the other 1 come from 1 wallet\./)
+  // The same two with the flow log down: nothing on this read says the key is the vault's, so they may be one party.
+  const logDown = await note({ ...pair, flowRows: async () => { throw new Error('down') } })
+  assert.match(logDown, / 3 of the 4 come from wallets linked on chain, which may be one party nobody has identified: 0xd2d2\.\.\.d2d2 and 0xd1d1\.\.\.d1d1;/)
+  // A flow's own record of the vault's keys says the same as the flow log, for a vault the counted list does not hold.
+  const fromRecord = await note({ ...pair, vaults: [], flows: [flow({ vault: VAULT, vaultKeys: { owner: OWNER, operator: KEY } })] })
+  assert.match(fromRecord, /come from one party nobody has identified: 0xd1d1\.\.\.d1d1 and 0xd2d2\.\.\.d2d2, the owner and agent key of vault 0xe1e1\.\.\.e1e1,/)
+  // Two agent keys of one vault, without the owner: each was named by the owner, and they may be two people.
+  const twoKeys = await note({ gateway: [gw({ payer: KEY }), gw({ payer: KEY2 })], walletLinks: [traced([KEY, KEY2])], vaults: [vaultEntry(VAULT, { owner: OWNER })], flowRows: keysRead([{ vault: VAULT, operator: KEY }, { vault: VAULT, operator: KEY2 }]) })
+  assert.match(twoKeys, /come from wallets linked on chain, which may be one party nobody has identified/)
+  // Two records that disagree on a vault's owner do not make the two wallets an owner and its agent key.
+  const twoOwnersOnRecord = await note({ ...pair, walletLinks: [traced([OWNER, KEY2])], gateway: [gw({ payer: OWNER }), gw({ payer: KEY2 })], flows: [flow({ vault: VAULT, vaultKeys: { owner: KEY2, operator: KEY } })] })
+  assert.match(twoOwnersOnRecord, /come from wallets linked on chain, which may be one party nobody has identified/)
+  // An owner and the agent key of another vault: no one vault holds both.
+  const twoVaults = await note({ ...pair, vaults: [vaultEntry(VAULT, { owner: OWNER }), vaultEntry('0x' + 'e2'.repeat(20), { owner: EXT_B })], flowRows: keysRead([{ vault: '0x' + 'e2'.repeat(20), operator: KEY }]) })
+  assert.match(twoVaults, /come from wallets linked on chain, which may be one party nobody has identified/)
+  // An owner with two agent keys is one party with all three named, the owner first.
+  const three = await note({ gateway: [gw({ payer: KEY2 }), gw({ payer: KEY }), gw({ payer: OWNER }), gw({ payer: EXT_C })], walletLinks: [traced([KEY2, KEY, OWNER])], vaults: [vaultEntry(VAULT, { owner: OWNER })], flowRows: keysRead([{ vault: VAULT, operator: KEY }, { vault: VAULT, operator: KEY2 }]) })
+  assert.match(three, / 3 of the 4 come from one party nobody has identified: 0xd1d1\.\.\.d1d1 and 0xd3d3\.\.\.d3d3 and 0xd2d2\.\.\.d2d2, the owner and two agent keys of vault 0xe1e1\.\.\.e1e1, linked on chain; the other 1 come from 1 wallet\./)
 })
 
 test('the links to our own side are labeled as ours or disclosed, each with what it rests on', async () => {
@@ -2410,7 +2466,6 @@ test('the team row only says no named team has a flow when none has, and an exte
   assert.doesNotMatch(teamFlow.milestone2.externalTeamsLive.note, /No named team has run/)
 })
 
-const V6_VAULT = '0xcb7e3b8b323b897e7e4303245dc98de130b2ed41'
 const V6_PAYEE = '0x24427be91913774187b8547071284506767a77c4'
 /** One external check, and a flow through vault 0xcB7e...Ed41 opened by it, as its record holds it. */
 const v6Flow = (payer: string, payee: string, outcome: 'paid' | 'refused', at = '2026-11-08T08:51:00.000Z') => {
