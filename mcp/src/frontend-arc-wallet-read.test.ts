@@ -37,6 +37,7 @@ type ReadModule = {
   hostOf: (url: string) => string
   usdcOf: (chain: ChainLike) => { address: string; decimals: number } | null
   setWalletReadProvider: (p: Provider | null, o?: { walletConnect?: boolean }) => void
+  clearWalletReadProvider: (p: Provider) => void
   timedProvider: (p: { request: (a: Call) => unknown }) => Provider
   pollReceipt: (chain: ChainLike, hash: string) => Promise<Poll>
   readTransaction: (chain: ChainLike, hash: string) => Promise<Rec | null | undefined>
@@ -677,6 +678,7 @@ test('a blocked read says what was seen, the way through follows what the wallet
 
   // The wallet's own failure text, which viem may word as a revert, never reaches a blocked read.
   const chain = m.ARC_MAINNET
+  const registry = m.rpcUrls(chain).map((u) => m.hostOf(u))
   const broken = fakeWallet((method) => {
     if (method === 'eth_chainId') return hex(chain.chainId)
     if (method === 'eth_getBlockByNumber') return block(100n)
@@ -693,11 +695,13 @@ test('a blocked read says what was seen, the way through follows what the wallet
         assert.equal(facts.blocked, true)
         assert.equal(facts.wallet, 'failed')
         assert.doesNotMatch(String(facts.reason), /revert/i)
+        assert.doesNotMatch(String(facts.reason), /your wallet/i, 'the wallet is not one of the network nodes that did not answer')
         const v = await m.readVault(chain, VAULT)
         assert.ok(!v.ok)
         assert.equal(v.failure.kind, 'blocked')
         assert.equal(v.failure.wallet, 'failed')
         assert.doesNotMatch(v.failure.reason, /revert/i)
+        assert.ok(v.failure.reason.startsWith(`tried ${registry.join(', ')}; no answer from any of them`), v.failure.reason)
       },
     )
     // A phone wallet is never asked: its reads leave from this page for the same hosts.
@@ -707,6 +711,16 @@ test('a blocked read says what was seen, the way through follows what the wallet
     assert.ok(!v.ok)
     assert.equal(v.failure.wallet, 'walletconnect')
     assert.deepEqual(phone.calls, [])
+    // Nor for a receipt or a transaction, or it would be asked its chain id on every blocked poll.
+    await withNet(
+      () => BLOCKED,
+      async () => {
+        const poll = await m.pollReceipt(chain, HASH)
+        assert.deepEqual([poll.found, poll.answered, poll.total, poll.blocked], [false, 0, registry.length, true])
+        assert.equal(await m.readTransaction(chain, HASH), undefined)
+      },
+    )
+    assert.deepEqual(phone.calls, [], 'a phone wallet is sent nothing on a blocked receipt check')
   } finally {
     m.setWalletReadProvider(null)
   }
@@ -813,6 +827,43 @@ test('a receipt or a transaction is not asked of the wallet after four 429s or f
       mock.timers.reset()
     }
     assert.deepEqual(wallet.calls, [], 'a host that timed out was sent the request, so the wallet is not asked')
+  } finally {
+    m.setWalletReadProvider(null)
+  }
+})
+
+test('a no that lands after the wallet changed stays with the wallet that said it, and only the wallet still registered is cleared', async () => {
+  const m = await read()
+  const chain = m.ARC_MAINNET
+  // Wallet A has a request in flight when the person moves to wallet B, and only then says no.
+  let sayNo: (e: unknown) => void = () => {}
+  const a = fakeWallet((method) => (method === 'eth_chainId' ? new Promise((_, reject) => (sayNo = reject)) : null))
+  const b = fakeWallet((method) => (method === 'eth_chainId' ? hex(chain.chainId) : method === 'eth_getTransactionReceipt' ? receiptJson : null))
+  const lastHost = () => m.hostOf(m.readUrls(chain)[m.readUrls(chain).length - 1])
+  m.setWalletReadProvider(a.provider)
+  try {
+    await withNet(
+      () => BLOCKED,
+      async () => {
+        const inFlight = m.pollReceipt(chain, HASH)
+        await turns(500, () => a.calls.length > 0)
+        assert.deepEqual(a.calls, ['eth_chainId'], 'wallet A has the request')
+        m.setWalletReadProvider(b.provider)
+        sayNo(Object.assign(new Error('The requested method and/or account has not been authorized by the user.'), { code: 4100 }))
+        assert.equal((await inFlight).found, false)
+        // B is another wallet: A's no says nothing about it, so B is still asked.
+        assert.equal(lastHost(), m.WALLET_HOST, 'wallet B is still read through')
+        const poll = await m.pollReceipt(chain, HASH)
+        assert.equal(poll.found, true)
+        assert.equal(poll.host, m.WALLET_HOST)
+        assert.deepEqual(b.calls, ['eth_chainId', 'eth_getTransactionReceipt'])
+      },
+    )
+    // One page unmounting clears only its own wallet, never the one another page registered since.
+    m.clearWalletReadProvider(a.provider)
+    assert.equal(lastHost(), m.WALLET_HOST, 'wallet B stays')
+    m.clearWalletReadProvider(b.provider)
+    assert.equal(m.readUrls(chain).length, m.rpcUrls(chain).length, 'its own clear drops it')
   } finally {
     m.setWalletReadProvider(null)
   }
