@@ -35,7 +35,7 @@ const STATS = [
   // did not: all 120 came from our own buyer wallet (mcp/src/asp/proof.ts names it).
   { n: 120, k: '120', v: 'real settlements', sub: 'X Layer mainnet, all from our own buyer wallet' },
   { n: null, k: '#0', v: 'first registry token', sub: 'Robinhood Chain mainnet' },
-  { n: 2575, k: '2575', v: 'tests, green', sub: 'deterministic scores' },
+  { n: 2576, k: '2576', v: 'tests, green', sub: 'deterministic scores' },
 ] as const
 
 /** A number that counts itself up the first time it scrolls into view. */
