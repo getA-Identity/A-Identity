@@ -42,6 +42,9 @@
  *     and ownerBrowser. A 429 that still reaches the page is counted, and said at the end of the run.
  *   - Another device is the owner's key sending straight to the chain. A phone whose hash never comes back is a
  *     reload with the stand-in wallet's request still open. Its prompt stays open until this script answers it.
+ *   - anvil reads the real chain through a stand-in on this machine. A lookup anvil passes on of a transaction hash
+ *     this run made (replaced, dropped, unmined or made up) is answered null there, as the real chain would answer
+ *     it, the real host's rate limits are waited out a few times, and everything else goes on as it is: see forkVia.
  *
  * Safety: the backend gets a built-from-scratch environment (no DATABASE_URL, nothing from your
  * shell, cwd in a temp dir so no .env is found) and a copy of mcp/dist under that temp dir, so its
@@ -60,6 +63,7 @@
  */
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { spawn, spawnSync } from 'node:child_process'
+import { createServer as createHttpServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { connect, createServer } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -90,7 +94,7 @@ const { generatePrivateKey, privateKeyToAccount, mnemonicToAccount } = await mod
 const { getChainById } = await mod('mcp/dist/chains/registry.js')
 const { committedOurKeys, OUR_KEY_PUBLIC_ADDRESSES } = await mod('mcp/dist/arc-owner-vault.js')
 const art = await mod('mcp/dist/contracts/AgentSpendPolicy.js')
-const { encodeDeployData, encodeFunctionData, decodeFunctionResult, getAddress, parseAbi, parseUnits, toFunctionSelector, toHex } = viem
+const { encodeDeployData, encodeFunctionData, decodeFunctionResult, getAddress, keccak256, parseAbi, parseUnits, toFunctionSelector, toHex } = viem
 const { randomBytes } = await import('node:crypto')
 
 const chain = getChainById('arc-mainnet')
@@ -110,17 +114,23 @@ const check = (ok, what) => {
 }
 const say = (s) => console.log(`      ${s}`)
 const section = (s) => console.log(`\n--- ${s}`)
+/** What the fork's stand-in did: lookups of this run's own hashes it answered itself, the calls it passed on by method, rate limits it waited out, and failures it passed on. See forkVia. */
+const forkSaid = { nulls: 0, passedOn: {}, waited: 0, failed: 0, lastFailed: '' }
 
 // --- the processes, which only this run started and only this run stops, by pid --------------
 const work = mkdtempSync(join(tmpdir(), 'arc-vault-fork-'))
 const children = []
+let stopping = false
 function stopChildren() {
+  stopping = true
   for (const c of children) {
     if (c.exitCode === null && c.signalCode === null) c.kill('SIGTERM')
   }
 }
 function finish(code) {
   stopChildren()
+  const busiest = Object.entries(forkSaid.passedOn).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([m, n]) => `${m} ${n}`).join(', ')
+  console.log(`\nthe fork's stand-in: ${forkSaid.nulls} lookups of this run's own hashes answered null, ${Object.values(forkSaid.passedOn).reduce((a, b) => a + b, 0)} calls passed on to the real host (${busiest}), ${forkSaid.waited} rate limits waited out, ${forkSaid.failed} failures passed on to anvil${forkSaid.lastFailed ? `, the last ${forkSaid.lastFailed}` : ''}`)
   const failed = results.filter((r) => !r.ok).length
   console.log(failed ? `\n${failed} of ${results.length} check(s) failed` : `\nALL ${results.length} CHECKS PASSED`)
   if (flag('--keep')) console.log('kept', work)
@@ -175,18 +185,105 @@ const anvilPort = await freePort()
 const anvilUrl = `http://127.0.0.1:${anvilPort}`
 let anvilOut = ''
 
+const pause = (ms) => new Promise((r) => setTimeout(r, ms))
+
+// What anvil reads from the real chain goes through this stand-in. anvil asks its upstream about any transaction hash
+// it does not hold, on every lookup: a hash a speed-up replaced, one dropped, one the stand-in wallet made up, and one
+// still waiting unmined. The page, the backend and this script ask about those every few seconds, the real host
+// behind the fork rate limits that, anvil backs off, and the page's own reads run out of time: in the run that failed
+// "the hash reads replaced" on 2026-11-06, after two minutes and 11 rounds none of the page's 4 hosts answered its
+// receipt check, so it rightly decided nothing. The real chain never saw a hash this run made, and a host answers null
+// for a hash it never saw, so that is what the stand-in answers for one of them. Everything else, a batch too, is passed
+// on as it is, at the pace the real host answers at, and a rate limit from it is waited out here, a few times at most: it
+// says nothing about the code under test.
+const runHashes = new Set()
+/** A transaction hash this run made: sent, signed or made up. */
+const ownHash = (h) => {
+  if (typeof h === 'string' && /^0x[0-9a-fA-F]{64}$/.test(h)) runHashes.add(h.toLowerCase())
+  return h
+}
+const BY_HASH = new Set(['eth_getTransactionByHash', 'eth_getTransactionReceipt'])
+/** How many times a read the real host refused is asked again, waiting 1, 2, 4, 8, 16, 30 and 30 seconds. anvil gives the stand-in 180. */
+const FORK_TRIES = 7
+const forkWait = (attempt) => Math.min(1000 * 2 ** attempt, 30000)
+/** The pace the primary kept answering at (see src/lib/arc/event-history.ts). This is one host, however many calls anvil has waiting. */
+const FORK_SPACING_MS = 400
+let forkUpstream = null
+let forkNextSend = 0
+const forkVia = await new Promise((resolve, reject) => {
+  const server = createHttpServer((req, res) => {
+    const chunks = []
+    req.on('data', (c) => chunks.push(c))
+    const reply = (status, type, payload) => {
+      if (res.headersSent) return
+      res.writeHead(status, { 'content-type': type })
+      res.end(payload)
+    }
+    const answer = async () => {
+      const body = Buffer.concat(chunks)
+      let call = null
+      try {
+        call = JSON.parse(body.toString('utf8'))
+      } catch {
+        call = null
+      }
+      if (call && !Array.isArray(call) && BY_HASH.has(call.method) && runHashes.has(String(call.params?.[0] ?? '').toLowerCase())) {
+        forkSaid.nulls++
+        return reply(200, 'application/json', JSON.stringify({ jsonrpc: '2.0', id: call.id ?? null, result: null }))
+      }
+      forkSaid.passedOn[call?.method ?? 'batch'] = (forkSaid.passedOn[call?.method ?? 'batch'] ?? 0) + 1
+      for (let attempt = 0; ; attempt++) {
+        let up = null
+        let why = ''
+        const sendAt = Math.max(Date.now(), forkNextSend)
+        forkNextSend = sendAt + FORK_SPACING_MS
+        await pause(sendAt - Date.now())
+        try {
+          const got = await fetch(forkUpstream, { method: 'POST', headers: { 'content-type': 'application/json' }, body, signal: AbortSignal.timeout(45000) })
+          up = { status: got.status, type: got.headers.get('content-type') ?? 'application/json', bytes: Buffer.from(await got.arrayBuffer()) }
+          if (got.status === 429 || /"error":\s*\{[^}]*(rate limit|too many requests)/i.test(up.bytes.toString('utf8', 0, 600))) why = `rate limited (${got.status})`
+        } catch (e) {
+          why = whyStopped(e)
+        }
+        if (why && attempt < FORK_TRIES) {
+          forkSaid.waited++
+          await pause(forkWait(attempt))
+          continue
+        }
+        if (why) {
+          forkSaid.failed++
+          forkSaid.lastFailed = `${call?.method ?? 'batch'}: ${why}`
+        }
+        // What the host said in the end, or that it did not answer, as anvil would have heard it from the host itself.
+        if (up) return reply(up.status, up.type, up.bytes)
+        return reply(502, 'application/json', JSON.stringify({ jsonrpc: '2.0', id: call?.id ?? null, error: { code: -32603, message: `the fork's host did not answer: ${why}` } }))
+      }
+    }
+    // Nothing in here may stop the run: anything unforeseen is a host that did not answer, to anvil.
+    req.on('end', () => void answer().catch((e) => reply(502, 'application/json', JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32603, message: `the fork's stand-in failed: ${whyStopped(e)}` } }))))
+  })
+  // anvil keeps its connections to the stand-in open far longer than the 5 seconds a Node server allows an idle one.
+  server.keepAliveTimeout = 0
+  server.on('error', reject)
+  server.listen(0, '127.0.0.1', () => resolve(`http://127.0.0.1:${server.address().port}`))
+})
+
+/** Long enough for anvil to outlast the stand-in's waiting on the real host, which its own timeout allows. */
+const RPC_TIMEOUT_MS = 200_000
 let rpcId = 1
 async function rpc(method, params = []) {
+  if (method === 'eth_sendRawTransaction') ownHash(keccak256(params[0]))
   // A fork reads state it has not seen from its upstream, which rate limits it. That says nothing about
   // this code, and anvil did nothing with a call it answered so, so the same call is asked again.
   for (let attempt = 0; ; attempt++) {
-    const res = await fetch(anvilUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: rpcId++, method, params }), signal: AbortSignal.timeout(60000) })
+    const res = await fetch(anvilUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: rpcId++, method, params }), signal: AbortSignal.timeout(RPC_TIMEOUT_MS) })
     const j = await res.json()
     if (j.error && /Fork Error|rate limit/i.test(j.error.message) && attempt < 8) {
       await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)))
       continue
     }
     if (j.error) throw Object.assign(new Error(j.error.message), { code: j.error.code, data: j.error.data })
+    if (method === 'eth_sendRawTransaction' || method === 'eth_sendTransaction') ownHash(j.result)
     return j.result
   }
 }
@@ -200,7 +297,8 @@ for (const upstream of chain.rpcUrls) {
     say(`${host} gave no block number: trying the next host`)
     continue
   }
-  const anvil = spawn('anvil', ['--fork-url', upstream, '--fork-block-number', head.toString(), '--port', String(anvilPort), '--host', '127.0.0.1', '--hardfork', 'prague', '--no-storage-caching'], { stdio: ['ignore', 'pipe', 'pipe'] })
+  forkUpstream = upstream
+  const anvil = spawn('anvil', ['--fork-url', forkVia, '--fork-block-number', head.toString(), '--port', String(anvilPort), '--host', '127.0.0.1', '--hardfork', 'prague', '--no-storage-caching', '--timeout', '180000'], { stdio: ['ignore', 'pipe', 'pipe'] })
   children.push(anvil)
   anvil.stdout.on('data', (d) => (anvilOut = (anvilOut + d).slice(-4000)))
   anvil.stderr.on('data', (d) => (anvilOut = (anvilOut + d).slice(-4000)))
@@ -211,6 +309,10 @@ for (const upstream of chain.rpcUrls) {
   )
   if (await Promise.race([answering, exited])) {
     forkBlock = head
+    // anvil going away mid-run leaves only "connection refused" on the next call, so it says why it went.
+    anvil.once('exit', (code, signal) => {
+      if (!stopping) say(`anvil exited (${signal ?? code}), and its last words were:\n${anvilOut.slice(-2500)}`)
+    })
     break
   }
   say(`${host} could not serve the fork (${anvilOut.split('\n').find((l) => /429|rate limit|error/i.test(l))?.slice(0, 120) ?? 'anvil did not answer'}): trying the next host`)
@@ -233,6 +335,7 @@ const foreignDeployer = acct(4)
 
 const chainHex = await rpc('eth_chainId')
 section(`Arc Mainnet forked at block ${forkBlock} on anvil port ${anvilPort}`)
+say(`anvil reads ${new URL(forkUpstream).host} through the stand-in at ${forkVia}, which answers null for this run's own hashes`)
 check(Number(chainHex) === chain.evmChainId, `the fork answers the registry's chain id ${chain.evmChainId} (${chainHex})`)
 
 // --- USDC: the precompile-backed token cannot run here, so the mock stands at its address ---------
@@ -273,6 +376,13 @@ if (!mock) throw new Error(`the token did not compile: ${JSON.stringify(solOut.e
 const mockStopped = solOut.contracts[tokensSol].ForkUSDCStopped
 await rpc('anvil_setCode', [USDC, `0x${mock.evm.deployedBytecode.object}`])
 say(`MockUSDC runtime, plus symbol() and decimals(), etched at ${USDC}`)
+
+section("this script's own calls: the fork's stand-in")
+{
+  const probe = ownHash(toHex(randomBytes(32)))
+  const nulls = forkSaid.nulls
+  check((await rpc('eth_getTransactionReceipt', [probe])) === null && forkSaid.nulls === nulls + 1, "a lookup of a hash this run made is answered null by the fork's stand-in, and the real host is not asked")
+}
 
 async function send(account, tx) {
   const nonce = Number(await rpc('eth_getTransactionCount', [account.address, 'pending']))
@@ -863,7 +973,7 @@ async function browserRehearsal({ handoffOnly = false } = {}) {
           if (String(tx.from).toLowerCase() !== owner.address.toLowerCase()) throw Object.assign(new Error('from is not the account'), { code: 4100 })
           if (wallet.holdSend) await wallet.holdSend
           if (wallet.handBack) {
-            const hash = wallet.handBack
+            const hash = ownHash(wallet.handBack)
             wallet.handBack = null
             wallet.sent.push({ hash, to: tx.to ?? null, data: tx.data })
             return hash
