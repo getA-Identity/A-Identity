@@ -752,3 +752,16 @@ test('a write prepared while no node answers stops before the wallet, with the w
     m.setWalletReadProvider(null)
   }
 })
+
+test('a read no network node answered is tried again by the page, and again once a wallet holds an account', async () => {
+  const m = await read()
+  for (const kind of ['unreachable', 'blocked']) assert.equal(m.readTriesAgain(kind), true, kind)
+  for (const kind of ['bad_address', 'no_usdc', 'no_contract', 'not_a_vault', 'wrong_chain', undefined]) assert.equal(m.readTriesAgain(kind), false, String(kind))
+  const page = repo('src/routes/app/ArcVault.tsx')
+  assert.match(page, /if \(!readTriesAgain\(failedKind\)\) return\s*const t = setInterval/)
+  // A read made before the wallet held an account here is made again once it does, after the wallet
+  // hook (called above it) has registered the wallet in the same commit.
+  assert.match(page, /const blockedWithoutWallet = failedKind === 'blocked' && read\.failure\?\.wallet === 'none'/)
+  assert.match(page, /if \(blockedWithoutWallet && wallet\.account\) void load\(\)/)
+  assert.ok(page.indexOf('const wallet = useArcWallet()') < page.indexOf('const blockedWithoutWallet'))
+})

@@ -64,6 +64,7 @@ import {
   networkWord,
   readFailureNext,
   readFailureTitle,
+  readTriesAgain,
   readVault,
   type ReadFailure,
   type VaultSnapshot,
@@ -73,7 +74,11 @@ import type { TxAction } from '../../lib/arc/vault-write'
 
 /** How soon a read from before a settled write's block is tried again: a host catches up in seconds. */
 const BEHIND_MS = 3_000
-/** How often a read no host answered is tried again. No answer is not a verdict, so nobody has to press Refresh. */
+/**
+ * How often a read no host answered is tried again, a read whose every request was stopped before an
+ * answer reached the page included: a lost connection ends there too. No answer is not a verdict, so
+ * nobody has to press Refresh.
+ */
 const UNANSWERED_RETRY_MS = 10_000
 
 type ReadState = {
@@ -259,12 +264,20 @@ export default function ArcVault() {
   }, [readBehind, load])
 
   useEffect(() => {
-    if (failedKind !== 'unreachable') return
+    if (!readTriesAgain(failedKind)) return
     const t = setInterval(() => {
       if (!document.hidden) void load()
     }, UNANSWERED_RETRY_MS)
     return () => clearInterval(t)
   }, [failedKind, load])
+
+  // A read no node answered, made before a wallet held an account here (the first read of a page
+  // load is): read again as soon as one does, so the page reads through it at once instead of saying
+  // to connect a wallet that is connected. The wallet hook registers it first, in the same commit.
+  const blockedWithoutWallet = failedKind === 'blocked' && read.failure?.wallet === 'none'
+  useEffect(() => {
+    if (blockedWithoutWallet && wallet.account) void load()
+  }, [blockedWithoutWallet, wallet.account, load])
 
   return (
     <AppPage

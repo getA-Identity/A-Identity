@@ -490,6 +490,11 @@ export function readFailureNext(f: Pick<ReadFailure, 'kind' | 'wallet' | 'wallet
   return READ_FAILURE_NEXT[f.kind]
 }
 
+/** A read that no host answered is tried again by the page itself: that is not a verdict, and a lost connection lands here too. */
+export function readTriesAgain(kind: ReadFailureKind | undefined): boolean {
+  return kind === 'unreachable' || kind === 'blocked'
+}
+
 /**
  * Read one vault live, every value pinned to one block on one host. By default that block is the
  * host's latest. With `blockNumber`, every value is read AT that block (a host that has not

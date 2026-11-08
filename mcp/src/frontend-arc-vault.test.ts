@@ -1869,8 +1869,9 @@ test('a vault read older than a settled write is said to be old, is read again, 
   assert.match(page, /const readBehind = Boolean\(v && landedBlock !== undefined && v\.block < landedBlock\)/)
   assert.match(page, /if \(!readBehind\) return\s*const t = setInterval\(\(\) => void load\(\), BEHIND_MS\)/)
   assert.match(page, /const held = shownTx\?\.outcome === 'pending' \|\| setupTx !== null \|\| readBehind/)
-  // A read no host answered is tried again by itself.
-  assert.match(page, /if \(failedKind !== 'unreachable'\) return\s*const t = setInterval/)
+  // A read no host answered is tried again by itself, one that no answer reached the page for
+  // included: a lost connection lands there too (frontend-arc-wallet-read.test.ts holds which kinds).
+  assert.match(page, /if \(!readTriesAgain\(failedKind\)\) return\s*const t = setInterval/)
   // A transaction pending in the setup holds this page's controls, and is watched from here.
   const net = ARC_MAINNET?.caip2 ?? ''
   const pendingFund = setupOf({ vault: VAULT, fundTx: record({ action: 'fund', amount: 500_000n }) })
