@@ -2,7 +2,7 @@ import { mock, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { decodeFunctionData, encodeFunctionResult, type Abi } from 'viem'
+import { decodeFunctionData, encodeFunctionResult, getAddress, getContractAddress, type Abi } from 'viem'
 
 /**
  * The Arc vault page reading through the person's wallet when no network node answers the page, run
@@ -65,7 +65,12 @@ const hosts = async () => (await import(repoUrl('src/lib/arc/hosts.ts').href)) a
 const copy = async () => (await import(repoUrl('src/lib/arc/deploy-copy.ts').href)) as CopyModule
 const explain = async () => (await import(repoUrl('src/lib/arc/failure-explain.ts').href)) as { explainFailure: (f: Failure) => Explained }
 const send = async () => (await import(repoUrl('src/lib/arc/send.ts').href)) as { failureOf: (e: unknown) => Failure }
-const contract = async () => (await import(repoUrl('src/lib/contracts/agent-spend-policy.ts').href)) as { AGENT_SPEND_POLICY_ABI: Abi }
+const contract = async () =>
+  (await import(repoUrl('src/lib/contracts/agent-spend-policy.ts').href)) as {
+    AGENT_SPEND_POLICY_ABI: Abi
+    AGENT_SPEND_POLICY_RUNTIME: string
+    AGENT_SPEND_POLICY_IMMUTABLES: Record<string, { start: number; length: number }[]>
+  }
 
 const OWNER = '0x1111111111111111111111111111111111111111'
 const OPERATOR = '0x2222222222222222222222222222222222222222'
@@ -357,6 +362,72 @@ test('a wallet that says no to a read is not asked again until it or its account
   // The hook registers a wallet only while it holds an account from it, and again on every change.
   const hook = repo('src/components/app/arc/useArcWallet.ts')
   assert.match(hook, /if \(!wallet \|\| !account\) return\s*const p = wallet\.provider\s*setWalletReadProvider\(p, \{ walletConnect: wallet\.name === 'WalletConnect' \}\)\s*return \(\) => clearWalletReadProvider\(p\)\s*\}, \[wallet, account\]\)/)
+})
+
+test('a deploy that lands between the receipt check and the nonce read settles under its own hash, and a hash with no receipt still reads replaced', async () => {
+  const m = await read()
+  const r = await receipt()
+  const { AGENT_SPEND_POLICY_ABI: abi, AGENT_SPEND_POLICY_RUNTIME: runtime, AGENT_SPEND_POLICY_IMMUTABLES: ranges } = await contract()
+  const chain = m.ARC_MAINNET
+  const usdc = getAddress(m.usdcOf(chain)?.address as string)
+  const registry = m.rpcUrls(chain).map((u) => m.hostOf(u))
+  const created = getContractAddress({ from: getAddress(OWNER), nonce: 7n })
+  const deployArgs = { owner: OWNER, operator: OPERATOR, usdc, dailyCap: 1_000_000n, autoApproveMax: 250_000n }
+  const word = (address: string) => address.slice(2).toLowerCase().padStart(64, '0')
+  let code = runtime.slice(2).toLowerCase()
+  for (const [name, value] of [['owner', OWNER], ['usdc', usdc]] as const)
+    for (const { start, length } of ranges[name]) code = code.slice(0, start * 2) + word(value) + code.slice((start + length) * 2)
+  const values: Record<string, unknown> = {
+    owner: OWNER,
+    operator: OPERATOR,
+    usdc,
+    dailyCap: deployArgs.dailyCap,
+    autoApproveMax: deployArgs.autoApproveMax,
+    frozen: false,
+    allowlistEnabled: false,
+    sessionKeyExpiry: 0n,
+    today: 1n,
+    spentToday: 0n,
+    balance: 0n,
+  }
+  /** The nonce is used and the vault exists from the start. The receipt is there only from the second round of asking. */
+  const network = (landed: boolean): Net => {
+    let asks = 0
+    return (_host, method, params) => {
+      if (method === 'eth_getTransactionReceipt') return landed && ++asks > registry.length ? { ...receiptJson, contractAddress: created, to: null, status: '0x1', logs: [] } : null
+      if (method === 'eth_getTransactionByHash') return txJson(chain.chainId)
+      if (method === 'eth_getTransactionCount') return '0x8'
+      if (method === 'eth_chainId') return hex(chain.chainId)
+      if (method === 'eth_getBlockByNumber') return block(100n)
+      if (method === 'eth_getCode') return `0x${code}`
+      if (method === 'eth_call') {
+        const { functionName } = decodeFunctionData({ abi, data: (params[0] as { data: `0x${string}` }).data })
+        return encodeFunctionResult({ abi, functionName, result: values[functionName] } as unknown as Parameters<typeof encodeFunctionResult>[0])
+      }
+      return undefined
+    }
+  }
+  const deploy: Rec = {
+    hash: HASH,
+    action: 'deploy',
+    what: 'Create your vault',
+    network: chain.caip2,
+    from: OWNER,
+    vault: null,
+    submittedAt: new Date(1_000_000).toISOString(),
+    expect: [],
+    outcome: 'pending',
+    deployArgs,
+    nonce: 7,
+  }
+  const landed = await withNet(network(true), () => r.advance(chain, deploy, 0, 2_000_000))
+  assert.equal(landed.record.outcome, 'settled', 'the receipt read after the nonce is what happened')
+  assert.equal(landed.record.vault, created)
+  assert.equal(landed.record.hash, HASH, 'the deploy keeps the hash the server is asked about')
+
+  const replaced = await withNet(network(false), () => r.advance(chain, deploy, 0, 2_000_000))
+  assert.equal(replaced.record.outcome, 'replaced', 'no receipt after the nonce moved: another transaction made this vault')
+  assert.equal(replaced.record.vault, created)
 })
 
 test('a vault read is a result, never a throw, and is blocked only when nobody answered at all', async () => {

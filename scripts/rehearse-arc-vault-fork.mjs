@@ -97,6 +97,7 @@ const viem = await mod('mcp/node_modules/viem/_esm/index.js')
 const { generatePrivateKey, privateKeyToAccount, mnemonicToAccount } = await mod('mcp/node_modules/viem/_esm/accounts/index.js')
 const { getChainById } = await mod('mcp/dist/chains/registry.js')
 const { committedOurKeys, OUR_KEY_PUBLIC_ADDRESSES } = await mod('mcp/dist/arc-owner-vault.js')
+const { ARC_OWNER_HELD_VAULTS } = await mod('mcp/dist/arc-season.js')
 const art = await mod('mcp/dist/contracts/AgentSpendPolicy.js')
 const { encodeDeployData, encodeFunctionData, decodeFunctionResult, getAddress, keccak256, parseAbi, parseUnits, toFunctionSelector, toHex } = viem
 const { randomBytes } = await import('node:crypto')
@@ -121,7 +122,7 @@ const section = (s) => console.log(`\n--- ${s}`)
 /** What closed connections did, said at the end: this script's own calls asked again, and the page's requests failed to it. */
 const socketNotes = { asked: [], toPage: 0, lastToPage: '' }
 /** What the fork's stand-in did: lookups of this run's own hashes it answered itself, the calls it passed on by method, rate limits it waited out, and failures it passed on. See forkVia. */
-const forkSaid = { nulls: 0, passedOn: {}, waited: 0, failed: 0, lastFailed: '' }
+const forkSaid = { nulls: 0, curatedLogs: 0, passedOn: {}, waited: 0, failed: 0, lastFailed: '' }
 
 // --- the processes, which only this run started and only this run stops, by pid --------------
 const work = mkdtempSync(join(tmpdir(), 'arc-vault-fork-'))
@@ -136,7 +137,7 @@ function stopChildren() {
 function finish(code) {
   stopChildren()
   const busiest = Object.entries(forkSaid.passedOn).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([m, n]) => `${m} ${n}`).join(', ')
-  console.log(`\nthe fork's stand-in: ${forkSaid.nulls} lookups of this run's own hashes answered null, ${Object.values(forkSaid.passedOn).reduce((a, b) => a + b, 0)} calls passed on to the real host (${busiest}), ${forkSaid.waited} rate limits waited out, ${forkSaid.failed} failures passed on to anvil${forkSaid.lastFailed ? `, the last ${forkSaid.lastFailed}` : ''}`)
+  console.log(`\nthe fork's stand-in: ${forkSaid.nulls} lookups of this run's own hashes answered null, ${forkSaid.curatedLogs} log reads of the listed vaults answered empty, ${Object.values(forkSaid.passedOn).reduce((a, b) => a + b, 0)} calls passed on to the real host (${busiest}), ${forkSaid.waited} rate limits waited out, ${forkSaid.failed} failures passed on to anvil${forkSaid.lastFailed ? `, the last ${forkSaid.lastFailed}` : ''}`)
   if (socketNotes.asked.length) console.log(`this script's own calls asked again after a closed connection: ${socketNotes.asked.length} (${[...new Set(socketNotes.asked)].join(', ')})`)
   if (socketNotes.toPage) console.log(`the page's requests failed to it after a failed connection: ${socketNotes.toPage}, the last ${socketNotes.lastToPage}`)
   const failed = results.filter((r) => !r.ok).length
@@ -211,6 +212,15 @@ const ownHash = (h) => {
   return h
 }
 const BY_HASH = new Set(['eth_getTransactionByHash', 'eth_getTransactionReceipt'])
+// The report also reads the vaults listed by hand in ARC_OWNER_HELD_VAULTS. Those are real vaults with real history, and
+// reading it through one rate limited host takes longer than any wait below. What they did says nothing about this run, so
+// a read of their logs is answered empty here, and the checks count this run's vaults on top of the listed ones.
+const CURATED_VAULTS = new Set(ARC_OWNER_HELD_VAULTS.map((v) => v.address.toLowerCase()))
+const onlyCuratedLogs = (call) => {
+  if (call?.method !== 'eth_getLogs') return false
+  const named = [call.params?.[0]?.address ?? []].flat()
+  return named.length > 0 && named.every((a) => CURATED_VAULTS.has(String(a).toLowerCase()))
+}
 /** How many times a read the real host refused is asked again, waiting 1, 2, 4, 8, 16, 30 and 30 seconds. anvil gives the stand-in 180. */
 const FORK_TRIES = 7
 const forkWait = (attempt) => Math.min(1000 * 2 ** attempt, 30000)
@@ -238,6 +248,10 @@ const forkVia = await new Promise((resolve, reject) => {
       if (call && !Array.isArray(call) && BY_HASH.has(call.method) && runHashes.has(String(call.params?.[0] ?? '').toLowerCase())) {
         forkSaid.nulls++
         return reply(200, 'application/json', JSON.stringify({ jsonrpc: '2.0', id: call.id ?? null, result: null }))
+      }
+      if (call && !Array.isArray(call) && onlyCuratedLogs(call)) {
+        forkSaid.curatedLogs++
+        return reply(200, 'application/json', JSON.stringify({ jsonrpc: '2.0', id: call.id ?? null, result: [] }))
       }
       forkSaid.passedOn[call?.method ?? 'batch'] = (forkSaid.passedOn[call?.method ?? 'batch'] ?? 0) + 1
       for (let attempt = 0; ; attempt++) {
@@ -719,7 +733,9 @@ check(list0.body.admission?.ready === true && list0.body.admission?.keysCompared
 check(list0.body.admission?.keysNotCompared?.includes('X402_3009_FUNDER_KEY') && !list0.body.admission.keysNotCompared.includes('CCTP_EVM_SIGNER_KEY'), 'and it names the keys it holds neither the key nor a committed address for')
 check(list0.body.sweep?.on === false && list0.body.sweep.lastRun === null && list0.body.sweep.lastBlockRead === null, 'with ARC_VAULT_SWEEP=off the list says the sweep is off, and it has read nothing')
 const report0 = await season()
-check(report0.milestone1.vaults.count === 0 && report0.milestone1.vaults.target === 5, `GET /api/arc/season counts ${report0.milestone1.vaults.count} of ${report0.milestone1.vaults.target}`)
+// The vaults listed by hand count before this run deploys any.
+const LISTED = ARC_OWNER_HELD_VAULTS.length
+check(report0.milestone1.vaults.count === LISTED && report0.milestone1.vaults.target === 5, `GET /api/arc/season counts the ${LISTED} listed vaults, ${report0.milestone1.vaults.count} of ${report0.milestone1.vaults.target}`)
 
 // --- the owner path -------------------------------------------------------------------------
 section('the owner: deploy, expiry, funding, admission')
@@ -747,7 +763,7 @@ check(Boolean(row?.explorerUrl) && row.explorerUrl.includes(vault), `the list li
 
 const report1 = await season()
 const item1 = seasonItem(report1, vault)
-check(report1.milestone1.vaults.count === 1 && report1.milestone1.vaults.target === 5, `GET /api/arc/season counts it: ${report1.milestone1.vaults.count} of ${report1.milestone1.vaults.target}`)
+check(report1.milestone1.vaults.count === LISTED + 1 && report1.milestone1.vaults.target === 5, `GET /api/arc/season counts it: ${report1.milestone1.vaults.count} of ${report1.milestone1.vaults.target}`)
 check(item1?.ownerKind === 'unstated', `the report says ownerKind ${item1?.ownerKind}`)
 check(item1?.deployTx === deployTx.toLowerCase(), 'the report names its deploy transaction')
 check(/admitted automatically/.test(report1.milestone1.vaults.note), 'the report note says it was admitted automatically, owner not identified')
@@ -760,7 +776,7 @@ const upper = await postVault(`0x${deployTx.slice(2).toUpperCase()}`)
 check(upper.body?.alreadyAdmitted === true, 'the same hash in capitals is the same deploy')
 const rowsAfterRepeat = await storeCount()
 check(rowsAfterRepeat === 1, `the store still holds ${rowsAfterRepeat} row`)
-check((await season()).milestone1.vaults.count === 1, 'the report still counts 1')
+check((await season()).milestone1.vaults.count === LISTED + 1, 'the report still counts it once')
 
 // --- what the owner did, and what anyone else did ----------------------------------------------
 section("owner actions: the owner's appear, anyone else's do not")
@@ -793,7 +809,8 @@ const actions = await waitFor(
     const item = seasonItem(await season(), vault)
     return item?.actionsRead.state === 'complete' && BigInt(item.actionsRead.scannedToBlock) >= BigInt(viaWithdraw.receipt.blockNumber) ? item : null
   },
-  90000,
+  // The first pass walks every listed vault from its deploy block, 10,000 blocks a query, before this run's vault.
+  300000,
 )
 say(`actionsRead ${JSON.stringify(actions.actionsRead)}`)
 say(`freezeTxs ${actions.freezeTxs.map((t) => t.txHash).join(', ')}`)
@@ -855,7 +872,7 @@ const lateAnswer = await postVault(late.hash)
 const lateIds = (lateAnswer.body?.reasons ?? []).map((r) => r.id)
 check(lateAnswer.body?.status === 'refused' && lateIds.length === 1 && lateIds[0] === 'session-key-expiry', `the refusal names only the end date: ${lateAnswer.body?.reasons?.[0]?.reason}`)
 check(lateAnswer.body?.retryable === true, 'the refusal is retryable')
-check((await season()).milestone1.vaults.count === 1, 'it is not counted')
+check((await season()).milestone1.vaults.count === LISTED + 1, 'it is not counted')
 await setExpiry(lateOwner, late.vault)
 
 // What the owner can change with one call is no fact about the vault, so none of it is refused for good.
@@ -871,7 +888,7 @@ await send(lateOwner, vaultCall(late.vault, 'setOperator', [agent.address]))
 
 const lateAgain = await postVault(late.hash)
 check(lateAgain.body?.status === 'admitted' && lateAgain.body.alreadyAdmitted === false, 'once the expiry, the limits and the key are set the same post is admitted: retryable was true')
-check((await season()).milestone1.vaults.count === 2, 'the report counts 2 of 5')
+check((await season()).milestone1.vaults.count === LISTED + 2, 'the report counts a second vault of this run')
 
 section('real hosts are not all up: one stalls, one is rate-limited, one has no copy of the receipt')
 const hostNames = chain.rpcUrls.map((u) => new URL(u).host)
@@ -886,7 +903,7 @@ say(`answered in ${mixedMs} ms, with only ${hostNames[3]} fully up`)
 check(mixedAnswer.body?.status === 'admitted', 'the deploy is admitted from the one host that has it')
 if (mixedAnswer.body?.status !== 'admitted') console.log(JSON.stringify(mixedAnswer.body, null, 1))
 check(mixedMs < 30000, 'the answer came inside the 30 seconds the proxy gives it')
-check((await season()).milestone1.vaults.count === 3, 'the report counts 3 of 5')
+check((await season()).milestone1.vaults.count === LISTED + 3, 'the report counts a third vault of this run')
 
 section('hosts that disagree, or simulate wrongly, are not a verdict about the vault')
 await rpc('anvil_setBalance', [acct(13).address, toHex(10n ** 20n)])
@@ -900,10 +917,10 @@ const missimulated = await postVault(doubted.hash)
 writeFileSync(hostBehaviourFile, '{}')
 check(missimulated.body?.status === 'refused' && missimulated.body.retryable === true && missimulated.body.reasons.length === 1 && missimulated.body.reasons[0].id === 'runtime-code', 'a simulation that disagrees with a creation input that matched: refused, and retryable')
 check(!/is not the vault contract/.test(missimulated.body?.reasons?.[0]?.reason ?? ''), `and its words do not blame the vault: ${missimulated.body?.reasons?.[0]?.reason}`)
-check((await season()).milestone1.vaults.count === 3, 'neither is counted')
+check((await season()).milestone1.vaults.count === LISTED + 3, 'neither is counted')
 const undoubted = await postVault(doubted.hash)
 check(undoubted.body?.status === 'admitted' && undoubted.body.alreadyAdmitted === false, 'with the hosts back, the same post is admitted: retryable was true')
-check((await season()).milestone1.vaults.count === 4, 'the report counts 4 of 5')
+check((await season()).milestone1.vaults.count === LISTED + 4, 'the report counts a fourth vault of this run')
 
 section('things that are no vault')
 const unknownHash = await postVault(toHex(BigInt(Date.now()), { size: 32 }))

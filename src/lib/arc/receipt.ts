@@ -25,7 +25,7 @@ import { getAddress, getContractAddress, isAddress, type Hex } from 'viem'
 import type { Chain } from '../chains'
 import type { DeployArgs, TxRecord } from './pending'
 import { READ_BACK_TRIES, decideLanded, decideUnseen, deployNonce, guessedNonce, needsReadBack, type DeployBack, type ReadBack, type Unseen } from './tx-rules.ts'
-import { missingFromReceipt, pollReceipt, readNonce, readTransaction, readVault } from './vault-read.ts'
+import { missingFromReceipt, pollReceipt, readNonce, readTransaction, readVault, type ReceiptPoll } from './vault-read.ts'
 import { sameAddress } from './vault-rules.ts'
 
 /** How often a pending transaction is asked about, and for how long before the page stops asking on its own. */
@@ -63,30 +63,33 @@ async function readBackAt(chain: Chain, vault: string, blockNumber: bigint, host
   return r.ok ? { ok: true, block: r.data.block, sessionKeyExpiry: r.data.sessionKeyExpiry, balance: r.data.balance } : { ok: false, reason: r.failure.reason }
 }
 
+/** What a receipt that was found says about the transaction it belongs to. */
+async function fromReceipt(chain: Chain, record: TxRecord, poll: Extract<ReceiptPoll, { found: true }>): Promise<Advance> {
+  const rc = poll.receipt
+  const created = rc.contractAddress && isAddress(rc.contractAddress) ? getAddress(rc.contractAddress) : null
+  const landed = { success: rc.status === 'success', block: rc.blockNumber, feeWei: rc.gasUsed * (rc.effectiveGasPrice ?? 0n), host: poll.host, contractAddress: created }
+  const facts: Parameters<typeof decideLanded>[2] = {}
+  if (landed.success && record.action === 'deploy') {
+    // At the receipt's block first; once that has failed READ_BACK_TRIES times (a host that
+    // no longer serves state that old), at the latest block.
+    if (created && record.deployArgs)
+      facts.deploy = await deployReadback(
+        chain,
+        created,
+        record.deployArgs,
+        (record.readBackTries ?? 0) < READ_BACK_TRIES ? { blockNumber: rc.blockNumber, preferHost: poll.host } : {},
+      )
+  } else if (landed.success) {
+    facts.missing = missingFromReceipt(rc, record.expect)
+    if (!facts.missing.length && needsReadBack(record) && record.vault) facts.readBack = await readBackAt(chain, record.vault, rc.blockNumber, poll.host)
+  }
+  return { record: decideLanded(record, landed, facts), answered: poll.answered, total: poll.total }
+}
+
 /** One check of a pending transaction. Returns the record unchanged (but for notes) while nothing is known. */
 export async function advance(chain: Chain, record: TxRecord, tick: number, now: number = Date.now()): Promise<Advance> {
   const poll = await pollReceipt(chain, record.hash)
-  if (poll.found) {
-    const rc = poll.receipt
-    const created = rc.contractAddress && isAddress(rc.contractAddress) ? getAddress(rc.contractAddress) : null
-    const landed = { success: rc.status === 'success', block: rc.blockNumber, feeWei: rc.gasUsed * (rc.effectiveGasPrice ?? 0n), host: poll.host, contractAddress: created }
-    const facts: Parameters<typeof decideLanded>[2] = {}
-    if (landed.success && record.action === 'deploy') {
-      // At the receipt's block first; once that has failed READ_BACK_TRIES times (a host that
-      // no longer serves state that old), at the latest block.
-      if (created && record.deployArgs)
-        facts.deploy = await deployReadback(
-          chain,
-          created,
-          record.deployArgs,
-          (record.readBackTries ?? 0) < READ_BACK_TRIES ? { blockNumber: rc.blockNumber, preferHost: poll.host } : {},
-        )
-    } else if (landed.success) {
-      facts.missing = missingFromReceipt(rc, record.expect)
-      if (!facts.missing.length && needsReadBack(record) && record.vault) facts.readBack = await readBackAt(chain, record.vault, rc.blockNumber, poll.host)
-    }
-    return { record: decideLanded(record, landed, facts), answered: poll.answered, total: poll.total }
-  }
+  if (poll.found) return fromReceipt(chain, record, poll)
 
   // No receipt on any host. Every few checks, look at the transaction itself and its nonce; once
   // the nonce is seen used, on every check, so the watch before 'replaced' is a matter of seconds.
@@ -104,6 +107,11 @@ export async function advance(chain: Chain, record: TxRecord, tick: number, now:
     if (record.action === 'deploy' && record.deployArgs && dn !== undefined) {
       const mined = typeof f.latestNonce === 'number' ? f.latestNonce : watching ? Number.MAX_SAFE_INTEGER : await readNonce(chain, record.from, 'latest')
       if (mined !== null && mined > dn) {
+        // Arc makes two blocks a second, so the nonce can move after the receipt check above simply
+        // because this transaction landed in between. Only a receipt read after the nonce tells that
+        // from a replacement, and a landed deploy read as one leaves the page with no hash to ask about.
+        const late = await pollReceipt(chain, record.hash)
+        if (late.found) return fromReceipt(chain, record, late)
         const address = getContractAddress({ from: getAddress(record.from), nonce: BigInt(dn) })
         f.createdAt = { address, back: await deployReadback(chain, address, record.deployArgs) }
       }
