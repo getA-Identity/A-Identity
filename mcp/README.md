@@ -139,8 +139,10 @@ Directories:
   `POST /api/x402/gateway/verify-then-pay` and the `verify_then_pay` MCP tool. Free checks
   first, read from Arc Mainnet (`reads.ts`): the vault holds the registry's USDC, an agent named
   in `payeeAgentId` is the payee's on Arc Mainnet's own IdentityRegistry, and the vault's policy
-  plus a simulated `pay()` from its operator would accept the payment, so a payment the vault
-  would refuse never buys a check. A payee that holds no agent is not refused: it goes on to
+  plus a simulated `pay()` from its operator would accept the payment, so a payment that neither
+  key could make never buys a check. A payment only the owner can make, above the ceiling or off
+  the allowlist on a vault with a human, goes on to the check with `ownerPay()` simulated instead,
+  and on a vault whose owner is its operator both stay refusals. A payee that holds no agent is not refused: it goes on to
   the check, and unless it is an agent on our platform it gets WARN. Then `risk_check` is bought in process through the Gateway rail,
   Arc Mainnet's offer only, with the payee ADDRESS as agentId (`core.ts`), and the answer must
   pass `verdict.ts` (settlement echo, payee and amount echo, a finite reputation, an ALLOW or
@@ -342,7 +344,7 @@ curl -s https://a-identity.xyz/api/arc/season | jq '.milestone1.checks | {count,
 operating wallet (agent #0, internal) and expect `TrustDenyError`, which is what its 25 flows got on 2026-11-01 and
 2026-11-02 UTC. It is off-platform, so since the rule changed on 2026-11-04 it forecasts WARN and the plan refuses any
 `--deny`: Milestone 1's 100 flows finished on 2026-11-02 and are not to be run again, and no other payee replaces it.
-The historical invocation was `--allow 25 --deny 75`, and it now ends REFUSED. Other flags: `--amount-units`
+The historical run's totals were `--allow 75 --deny 25`, and that invocation now ends REFUSED. Other flags: `--amount-units`
 (default 1000, and each flow pays one unit more, so no two share an amount), `--base-url`,
 `--budget` (default 0.75 USDC), `--max-fee-gwei` (default 60), `--pause-ms` (default 5000),
 `--operator`, `--ack-stop`, `--ack-fresh-log`, `--reconcile`. Exit 0 fits or finished, 1 refused or

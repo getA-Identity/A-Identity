@@ -32,8 +32,10 @@
  *     timed by its block, which the chain gives in whole seconds, so it is compared with its check
  *     at that precision; the receipt route has already proved the block order.
  *   - A payer is internal when it is on either rail's published list of our own buyer
- *     wallets, or is the owner of a vault labeled 'team', compared case-insensitively. Everything
- *     else is external.
+ *     wallets, is an address this repo commits as ours (committedOurKeys, which admission refuses
+ *     an owner from too, and no env), is the owner of a vault labeled 'team', or is the agent key on
+ *     a recorded flow through such a vault or through the launch-day vault, compared
+ *     case-insensitively. Everything else is external.
  *   - A vault counts only when its owner key is one we never held, so the launch-day
  *     vault, owned by our operating wallet, does not. The vaults are the curated list plus the
  *     ones POST /api/arc/vaults admitted (arc-owner-vault-live.ts holds them to the same checks),
@@ -51,7 +53,7 @@
  * injected, so the aggregation is unit-tested with rows and the route adds the real
  * loaders and nothing else.
  */
-import { ADMISSION_CHAIN, ADMISSION_EVIDENCE_URL, collectOurAddresses, liveOurAddressSources } from './arc-owner-vault.js'
+import { ADMISSION_CHAIN, ADMISSION_EVIDENCE_URL, ARC_OUR_PAYEES, collectOurAddresses, committedOurKeys, liveOurAddressSources } from './arc-owner-vault.js'
 import { admittedVaultsFromStore } from './arc-owner-vault-live.js'
 import { liveOwnerActions, type ActionsReadState, type ActionTx, type ActionVault, type VaultOwnerActions } from './arc-vault-actions.js'
 import { getChainById, type ChainDescriptor } from './chains/index.js'
@@ -64,6 +66,7 @@ import {
   loadX402SettlementsResult,
   type GatewaySettlementRecord,
   type VtpFlowRecord,
+  type VtpStoreIo,
   type X402SettlementRecord,
 } from './storage.js'
 import { internalPayers as gatewayInternalPayers, railStatus as gatewayRailStatus } from './x402-gateway/rail.js'
@@ -128,7 +131,7 @@ export const ARC_PARTNERS: ArcPartner[] = [
  * counts; a reviewer still needs to see which of the two each vault is. The chain cannot tell them
  * apart, so whoever admits the vault with the script says which, with --owner-kind. 'unstated': the
  * vault was admitted automatically by POST /api/arc/vaults, where nobody can say, and a reader is
- * told the owner is not identified.
+ * told the owner is not identified, until someone says (labelOwners).
  */
 export type ArcOwnerKind = 'team' | 'external' | 'unstated'
 
@@ -180,18 +183,8 @@ export type ArcRefusal = {
   payeeInternal?: string
 }
 
-/**
- * Payees that are ours although they are neither a rail's wallet nor a vault key. A flow paying
- * one is a real flow and counts, and it is labeled, because a reviewer would otherwise read it as
- * a payment to somebody else. Meridian is our showcase agent: the ledger says so where its Arc
- * Mainnet identity #4306 was registered and moved to this wallet (chains/provenance.ts).
- */
-export const ARC_OUR_PAYEES: { address: string; why: string }[] = [
-  { address: '0x4e26Ae66840134Ac5979c56ba2509F3956b93431', why: 'the payee is Meridian, our own showcase agent' },
-  // Simon is a platform agent in our founder's own account (agent_mrnzx4znbxzh5). It took over as
-  // the Milestone 1 ALLOW payee on 2026-11-02, when Meridian's account could not be reached.
-  { address: '0x03f1fb189E461B88f3e8bA7100B29B594E5f98A9', why: 'the payee is Simon, an agent in our own account' },
-]
+// Our own agents. Admission refuses an owner from this list too, so it lives in arc-owner-vault.ts.
+export { ARC_OUR_PAYEES }
 
 /**
  * The day the trust verdict's rule changed: from then on, a payee we know nothing about gets WARN
@@ -356,7 +349,13 @@ export type ArcSeasonReport = {
   usage: {
     basis: string
     internal: ArcSeasonUsageSide
-    external: ArcSeasonUsageSide & { byWallet: ArcSeasonWallet[] }
+    external: ArcSeasonUsageSide & {
+      byWallet: ArcSeasonWallet[]
+      /** Set when the flow log could not be read: the agent key of a vault labeled team, and a key the launch-day vault rotated
+       *  to, are known from that log, so one could be counted as external. The number is then an upper limit, the opposite of
+       *  incomplete. Every number that reads external checks carries this. */
+      mayIncludeTeamKeys?: true
+    }
   }
   milestone1: {
     title: string
@@ -383,6 +382,8 @@ export type ArcSeasonReport = {
       internal: number
       /** External Gateway checks. Counted under Milestone 2, never in count. */
       external: number
+      /** external, and so internal the other way, could be off by an agent key of a vault labeled team (usage.external). */
+      externalMayIncludeTeamKeys?: true
       linked: Record<ArcFlowOutcome, number>
       /** Our own Gateway checks in the retained log with nothing linked: paid checks, not flows.
        *  null when the Gateway log or the flow log could not be read, because then nobody can say. */
@@ -417,7 +418,7 @@ export type ArcSeasonReport = {
     title: string
     due: string
     externalTeamsLive: { count: number; target: number; incomplete?: true; teams: ArcSeasonTeam[]; note: string }
-    externalChecks: { count: number; target: number; incomplete?: true; note: string }
+    externalChecks: { count: number; target: number; incomplete?: true; mayIncludeTeamKeys?: true; note: string }
     teamActiveOnSeveralDays: {
       count: number
       target: number
@@ -433,13 +434,14 @@ export type ArcSeasonReport = {
      *  an outside team can show, so they are listed. */
     externalFlows: { count: number; linked: Record<ArcFlowOutcome, number>; items: ArcSeasonFlowItem[]; incomplete?: true; note: string }
     /** External wallets that paid but are attributed to no team. Reported, never folded. */
-    unattributed: { wallets: number; checks: number; note: string }
+    unattributed: { wallets: number; checks: number; mayIncludeTeamKeys?: true; note: string }
   }
   afterProgram: {
-    activeExternalWallets: { count: number; target: number; incomplete?: true; windowDays: number; since: string; wallets: string[] }
+    activeExternalWallets: { count: number; target: number; incomplete?: true; mayIncludeTeamKeys?: true; windowDays: number; since: string; wallets: string[] }
     /** External use per UTC week, Monday first, from the first external check to this read. */
     weekly: {
       incomplete?: true
+      mayIncludeTeamKeys?: true
       weeks: ArcSeasonWeek[]
       /** External wallets that paid in two or more different weeks, ascending. */
       repeatWallets: string[]
@@ -461,6 +463,8 @@ export type ArcSeasonDeps = {
   facilitatorRows: () => Promise<X402SettlementRecord[]>
   /** Our own buyer wallets, as each rail publishes them. Any case. */
   internalPayers: { gateway: string[]; facilitator: string[] }
+  /** Every other address the repo itself commits as ours, read with no env (committedOurKeys). Any case. */
+  committedOurs?: string[]
   /** The wallets our rails are paid to. A payment to one is a payment to ourselves. */
   ourPayTo?: string[]
   /** Our own agents and other payees that are ours. Default ARC_OUR_PAYEES. */
@@ -487,8 +491,12 @@ export type ArcSeasonDeps = {
   flowRows?: (onSkip?: (row: ArcSeasonSkippedRow) => void, onKeys?: (keys: ArcFlowKeys) => void) => Promise<ArcVerifyThenPayFlow[]>
 }
 
-/** Which key was a vault's operator when a flow was recorded. Read from the chain by the check's free half, so it is nobody's word. */
-export type ArcFlowKeys = { vault: string; operator: string }
+/**
+ * Which key was a vault's operator when a flow was recorded, read from the chain by the check's free half, so it is
+ * nobody's word, and which wallet paid that flow's check, when the row names it. The two can differ: anyone can deploy a
+ * vault naming someone else's wallet as its operator and buy a check for it.
+ */
+export type ArcFlowKeys = { vault: string; operator: string; payer?: string }
 
 // The live loaders, each through the read that tells "no rows yet" from "could not read the
 // log", so an unreadable log throws and is reported as unreadable rather than counted as zero.
@@ -506,8 +514,9 @@ async function liveFacilitatorRows(): Promise<X402SettlementRecord[]> {
   return read.rows
 }
 
-async function liveFlowRows(onSkip?: (row: ArcSeasonSkippedRow) => void, onKeys?: (keys: ArcFlowKeys) => void): Promise<ArcVerifyThenPayFlow[]> {
-  const read = await loadCountableVtpFlows()
+/** The store is a seam only so a test can run this very loader against a real file: a recorded row's keys reach the report through it. */
+export async function liveFlowRows(onSkip?: (row: ArcSeasonSkippedRow) => void, onKeys?: (keys: ArcFlowKeys) => void, io: VtpStoreIo = {}): Promise<ArcVerifyThenPayFlow[]> {
+  const read = await loadCountableVtpFlows(io)
   if (!read.ok) throw new Error(read.reason)
   for (const keys of flowKeysFromRows(read.rows)) onKeys?.(keys)
   return seasonFlowsFromRows(read.rows, onSkip)
@@ -519,7 +528,11 @@ async function liveFlowRows(onSkip?: (row: ArcSeasonSkippedRow) => void, onKeys?
  * wrote keeps naming it after a setOperator, which is why this reads rows and not the vault as it is now.
  */
 export function flowKeysFromRows(rows: VtpFlowRecord[]): ArcFlowKeys[] {
-  return rows.flatMap((row) => (row && !holdsNoFlow(row) && typeof row.vault === 'string' && typeof row.operator === 'string' ? [{ vault: row.vault, operator: row.operator }] : []))
+  return rows.flatMap((row) =>
+    row && !holdsNoFlow(row) && typeof row.vault === 'string' && typeof row.operator === 'string'
+      ? [{ vault: row.vault, operator: row.operator, ...(typeof row.check?.payer === 'string' ? { payer: row.check.payer } : {}) }]
+      : [],
+  )
 }
 
 /** Flow rows as season flows, one row at a time: a row that cannot be mapped is passed to onSkip,
@@ -545,6 +558,7 @@ export function liveArcSeasonDeps(env: NodeJS.ProcessEnv = process.env): ArcSeas
     admittedVaults: (onSkip) => admittedVaultsFromStore(collectOurAddresses(liveOurAddressSources(env)), onSkip),
     ownerActions: liveOwnerActions(env),
     internalPayers: { gateway: gatewayInternalPayers(env), facilitator: facilitatorInternalPayers(env) },
+    committedOurs: committedOurKeys(),
     ourPayTo: [gatewayRailStatus(env, arcMainnet().caip2).payTo, facilitatorRailStatus(env, arcMainnet().caip2).payTo].filter((a): a is string => Boolean(a)),
   }
 }
@@ -573,6 +587,24 @@ export function mergeVaults(curated: ArcOwnerHeldVault[], admitted: ArcOwnerHeld
     out.push(v)
   }
   return out
+}
+
+const PARTNER_OWNER_NOTE = 'Passed every owner-held check and admitted automatically. The chain cannot say whose wallet an owner is; this one is on our list of wallets attributed to external teams.'
+
+/**
+ * What is known of whose wallet each vault's owner is. A stored row says 'unstated', because the chain cannot tell. A
+ * curated entry for the same vault says what a person said. A wallet on the partner list is one someone has said is
+ * outside the team, and an owner cannot be planted: admission requires that wallet to have sent the deploy. Nothing else
+ * moves a label, so both the report and GET /api/arc/vaults read a vault's owner the same way.
+ */
+export function labelOwners(vaults: ArcOwnerHeldVault[], curated: ArcOwnerHeldVault[] = ARC_OWNER_HELD_VAULTS, partners: ArcPartner[] = ARC_PARTNERS): ArcOwnerHeldVault[] {
+  const entries = new Map(curated.map((c) => [c.address.toLowerCase(), c]))
+  const partnerWallets = new Set(partners.map((p) => p.wallet.toLowerCase()))
+  return vaults.map((v) => {
+    const entry = entries.get(v.address.toLowerCase())
+    if (entry) return { ...v, ownerKind: entry.ownerKind, note: entry.note }
+    return v.ownerKind === 'unstated' && partnerWallets.has(v.owner.toLowerCase()) ? { ...v, ownerKind: 'external' as const, note: PARTNER_OWNER_NOTE } : v
+  })
 }
 
 const GATEWAY_SETTLED = new Set<GatewaySettlementRecord['outcome']>(['credited', 'completed'])
@@ -787,11 +819,11 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   const flowKeys: ArcFlowKeys[] = []
   const recordedFlows = loadFlowRows ? await readLog('verify-then-pay flow log', () => loadFlowRows((row) => skippedRows.push(row), (keys) => flowKeys.push(keys))) : null
   const flows = mergeFlows(deps.flows ?? ARC_VERIFY_THEN_PAY_FLOWS, recordedFlows?.rows ?? [])
-  for (const f of flows) if (f.vault && f.vaultKeys) flowKeys.push({ vault: f.vault, operator: f.vaultKeys.operator })
+  for (const f of flows) if (f.vault && f.vaultKeys) flowKeys.push({ vault: f.vault, operator: f.vaultKeys.operator, ...(f.payer ? { payer: f.payer } : {}) })
   const skippedVaults: ArcSeasonSkippedVault[] = []
   const loadAdmitted = deps.admittedVaults
   const admittedVaults = loadAdmitted ? await readLog('list of admitted vaults', () => loadAdmitted((row) => skippedVaults.push(row))) : null
-  const vaults = mergeVaults(curatedVaults, admittedVaults?.rows ?? [])
+  const vaults = labelOwners(mergeVaults(curatedVaults, admittedVaults?.rows ?? []), curatedVaults, partners)
   const vaultsByKind: Record<ArcOwnerKind, number> = { team: 0, external: 0, unstated: 0 }
   for (const v of vaults) vaultsByKind[v.ownerKind] += 1
   const unstatedVaults = vaultsByKind.unstated
@@ -812,16 +844,23 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   ]
   // The agent keys flows recorded on vaults of this kind. Matched on the vault's own address and never on its
   // owner: anyone can deploy a vault that names a team wallet as owner and their own key as operator.
-  const agentKeysOn = (kind: ArcOwnerKind) => {
+  const flowKeysOn = (kind: ArcOwnerKind) => {
     const addresses = new Set(vaults.filter((v) => v.ownerKind === kind).map((v) => v.address.toLowerCase()))
-    return flowKeys.filter((k) => addresses.has(k.vault.toLowerCase())).map((k) => k.operator)
+    return flowKeys.filter((k) => addresses.has(k.vault.toLowerCase()))
   }
   // A vault labeled 'team' is a person on our team, in their own wallet. We never held that key,
   // which is what the vault metric counts, and the wallet is still not one "we do not control" for
   // Milestone 2, so a check it pays is ours. So is one the agent key they run pays, and the approval
   // page offers only a check that key paid for, so that is the key a team member's hand-off comes from.
   const teamWallets = vaults.filter((v) => v.ownerKind === 'team').map((v) => v.owner)
-  const mine = new Set([...deps.internalPayers.gateway, ...deps.internalPayers.facilitator, ...teamWallets, ...agentKeysOn('team')].map((a) => a.toLowerCase()))
+  // The launch-day vault is ours whoever its key is now: its owner is our operating wallet, and only that wallet can set its
+  // operator, which the row read from the chain. So a key it has rotated to is ours before anyone has committed its address.
+  const launchVault = launchDayVault()
+  const launchDayKeys = launchVault ? flowKeys.filter((k) => k.vault.toLowerCase() === launchVault.toLowerCase()).map((k) => k.operator) : []
+  const ourPayeeList = deps.ourPayees ?? ARC_OUR_PAYEES
+  const mine = new Set(
+    [...deps.internalPayers.gateway, ...deps.internalPayers.facilitator, ...(deps.committedOurs ?? []), ...ourPayeeList.map((p) => p.address), ...teamWallets, ...flowKeysOn('team').map((k) => k.operator), ...launchDayKeys].map((a) => a.toLowerCase()),
+  )
   const internalChecks = checks.filter((c) => mine.has(c.payer))
   const externalChecks = checks.filter((c) => !mine.has(c.payer))
 
@@ -924,7 +963,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   // A payee that is ours, or the vault's own key: the flow is real and counts, and a reviewer
   // should not have to work out from addresses that nobody else was going to be paid.
   const ourAddresses = new Set([...mine, ...(deps.ourPayTo ?? []).map((a) => a.toLowerCase())])
-  const ourPayees = new Map((deps.ourPayees ?? ARC_OUR_PAYEES).map((p) => [p.address.toLowerCase(), p.why]))
+  const ourPayees = new Map(ourPayeeList.map((p) => [p.address.toLowerCase(), p.why]))
   const payeeInternal = (f: ArcVerifyThenPayFlow): string | null => {
     const payee = f.payee.toLowerCase()
     if (payee === f.vaultKeys?.owner.toLowerCase()) return "the payee is this vault's owner"
@@ -932,7 +971,6 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
     if (ourPayees.has(payee)) return ourPayees.get(payee) as string
     return ourAddresses.has(payee) ? 'the payee is one of our own wallets' : null
   }
-  const launchVault = launchDayVault()
   const counted = new Set(vaults.map((v) => v.address.toLowerCase()))
   const vaultKindOf = (f: ArcVerifyThenPayFlow): ArcFlowVaultKind => {
     if (!f.vault) return 'not-recorded'
@@ -964,14 +1002,28 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   const everyFlowOnLaunchVault = linkedList.length > 0 && flowsByVault['launch-day'] === linkedList.length
   const flowLogUnreadable = Boolean(recordedFlows && !recordedFlows.read.readable)
   const flowsIncomplete = !gateway.read.readable || flowLogUnreadable
+  // The agent keys of team vaults come from the flow log, and so does a key the launch-day vault rotated to before anyone
+  // committed it, so with the log down one could be counted as external. That makes a number too high, not too low, so it is
+  // not `incomplete`. Said on every number that reads external checks, wherever there is one. The launch-day vault is always
+  // there to rotate, and whether its key now is committed takes a chain read this report does not make, so it is said on
+  // every outage of the log rather than never.
+  const keysFromLog = [...(vaultsByKind.team > 0 ? ['a vault labeled team'] : []), ...(launchVault ? ['the launch-day vault'] : [])]
+  const keysOf = keysFromLog.length > 1 ? `${keysFromLog[0]}, or of ${keysFromLog[1]},` : keysFromLog[0]
+  const teamKeysUnknown = flowLogUnreadable && keysFromLog.length > 0
+  const flagTeamKeys = (count: number) => (teamKeysUnknown && count > 0 ? { mayIncludeTeamKeys: true as const } : {})
+  const teamKeysCaveat = (count: number) =>
+    teamKeysUnknown && count > 0 ? ` The verify-then-pay flow log could not be read on this request, so the agent key of ${keysOf} could be counted as external until it answers.` : ''
   const externalFlowItems = [...externalRows.values()].map(flowItem)
   const weekly = weeklyUsage(externalChecks, now(), teamOf)
   // A wallet that paid and also owns a vault nobody identified, or runs as its agent key, could be
-  // one of ours, and the chain cannot say. It still counts as external, and it is said.
+  // one of ours, and the chain cannot say. It still counts as external, and it is said. Not of a wallet
+  // the partner list names, because then someone has said. And a key only on a flow it paid for itself:
+  // a vault can name anyone's wallet as its operator, and that must not plant this sentence on them. A
+  // team vault's keys above are not held to that: there the label is ours, and it is the vault that says.
   const unstatedOwners = new Set(vaults.filter((v) => v.ownerKind === 'unstated').map((v) => v.owner.toLowerCase()))
-  const unstatedAgentKeys = new Set(agentKeysOn('unstated').map((a) => a.toLowerCase()))
-  const externalVaultOwners = external.filter((w) => unstatedOwners.has(w.wallet)).length
-  const externalAgentKeys = external.filter((w) => unstatedAgentKeys.has(w.wallet) && !unstatedOwners.has(w.wallet)).length
+  const unstatedAgentKeys = new Set(flowKeysOn('unstated').filter((k) => k.payer?.toLowerCase() === k.operator.toLowerCase()).map((k) => k.operator.toLowerCase()))
+  const externalVaultOwners = external.filter((w) => !w.team && unstatedOwners.has(w.wallet)).length
+  const externalAgentKeys = external.filter((w) => !w.team && unstatedAgentKeys.has(w.wallet) && !unstatedOwners.has(w.wallet)).length
   const internalPayeeFlows = linkedList.filter((f) => payeeInternal(f) !== null).length
   const refusedPayees = new Set(linkedList.filter((f) => f.outcome === 'refused').map((f) => f.payee.toLowerCase())).size
 
@@ -983,6 +1035,14 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
     const why = payeeInternal(f)
     return [{ kind: 'deny-before-signing' as const, evidenceUrl: f.evidenceUrl, at: f.at, note: f.note, ...(why ? { payeeInternal: why } : {}) }]
   })
+  // A recorded policy revert is one by the same definition: a vault transaction that reverted on chain, with its hash, that the
+  // receipt route read back. A curated entry for the same hash is the same refusal.
+  const curatedHashes = new Set(refusals.flatMap((r) => (r.txHash ? [r.txHash.toLowerCase()] : [])))
+  const recordedReverts: ArcRefusal[] = linkedList.flatMap((f) => {
+    if (f.outcome !== 'refused' || !f.txHash || !TX_HASH.test(f.txHash) || curatedHashes.has(f.txHash.toLowerCase())) return []
+    const why = payeeInternal(f)
+    return [{ kind: 'vault-policy-on-chain' as const, txHash: f.txHash, at: f.at, note: f.note, ...(why ? { payeeInternal: why } : {}) }]
+  })
   // What a re-check today would answer differently, and only that: a DENY dated after the change,
   // or one on an agent of ours that has a platform record, was not answered under the older rule.
   const ourPlatformAgents = new Set(ARC_OUR_PAYEES.map((p) => p.address.toLowerCase()))
@@ -990,7 +1050,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
     (f) => f.outcome === 'refused' && !f.txHash && f.evidenceUrl && !curatedEvidence.has(f.evidenceUrl) && Date.parse(f.at) < Date.parse(`${RISK_RULE_CHANGED_ON}T00:00:00.000Z`) && !ourPlatformAgents.has(f.payee.toLowerCase()),
   )
   const namedUnderOldRule = [...new Set(deniesUnderOldRule.map((f) => f.payee.toLowerCase()))]
-  const allRefusals = [...refusals, ...recordedDenials]
+  const allRefusals = [...refusals, ...recordedReverts, ...recordedDenials]
   const byKind: Record<ArcRefusalKind, number> = { 'vault-policy-on-chain': 0, 'deny-before-signing': 0 }
   for (const r of allRefusals) byKind[r.kind] += 1
   const refusalKindsShown = Object.values(byKind).filter((n) => n > 0).length
@@ -1017,9 +1077,9 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
     },
     usage: {
       basis:
-        'A payer is internal when its address is on either rail\'s published list of our own buyer wallets (the hardcoded KNOWN_INTERNAL_PAYERS plus X402_GATEWAY_INTERNAL_PAYERS and X402_3009_INTERNAL_PAYERS) owns a vault labeled team, or is the agent key on a recorded verify-then-pay flow through such a vault, compared case-insensitively; every other payer is external, and a check is a Circle Gateway row credited or completed, or a facilitator row settled, on Arc Mainnet. Those last two are read in this report only: the rails\' own proof reads the lists alone, and an agent key with no recorded flow through that vault stays external until it is on a list.',
+        'A payer is internal when its address is on either rail\'s published list of our own buyer wallets (the hardcoded KNOWN_INTERNAL_PAYERS plus X402_GATEWAY_INTERNAL_PAYERS and X402_3009_INTERNAL_PAYERS), is an address this repo commits as ours (admission refuses a vault owner from the same addresses, and our own agents are among them), owns a vault labeled team, or is the agent key on a recorded verify-then-pay flow through such a vault or through the launch-day vault, compared case-insensitively; every other payer is external, and a check is a Circle Gateway row credited or completed, or a facilitator row settled, on Arc Mainnet. Everything after the rails\' lists counts as internal in this report only: the rails\' own proof reads the lists alone, and an agent key with no recorded flow through that vault stays external until it is on a list.' + teamKeysCaveat(externalChecks.length),
       internal: side(internalChecks),
-      external: { ...side(externalChecks), byWallet: external },
+      external: { ...side(externalChecks), byWallet: external, ...flagTeamKeys(externalChecks.length) },
     },
     milestone1: {
       title: 'Owner-held spend vaults and verify-then-pay on Arc Mainnet',
@@ -1049,6 +1109,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
         ...flagIncomplete(flowsIncomplete),
         internal: gatewayInternal,
         external: gatewayExternal,
+        ...(teamKeysUnknown && gatewayExternal > 0 ? { externalMayIncludeTeamKeys: true as const } : {}),
         linked,
         unlinked: flowsIncomplete ? null : gatewayInternal - linkedInLog,
         agedOut,
@@ -1084,13 +1145,14 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
         target: ARC_SEASON_TARGETS.inspectableRefusals,
         ...flagIncomplete(flowsIncomplete),
         // The curated entries and the first few recorded ones: every recorded one is on checks.items.
-        items: [...refusals, ...recordedDenials.slice(0, REFUSAL_ITEMS_SHOWN)].map((r) => ({ ...r, explorerUrl: r.txHash ? txUrl(chain, r.txHash) : null })),
+        items: [...refusals, ...recordedReverts.slice(0, REFUSAL_ITEMS_SHOWN), ...recordedDenials.slice(0, REFUSAL_ITEMS_SHOWN)].map((r) => ({ ...r, explorerUrl: r.txHash ? txUrl(chain, r.txHash) : null })),
         byKind,
         note:
-          (flowsIncomplete ? 'A log the DENY records are read from could not be read on this request, so any DENY it holds is missing from this count until it answers. ' : '') +
+          (flowsIncomplete ? 'A log the recorded refusals are read from could not be read on this request, so any refusal it holds is missing from this count until it answers. ' : '') +
           (allRefusals.length === 0
             ? 'No inspectable refusal yet. The launch-day refusal (a 0.50 USDC payment above autoApproveMax) was a simulation that returned the contract\'s typed AboveAutoApprove error and broadcast nothing, so it has no hash and is not counted. A refusal counts once it is a reverted vault transaction with a hash, or a DENY verdict that stopped a payment before signing with an audit entry anyone can open.'
             : `${refusalKindsShown} of the ${ARC_SEASON_TARGETS.inspectableRefusals} kinds committed to: ${byKind['vault-policy-on-chain']} vault-policy refusal(s) on chain and ${byKind['deny-before-signing']} DENY result(s) stopped before signing, read from the public flow records. The launch-day simulated refusal is not among them.` +
+              (recordedReverts.length > REFUSAL_ITEMS_SHOWN ? ` ${recordedReverts.length - REFUSAL_ITEMS_SHOWN} more recorded revert(s) are on checks.items.` : '') +
               (recordedDenials.length > REFUSAL_ITEMS_SHOWN ? ` ${recordedDenials.length - REFUSAL_ITEMS_SHOWN} more DENY record(s) are on checks.items.` : '') +
               (deniesUnderOldRule.length > 0
                 ? ` ${deniesUnderOldRule.length} recorded DENY result(s), dated before ${RISK_RULE_CHANGED_ON}, name ${namedUnderOldRule.join(' and ')}, which holds no platform record. Each stands as it was answered, and was correct under the rule of its day, when a payee with no platform record got DENY. That rule changed on ${RISK_RULE_CHANGED_ON}: such a payee now gets WARN, so a reviewer who checks ${namedUnderOldRule.length === 1 ? 'that wallet' : 'those wallets'} again today sees WARN. Nothing recorded here was changed, and no count moved.`
@@ -1116,6 +1178,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
         count: externalChecks.length,
         target: ARC_SEASON_TARGETS.externalChecks,
         ...flagIncomplete(settlementsIncomplete),
+        ...flagTeamKeys(externalChecks.length),
         note:
           settlementsCaveat +
           (externalChecks.length === 0
@@ -1129,8 +1192,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
           (externalAgentKeys > 0
             ? ` ${externalAgentKeys} of these wallet(s) are the agent key on a flow through a vault admitted with the owner not identified, so one could be a team member's: the chain cannot say, and each counts as external until someone says otherwise.`
             : '') +
-          // The agent keys of team vaults come from the flow log, so with it down one could be counted here.
-          (flowLogUnreadable && vaultsByKind.team > 0 ? ' The verify-then-pay flow log could not be read on this request, so the agent key of a vault labeled team could be counted here until it answers.' : ''),
+          teamKeysCaveat(externalChecks.length),
       },
       teamActiveOnSeveralDays: {
         count: severalDays.length,
@@ -1176,18 +1238,19 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
         note:
           (flowsIncomplete ? 'The Circle Gateway settlement log or the verify-then-pay flow log could not be read on this request, so this list may be short. ' : '') +
           (externalFlowItems.length === 0
-            ? `${flowsIncomplete ? '' : 'No external verify-then-pay flow has reached a vault payment or a refusal yet. '}A flow appears here when a wallet outside our own pays a Circle Gateway check and the route then records its vault payment or a refusal. A WARN waiting for its owner has a public record at its flow URL and counts as neither until the owner acts. An external check with no flow here still counts as a paid check above.`
+            ? `${flowsIncomplete ? '' : 'No external verify-then-pay flow has reached a vault payment or a refusal yet. '}A flow appears here when a wallet outside our own pays a Circle Gateway check and the route then records its vault payment or a refusal. A payment waiting for its owner has a public record at its flow URL and counts as neither until the owner acts. An external check with no flow here still counts as a paid check above.`
             : `${externalFlowItems.length} verify-then-pay flow(s) opened by a check from a wallet A-Identity does not control, by the same linking rules as Milestone 1 and counted apart from it.`),
       },
       unattributed: {
         wallets: unattributed.length,
         checks: unattributed.reduce((s, w) => s + w.checks, 0),
+        ...flagTeamKeys(unattributed.length),
         note:
           unattributed.length === 0
             ? settlementsIncomplete
               ? `The ${unreadableSettlementLogs.join(' and the ')} could not be read on this request, so this says nothing about wallets it holds.`
               : 'Every external wallet that paid is attributed to a team, or none has paid.'
-            : `${unattributed.length} external wallet(s) paid ${unattributed.reduce((s, w) => s + w.checks, 0)} check(s) without being attributed to a team. They count as external checks and as nothing else.`,
+            : `${unattributed.length} external wallet(s) paid ${unattributed.reduce((s, w) => s + w.checks, 0)} check(s) without being attributed to a team. They count as external checks, external wallets and external flows, and toward no team metric.${teamKeysCaveat(unattributed.length)}`,
       },
     },
     afterProgram: {
@@ -1195,20 +1258,22 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
         count: activeWallets.length,
         target: ARC_SEASON_TARGETS.activeExternalWallets,
         ...flagIncomplete(settlementsIncomplete),
+        ...flagTeamKeys(activeWallets.length),
         windowDays: ARC_SEASON_TARGETS.activeWindowDays,
         since,
         wallets: activeWallets,
       },
       weekly: {
         ...flagIncomplete(settlementsIncomplete),
+        ...flagTeamKeys(weekly.weeks.length),
         ...weekly,
         note:
           settlementsCaveat +
           (weekly.weeks.length === 0
             ? `${settlementsIncomplete ? '' : 'No external check to report by week yet. '}Each UTC week will list its external checks, active wallets, active days and the wallets that came back from an earlier week.`
-            : `External use per UTC week, Monday to Sunday, from the first external check to this read, on either rail. A wallet is a repeat wallet when it paid in two or more different weeks, and a team when its wallets did: ${weekly.repeatWallets.length} wallet(s) and ${weekly.repeatTeams.length} team(s) so far.`),
+            : `External use per UTC week, Monday to Sunday, from the first external check to this read, on either rail. A wallet is a repeat wallet when it paid in two or more different weeks, and a team when its wallets did: ${weekly.repeatWallets.length} wallet(s) and ${weekly.repeatTeams.length} team(s) so far.${teamKeysCaveat(weekly.weeks.length)}`),
       },
-      note: `After the program the reference is ${ARC_SEASON_TARGETS.activeExternalWallets} external wallets with a settled check inside the last ${ARC_SEASON_TARGETS.activeWindowDays} days, measured on a rolling window from the time of each read.`,
+      note: `After the program the reference is ${ARC_SEASON_TARGETS.activeExternalWallets} external wallets with a settled check inside the last ${ARC_SEASON_TARGETS.activeWindowDays} days, measured on a rolling window from the time of each read.${teamKeysCaveat(activeWallets.length)}`,
     },
     note: `Targets are the Deliverable 1 commitments as revised by Circle on 2026-10-19; counts are read from the settlement logs and the admitted vault list on every request, and the curated lists (vaults, refusals, partners) fill only when the evidence exists. The date on each milestone is the target the team set; the program measures them through ${ARC_SEASON_PROGRAM.measuredThrough}, its last day, and traction can extend past that.`,
   }

@@ -350,6 +350,9 @@ test('one transaction proves one flow, and a flow that ended takes no receipt', 
   const out = await recordVtpReceipt(FLOW, HASH, deps(store, r.call))
   assert.equal(out.httpStatus, 409)
   assert.equal(out.body.code, 'TX_LINKED_ELSEWHERE')
+  assert.equal(out.body.answersFlow, OTHER_FLOW, 'it names the flow, so the page can read what that record proved')
+  assert.equal(out.body.retry, undefined, 'and this answer is final here')
+  assert.equal(out.body.verified, false)
   assert.deepEqual(r.asked, [], 'refused before any RPC was asked')
 
   const denied = await storeWith([flow({ outcome: 'blocked', detail: 'deny', prepared: null })])
@@ -725,7 +728,7 @@ test('Postgres-shaped log, across flows: a payment finds the check it answers, t
   const third = '0x' + 'ef'.repeat(32)
   await crossed.store.insert(flow({ flowId: third, check: { ...flow().check, authNonce: third, verdictBlock: '90' } }))
   const taken = await recordVtpReceipt(third, HASH, deps(crossed.store, again.call))
-  assert.deepEqual([taken.httpStatus, taken.body.code], [409, 'TX_LINKED_ELSEWHERE'])
+  assert.deepEqual([taken.httpStatus, taken.body.code, taken.body.answersFlow], [409, 'TX_LINKED_ELSEWHERE', FLOW])
   assert.deepEqual(again.asked, [])
 
   // Two posts that both passed that read on different amounts: only the index stops the second.
@@ -736,8 +739,11 @@ test('Postgres-shaped log, across flows: a payment finds the check it answers, t
   assert.equal((await recordVtpReceipt(FLOW, HASH, deps(blind, rpc({ [URLS[0]]: rawReceipt({ block: 205 }) }).call))).httpStatus, 200)
   const both = rawReceipt({ block: 205, logs: [transferLog({ value: AMOUNT + 1n }), paidLog({ amount: AMOUNT + 1n })] })
   const blocked = await recordVtpReceipt(FLOW_B, HASH, deps(blind, rpc({ [URLS[0]]: both }).call))
-  assert.deepEqual([blocked.httpStatus, blocked.body.code, blocked.body.verified], [409, 'TX_LINKED_ELSEWHERE', false])
+  assert.deepEqual([blocked.httpStatus, blocked.body.code, blocked.body.verified, blocked.body.retry], [409, 'TX_LINKED_ELSEWHERE', false, true])
   assert.equal((await rowOf(race.store, FLOW_B)).outcome, 'pending')
+  // The write cannot name the flow that won. The post it says to make, past the read, does.
+  const named = await recordVtpReceipt(FLOW_B, HASH, deps(race.store, rpc({}).call))
+  assert.deepEqual([named.httpStatus, named.body.code, named.body.answersFlow, named.body.retry], [409, 'TX_LINKED_ELSEWHERE', FLOW, undefined])
 
   // A later reservation on the same vault, payee and amount is not a check yet, so it takes
   // nothing from the flow that has one.

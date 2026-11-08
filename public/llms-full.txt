@@ -449,8 +449,13 @@ version `0.2.0`, protocol `2025-06-18`.
 23 tools:
 
 **Identity and discovery**: `resolve_agent`, `get_reputation`, `list_agents`,
-`find_agent`, `get_agent_manifest`, `register_agent`, `list_capabilities`,
-`merchant_check`
+`find_agent`, `get_agent_manifest`, `list_capabilities`, `merchant_check`
+
+**Register (verified session)**: `register_agent`. Without a session it answers
+Forbidden and registers nothing. It writes a platform record, not an on-chain one:
+the record is created under Arc testnet (`eip155:5042002`) and stays
+`onchain: queued` until the owner anchors it from the console. An owner-held Arc
+Mainnet vault or a paid check does not need one.
 
 **Chain and platform status**: `get_chain_status`, `get_arc_status`,
 `get_circle_status`
@@ -469,19 +474,28 @@ those on Arc Mainnet; a full id such as `eip155:5042:8004/0` names its own chain
 
 **Verify then pay (Arc Mainnet)**: `verify_then_pay`, `verify_then_pay_receipt`. Buys
 risk_check through Circle Gateway (0.005 USDC), never signs, and returns the exact vault
-pay() call on ALLOW, a prepared ownerPay for the owner on WARN, and nothing on DENY. A payee
-with no ERC-8004 agent is not refused: unknown is not bad, so it gets WARN. A payment above the
+pay() call on ALLOW, a prepared ownerPay for the owner on WARN, and nothing on DENY, nor on a
+WARN from a vault whose owner is its operator, since no human stands behind it. A payee
+with no ERC-8004 agent is not refused: unknown is not bad, so it gets WARN. On a vault with a human, a payment above the
 vault's ceiling or off its allowlist still buys the check, and ALLOW or WARN hands ownerPay to the
 owner, who approves it on the vault page from the link in ownerHandoff.approvalUrl, which is null when the
-check was not paid from the vault's operator key, since the page offers no other. Over HTTP: `POST /api/x402/gateway/verify-then-pay`,
+check was not paid from the vault's operator key or the payee is that key, since the page offers neither. The page
+can still refuse a link it is given: a vault that is ours or not the build it deploys, a key stopped or replaced
+since the check, or a check older than 24 hours. For a vault the page does not act on, the owner sends ownerPay
+from the owner key then. A stopped or replaced key and a check that old are refused for the request itself, so a
+new check from a working agent key is the way there. On a vault whose owner is its operator both stay refusals,
+with nothing charged. Over HTTP: `POST /api/x402/gateway/verify-then-pay`,
 `GET /api/x402/gateway/flows/<flowId>` (public), `GET /api/x402/gateway/flows?vault=0x...` (what waits
 for one vault's owner) and
 `POST /api/x402/gateway/flows/<flowId>/receipt`.
 
-Read tools need no credential. Tools that move value require a verified session
-(Authorization: Bearer, from OAuth or a wallet or email login) and, without one,
-return a Forbidden error rather than moving anything. Spending limits are
-enforced on-chain regardless of how the caller authenticated.
+Read tools need no credential. Tools that write, or read an owner's records,
+require a verified session (Authorization: Bearer, from OAuth or a wallet or email
+login) and, without one, return a Forbidden error rather than acting:
+`register_agent`, the work and escrow tools and the policy and audit tools. The
+verify-then-pay pair takes no session: the check is paid through Gateway, and the
+receipt records only what the chain proves. Spending limits are enforced on-chain
+regardless of how the caller authenticated.
 
 Machine-readable server card:
 https://a-identity.xyz/.well-known/mcp/server-card.json

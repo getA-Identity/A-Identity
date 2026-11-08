@@ -1,6 +1,6 @@
 {
   "name": "@a-identity/trust-guard",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "One-line trust guard: verify an AI agent (ERC-8004 identity + KYA + 0-1000 reputation + Sybil + risk) before you pay or hire it. Throws on DENY and on WARN by default. Pays per call over x402 on X Layer, Algorand or Arc Mainnet, with verifyThenPay for Arc vaults.",
   "type": "module",
   "main": "./dist/index.js",

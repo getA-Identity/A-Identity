@@ -6,8 +6,9 @@ description: "The A-Identity MCP server, tool by tool: identity and reputation r
 The server lives in the `mcp` package. It speaks MCP over Streamable HTTP, where it
 exposes **23 tools**, and over stdio, where a bare server has only the nine read-only ones
 that are always registered, because the rest need hooks the HTTP entry injects. Read tools
-are open and need no session; the tools
-that move value (`hire_agent`, `deliver_task`, `release_escrow`) require a verified
+are open and need no session; the tools that write or read an owner's records
+(`register_agent`, `hire_agent`, `deliver_task`, `check_task_status`, `release_escrow`
+and the five policy tools) require a verified
 session (Authorization: Bearer, via OAuth or a wallet or email login) and return a
 Forbidden error without one. Spending limits are enforced on-chain regardless of the
 caller. Where a vault is owner-signed, the server never holds the owner's key: on Stellar
@@ -57,13 +58,13 @@ npm run smoke         # exercise every tool over stdio
 | `deliver_task` | Submit a deliverable for a task your agent was hired for |
 | `check_task_status` | Read a task you are a party to: status, deliverable and escrow state |
 | `release_escrow` | Approve and release a task, settling the ERC-8183 escrow to the worker in USDC on Arc testnet |
-| `register_agent` | Register an agent from a manifest and get back its id and honest ERC-8004 status |
+| `register_agent` | Register an agent from a manifest and get back its id and honest ERC-8004 status. Needs a verified session; without one nothing is registered. It writes a platform record on Arc testnet that stays `onchain: queued` until the owner anchors it from the console. An owner-held Arc Mainnet vault or a paid check does not need one |
 | `policy_get` | Read an agent's action policy: per-action and daily caps, the human-approval line, allowlists |
 | `policy_set` | Update an agent's action policy. The patch is sanitized and caps are clamped |
 | `pre_action_check` | Ask whether an intended action is allowed. Returns ALLOW, WARN or DENY with the evidence |
 | `audit_log` | An agent's recorded decisions, newest first, with the USD value the policy governed |
 | `record_audit_outcome` | Record what actually happened after a decision: executed, blocked, awaiting_human or abandoned |
-| `verify_then_pay` | Before an Arc Mainnet vault pays: free checks that the vault would pay, then `risk_check` bought through Circle Gateway (0.005 USDC). ALLOW returns the exact `pay()`, WARN a prepared `ownerPay` for the owner, DENY nothing. Above the vault's ceiling or off its allowlist the check is still charged, and ALLOW or WARN both return the `ownerPay` hand-off. Never signs |
+| `verify_then_pay` | Before an Arc Mainnet vault pays: free checks that the vault would pay, then `risk_check` bought through Circle Gateway (0.005 USDC). ALLOW returns the exact `pay()`, WARN a prepared `ownerPay` for the owner, or nothing on a vault whose owner is its operator, DENY nothing. On a vault with a human, above the vault's ceiling or off its allowlist the check is still charged, and ALLOW or WARN both return the `ownerPay` hand-off. Never signs |
 | `verify_then_pay_receipt` | Give a flow id and a transaction hash; the server reads the receipt from every Arc Mainnet RPC and records only what it proves. Never signs |
 
 ## The Core Reads, In Detail
@@ -128,12 +129,17 @@ charged. Called with `payment`, it buys the check and returns the call to send.
 | `asset` | string, optional | refused unless it is Arc Mainnet's USDC |
 | `payeeAgentId` | string, optional | checked on chain against the payee and refused if it is not theirs, never sent to `risk_check` |
 | `payment` | string, optional | base64 `PAYMENT-SIGNATURE` for the challenge, signed from your own Gateway balance |
-| `payOnWarn` | boolean, optional | on WARN, prepare `pay()` for the operator instead of handing the payment to the owner; default false. A payee we know nothing about gets WARN, so on such a payee this is your own explicit choice to pay it. It does not apply above the vault's ceiling or off its allowlist, because the vault would refuse the operator: that stays a hand-off |
+| `payOnWarn` | boolean, optional | on WARN, prepare `pay()` for the operator instead of handing the payment to the owner; default false. A payee we know nothing about gets WARN, so on such a payee this is your own explicit choice to pay it. It does not apply above the vault's ceiling or off its allowlist, because the vault would refuse the operator: on a vault with a human that stays a hand-off |
 
 A hand-off comes back with stage `awaiting_human` and `prepared` null: send `ownerHandoff.ownerPay` from the
 owner key, or send the owner `ownerHandoff.approvalUrl`, the vault page where they approve it from their own
-wallet. That link is null when the vault page would refuse it: the check was not paid by the vault's operator
-key, or the payee is that key. `ownerHandoff.ownerOnly` names the gate when the vault would refuse the operator.
+wallet. That link is null where the server can already see the vault page would refuse it: the check was not
+paid by the vault's operator key, or the payee is that key. The page reads the chain when it opens and can still
+refuse a link it is given: a vault that is ours or not the build it deploys, a key stopped or replaced since the
+check, or a check older than 24 hours. For a vault the page does not act on, `ownerHandoff.ownerPay` from
+the owner key is the way then. A stopped or replaced key and a check that old are refused for the request
+itself, so a new check from a working agent key is the way there.
+`ownerHandoff.ownerOnly` names the gate when the vault would refuse the operator.
 
 ### verify_then_pay_receipt
 

@@ -223,6 +223,7 @@ test('found and counted through the real admission and store: one row, same shap
           findByTx: (hash) => findAdmittedArcVaultByTx(hash, io),
           persist: (rec) => persistAdmittedArcVault(rec, io),
           admit: (tx) => runAdmission({ context, hosts: [chainHost], tx, ours, requireEnvKeys: true }),
+          ours: () => ours,
           foundBy: 'sweep',
         },
       )
@@ -690,6 +691,7 @@ test('a vault refused for what its owner can still change is not closed: it is a
           findByTx: (hash) => findAdmittedArcVaultByTx(hash, io),
           persist: (rec) => persistAdmittedArcVault(rec, io),
           admit: (tx) => runAdmission({ context, hosts: [chainHost], tx, ours, requireEnvKeys: true }),
+          ours: () => ours,
           foundBy: 'sweep',
         },
       )
@@ -1670,7 +1672,7 @@ test('the real deps: the list is lowercased, because rows are checksummed and ca
 test('the real deps say who found the row, and are otherwise the same as the route', () => {
   const deps = sweepAdmissionDeps({ CELO_BUYER_KEY: KEY })
   assert.equal(deps.foundBy, 'sweep')
-  assert.deepEqual(Object.keys(deps).sort(), ['admit', 'findByTx', 'foundBy', 'persist'])
+  assert.deepEqual(Object.keys(deps).sort(), ['admit', 'findByTx', 'foundBy', 'ours', 'persist'])
   const source = readFileSync(new URL('../src/arc-vault-sweep.ts', import.meta.url), 'utf8')
   assert.match(source, /admitVaultDeploy\(\{ deployTx \}, sweepAdmissionDeps\(env\)\)/, 'and the sweep goes through them')
 })

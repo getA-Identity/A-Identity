@@ -64,10 +64,13 @@ export function approvalUrl(chain: ChainDescriptor, vault: string, flowId: strin
 }
 
 /**
- * Why the vault page will not offer this hand-off, or null when it can. The page treats a check as a
- * request from the agent only when the vault's operator paid for it, and it never offers a payment to the
- * agent's own key (src/lib/arc/handoff-rules.ts). The server knows both when it answers, so it hands out no
- * link that would show the owner a refusal, or tell them a real request looks like a trick.
+ * Why the server can already see that the vault page will not offer this hand-off, or null when it cannot. The
+ * page treats a check as a request from the agent only when the vault's operator paid for it, and it never offers
+ * a payment to the agent's own key (src/lib/arc/handoff-rules.ts). The server knows both when it answers, so for
+ * those it hands out no link that would show the owner a refusal, or tell them a real request looks like a trick.
+ * null is no promise that the page will act. It reads the chain when it opens, and it also refuses what this does
+ * not look at: a vault that is ours or not the build it deploys, a key stopped or replaced since the check, and a
+ * check older than 24 hours.
  */
 export function whyNoApproval(f: { payer: string; operator: string; payee: string }): string | null {
   const operator = f.operator.toLowerCase()
@@ -76,7 +79,7 @@ export function whyNoApproval(f: { payer: string; operator: string; payee: strin
   return null
 }
 
-/** The link for a hand-off, or null when the vault page would refuse it. */
+/** The link for a hand-off, or null when whyNoApproval can see the vault page would refuse it. */
 export function approvalUrlFor(chain: ChainDescriptor, vault: string, flowId: string, f: { payer: string; operator: string; payee: string }): string | null {
   return whyNoApproval(f) === null ? approvalUrl(chain, vault, flowId) : null
 }

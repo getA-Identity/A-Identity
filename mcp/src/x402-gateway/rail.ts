@@ -194,7 +194,7 @@ export type RailDeps = GatewayDeps & {
   handlers?: Partial<Record<GatewayToolName, (input: GatewayToolInput) => Promise<unknown>>>
   load?: () => Promise<GatewaySettlementRecord[]>
   persist?: (rec: GatewaySettlementRecord) => Promise<void>
-  update?: (authNonce: string, patch: Parameters<typeof updateGatewaySettlement>[1]) => Promise<void>
+  update?: (authNonce: string, payer: string, patch: Parameters<typeof updateGatewaySettlement>[2]) => Promise<void>
 }
 
 export type RailChallengeResult =
@@ -668,7 +668,9 @@ export async function railProof(status: GatewayRailStatus, deps: RailDeps = {}):
 /**
  * Attach batch hashes to credited rows once Gateway reports them. Bounded: at most
  * `limit` rows, one read each, run in parallel, so a proof page load stays quick and a
- * Gateway outage costs nothing but a stale status word.
+ * Gateway outage costs nothing but a stale status word. A row takes only its own payer's
+ * transfer and moves only itself: a nonce is unique per payer, and an unconfirmed row under the
+ * same nonce is not this payment (updateGatewaySettlement).
  */
 export async function refreshCreditedRows(deps: RailDeps = {}, limit = 25): Promise<{ checked: number; upgraded: number }> {
   const rows = await (deps.load ?? loadGatewaySettlements)()
@@ -682,16 +684,16 @@ export async function refreshCreditedRows(deps: RailDeps = {}, limit = 25): Prom
       if (!chain?.gateway) return
       try {
         const found = await calls.searchTransfers(chain.gateway.facilitator, { network: r.network, nonce: r.authNonce })
-        const t = found.find((x) => x.toAddress.toLowerCase() === r.payTo.toLowerCase() && String(x.amount) === r.value)
+        const t = found.find((x) => x.toAddress.toLowerCase() === r.payTo.toLowerCase() && String(x.amount) === r.value && x.fromAddress.toLowerCase() === r.payer.toLowerCase())
         if (!t) return
         if (t.status === 'failed') {
-          await update(r.authNonce, { outcome: 'failed', gatewayStatus: t.status, transferId: t.id })
+          await update(r.authNonce, r.payer, { outcome: 'failed', gatewayStatus: t.status, transferId: t.id })
           upgraded += 1
         } else if (t.status === 'completed' && typeof t.txHash === 'string' && /^0x[0-9a-fA-F]{64}$/.test(t.txHash)) {
-          await update(r.authNonce, { outcome: 'completed', gatewayStatus: t.status, tx: t.txHash, explorerUrl: txUrl(chain, t.txHash), transferId: t.id })
+          await update(r.authNonce, r.payer, { outcome: 'completed', gatewayStatus: t.status, tx: t.txHash, explorerUrl: txUrl(chain, t.txHash), transferId: t.id })
           upgraded += 1
         } else if (t.status !== r.gatewayStatus) {
-          await update(r.authNonce, { outcome: 'credited', gatewayStatus: t.status, transferId: t.id })
+          await update(r.authNonce, r.payer, { outcome: 'credited', gatewayStatus: t.status, transferId: t.id })
         }
       } catch {
         /* a refresh that fails leaves the row as it was, which is still true */

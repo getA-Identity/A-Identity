@@ -169,7 +169,7 @@ export type OwnerHandoff = {
   auditOutcome: 'awaiting_human'
   owner: string
   ownerPay: PreparedCall
-  /** Where the owner can approve this on the vault page, with their own wallet. Always the site's own origin. null when the page would refuse it: the check was not paid by the vault's operator key, or the payee is that key. */
+  /** Where the owner can approve this on the vault page, with their own wallet. Always the site's own origin. null where the server can see the page would refuse it: the check was not paid by the vault's operator key, or the payee is that key. A link is no promise that the page will act: see whyNoApproval. */
   approvalUrl: string | null
   /** The gate in pay() that makes this the owner's to pay, whatever the verdict was. null: the verdict did, a WARN. */
   ownerOnly: OperatorBlockCode | null
@@ -466,7 +466,7 @@ function result(chain: ChainDescriptor, over: Partial<VerifyThenPayToolResult> &
  */
 const ONE_KEY_WAY_OUT = "A vault's owner cannot be changed, so give your agent a new key of its own with setOperator, and keep this key from it. That helps only if the agent no longer has this key: if its process or logs have held it, deploy a new vault with an owner key the agent never holds."
 
-function refused(chain: ChainDescriptor, httpStatus: number, code: VtpRefusalCode, reason: string, checks: VtpChecks | null): VtpResponse {
+function refused(chain: ChainDescriptor, httpStatus: number, code: VtpRefusalCode, reason: string, checks: VtpChecks | null, payOnWarn = false): VtpResponse {
   return {
     httpStatus,
     body: result(chain, {
@@ -478,14 +478,19 @@ function refused(chain: ChainDescriptor, httpStatus: number, code: VtpRefusalCod
         httpStatus === 503
           ? `Nothing was charged: ${chain.name} or the flow log did not answer, so nothing could be decided. Ask again shortly.`
           : (code === 'AboveAutoApprove' || code === 'PayeeNotAllowed') && checks?.vault.ownerIsOperator === true
-            ? `Nothing was charged and no check was bought, so there is no verdict on this payee and nothing was prepared: ${reason}. This vault's owner and operator are one key, so there is no person to hand this to. Raising the ceiling or allowing the payee gets a verdict, where ALLOW prepares pay() and WARN stops with the check paid, or prepares pay() as the agent's own decision if the request sets payOnWarn. For a hand-off: ${ONE_KEY_WAY_OUT}`
+            ? `Nothing was charged and no check was bought, so there is no verdict on this payee and nothing was prepared: ${reason}. This vault's owner and operator are one key, so there is no person to hand this to. Raising the ceiling or allowing the payee gets a verdict, where ALLOW prepares pay() and WARN ${
+                // Named only to a caller who set it: this answer has no verdict and no record of the payee, and
+                // pointing an autonomous agent at payOnWarn here could walk it into paying a stranger.
+                payOnWarn ? "prepares pay() as the agent's own decision, because you set payOnWarn" : 'stops with the check paid'
+              }. For a hand-off: ${ONE_KEY_WAY_OUT}`
             : `Nothing was charged and no check was bought: ${reason}.`,
     }),
   }
 }
 
-/** The answer for a caller over the verify-then-pay budget: nothing was read, nothing was
- *  charged, and the same request can be sent again once the window has passed. */
+/** The MCP tool's answer for a caller over the verify-then-pay budget: nothing was read, nothing was
+ *  charged, and the same request can be sent again once the window has passed. Over HTTP the limiter
+ *  in http.ts answers before this route runs, with only {error} and Retry-After. */
 export function vtpRateLimited(windowMs: number): VtpResponse {
   const chain = vtpChain()
   const s = Math.ceil(windowMs / 1000)
@@ -501,18 +506,33 @@ export function vtpRateLimited(windowMs: number): VtpResponse {
   }
 }
 
+/** What another try costs, for an answer that sends a caller to one. */
+const anotherAuthorization = (): string => `a new authorization costs another ${toolPriceUsd('risk_check')} USDC`
+
 /**
  * A nonce seen before says what this request did, and nothing about how the first one went: that one may
  * have been charged and hold a verdict, its answer lost on the way back, or still be running, in which case
  * no reader can see it yet. So this does not send the caller off to pay for a second check and open a second flow.
+ *
+ * A signature names no payee, so the same header can come back with other inputs, and a flow answers only the
+ * vault, payee and amount it names. `otherRequest` says the row was read and names others. The race for the
+ * reservation has no row to read, so the words for it have to hold in both cases.
+ *
+ * A nonce the proof shows with no flow to read can stay that way for good: nothing closes an opening row whose
+ * server died, and nothing refreshes an unconfirmed one. So the last step says what to do with one rather than
+ * leaving the caller to wait, and it is worded as what to treat it as, because a very slow first request could
+ * still close its flow. The proof has no look-up: it lists its newest rows, so a nonce older than those reads
+ * as missing.
  */
-function nonceUsed(chain: ChainDescriptor, nonce: string, checks: VtpChecks | null): VtpResponse {
+function nonceUsed(chain: ChainDescriptor, nonce: string, checks: VtpChecks | null, otherRequest = false): VtpResponse {
   const out = refused(chain, 409, 'NONCE_ALREADY_USED', `this authorization nonce already opened flow ${nonce}`, checks)
   return {
     ...out,
     body: {
       ...out.body,
-      next: `This request charged nothing. The first request with this nonce may have been charged and may hold a verdict, or may still be running. Read GET ${flowPath(nonce)}: a flow there is your answer, so do not sign again. If that answers 404, look this nonce up on GET /api/x402/gateway/proof and read both again in a minute, because a request still running shows in neither. Sign a new authorization only if neither shows this nonce by then, or the proof log says it failed.`,
+      next: otherRequest
+        ? `This request charged nothing. The first request with this nonce named another vault, payee or amount, so what is recorded under it does not answer this request, and no verdict there is about this payment. A signature names no payee, so this request needs its own: sign a new authorization, which costs another ${toolPriceUsd('risk_check')} USDC.`
+        : `This request charged nothing. The first request with this nonce may have been charged and may hold a verdict, or may still be running. Read GET ${flowPath(nonce)}: a flow there that names this vault, payee and amount is your answer, so do not sign again. One that names others does not answer this request, so sign a new authorization for it. If that read answers 404, look this nonce up on GET /api/x402/gateway/proof, which lists only the newest 50 rows, and read both again in a minute, because a request still running shows in neither. If neither shows this nonce by then, or the proof log says it failed, sign a new authorization. If the proof log reads credited, completed or unconfirmed and the flow still answers 404, treat this nonce as giving no flow: ${anotherAuthorization()}, and one that reads unconfirmed may still settle until it expires.`,
     },
   }
 }
@@ -740,14 +760,18 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
         logFlowStoreFault('reading a payment nonce', existing.reason)
         return refused(chain, 503, 'FLOW_STORE_UNREADABLE', `${FLOW_LOG_UNREADABLE}, so a flow for this payment could not be recorded`, null)
       }
-      if (existing.row) return nonceUsed(chain, payment.nonce, null)
+      if (existing.row) {
+        // A row holds these as flowRecord wrote them: lowercase addresses, and the amount as a string.
+        const { vault, payee, amount } = existing.row
+        return nonceUsed(chain, payment.nonce, null, vault !== p.vault || payee !== p.payee || amount !== p.amount.toString())
+      }
     }
   }
 
   // 4. the free preflight
   const client = deps.client ?? (await vtpReadClient(chain, env))
   const pre = await preflight(client, chain, p, deps)
-  if (!pre.ok) return refused(chain, pre.httpStatus, pre.code, pre.reason, pre.checks)
+  if (!pre.ok) return refused(chain, pre.httpStatus, pre.code, pre.reason, pre.checks, parsed.payOnWarn)
 
   // 5. no usable payment yet: the challenge
   const asked = { payOnWarn: parsed.payOnWarn, payee: p.payee }
@@ -849,9 +873,9 @@ export async function runVerifyThenPay(input: VtpInput, paymentHeader: string | 
         rail: { httpStatus: out.httpStatus, body: challenge ?? out.body },
         reason: String((railBody as { verifyError?: unknown })?.verifyError ?? (railBody as { reason?: unknown })?.reason ?? (railBody as { error?: unknown })?.error ?? `the rail answered ${out.httpStatus}`),
         next: unknown
-          ? 'The settle call got no usable answer from Gateway, so whether this authorization settled is not known and it stays valid until it expires. No verdict was served and no flow was recorded. Do not pay, and look the nonce up on GET /api/x402/gateway/proof before signing another.'
+          ? `The settle call got no usable answer from Gateway, so whether this authorization settled is not known and it stays valid until it expires. No verdict was served and no flow was recorded. Do not pay, and look the nonce up on GET /api/x402/gateway/proof, which lists only the newest 50 rows, before signing another. If it reads unconfirmed, treat this nonce as giving no flow: ${anotherAuthorization()}, and this one may still settle until it expires.`
           : unconfirmed
-            ? 'Gateway answered success but its transfer could not be read back, so no verdict was served and no flow was recorded. Do not pay; the settlement is recorded as unconfirmed on GET /api/x402/gateway/proof.'
+            ? `Gateway answered success but its transfer could not be read back, so no verdict was served and no flow was recorded. Do not pay; the settlement is recorded as unconfirmed on GET /api/x402/gateway/proof. Treat this nonce as giving no flow: ${anotherAuthorization()}, and this one may still settle until it expires.`
             : `No verdict, so do not pay. Nothing was recorded as a flow. Read rail.body for what the Gateway rail refused.${flowId ? ' This nonce has had its one attempt: trying again takes a new authorization.' : ''}`,
       }),
     }
@@ -1066,7 +1090,7 @@ export type VtpFlowReadBody = {
   url: string | null
   receiptUrl: string | null
   paymentExplorerUrl: string | null
-  /** Where the owner approves this flow, while it waits for them and the vault page would offer it. */
+  /** The flow's approval link while it waits for its owner, unless its payer or payee already rule the vault page out. This read looks at no chain, so the link stays after a key is stopped or replaced and past 24 hours, and the page can still refuse it. */
   approvalUrl?: string | null
   error?: string
   note: string

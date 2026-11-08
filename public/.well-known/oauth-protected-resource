@@ -31,6 +31,6 @@
         "requires_human": false
       }
     ],
-    "notes": "No credential widens a spending limit. Caps, the approval line and the payee allowlist are enforced by an on-chain vault that cannot see how the caller authenticated. Value-moving tools (hire_agent, deliver_task, release_escrow, policy_set, record_audit_outcome) require a verified session from the oauth method above, or a wallet or email login in the console, and are refused without one; there is no separate provisioned key."
+    "notes": "No credential widens a spending limit. Caps, the approval line and the payee allowlist are enforced by an on-chain vault that cannot see how the caller authenticated. A verified session, from the oauth method above or a wallet sign-in or an email link, is required for register_agent and its REST doors (POST /api/agents/register, POST /api/agents/register-url), for the task tools (hire_agent, deliver_task, check_task_status, release_escrow) and for the owner tools (policy_get, policy_set, pre_action_check, audit_log, record_audit_outcome); each refuses a caller without one, and a guest token from the plain email login is not a verified session. verify_then_pay and verify_then_pay_receipt are open by design: the check is bought with a Gateway payment, and the receipt records only what the chain proves. There is no separate provisioned key."
   }
 }

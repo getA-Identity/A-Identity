@@ -244,6 +244,10 @@ export async function releaseTask(
   input: { rating?: number; review?: string } = {},
   caller?: string,
 ): Promise<Task | { error: string }> {
+  // No caller releases nothing, whatever the row holds: the comparison below alone would let
+  // a caller with no session through on a row whose client is missing, and over MCP that
+  // caller is undefined. The same fail-closed shape as ownsAgent.
+  if (!caller) return { error: 'Forbidden: only the hiring client can release, and that needs a verified session' }
   const task = state.tasks.find((t) => t.id === taskId)
   if (!task) return { error: 'Unknown task' }
   if (task.client !== caller) return { error: 'Forbidden: only the hiring client can release' }
@@ -364,8 +368,10 @@ export async function disputeTask(taskId: string, reason: string, caller?: strin
   return task
 }
 
-/** Read one task; only a party to it (the client or the hired agent's owner) may read. */
+/** Read one task; only a party to it (the client or the hired agent's owner) may read. No
+ *  caller is no party, even on a row whose client is missing (fail-closed, like releaseTask). */
 export function getTask(taskId: string, caller?: string): Task | { error: string } {
+  if (!caller) return { error: 'Forbidden: not a party to this task' }
   const task = state.tasks.find((t) => t.id === taskId)
   if (!task) return { error: 'Unknown task' }
   const agent = state.agents.find((a) => a.id === task.agentId)

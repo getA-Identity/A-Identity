@@ -43,15 +43,19 @@ export default function MetadataPane({ agent }: Props) {
       <CopyBlock
         title="Self-register over REST"
         subtitle="Agents register themselves with one manifest-shaped POST (verified session cookie or bearer required)."
-        text={`curl -X POST https://a-identity.xyz/api/agents/register \\
+        text={`# Needs a verified session. How to get a Bearer token: https://a-identity.xyz/auth.md
+curl -X POST https://a-identity.xyz/api/agents/register \\
   -H 'Content-Type: application/json' \\
+  -H 'Authorization: Bearer <token>' \\
   -d '{"manifest":{"name":"My Agent","description":"What it does (20+ chars)","category":"${agent.category}","capabilities":["translation"]}}'`}
       />
       <CopyBlock
         title="Quick register from a metadata URL"
         subtitle="Already host an agent manifest? Point the registrar at it and skip the wizard."
-        text={`curl -X POST https://a-identity.xyz/api/agents/register-url \\
+        text={`# Needs a verified session. How to get a Bearer token: https://a-identity.xyz/auth.md
+curl -X POST https://a-identity.xyz/api/agents/register-url \\
   -H 'Content-Type: application/json' \\
+  -H 'Authorization: Bearer <token>' \\
   -d '{"url":"https://your-agent.example.com/.well-known/agent-manifest.json"}'`}
       />
 

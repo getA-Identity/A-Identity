@@ -288,6 +288,14 @@ test('the notice says what it cannot know as that', () => {
   assert.doesNotMatch(notice, /still works as a vault/)
 })
 
+test('every sentence that sends an owner to the team says how to reach it, at the address the site publishes', () => {
+  const rules = readSource('src/lib/arc/vault-count.ts')
+  assert.match(readSource('src/lib/brand.ts'), /hello: 'hello@a-identity\.xyz'/)
+  const told = rules.match(/tell the A-Identity team[^'"]*/g) ?? []
+  assert.equal(told.length, 2)
+  for (const sentence of told) assert.match(sentence, /^tell the A-Identity team at hello@a-identity\.xyz\b/)
+})
+
 test('with no hash the page says why from the end date, and says the server is looking only when the server says so', async () => {
   const { endDateOf, noHashWords, sweepSaysFrom } = await loadRules()
   const LOOKS = /our server looks for vaults on the chain by itself/
@@ -298,7 +306,7 @@ test('with no hash the page says why from the end date, and says the server is l
   const future = noHashWords('future', 'looking')
   assert.match(future, /^\. You do not have to send anything to anyone/)
   assert.match(future, /this one has the agent key end date it looks for/)
-  assert.match(future, /If it still says this tomorrow, tell the A-Identity team/)
+  assert.match(future, /If it still says this tomorrow, tell the A-Identity team at hello@a-identity\.xyz, because the check may have refused it\./)
 
   // A date that has passed: the one action that fixes it is renewing, so it says so and sends nobody to a person.
   const passed = noHashWords('passed', 'looking')
@@ -316,7 +324,7 @@ test('with no hash the page says why from the end date, and says the server is l
   const revoked = noHashWords('revoked', 'looking')
   assert.match(revoked, /^\. Its agent key is revoked, and that does not stop a vault counting\. You do not have to send anything to anyone: our server looks/)
   assert.match(revoked, /it finds this one with its key revoked too/)
-  assert.match(revoked, /If it still says this tomorrow, tell the A-Identity team/)
+  assert.match(revoked, /If it still says this tomorrow, tell the A-Identity team at hello@a-identity\.xyz/)
   assert.doesNotMatch(revoked, /has passed|new one|Set |end date/, 'it never asks an owner to turn back on a key they just cut off')
   assert.equal(noHashWords('revoked', 'reading'), '. Its agent key is revoked, and that does not stop a vault counting.', 'it says what the read showed, and claims no search')
   assert.match(noHashWords('revoked', 'not-looking'), /that does not stop a vault counting\. Our server is not looking .* so if another browser/, 'nothing to do first, so no after that')
@@ -328,7 +336,7 @@ test('with no hash the page says why from the end date, and says the server is l
       assert.doesNotMatch(words, LOOKS, `${endDate} ${sweep}`)
       assert.doesNotMatch(words, /has the agent key end date it looks for/)
       // This browser holds no hash whoever sent the deploy, and on the setup's last screen it is always the one that did, so only another one can ask.
-      if (sweep !== 'reading') assert.match(words, /if another browser of yours saw this vault's deploy land, open this vault there: it can ask by itself\. If none did, tell the A-Identity team\./)
+      if (sweep !== 'reading') assert.match(words, /if another browser of yours saw this vault's deploy land, open this vault there: it can ask by itself\. If none did, tell the A-Identity team at hello@a-identity\.xyz\./)
       assert.doesNotMatch(words, /the browser that deployed/)
     }
     assert.match(noHashWords(endDate, 'looking'), LOOKS, endDate)

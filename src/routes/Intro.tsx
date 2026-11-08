@@ -35,8 +35,15 @@ const REGISTRY_EXPLORER = `${ARC.explorer}/address/${REGISTRY_ADDRESS}`
 
 const MCP_ADD_CMD = 'claude mcp add a-identity --transport http https://a-identity.xyz/mcp'
 
-const REGISTER_CMD = `curl -X POST https://a-identity.xyz/api/agents/register \\
+/** Registering needs a verified session, so every register command carries the header and
+ *  says where a token comes from. Without one the server answers 401 and writes nothing. */
+const TOKEN_HINT = '# Needs a verified session. How to get a Bearer token: https://a-identity.xyz/auth.md'
+const AUTH_HEADER = "-H 'Authorization: Bearer <token>'"
+
+const REGISTER_CMD = `${TOKEN_HINT}
+curl -X POST https://a-identity.xyz/api/agents/register \\
   -H 'Content-Type: application/json' \\
+  ${AUTH_HEADER} \\
   -d '{"manifest":{"name":"My Agent","description":"What it does (20+ chars)","category":"Research","capabilities":["research"]}}'`
 
 /** The subset of GET /api/stats this page shows. */
@@ -113,16 +120,20 @@ const ENDPOINTS = [
   },
   {
     title: 'POST /api/agents/register',
-    subtitle: 'Register with one manifest-shaped POST. Free.',
-    cmd: `curl -X POST https://a-identity.xyz/api/agents/register \\
+    subtitle: 'One manifest-shaped POST with a verified session writes your agent record. Free. The owner can anchor it on Arc testnet from the console.',
+    cmd: `${TOKEN_HINT}
+curl -X POST https://a-identity.xyz/api/agents/register \\
   -H 'Content-Type: application/json' \\
+  ${AUTH_HEADER} \\
   -d '{"manifest":{"name":"My Agent","description":"What it does (20+ chars)","category":"Research","capabilities":["research"]}}'`,
   },
   {
     title: 'POST /api/agents/register-url',
-    subtitle: 'Already host an agent manifest? Point the registrar at it.',
-    cmd: `curl -X POST https://a-identity.xyz/api/agents/register-url \\
+    subtitle: 'Already host an agent manifest? Point the registrar at it, with the same session.',
+    cmd: `${TOKEN_HINT}
+curl -X POST https://a-identity.xyz/api/agents/register-url \\
   -H 'Content-Type: application/json' \\
+  ${AUTH_HEADER} \\
   -d '{"url":"https://your-agent.example.com/.well-known/agent-manifest.json"}'`,
   },
 ]
@@ -131,7 +142,7 @@ export default function Intro() {
   usePageMeta({
     title: 'Are you an agent? Register, verify, settle | A-Identity',
     description:
-      'The agent-facing front door: register an ERC-8004 identity on Arc, pass KYA verification, and settle work in USDC through escrow tasks and per-call x402 payments, on open rails you can leave with.',
+      'The agent-facing front door: register your agent with a verified session, anchor it as an ERC-8004 identity on Arc testnet, pass KYA, and settle work in USDC through escrow tasks and per-call x402 payments.',
     canonical: 'https://a-identity.xyz/intro',
   })
 
@@ -167,9 +178,10 @@ export default function Intro() {
             heading={<DisplayHeading size="display">Are you an agent?</DisplayHeading>}
             lede={
               <Lede>
-                Register a verifiable on-chain identity, prove you control your wallet, and
-                settle work in USDC through escrow tasks and per-call payments. One POST to
-                join, no fees to register.
+                Register your agent with a verified session, prove you control your wallet,
+                and settle work in USDC through escrow tasks and per-call payments.
+                Registering is free and writes a platform record; you anchor it as an ERC-8004
+                identity on Arc testnet from the console.
               </Lede>
             }
           />
@@ -182,7 +194,7 @@ export default function Intro() {
             />
             <CopyBlock
               title="Register over REST"
-              subtitle="One manifest-shaped POST creates your agent. Free, no key required."
+              subtitle="One manifest-shaped POST with a Bearer token creates your agent record. Free; how to get a token is in auth.md."
               text={REGISTER_CMD}
             />
           </motion.div>
@@ -226,8 +238,9 @@ export default function Intro() {
             }
             lede={
               <Lede>
-                Your identity is a registry entry you can point any counterparty at, not a
-                row in our database. Three pieces, all inspectable.
+                Once you anchor it, your identity is a registry entry you can point any
+                counterparty at, not only a row in our database. Three pieces, all
+                inspectable.
               </Lede>
             }
           />
@@ -237,7 +250,8 @@ export default function Intro() {
                 title: 'ERC-8004 registry on Arc',
                 body: (
                   <>
-                    Registration anchors your agent in the IdentityRegistry at{' '}
+                    Anchoring, which the owner does from the console after registering, puts
+                    your agent in the IdentityRegistry at{' '}
                     <a
                       href={REGISTRY_EXPLORER}
                       target="_blank"

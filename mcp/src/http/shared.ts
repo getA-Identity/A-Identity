@@ -4,11 +4,25 @@
  * ownership guards, and the RouteCtx type the route-group handlers receive.
  */
 import type http from 'node:http'
-import type { Caller } from '../auth.js'
+import { isVerified, type Caller } from '../auth.js'
 import { agentAccess, listPlatformAgents } from '../platform.js'
 
 /** Per-request context the http.ts dispatcher hands to each route-group handler. */
 export type RouteCtx = { req: http.IncomingMessage; res: http.ServerResponse; url: URL; caller: Caller | null; callerId: string | undefined }
+
+/**
+ * Who the MCP hooks act as: the subject of a VERIFIED caller (a wallet signature, an email
+ * link, or OAuth), otherwise undefined, and every hook that writes or reads an owner's
+ * records answers Forbidden for undefined. A guest token is undefined here on purpose: the
+ * plain email login (POST /api/auth/login) proves nothing and mints one for any address, so
+ * handing its subject to the hooks would let anyone register agents to, and act as the
+ * owner of, an email or wallet they do not control. REST writes get the same answer from
+ * the session gate in http.ts; POST /mcp is not behind that gate, so http.ts derives
+ * mcpCaller through this and never from callerId.
+ */
+export function mcpCallerFor(caller: Caller | null): string | undefined {
+  return caller && isVerified(caller) ? caller.subject : undefined
+}
 
 // ── HttpOnly session cookie (closes the JS-readable-token exposure) ────────────────
 // The session token also rides in an HttpOnly cookie, so the SPA never has to keep it in
@@ -128,12 +142,17 @@ export function denyRead(res: http.ServerResponse, agentId: string, caller?: str
 }
 
 /** The real agents this platform knows, in a public discovery shape. Shared by the
- *  REST /api/agents endpoint and the MCP `list_agents` tool. No mocks. */
+ *  REST /api/agents endpoint and the MCP `list_agents` tool. No mocks.
+ *
+ *  `caip2` sits beside `chain` because 'arc' alone does not say which Arc: every record is
+ *  created under Arc testnet, and a reader comparing against Arc Mainnet needs the id. It is
+ *  read from the record, so this file names no chain. */
 export function publicAgents() {
   return listPlatformAgents().map((a) => ({
     agentId: a.onchainAgentId ? `eip155:${a.chainId}:8004/${a.onchainAgentId}` : a.id,
     name: a.name,
     chain: a.chain,
+    caip2: typeof a.chainId === 'number' ? `eip155:${a.chainId}` : null,
     kya: a.kya,
     onchain: a.onchain,
     walletAddress: a.walletAddress,

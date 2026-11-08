@@ -210,6 +210,17 @@ test('the two agent-registration doors share one budget, so neither is a way aro
   )
 })
 
+test('the manifest doors share the agent-create budget too, so no door is a way around another', () => {
+  // POST /api/agents/register and /api/agents/register-url write the same agent row and had
+  // no budget at all; register-url also makes an outbound fetch for every call.
+  const doors = ['/api/agents', '/api/v1/agents/register', '/api/agents/register', '/api/agents/register-url']
+  const buckets = doors.map((p) => rateBudget('POST', p))
+  buckets.forEach((b, i) => assert.ok(b, `${doors[i]} writes an agent row and must have a rate budget`))
+  assert.deepEqual([...new Set(buckets.map((b) => b?.bucket))], ['agent-create'], 'one bucket for every single-agent door')
+  // The owner's own registration view is a read and stays unbudgeted.
+  assert.equal(rateBudget('GET', '/api/agents/register'), null)
+})
+
 test('rating an agent is budgeted like the other free writes that create rows', () => {
   // Feedback belonged in this class from the day it was written and was simply left out of
   // it: it writes a durable row AND feeds reputation (agentReputation reads it into the

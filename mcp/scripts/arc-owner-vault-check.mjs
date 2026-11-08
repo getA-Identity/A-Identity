@@ -19,8 +19,8 @@
  *     eth_call when a host can run one;
  *   - owner() is receipt.from, so the owner's own wallet sent the deploy;
  *   - owner() is none of our keys: the provenance ledger's agent owners (the operating
- *     wallet), both rails' internal payer lists, the oracle validator, the addresses committed
- *     for our keys, and the address of every EVM key env var that is set (run with
+ *     wallet), both rails' internal payer lists, the oracle validator, our own agents' wallets,
+ *     the addresses committed for our keys, and the address of every EVM key env var that is set (run with
  *     --env-file=.env to include those; admitting with --tx on arc-mainnet refuses without
  *     them, a rehearsal or a --vault read does not). A key set only in this run's env is
  *     compared here and not on the server: GET /api/arc/vaults names those;

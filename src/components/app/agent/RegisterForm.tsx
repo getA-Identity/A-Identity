@@ -375,7 +375,7 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
           <div className="flex flex-col gap-3 border-t border-border px-4 py-4">
             <CopyBlock
               title="MCP server"
-              subtitle="Add the A-Identity MCP server to any client (Claude Code shown), then call the register_agent tool."
+              subtitle="Add the A-Identity MCP server to any client (Claude Code shown), then call the register_agent tool with a Bearer token on the connection (see auth.md); without one it registers nothing."
               text={MCP_ADD_CMD}
             />
             <CopyBlock
@@ -462,7 +462,7 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
                     ['capabilities', 'Array of strings. Without services, each capability becomes a hireable service.'],
                     ['services', 'Array of { name, priceUsd, unit } the agent sells.'],
                     ['endpoint', 'Public URL where the agent can be called. Agents with one are listed as online.'],
-                    ['walletAddress', 'The wallet the agent pays and gets paid with.'],
+                    ['walletAddress', 'The wallet the agent pays and gets paid with: 0x and 40 hex characters, or the registration is refused.'],
                     ['cardStyle', 'Whole number 1 to 6. Themes the agent\'s public profile hero.'],
                     ['ci', 'true marks a canary or monitoring agent; its activity is excluded from traction headlines.'],
                   ] as const

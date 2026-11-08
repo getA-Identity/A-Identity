@@ -47,8 +47,12 @@ export function mcpEndpointInfo() {
     },
     tryIt: CURL_TOOLS_LIST,
     auth:
-      'Read tools need no session. Tools that move value (hire_agent, deliver_task, release_escrow) ' +
-      'require Authorization: Bearer from OAuth or a wallet or email login.',
+      'Read tools need no session. A verified session (Authorization: Bearer <token>, from OAuth, a wallet sign-in or an email link) ' +
+      'is required for register_agent and its REST doors (POST /api/agents/register, POST /api/agents/register-url), for the task tools ' +
+      'hire_agent, deliver_task, check_task_status and release_escrow, and for the owner tools policy_get, policy_set, pre_action_check, ' +
+      'audit_log and record_audit_outcome. Without one each tool answers Forbidden, each REST door answers 401 or 403, and nothing changes; ' +
+      'a guest token from the plain email login is not a verified session. verify_then_pay and verify_then_pay_receipt are open by design: ' +
+      'the check is bought with a Gateway payment, and the receipt records only what the chain proves. How to get a token: https://a-identity.xyz/auth.md',
   }
 }
 
