@@ -27,7 +27,9 @@ import { agentCreateVolume, chargeAgentCreate } from './rate-budget.js'
 import { getChainById } from './chains/index.js'
 import { buildServer, type ServerData } from './server.js'
 import { issueToken, verifyToken } from './auth.js'
+import { protectedResourceMetadata } from './oauth.js'
 import { handleGuardrailRoutes } from './http/guardrail-routes.js'
+import { mcpEndpointInfo } from './http/mcp-info.js'
 import { mcpCallerFor, publicAgents, type RouteCtx } from './http/shared.js'
 
 /**
@@ -420,6 +422,36 @@ test('a task row with no client is still closed to a caller with no session', as
   assert.equal(legacy.status, 'delivered', 'nothing was released')
   const read = getTask(legacy.id, undefined)
   assert.ok('error' in read && read.error.startsWith('Forbidden'), 'and nothing is read')
+})
+
+// -- what the published auth summaries say --
+
+test('every auth summary a client reads first names each tool that needs a session, the REST doors, and the open pair', () => {
+  const published = (rel: string) => readFileSync(join(SRC, '..', '..', rel), 'utf8')
+  const notesOf = (rel: string) => (JSON.parse(published(rel)) as { agent_auth: { notes: string } }).agent_auth.notes
+  const oauthNotes = (protectedResourceMetadata().agent_auth as { notes: string }).notes
+
+  // The three OAuth copies are one statement, so they say it in the same words.
+  assert.equal(notesOf('public/.well-known/oauth-protected-resource'), oauthNotes, 'the static protected resource metadata says what oauth.ts serves')
+  assert.equal(notesOf('public/.well-known/oauth-authorization-server'), oauthNotes, 'the authorization server mirror says what oauth.ts serves')
+  assert.ok(published('scripts/gen-oauth-mirror.mjs').includes(oauthNotes), 'and the generator would write it back')
+
+  const summaries: Record<string, string> = {
+    'GET /mcp': mcpEndpointInfo().auth,
+    'the server card': (JSON.parse(published('public/.well-known/mcp/server-card.json')) as { authentication: { note: string } }).authentication.note,
+    'the OAuth metadata notes': oauthNotes,
+  }
+  // The same classification the tool-by-tool test above holds to the registered tools, so a
+  // new tool that needs a session has to be named here the day it lands.
+  const needsSession = Object.keys(sessionCalls('agent', 'task'))
+  const open = Object.keys(OPEN_TOOLS).filter((t) => t.startsWith('verify_then_pay'))
+  assert.equal(open.length, 2, 'the verify-then-pay pair is still classified open')
+  for (const [where, text] of Object.entries(summaries)) {
+    for (const tool of [...needsSession, ...open]) assert.match(text, new RegExp(`\\b${tool}\\b`), `${where} must name ${tool}`)
+    for (const door of [/POST \/api\/agents\/register\b(?!-)/, /POST \/api\/agents\/register-url\b/]) assert.match(text, door, `${where} must name both REST doors`)
+    assert.match(text, /verify_then_pay and verify_then_pay_receipt are open by design/, `${where} must say the pair is open by design`)
+    assert.match(text, /a guest token from the plain email login is not a verified session/, `${where} must say a guest token is not one`)
+  }
 })
 
 // ── what the list says about a record ────────────────────────────────────────────
