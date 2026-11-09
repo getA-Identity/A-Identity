@@ -448,7 +448,7 @@ export const PROVENANCE: ChainProvenance[] = [
       {
         name: 'AgentSpendPolicy vault',
         address: '0x05a6aad7124c2f1c7b82b03e0bbe3867bc500073',
-        note: 'Ours: the same Solidity contract that runs on Arc and Arbitrum One. Read live on 2026-10-11: owner the operating wallet 0xd305...ed36, operator the agent key 0x8C8D...3349, dailyCap 1 USDG, autoApproveMax 0.25 USDG, not frozen, allowlist off, session key valid to 2026-11-15, balance 0.02 USDG (funded 0.03, one 0.01 payment since). Dust on purpose; the caps are the product. Built from the contract source at commit c05b1710, before the Arc Studio review made owner immutable, so verify it against that commit (scripts/sourcify-verify.mjs --source-ref c05b1710); vaults deployed after that review use the reviewed source.',
+        note: 'Ours: the same Solidity contract that runs on Arc and Arbitrum One. Read live on 2026-10-11: owner the operating wallet 0xd305...ed36, operator the agent key 0x8C8D...3349, dailyCap 1 USDG, autoApproveMax 0.25 USDG, not frozen, allowlist off, session key valid to 2026-11-15 (renewed on 2026-11-08 to 2027-01-07, below), balance 0.02 USDG (funded 0.03, one 0.01 payment since). Dust on purpose; the caps are the product. Built from the contract source at commit c05b1710, before the Arc Studio review made owner immutable, so verify it against that commit (scripts/sourcify-verify.mjs --source-ref c05b1710); vaults deployed after that review use the reviewed source.',
       },
     ],
     artifacts: [
@@ -503,7 +503,7 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: '0xe48d38b9188038afeb4fc1873fa05357408b976d76b7e6c1f468bcf58d2753d8',
         onChain: 'rhchain',
         blockNumber: 47888701,
-        note: 'The same contract that runs on Arc and (in Rust) on Stellar, holding the chain\'s real settlement token: dailyCap 1 USDG, autoApproveMax 0.25. Its first session key (tx 0xda4a3d7c) lapsed on 2026-09-04 and was renewed to 2026-11-15 on 2026-10-01, when the agent key was also split from the owner key (both below). Deployed 2026-08-28 at 0x05a6aad7124c2f1c7b82b03e0bbe3867bc500073, funded with 0.03 USDG (tx 0x2bbb6077). Dust on purpose: the caps are the product, not the balance.',
+        note: 'The same contract that runs on Arc and (in Rust) on Stellar, holding the chain\'s real settlement token: dailyCap 1 USDG, autoApproveMax 0.25. Its first session key (tx 0xda4a3d7c) lapsed on 2026-09-04 and was renewed to 2026-11-15 on 2026-10-01, when the agent key was also split from the owner key, and renewed again on 2026-11-08 to 2027-01-07 (all three below). Deployed 2026-08-28 at 0x05a6aad7124c2f1c7b82b03e0bbe3867bc500073, funded with 0.03 USDG (tx 0x2bbb6077). Dust on purpose: the caps are the product, not the balance.',
       },
       {
         kind: 'settlement',
@@ -528,6 +528,14 @@ export const PROVENANCE: ChainProvenance[] = [
         onChain: 'rhchain',
         blockNumber: 77383032,
         note: 'Owner-only setOperator to the buyer agent 0x8C8D...3349 through mcp/scripts/evm-vault-operator.mjs, 31508 gas, 0.00000064 ETH. Simulated right after, nothing broadcast: the new operator is refused withdraw, setPolicy, setSessionKeyExpiry, ownerPay and setOperator with NotOwner and anything above 0.25 USDG with AboveAutoApprove, and the owner is refused pay() with NotOperator. Before this, one key held both roles, so the caps bound nobody who held it.',
+      },
+      {
+        kind: 'session-key',
+        label: 'Vault session key renewed again, to 2027-01-07, before it could lapse',
+        txHash: '0x82af8bc9c823f1d2db06565ad81675a9db02e10f1491725cb2841cb3fad1ab76',
+        onChain: 'rhchain',
+        blockNumber: 109615645,
+        note: 'Renewed on 2026-11-08, a week before the 2026-11-15 expiry, to 2027-01-07T23:45:53Z, so the key does not lapse while this page is being read. An owner-only setSessionKeyExpiry through mcp/scripts/evm-vault-session.mjs, 29713 gas, 0.00000061 ETH; the new expiry read back from the contract, and an operator pay() of 0.01 USDG simulated as allowed afterwards.',
       },
       {
         kind: 'attestation',

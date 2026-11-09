@@ -591,8 +591,8 @@ Live today:
   matching Transfer log. No canonical Circle USDC is published for this chain, so
   the registry asserts none. Since 2026-08-28 an AgentSpendPolicy vault is live here
   too, holding USDG under dust caps with a typed AboveAutoApprove refusal proven; since
-  2026-10-01 its agent key is a separate wallet from its owner key, renewed to 2026-11-15. And
-  agent #0's reputation is anchored on the canonical ReputationRegistry by our oracle
+  2026-10-01 its agent key is a separate wallet from its owner key; its session key was renewed
+  on 2026-11-08 to 2027-01-07. And agent #0's reputation is anchored on the canonical ReputationRegistry by our oracle
   validator (tagged with its identity-only basis).
 - **Arbitrum One** (`eip155:42161`). ERC-8004 identity
   `0x8004a169fb4a3325136eb29fa0ceb6d2e539a432` and reputation
