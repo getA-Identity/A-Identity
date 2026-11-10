@@ -2428,8 +2428,8 @@ test("linked payers are said to be one party only when they are one vault's owne
   assert.match(onHisWord, / 3 of the 4 come from one party nobody has identified: 0x39ae\.\.\.5794 and 0xed70\.\.\.677b, linked on chain, and one person on the founder's word of 2026-11-10; the other 1 come from 1 wallet\.$/)
   assert.doesNotMatch(onHisWord, /may be one party/)
   // His word covers only the wallets he named: the owner with its own agent key is still read through the chain alone.
-  const KEY_A = '0x707b8af7ba198e6bcf80480660fae5455e81ecd3'
-  const ownerAndKey = await note({ gateway: [gw({ payer: A }), gw({ payer: KEY_A }), gw({ payer: EXT_C })], walletLinks: ARC_WALLET_LINKS, vaults: ARC_OWNER_HELD_VAULTS })
+  const AGENT_A = '0x707b8af7ba198e6bcf80480660fae5455e81ecd3'
+  const ownerAndKey = await note({ gateway: [gw({ payer: A }), gw({ payer: AGENT_A }), gw({ payer: EXT_C })], walletLinks: ARC_WALLET_LINKS, vaults: ARC_OWNER_HELD_VAULTS })
   assert.match(ownerAndKey, / 2 of the 3 come from wallets linked on chain, which may be one party nobody has identified: 0x39ae\.\.\.5794 and 0x707b\.\.\.ecd3; the other 1 come from 1 wallet\.$/)
 
   // A vault's owner and the agent key the flow log names for it are one party, owner first whatever order the link holds them.
