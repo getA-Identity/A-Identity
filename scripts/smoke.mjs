@@ -45,7 +45,7 @@ if (serve) {
 // likewise, once bare and once with the mainnet named, the way a shared link opens it.
 const PUBLIC = ['/', '/explorer?q=849980', '/arc', '/stellar', '/stellar?network=testnet', '/app/vault/stellar', '/app/vault/arc', '/app/vault/arc?network=eip155:5042', '/algorand', '/check', '/check?q=WHZ74ZGNGZGAVEQZTHESENVP5RTHMEQ4BOUKF7UHWOADQMKXDKAK3FESJE', '/check/robinhood', '/check/robinhood?q=%230', '/check/arbitrum', '/celo-proof', '/proof', '/proof/arc', '/proof/stellar',
   '/proof/algorand', '/proof/base', '/proof/robinhood', '/proof/arbitrum', '/proof/celo',
-  '/stats', '/intro', '/mascot', '/brand-kit', '/motion', '/manifesto', '/roadmap', '/brand', '/contact', '/faq', '/blog', '/architecture', '/login', '/bozuk-link']
+  '/stats', '/intro', '/mascot', '/brand-kit', '/motion', '/manifesto', '/roadmap', '/brand', '/contact', '/feedback', '/faq', '/blog', '/architecture', '/login', '/bozuk-link']
 const CONSOLE = ['/app', '/app/checks', '/app/agent-id', '/app/wallet', '/app/settlements', '/app/permissions', '/app/marketplace', '/app/earnings']
 
 const IGNORE = [/favicon/i, /net::ERR/i, /Failed to load resource/i, /model-viewer/i, /unpkg\.com/i]

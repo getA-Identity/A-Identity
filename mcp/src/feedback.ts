@@ -1,5 +1,6 @@
 /**
- * Site feedback: the widget in the corner of every page, emailed to the team inbox.
+ * Site feedback: the widget in the corner of every page and the /feedback page, emailed to the
+ * team inbox.
  *
  * Anonymous by design (the public pages have no sign-in), bounded by the site-feedback rate
  * bucket, and it does exactly one thing with what it receives: it emails it through Resend,
@@ -13,8 +14,22 @@
  */
 import { createHash, randomBytes } from 'node:crypto'
 
-export const FEEDBACK_KINDS = ['bug', 'idea', 'question', 'other'] as const
+/**
+ * The widget offers the first four. The /feedback page, where the Demo Day deck sends people,
+ * offers the last three: feedback, a general inquiry, or a request.
+ */
+export const FEEDBACK_KINDS = ['bug', 'idea', 'question', 'other', 'feedback', 'inquiry', 'request'] as const
 export type FeedbackKind = (typeof FEEDBACK_KINDS)[number]
+
+const KIND_LABELS: Record<FeedbackKind, string> = {
+  bug: 'Bug',
+  idea: 'Idea',
+  question: 'Question',
+  other: 'Other',
+  feedback: 'Feedback',
+  inquiry: 'General inquiry',
+  request: 'Request',
+}
 
 export const FEEDBACK_MESSAGE_MIN = 10
 export const FEEDBACK_MESSAGE_MAX = 2000
@@ -151,7 +166,7 @@ export function escapeHtml(s: string): string {
 }
 
 function kindLabel(kind: FeedbackKind): string {
-  return kind.charAt(0).toUpperCase() + kind.slice(1)
+  return KIND_LABELS[kind]
 }
 
 /** "[A-Identity feedback] bug: the first sixty characters of the message" */
@@ -201,7 +216,7 @@ export function feedbackEmail(value: Feedback, meta: FeedbackMeta): { subject: s
       <tr><td style="background:#ffffff;border-radius:20px;padding:32px;box-shadow:0 12px 40px rgba(25,40,55,0.08)">
         <div style="display:inline-block;padding:4px 12px;border-radius:999px;background:#7342e2;color:#ffffff;font-size:12px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase">${escapeHtml(kindLabel(value.kind))}</div>
         <h1 style="margin:14px 0 6px;font-size:20px;font-weight:800;letter-spacing:-0.01em;color:#192837">Site feedback</h1>
-        <p style="margin:0 0 18px;font-size:13px;line-height:1.5;color:#5b6673">Sent from the feedback widget on the site. The message is quoted exactly as typed.</p>
+        <p style="margin:0 0 18px;font-size:13px;line-height:1.5;color:#5b6673">Sent from the feedback form on the site. The message is quoted exactly as typed.</p>
         <div style="padding:16px 18px;border-radius:14px;background:#f2f2ee;${cell};white-space:pre-wrap">${escapeHtml(value.message)}</div>
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:6px">
           ${rows.map(([k, v]) => `<tr><td style="${label}">${escapeHtml(k)}</td></tr><tr><td style="${cell}">${v}</td></tr>`).join('\n          ')}
@@ -241,7 +256,9 @@ export async function sendFeedback(
   const apiKey = env.RESEND_API_KEY
   if (!apiKey) return { delivered: false, configured: false, reason: NOT_CONFIGURED_REASON }
   const from = env.MAGIC_FROM_EMAIL || DEFAULT_FROM
-  const to = [env.FEEDBACK_TO_EMAIL || DEFAULT_FEEDBACK_TO]
+  // One inbox or several: FEEDBACK_TO_EMAIL may be a comma-separated list.
+  const listed = (env.FEEDBACK_TO_EMAIL ?? '').split(',').map((a) => a.trim()).filter(Boolean)
+  const to = listed.length ? listed : [DEFAULT_FEEDBACK_TO]
   const { subject, html, text } = feedbackEmail(value, meta)
   const payload: Record<string, unknown> = { from, to, subject, html, text }
   if (value.email) payload.reply_to = value.email

@@ -749,7 +749,7 @@ POST /api/cctp/stellar/bridge   CCTP transfer either way: prepared for any verif
 POST /api/arc/agent-run         autonomous run: agent pays a service on its own until its budget is used up, then stops (+ protocol fee)
 GET  /api/marketplace           Agent House feed
 POST /api/follow                follow an agent
-POST /api/feedback              site feedback from the corner widget, emailed to the team via Resend (anonymous; rate-limited; 503 when no RESEND_API_KEY)
+POST /api/feedback              site feedback from the corner widget and /feedback, emailed to the team via Resend (anonymous; rate-limited; 503 when no RESEND_API_KEY)
 ```
 
 ## Quickstart

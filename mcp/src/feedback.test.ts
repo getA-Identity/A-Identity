@@ -66,6 +66,10 @@ test('a short message, an over-long message and an unknown kind are refused with
   assert.ok(validateFeedback({ kind: 'bug', message: 'x'.repeat(2000) }).ok, 'exactly the maximum is fine')
   const kind = validateFeedback({ kind: 'rant', message: GOOD.message })
   assert.equal(kind.ok, false)
+  // The /feedback page's three kinds are accepted alongside the widget's four.
+  for (const pageKind of ['feedback', 'inquiry', 'request']) {
+    assert.ok(validateFeedback({ kind: pageKind, message: GOOD.message }).ok, pageKind)
+  }
   assert.equal(validateFeedback(null).ok, false)
   assert.equal(validateFeedback([]).ok, false)
 })
@@ -126,6 +130,9 @@ test('the email escapes markup and carries the kind, the page and the reply hint
   const anon = feedbackEmail({ kind: 'other', message: 'anonymous note of enough length' }, META)
   assert.ok(anon.html.includes('cannot be answered'))
   assert.ok(anon.text.includes('no address left'))
+  // A page kind reads as its label, not as the raw id.
+  const inquiry = feedbackEmail({ kind: 'inquiry', message: 'a general inquiry of enough length' }, META)
+  assert.ok(inquiry.html.includes('General inquiry') && inquiry.text.includes('Kind: General inquiry'))
 })
 
 test('the subject is the kind plus the first sixty characters, on one line', () => {
@@ -165,6 +172,10 @@ test('with a key it posts to Resend with the configured to, from, reply_to and s
   assert.equal(sent.reply_to, 'someone@example.com')
   assert.ok(String(sent.subject).startsWith('[A-Identity feedback] bug: '))
   assert.ok(typeof sent.html === 'string' && typeof sent.text === 'string')
+  // A comma-separated FEEDBACK_TO_EMAIL reaches every listed inbox, blanks dropped.
+  const many = fakeFetch(200, { id: 'email_456' })
+  await sendFeedback({ kind: 'request', message: GOOD.message }, META, { ...ENV, FEEDBACK_TO_EMAIL: 'a@example.com, b@example.com,' }, many.fetch)
+  assert.deepEqual((JSON.parse(String(many.calls[0].init.body)) as { to: string[] }).to, ['a@example.com', 'b@example.com'])
 })
 
 test('the defaults are the team inbox and the Resend test sender, and no reply_to without an address', async () => {

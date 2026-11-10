@@ -65,23 +65,6 @@ function Counter({ to, delay = 0, suffix = '' }: { to: number; delay?: number; s
   return <motion.span>{text}</motion.span>
 }
 
-/** Brand art, faded into the navy at its edges so it sits in the slide instead of on it. */
-function Art({ src, className, float = true }: { src: string; className?: string; float?: boolean }) {
-  const print = usePrint()
-  const mask = 'radial-gradient(closest-side, black 58%, transparent 100%)'
-  return (
-    <motion.img
-      src={src}
-      alt=""
-      draggable={false}
-      className={className}
-      style={{ maskImage: mask, WebkitMaskImage: mask }}
-      animate={print || !float ? undefined : { y: [0, -16, 0], rotate: [0, 1.2, 0] }}
-      transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
-    />
-  )
-}
-
 /** The mascot, bobbing gently. Transparent renders, so no edge mask. */
 function Owl({ src, className, style }: { src: string; className?: string; style?: React.CSSProperties }) {
   const print = usePrint()
@@ -889,6 +872,7 @@ function SlideClose() {
   const print = usePrint()
   const links = [
     ['Product', 'a-identity.xyz'],
+    ['Contact', 'a-identity.xyz/feedback'],
     ['Arc Mainnet receipts', 'a-identity.xyz/proof/arc'],
     ['Code', 'github.com/getA-Identity/A-Identity'],
     ['X', 'x.com/ai_dentity'],
@@ -939,8 +923,18 @@ function SlideClose() {
               animate={print ? undefined : { opacity: [0.35, 0.8, 0.35], scale: [0.9, 1.15, 0.9] }}
               transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
             />
-            <Art src="/art/art-gateway.webp" className="relative w-[720px]" float={false} />
-            <Owl src="/mascots/owl-soft.png" className="absolute bottom-[10%] left-1/2 w-[190px] -translate-x-1/2" />
+            {/* Demo Day has no live Q&A, so the last slide hands the audience a way in: a QR to
+                /feedback. public/qr/feedback.svg encodes https://a-identity.xyz/feedback?ref=demoday,
+                so the visits it brings can be told apart; public/qr/feedback.png is the same code
+                for a deck built elsewhere. Cream and ink are the brand's fixed colours, kept in both
+                themes like a logo, because a QR scans best dark on light. */}
+            <div className="relative rounded-[32px] bg-cream p-6 shadow-2xl">
+              <img src="/qr/feedback.svg" alt="QR code for a-identity.xyz/feedback" className="h-[330px] w-[330px]" draggable={false} />
+              <p className="mt-3 text-center text-[14px] font-semibold uppercase tracking-[0.18em] text-ink/60">Feedback, inquiries, requests</p>
+              <p className="mt-1 text-center text-[24px] font-semibold text-ink">a-identity.xyz/feedback</p>
+            </div>
+            {/* Perched on the card's top edge, clear of the code and its quiet zone. */}
+            <Owl src="/mascots/owl-soft.png" className="absolute -top-[182px] right-[8px] w-[190px]" />
           </Reveal>
         </div>
       </div>

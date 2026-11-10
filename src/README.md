@@ -38,6 +38,7 @@ is what keeps the console, the explorer and viem out of the homepage's first chu
 | `/stats` | [`routes/Stats.tsx`](routes/Stats.tsx) | Built out of `components/stats/` |
 | `/brand` | [`routes/BrandKit.tsx`](routes/BrandKit.tsx) | `/brand-kit` is a `<Navigate replace>` to it, so old links still land |
 | `/contact` | [`routes/Contact.tsx`](routes/Contact.tsx) | |
+| `/feedback` | [`routes/Feedback.tsx`](routes/Feedback.tsx) | Feedback, inquiries and requests, emailed to the team; the deck's QR points here |
 | `/faq` | [`routes/Faq.tsx`](routes/Faq.tsx) | Renders all of `lib/faq.ts`, then appends the landing cut |
 | `/blog`, `/blog/:slug` | [`routes/Blog.tsx`](routes/Blog.tsx), [`routes/BlogPost.tsx`](routes/BlogPost.tsx) | Content from `lib/blog.ts` |
 | `/tr/blog`, `/tr/blog/:slug` | the same two files | Turkish lives under a locale prefix, so each translation has its own crawlable URL |

@@ -18,7 +18,15 @@ export const FEEDBACK_KINDS = [
   { id: 'question', label: 'Question' },
   { id: 'other', label: 'Other' },
 ] as const
-export type FeedbackKind = (typeof FEEDBACK_KINDS)[number]['id']
+
+/** The /feedback page's choices, the ones the Demo Day deck points people to. */
+export const INQUIRY_KINDS = [
+  { id: 'feedback', label: 'Feedback' },
+  { id: 'inquiry', label: 'General inquiry' },
+  { id: 'request', label: 'Request' },
+] as const
+
+export type FeedbackKind = (typeof FEEDBACK_KINDS)[number]['id'] | (typeof INQUIRY_KINDS)[number]['id']
 
 export const FEEDBACK_MESSAGE_MIN = 10
 export const FEEDBACK_MESSAGE_MAX = 2000
@@ -91,12 +99,20 @@ export async function submitFeedback(draft: FeedbackDraft): Promise<FeedbackOutc
 
 /** A mailto link to the team inbox with the draft prefilled, for when the server cannot send. */
 export function feedbackMailto(draft: FeedbackDraft): string {
-  const label = FEEDBACK_KINDS.find((k) => k.id === draft.kind)?.label ?? 'Feedback'
+  const label = [...FEEDBACK_KINDS, ...INQUIRY_KINDS].find((k) => k.id === draft.kind)?.label ?? 'Feedback'
   const page = typeof window !== 'undefined' ? window.location.href : ''
   const body = `${draft.message.trim()}\n\n${page ? `Page: ${page}\n` : ''}`
   const params = new URLSearchParams({ subject: `[A-Identity feedback] ${label}`, body })
   // URLSearchParams encodes spaces as "+", which mail clients render literally.
   return `mailto:${CONTACT.hello}?${params.toString().replace(/\+/g, '%20')}`
+}
+
+/**
+ * Pages where the corner button stays away. The deck is presented full screen, live, and the
+ * button would sit on every slide; its closing slide points to /feedback instead.
+ */
+export function hidesFeedbackWidget(pathname: string): boolean {
+  return pathname === '/deck'
 }
 
 /**

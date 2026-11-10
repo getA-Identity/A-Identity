@@ -28,6 +28,7 @@ const Roadmap = lazy(() => import('./routes/Roadmap'))
 const Intro = lazy(() => import('./routes/Intro'))
 const Stats = lazy(() => import('./routes/Stats'))
 const Contact = lazy(() => import('./routes/Contact'))
+const Feedback = lazy(() => import('./routes/Feedback'))
 const Faq = lazy(() => import('./routes/Faq'))
 const Blog = lazy(() => import('./routes/Blog'))
 const BlogPost = lazy(() => import('./routes/BlogPost'))
@@ -125,6 +126,7 @@ export default function App() {
         <Route path="/brand" element={<BrandKit />} />
         <Route path="/brand-kit" element={<Navigate to="/brand" replace />} />
         <Route path="/contact" element={<Contact />} />
+        <Route path="/feedback" element={<Feedback />} />
         <Route path="/faq" element={<Faq />} />
         <Route path="/blog" element={<Blog />} />
         <Route path="/blog/:slug" element={<BlogPost />} />

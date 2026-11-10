@@ -69,8 +69,12 @@ export function rateBudget(method: string, pathname: string): { bucket: string; 
     return { bucket: 'auth', max: 20, windowMs: 60_000 }
   // Passwordless email: sends a real email, so limit hardest.
   if (pathname === '/api/auth/magic/request') return { bucket: 'magic', max: 5, windowMs: 60_000 }
-  // The site feedback widget: anonymous, and each accepted call sends a real email, so it is limited like the magic link.
-  if (pathname === '/api/feedback') return { bucket: 'site-feedback', max: 5, windowMs: 60_000 }
+  // Site feedback, from the corner widget and the /feedback page: anonymous, and each accepted call
+  // sends a real email. Through the site the key is a shared proxy address, not the visitor's (a
+  // few Vercel egress addresses per region, measured), and the deck's closing slide sends a whole
+  // Demo Day audience here at once, so the bucket is sized for an audience rather than a person.
+  // A direct caller to the backend is still keyed on its own address.
+  if (pathname === '/api/feedback') return { bucket: 'site-feedback', max: 30, windowMs: 60_000 }
   // Expensive on-chain demo runs (each spends gas / moves real testnet value).
   if (pathname === '/api/arc/agent-run' || (pathname.startsWith('/api/arc/') && pathname.endsWith('-demo')))
     return { bucket: 'demo', max: 8, windowMs: 60_000 }

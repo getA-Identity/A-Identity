@@ -81,6 +81,7 @@ export const NAV_MENU: readonly NavMenuGroup[] = [
       { label: 'FAQ', href: '/faq', desc: 'The questions we actually get' },
       { label: 'Brand', href: '/brand', desc: 'The owl, the marks, the rules' },
       { label: 'Contact', href: '/contact', desc: 'Talk to the founders' },
+      { label: 'Feedback', href: '/feedback', desc: 'Tell us what to fix or build' },
     ],
   },
 ]
@@ -135,6 +136,7 @@ export const FOOTER_COLUMNS: readonly FooterColumn[] = [
       { label: 'Brand', href: '/brand' },
       { label: 'Network stats', href: '/stats' },
       { label: 'Contact', href: '/contact' },
+      { label: 'Feedback', href: '/feedback' },
     ],
   },
 ]

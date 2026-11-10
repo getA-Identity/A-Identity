@@ -13,6 +13,7 @@ import {
   FEEDBACK_MESSAGE_MIN,
   feedbackMailto,
   hasCornerFab,
+  hidesFeedbackWidget,
   submitFeedback,
   type FeedbackDraft,
   type FeedbackKind,
@@ -71,13 +72,21 @@ export default function FeedbackWidget() {
     }
   }, [phase.name])
 
+  // The latest close for the Escape handler. Read through a ref so the effect below runs once
+  // per open: depending on close itself re-ran it on every phase change, and each cleanup sent
+  // focus to the opener behind the dialog.
+  const closeRef = useRef(close)
+  useEffect(() => {
+    closeRef.current = close
+  }, [close])
+
   // Body scroll lock, Escape, and focus restored to the button that opened the dialog.
   useEffect(() => {
     if (!open) return
     const prevOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === 'Escape') close()
+      if (e.key === 'Escape') closeRef.current()
     }
     document.addEventListener('keydown', onKey)
     const t = window.setTimeout(() => firstFieldRef.current?.focus(), 30)
@@ -88,7 +97,14 @@ export default function FeedbackWidget() {
       window.clearTimeout(t)
       opener?.focus()
     }
-  }, [open, close])
+  }, [open])
+
+  // React applies autoFocus only to form controls, not to a link, so the fallback's mailto
+  // link is focused by hand.
+  const mailtoRef = useRef<HTMLAnchorElement>(null)
+  useEffect(() => {
+    if (open && phase.name === 'fallback') mailtoRef.current?.focus()
+  }, [open, phase.name])
 
   // A small trap: Tab and Shift+Tab cycle inside the panel while it is open.
   const onPanelKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -122,10 +138,18 @@ export default function FeedbackWidget() {
     else setPhase({ name: 'error', reason: outcome.reason })
   }
 
+  // Leaving for a page without the button closes the dialog, so its scroll lock goes with it.
+  const hidden = hidesFeedbackWidget(pathname)
+  useEffect(() => {
+    if (hidden) setOpen(false)
+  }, [hidden])
+
   const lifted = hasCornerFab(pathname)
   const dark = theme === 'dark' ? 'dark' : ''
   const titleId = `${uid}-title`
   const noteId = `${uid}-note`
+
+  if (hidden) return null
 
   return (
     <>
@@ -215,8 +239,8 @@ export default function FeedbackWidget() {
                   </p>
                   <div className="w-full whitespace-pre-wrap rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm text-foreground/80">{draft.message.trim()}</div>
                   <div className="flex flex-wrap gap-2">
-                    <Button asChild autoFocus>
-                      <a href={feedbackMailto(draft)}>
+                    <Button asChild>
+                      <a ref={mailtoRef} href={feedbackMailto(draft)}>
                         <Mail size={16} aria-hidden="true" />
                         Email {CONTACT.hello}
                       </a>
@@ -230,7 +254,7 @@ export default function FeedbackWidget() {
                 <form className="mt-5 flex flex-col gap-4" onSubmit={onSubmit} noValidate>
                   <fieldset className="min-w-0">
                     <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground/50">What kind of note is this?</legend>
-                    <div className="grid grid-cols-4 gap-1.5" role="radiogroup">
+                    <div className="grid grid-cols-4 gap-1.5">
                       {FEEDBACK_KINDS.map((k) => (
                         <label
                           key={k.id}
@@ -258,7 +282,6 @@ export default function FeedbackWidget() {
                       </label>
                       <span
                         className={cn('font-mono text-[11px] tabular-nums', draft.message.length > FEEDBACK_MESSAGE_MAX ? 'text-danger' : 'text-foreground/50')}
-                        aria-live="polite"
                       >
                         {draft.message.length}/{FEEDBACK_MESSAGE_MAX}
                       </span>
@@ -312,7 +335,7 @@ export default function FeedbackWidget() {
                   </div>
 
                   <p id={noteId} className="text-xs text-foreground/50">
-                    We include the page you are on and your browser name, nothing else.
+                    Along with your note we send the page, your browser's user agent, your account if you are signed in, and a salted connection marker, never your IP address.
                   </p>
 
                   {phase.name === 'error' && (
