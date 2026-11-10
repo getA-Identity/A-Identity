@@ -474,6 +474,10 @@ export default function ChainCheck({ slug }: { slug: PayCheckSlug }) {
                 {PAGES[s].name}
               </Link>
             ))}
+            {/* The paid check from a wallet, on its own page: same family, different question. */}
+            <Link to="/check/celo" className="rounded-full border border-border px-3 py-1 font-semibold text-foreground/60 transition-colors hover:text-foreground">
+              Celo
+            </Link>
           </nav>
 
           <div className="mt-5 text-center sm:mt-6">

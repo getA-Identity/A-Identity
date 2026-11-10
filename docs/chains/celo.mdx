@@ -99,6 +99,24 @@ curl -s https://a-identity-backend.onrender.com/api/celo/proof
 curl -s https://a-identity-backend.onrender.com/api/celo/status
 ```
 
+## Pay a check from your own wallet
+
+[a-identity.xyz/check/celo](https://a-identity.xyz/check/celo) sells one `risk_check` on
+Celo mainnet to a browser wallet, with no key and no code:
+
+1. Connect Rabby or MetaMask; the page switches it to Celo, adding the network from our
+   registry if the wallet has never seen it.
+2. Type an ERC-8004 agent id (`#9759` is ours) and press the button. The page reads the
+   402 terms and refuses them if they name another network, token, payee or price than
+   the rail publishes at `/api/celo/status`.
+3. Approve one EIP-3009 `TransferWithAuthorization` in the wallet. It is a signature, not a
+   transaction: the Celo facilitator broadcasts it and pays the gas, so the buyer needs a
+   little USDC and no CELO.
+
+The answer is ALLOW, WARN or DENY with its reasons, the settlement hash on Celoscan, and a
+line on [/proof/celo](https://a-identity.xyz/proof/celo). A deep link prefills the id and
+never pays on load: `https://a-identity.xyz/check/celo?q=%239759`.
+
 ## Where Celo fits
 
 Celo is the rail that proved the product works against someone else's facilitator, which

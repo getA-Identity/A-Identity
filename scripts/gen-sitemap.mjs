@@ -76,6 +76,7 @@ const STATIC = [
   ['/check', 'weekly', '0.8'],
   ['/check/robinhood', 'weekly', '0.8'],
   ['/check/arbitrum', 'weekly', '0.7'],
+  ['/check/celo', 'weekly', '0.7'],
   ['/signup', 'yearly', '0.5'],
   ['/login', 'yearly', '0.5'],
   ['/brand', 'monthly', '0.4'],
