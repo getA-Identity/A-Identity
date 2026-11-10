@@ -157,7 +157,14 @@ jobs:
           # 11,605-byte artifact `stellar contract build` writes, the same size as the v0.1.1
           # release; the drift is a fixed file selection, not a non-deterministic build.
           # The v0.1.0 value was 51ba7c9b97b16fd17f4ce8140cf9fa59a689f42aca4cdab4f0fca07a1bdb7b51.
-          LINUX_X64=3c286670315ef51e4bbf1f823365cacc3ea0840947def1b36a230097243d749e
+          #
+          # Re-recorded 2026-11-10 from run 42845434492, when the Stellar CLI pin above moved
+          # from 27.1.0 to 30.0.1 with no source change. The previous literal was
+          # 3c286670315ef51e4bbf1f823365cacc3ea0840947def1b36a230097243d749e. The raw rustc
+          # output, deps/agent_spend_policy.wasm, hashed 272f7589... in both runs, so the
+          # compiler produced identical bytes and only the CLI's post-processing changed:
+          # the `cliver` meta entry, as the install step above explains.
+          LINUX_X64=e8b10cb6544a018717095627a45482aedce15cced4a4978fcf2b712968ad819f
           DEPLOYED=155eb31c1867254eacbf1b7a4755164d15cc6b6f939644705ab6b8df61579239
           echo "built on this runner : $ACTUAL"
           echo "deployed on pubnet   : $DEPLOYED (built elsewhere, not comparable here)"
