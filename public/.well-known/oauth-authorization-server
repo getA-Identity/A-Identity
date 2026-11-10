@@ -1,4 +1,5 @@
 {
+  "authorization_response_iss_parameter_supported": true,
   "authorization_endpoint": "https://artistic-olive-45-staging.authkit.app/oauth2/authorize",
   "code_challenge_methods_supported": [
     "S256"
