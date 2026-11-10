@@ -158,6 +158,14 @@ gate, scoped to `soroban/**` so a frontend commit does not pay for a Rust toolch
 second advisory check exists because the first one is blind to this ecosystem: `cargo audit`
 reads RustSec, and RustSec has never carried a single Stellar advisory.
 
+CI builds with Stellar CLI 30.0.1, pinned in that workflow since 2026-11-10 (27.1.0 before).
+The CLI version is part of the hash: `stellar contract build` writes its own version into the
+wasm's `contractmetav0` section as `cliver`, next to `rsver` and `rssdkver`, so the v0.1.1
+source builds to `353e4264...` under 27.1.0 and to `823f16e1...` under 30.0.1 on the same
+machine, both 11,605 bytes, with `strings` differing in exactly that one line. Reproducing a
+deployed or released hash therefore needs the CLI the receipt names, which is why the
+receipts in `releases/` keep saying 27.1.0: that is what built those bytes.
+
 The Instawards SoW asks for a tests-passed screenshot, and a picture of green text is both
 trivial to fake and impossible to re-check, so we do not take one. `node
 scripts/gen-stellar-tests-image.mjs` (from the repo root) runs the suites above plus the

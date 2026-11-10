@@ -93,10 +93,16 @@ jobs:
       # step failed for nine minutes and took the whole workflow with it. The release
       # tarball is the same official artifact at the same pinned version, and it installs in
       # seconds. Pinned deliberately: `stellar contract build` output is hashed two steps
-      # below, so the tool that produces it may not float.
+      # below, so the tool that produces it may not float. It is not only the flags: the
+      # CLI writes its own version into the wasm's contractmetav0 section (`cliver`, shown
+      # by `stellar contract info meta`), so the same source under a different CLI is a
+      # different hash with no source change. Measured 2026-11-10 on macOS arm64: 27.1.0
+      # gives 353e4264... (the v0.1.1 release hash) and 30.0.1 gives 823f16e1..., both
+      # 11,605 bytes, and `strings` differs in exactly that one line. Bumping this version
+      # therefore moves LINUX_X64 below, and the literal is re-recorded in the same commit.
       - name: Install the Stellar CLI
         env:
-          STELLAR_CLI_VERSION: 27.1.0
+          STELLAR_CLI_VERSION: 30.0.1
         run: |
           curl -sSfL "https://github.com/stellar/stellar-cli/releases/download/v${STELLAR_CLI_VERSION}/stellar-cli-${STELLAR_CLI_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
             | sudo tar -xz -C /usr/local/bin stellar
