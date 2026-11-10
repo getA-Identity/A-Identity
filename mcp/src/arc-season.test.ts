@@ -1804,30 +1804,37 @@ test('Slippay is named with both of its wallets, which read as one team, so exte
 })
 
 /** The three counted vaults as the chain read them on 2026-11-06: address, owner (the deploy's sender and owner()), deploy hash, block and UTC day. */
-const COUNTED_VAULTS = [
+const COUNTED_VAULTS: [string, string, string, string, string][] = [
   ['0x25e461649e232ae23fF6CBA1e4Cd001F7a056B90', '0x8cd5D3981A1fA059A92722591d25240e6F0f27A5', '0xbd8d1e4ab5d14e6f65837f92becf0a492165bd007e8e9308ad177f7ab3cf9d2f', '29552025', '2026-11-04'],
   ['0xa4D8052998A59017fd6816654F4C9eef62DE8182', '0x39AEfbC8388da12907A21d9De888B288a9fa5794', '0xeedb9cf539988596b145b8f467c15fe489f8f2b6f5ef5b8488bcd991e7a42e7b', '29681265', '2026-11-05'],
   ['0x033FdeECD2f60d2A0Cb78794c4Cd1F191A9DEbE5', '0xeD701bA695FBBaa7f0CD1D4cBe540E86F55C677b', '0xd7ea1ee90de141eb89ac6c10b16d8066fb54d66088550dc9794569d83a5ae7fe', '29751356', '2026-11-06'],
 ]
 
-test("the three counted vaults are outside the team on the founder's word, and each owner is still not identified", async () => {
-  assert.deepEqual(ARC_OWNER_HELD_VAULTS.map((v) => [v.address, v.owner, v.deployTx, v.deployBlock, v.deployedAt]), COUNTED_VAULTS)
-  for (const v of ARC_OWNER_HELD_VAULTS) {
+test("the counted vaults the founder spoke for are outside the team on his word, each with its day, and each owner is still not identified", async () => {
+  // The three of 2026-11-06, and vault 0xcB7e...Ed41, whose owner he spoke for on 2026-11-10: its fields are held to the
+  // trace's own read of it further down, where that read is written.
+  assert.equal(ARC_OWNER_HELD_VAULTS.length, 4)
+  assert.deepEqual(ARC_OWNER_HELD_VAULTS.slice(0, 3).map((v) => [v.address, v.owner, v.deployTx, v.deployBlock, v.deployedAt]), COUNTED_VAULTS)
+  const saidOn = ['2026-11-06', '2026-11-06', '2026-11-06', '2026-11-10']
+  for (const [i, v] of ARC_OWNER_HELD_VAULTS.entries()) {
     assert.equal(v.ownerKind, 'external', v.address)
-    assert.match(v.note, /on 2026-11-06 the founder confirmed that this owner is not a team wallet/, v.address)
+    assert.match(v.note, new RegExp(`Outside the team: on ${saidOn[i]} the founder said that this owner is not a team wallet\\.`), v.address)
     assert.match(v.note, /The owner is not identified: nobody has said whose wallet it is\./, v.address)
   }
   // The rows as the store holds them, admitted with the owner not identified: the entries label them, and each counts once.
   const stored = ARC_OWNER_HELD_VAULTS.map((v) => ({ ...v, address: v.address.toLowerCase(), ownerKind: 'unstated' as const, note: 'Admitted automatically by POST /api/arc/vaults; the owner is not identified.' }))
   const r = await arcSeasonReport(deps({ vaults: ARC_OWNER_HELD_VAULTS, admittedVaults: async () => stored }))
   const v = r.milestone1.vaults
-  assert.equal(v.count, 3)
-  assert.deepEqual(v.byKind, { team: 0, external: 3, unstated: 0 })
-  assert.match(v.note, /0 of them someone on our own team, in their own wallet; 3 someone outside the team; 0 not identified as either\./)
+  assert.equal(v.count, 4)
+  assert.deepEqual(v.byKind, { team: 0, external: 4, unstated: 0 })
+  assert.match(v.note, /0 of them someone on our own team, in their own wallet; 4 someone outside the team; 0 not identified as either\./)
   assert.doesNotMatch(v.note, /admitted automatically after every check passed, with the owner not identified/)
-  assert.deepEqual(v.items.map((i) => [i.ownerKind, i.note === ARC_OWNER_HELD_VAULTS[0].note]), [['external', true], ['external', true], ['external', true]])
+  assert.deepEqual(
+    v.items.map((i) => [i.ownerKind, i.note]),
+    ARC_OWNER_HELD_VAULTS.map((c) => ['external', c.note]),
+  )
   // GET /api/arc/vaults labels the stored rows the same way, through the same function and its defaults.
-  assert.deepEqual(labelOwners(stored).map((s) => s.ownerKind), ['external', 'external', 'external'])
+  assert.deepEqual(labelOwners(stored).map((s) => s.ownerKind), ['external', 'external', 'external', 'external'])
 })
 
 test('the founder wallet is on the internal payer list of both rails, so a check it pays can never read as external', async () => {
@@ -1932,7 +1939,8 @@ test('the deploy flow says a vault counts once its end date is set, at the secon
 
 // ── who stands behind the numbers: the hand trace of 2026-11-08, as the curated lists hold it ─────────────
 
-/** The three vaults the server admitted after the founder's statement of 2026-11-06, as the chain read them: nobody has spoken for them. */
+/** The three vaults the server admitted after the founder's statement of 2026-11-06, as the chain read them. Nobody had spoken for
+ *  them when the trace was read; on 2026-11-10 the founder spoke for the owner of the last. */
 const NEW_VAULTS: [string, string, string, string, string][] = [
   ['0x9aCeD7d5442aED2c8aCB0Ab249B46b3A17aF0619', '0xD4F1254C803662c46D9c21f80F4F3c15FF57e2c9', '0x6bda1b2faa57bf0f4330fbb8aef38152a9a0f19ddfe465c31d94837fa59ee9ab', '29879919', '2026-11-06'],
   ['0x30E423f2b00eb8654a021AaA2bd9acAd20A1ff79', '0x363daf2A42D5055Dac91163f0eA29ca05c378f01', '0xdb11b831e432660077a05cdced0614a880b5872e2a2a12eb7eb87617053602e9', '29967114', '2026-11-07'],
@@ -1941,7 +1949,7 @@ const NEW_VAULTS: [string, string, string, string, string][] = [
 const ADMITTED_NOTE = 'Admitted automatically by POST /api/arc/vaults; the owner is not identified.'
 /** The six rows as the store holds them on 2026-11-08, every one with the owner not identified. */
 const sixStoredVaults = () =>
-  [...ARC_OWNER_HELD_VAULTS.map((v): [string, string, string, string, string] => [v.address, v.owner, v.deployTx, v.deployBlock!, v.deployedAt]), ...NEW_VAULTS].map(([address, owner, deployTx, deployBlock, deployedAt]) => ({
+  [...COUNTED_VAULTS, ...NEW_VAULTS].map(([address, owner, deployTx, deployBlock, deployedAt]) => ({
     address: address.toLowerCase(),
     owner: owner.toLowerCase(),
     ownerKind: 'unstated' as const,
@@ -1968,9 +1976,9 @@ const liveExternalRows = () => [
   ...Array.from({ length: 14 }, (_, i) => gw({ payer: V6_OPERATOR, ts: new Date(Date.parse('2026-11-07T22:41:28.193Z') + i * 2_700_000).toISOString(), amountUsd: 0.005 })),
   ...Array.from({ length: 6 }, (_, i) => gw({ payer: V6_OWNER, ts: new Date(Date.parse('2026-11-08T09:11:21.993Z') + i * 800).toISOString(), amountUsd: 0.005 })),
   ...seasonRows(),
-  ...['2026-11-05T06:51:48.403Z', '2026-11-05T06:51:50.285Z'].map((ts) => gw({ payer: ARC_NOT_TEAM_PAYERS[0], ts, amountUsd: 0.005 })),
-  gw({ payer: ARC_NOT_TEAM_PAYERS[1], ts: '2026-11-05T17:56:32.918Z', amountUsd: 0.005 }),
-  gw({ payer: ARC_NOT_TEAM_PAYERS[2], ts: '2026-11-05T21:04:22.284Z', amountUsd: 0.005 }),
+  ...['2026-11-05T06:51:48.403Z', '2026-11-05T06:51:50.285Z'].map((ts) => gw({ payer: ARC_NOT_TEAM_PAYERS[0].wallet, ts, amountUsd: 0.005 })),
+  gw({ payer: ARC_NOT_TEAM_PAYERS[1].wallet, ts: '2026-11-05T17:56:32.918Z', amountUsd: 0.005 }),
+  gw({ payer: ARC_NOT_TEAM_PAYERS[2].wallet, ts: '2026-11-05T21:04:22.284Z', amountUsd: 0.005 }),
 ]
 
 const liveShape = () =>
@@ -1995,17 +2003,27 @@ test('the vault count says how many owner wallets stand behind it and how many a
   const r = await liveShape()
   const v = r.milestone1.vaults
   assert.deepEqual([v.count, v.target], [6, 5], 'the count stays what it is')
-  assert.deepEqual(v.byKind, { team: 0, external: 3, unstated: 3 }, 'the three the founder spoke for, and the three nobody has')
+  assert.deepEqual(v.byKind, { team: 0, external: 4, unstated: 2 }, 'the four the founder spoke for, and the two nobody has')
+  // The vault he spoke for on 2026-11-10 is the row the trace read, labeled external on his word, with its day.
+  const spokenFor = ARC_OWNER_HELD_VAULTS[3]
+  assert.deepEqual([spokenFor.address, spokenFor.owner, spokenFor.deployTx, spokenFor.deployBlock, spokenFor.deployedAt], NEW_VAULTS[2])
+  const v6Item = v.items.find((i) => lower(i.address) === V6_VAULT)!
+  assert.equal(v6Item.ownerKind, 'external')
+  assert.match(v6Item.note, /Outside the team: on 2026-11-10 the founder said that this owner is not a team wallet\. The owner is not identified: nobody has said whose wallet it is\./)
   assert.deepEqual([v.owners.distinct, v.owners.parties], [6, 5])
-  assert.equal(v.owners.summary, '6 vaults from 6 owner wallets; two of the owner wallets are linked on chain, so they may be one party: at most 5 parties.')
+  // Two owners a link ties may be one party on the chain; the founder said on 2026-11-10 that these two are one person's, and
+  // the summary says it as his word, with its day. The ceiling does not move: the link had already merged them.
+  assert.equal(v.owners.summary, '6 vaults from 6 owner wallets; two of the owner wallets are linked on chain, and the founder said on 2026-11-10 that they belong to one person: at most 5 parties.')
   assert.ok(v.note.includes(v.owners.summary), 'the note the API carries says it too')
   assert.equal(v.owners.linked.length, 1)
   const [link] = v.owners.linked
   assert.deepEqual(link.owners, ['0x39AEfbC8388da12907A21d9De888B288a9fa5794', '0xeD701bA695FBBaa7f0CD1D4cBe540E86F55C677b'], 'as the counted vaults spell them, and only those')
   assert.deepEqual(link.vaults, ['0xa4D8052998A59017fd6816654F4C9eef62DE8182', '0x033FdeECD2f60d2A0Cb78794c4Cd1F191A9DEbE5'])
   assert.equal(link.tracedOn, '2026-11-08')
-  assert.match(link.note, /may belong to one party/)
-  assert.match(link.confidence, /medium for 0x39AE\.\.\.5794 with 0xeD70\.\.\.677b/)
+  assert.equal(link.onePersonOn, '2026-11-10')
+  assert.match(link.note, /The chain cannot say whose wallets these are\. On 2026-11-10 the founder said that 0x39AE\.\.\.5794 and 0xeD70\.\.\.677b belong to one person, so on his word the two vaults are one party\./)
+  assert.doesNotMatch(link.note, /may belong to one party/)
+  assert.match(link.confidence, /medium for 0x39AE\.\.\.5794 with 0xeD70\.\.\.677b on the chain alone, because .* would all look the same\.$/)
   // Each hash links from the registry, and the first two are what ties the owners and the agent key.
   const funded = '0x4ffaba3861c5f37469daebadebce5f48023f2920e85bc66288ebae5c6de0d139'
   const fundedOperator = '0x57940cfcb58bd8f3663e47663b94c3cacb3749f0ed274a8c486e5410a33e9d07'
@@ -2013,12 +2031,14 @@ test('the vault count says how many owner wallets stand behind it and how many a
   assert.match(link.evidence[0].what, /0\.99 USDC of it went to 0xeD70\.\.\.677b/)
   assert.match(link.evidence[1].what, /the agent key of vault 0xa4D8\.\.\.8182/)
   assert.match(v.note, /Each link was traced by hand, not read live on this request, and the transactions behind it are named with it; the count does not move for it\./)
-  // The one party that owns a counted vault and also paid.
+  // The one party that owns a counted vault and also paid, spelled as its curated entry spells the vault.
   assert.equal(v.owners.alsoPaid.length, 1)
-  assert.deepEqual([v.owners.alsoPaid[0].vaults, [...v.owners.alsoPaid[0].wallets].sort(), v.owners.alsoPaid[0].checks], [['0xcb7e3b8b323b897e7e4303245dc98de130b2ed41'], [V6_OPERATOR, V6_OWNER].sort(), 20])
-  assert.match(v.note, /The party behind vault 0xcb7e\.\.\.ed41 also paid 20 external checks, counted under Milestone 2 and never here\./)
-  // The founder's word of 2026-11-06 is on the three vaults labeled external, and the note says it does not reach the rest.
-  assert.match(v.note, /The founder's statement of 2026-11-06 does not cover these\./)
+  assert.deepEqual([v.owners.alsoPaid[0].vaults, [...v.owners.alsoPaid[0].wallets].sort(), v.owners.alsoPaid[0].checks], [['0xcB7e3b8b323B897E7E4303245dc98DE130B2Ed41'], [V6_OPERATOR, V6_OWNER].sort(), 20])
+  assert.match(v.note, /The party behind vault 0xcB7e\.\.\.Ed41 also paid 20 external checks, counted under Milestone 2 and never here\./)
+  // The founder's word is on the four vaults labeled external, each with its day, and the note says it does not reach the two
+  // nobody has spoken for.
+  assert.match(v.note, / 2 of them were admitted automatically after every check passed, with the owner not identified: .*, so one could be a team member's\. The founder's word that an owner is not a team wallet, given on 2026-11-06 and 2026-11-10, does not cover these\./)
+  assert.doesNotMatch(v.note, /The founder's statement of 2026-11-06 does not cover these/)
 })
 
 test('owner wallets count once whatever their case, and a link counts only between owners of counted vaults', async () => {
@@ -2079,24 +2099,41 @@ test('the external checks say how many wallets and parties stand behind them, wi
   assert.deepEqual([p.wallets, p.parties], [8, 6])
   assert.equal(p.summary, "33 checks from 8 wallets, at most 6 parties: two wallets linked on chain paid 20, and Slippay's two wallets paid 7.")
   assert.ok(m2.externalChecks.note.includes(p.summary))
-  assert.deepEqual(p.whoPaid, { team: { wallets: 3, checks: 9 }, 'not-team': { wallets: 3, checks: 4 }, 'not-identified': { wallets: 2, checks: 20 } })
+  // The founder said on 2026-11-06 that three paying wallets are not team wallets, and on 2026-11-10 the same of the two that
+  // paid the 20: each is listed once, with its day, and every check moves only between the labels.
+  const spokenFor = ARC_NOT_TEAM_PAYERS.map((x) => lower(x.wallet))
+  assert.equal(new Set(spokenFor).size, spokenFor.length, 'a wallet the founder spoke for is listed once')
+  assert.ok(ARC_NOT_TEAM_PAYERS.every((x) => /^\d{4}-\d{2}-\d{2}$/.test(x.saidOn)))
+  assert.deepEqual(
+    ARC_NOT_TEAM_PAYERS.filter((x) => x.saidOn === '2026-11-10').map((x) => lower(x.wallet)).sort(),
+    [V6_OPERATOR, V6_OWNER, '0xebbaedce6b4d9339280b933726e7902c38cf5064', '0x24427be91913774187b8547071284506767a77c4'].sort(),
+  )
+  assert.deepEqual(p.whoPaid, { team: { wallets: 3, checks: 9 }, 'not-team': { wallets: 5, checks: 24 }, 'not-identified': { wallets: 0, checks: 0 } })
   assert.equal(p.linked.length, 1, 'the one traced group with two or more paying wallets')
   assert.deepEqual([[...p.linked[0].wallets].sort(), p.linked[0].checks, p.linked[0].team], [[V6_OPERATOR, V6_OWNER].sort(), 20, undefined])
+  // The group's own note says what the founder said, as his word with its day, and claims no more than he did.
+  assert.match(p.linked[0].note, /On 2026-11-10 the founder said that the wallets of this party are not team wallets, and that neither he nor his cofounder knows whose they are\.$/)
+  assert.doesNotMatch(p.linked[0].note, /nobody has said whose|customer/)
   // Slippay's two wallets are one party on the team list alone: no traced group of theirs is published.
   // The 20 are the crux: a reader must not take them for 20 separate users, or the 33 for the program's demand.
-  // They are said to be one party because they are one vault's owner and its agent key, which the flow log names.
-  assert.match(m2.externalChecks.note, /20 of the 33 come from one party nobody has identified: 0x5675\.\.\.1a43 and 0x1d54\.\.\.7f5f, the owner and agent key of vault 0xcb7e\.\.\.ed41, linked on chain; the other 13 come from 6 wallets\./)
-  assert.match(m2.externalChecks.note, /By who stands behind them: 9 checks from 3 wallets of named teams; 4 checks from 3 wallets the founder confirmed on 2026-11-06 are not team wallets; 20 checks from 2 wallets nobody has identified\./)
+  // They are said to be one party because they are one vault's owner and its agent key, which the flow log names, and the
+  // line says what the founder said of them, with its day.
+  assert.match(m2.externalChecks.note, /20 of the 33 come from one party whose wallets the founder said on 2026-11-10 are not team wallets: 0x5675\.\.\.1a43 and 0x1d54\.\.\.7f5f, the owner and agent key of vault 0xcB7e\.\.\.Ed41, linked on chain; the other 13 come from 6 wallets\./)
+  assert.match(m2.externalChecks.note, /By who stands behind them: 9 checks from 3 wallets of named teams; 4 checks from 3 wallets the founder said on 2026-11-06 are not team wallets; 20 checks from 2 wallets the founder said on 2026-11-10 are not team wallets\./)
+  // Nothing is left that nobody has spoken for, and no sentence says that one of the two could be a team member's.
+  assert.doesNotMatch(m2.externalChecks.note, /nobody has identified|could be a team member's/)
   // Each wallet row says it too, so a list of wallets does not read as a list of people.
   const row = (w: string) => r.usage.external.byWallet.find((x) => x.wallet === w)!
   assert.deepEqual(row(V6_OPERATOR).linkedWith, [V6_OWNER])
-  assert.equal(row(V6_OWNER).identity, 'not-identified')
+  assert.deepEqual([row(V6_OWNER).identity, row(V6_OWNER).notTeamSaidOn], ['not-team', '2026-11-10'])
+  assert.deepEqual([row(V6_OPERATOR).identity, row(V6_OPERATOR).notTeamSaidOn], ['not-team', '2026-11-10'])
   assert.deepEqual(row(SLIPPAY_WALLETS[0]).linkedWith, [SLIPPAY_WALLETS[1]])
   assert.equal(row(SLIPPAY_WALLETS[1]).identity, 'team')
-  assert.equal(row(ARC_NOT_TEAM_PAYERS[0]).identity, 'not-team')
-  assert.equal(row(ARC_NOT_TEAM_PAYERS[0]).linkedWith, undefined)
+  assert.equal(row(SLIPPAY_WALLETS[1]).notTeamSaidOn, undefined)
+  assert.deepEqual([row(ARC_NOT_TEAM_PAYERS[0].wallet).identity, row(ARC_NOT_TEAM_PAYERS[0].wallet).notTeamSaidOn], ['not-team', '2026-11-06'])
+  assert.equal(row(ARC_NOT_TEAM_PAYERS[0].wallet).linkedWith, undefined)
   assert.deepEqual([m2.unattributed.wallets, m2.unattributed.checks], [5, 24])
-  assert.match(m2.unattributed.note, /3 of them \(4 checks\) the founder confirmed on 2026-11-06 are not team wallets; 2 \(20 checks\) nobody has identified, each counted as external until someone says otherwise\./)
+  assert.match(m2.unattributed.note, /3 of them \(4 checks\) the founder said on 2026-11-06 are not team wallets; 2 \(20 checks\) the founder said on 2026-11-10 are not team wallets\.$/)
   // What moves is teams, days and the new labels: and the checks the two rows above stand on stay what they are.
   assert.equal(r.usage.external.checks, 33)
   assert.equal(r.usage.external.wallets.length, 8)
@@ -2192,7 +2229,19 @@ test('every curated link names two or more wallets and a transaction for each th
     assert.match(l.tracedOn, /^\d{4}-\d{2}-\d{2}$/)
     assert.ok(l.confidence.length > 2 && l.note.length > 20, l.note)
     assert.ok(l.evidence.length > 0 && l.evidence.every((e) => /^0x[0-9a-fA-F]{64}$/.test(e.txHash ?? '') && e.what.length > 12), l.note)
+    // What the founder said of a group's wallets is his word with its day: about wallets the group holds, and said in the note.
+    if (l.onePerson) {
+      const held = l.wallets.map(lower)
+      assert.ok(l.onePerson.wallets.length >= 2 && l.onePerson.wallets.every((w) => held.includes(lower(w))), l.note)
+      assert.match(l.onePerson.saidOn, /^\d{4}-\d{2}-\d{2}$/)
+      assert.match(l.note, new RegExp(`On ${l.onePerson.saidOn} the founder said that .* belong to one person`), l.note)
+    }
   }
+  assert.deepEqual(
+    ARC_WALLET_LINKS.filter((l) => l.onePerson).map((l) => l.onePerson!.wallets.map(lower)),
+    [['0x39aefbc8388da12907a21d9de888b288a9fa5794', '0xed701ba695fbbaa7f0cd1d4cbe540e86f55c677b']],
+    'only the two owners the founder spoke for on 2026-11-10',
+  )
   // Every wallet is in one group: two groups that overlapped would silently be one party.
   const every = ARC_WALLET_LINKS.flatMap((l) => l.wallets.map((w) => w.toLowerCase()))
   assert.equal(new Set(every).size, every.length, 'a wallet appears in two groups')
@@ -2315,7 +2364,7 @@ test('no wallet the trace names is on a list of ours, so the line that says none
     ...ARC_WALLET_LINKS.flatMap((l) => l.wallets),
     ...ARC_OWNER_HELD_VAULTS.map((v) => v.owner),
     ...NEW_VAULTS.map(([, owner]) => owner),
-    ...ARC_NOT_TEAM_PAYERS,
+    ...ARC_NOT_TEAM_PAYERS.map((p) => p.wallet),
     ...ARC_PARTNERS.map((p) => p.wallet),
   ].map(lower)
   assert.ok(named.length > 30)
@@ -2323,14 +2372,37 @@ test('no wallet the trace names is on a list of ours, so the line that says none
   assert.ok(ARC_OUR_SIDE_LINKS.some((x) => x.kind === 'none-found' && /is on a published internal payer list of ours or the committed list of our keys, and none is one of our own agents\./.test(x.note)))
 })
 
-test('a linked party is said to be one nobody has identified only when none of its wallets is, and the who-paid line names only the kinds that paid', async () => {
+test('a linked party is said to be one nobody has identified only when none of its wallets is, one the founder spoke for on one day is said with that day, and the who-paid line names only the kinds that paid', async () => {
   const [a, b, c] = ['0x' + 'a1'.repeat(20), '0x' + 'b2'.repeat(20), '0x' + 'c3'.repeat(20)]
   const link: ArcWalletLink = { wallets: [a, b], tracedOn: '2026-11-08', confidence: 'High.', note: 'traced by hand, a test row', evidence: [{ txHash: '0x' + '9a'.repeat(32), what: 'a transfer in a test' }] }
   const rows = [gw({ payer: a }), gw({ payer: a }), gw({ payer: b }), gw({ payer: c })]
   // One of the two linked wallets was said not to be the team's: the party is not one nobody has identified.
-  const mixed = await arcSeasonReport(deps({ gateway: rows, walletLinks: [link], notTeamPayers: [a] }))
+  const mixed = await arcSeasonReport(deps({ gateway: rows, walletLinks: [link], notTeamPayers: [{ wallet: a, saidOn: '2026-11-06' }] }))
   assert.doesNotMatch(mixed.milestone2.externalChecks.note, /one party nobody has identified/)
-  assert.match(mixed.milestone2.externalChecks.note, /By who stands behind them: 2 checks from 1 wallet the founder confirmed on 2026-11-06 are not team wallets; 2 checks from 2 wallets nobody has identified\.$/)
+  assert.match(mixed.milestone2.externalChecks.note, /By who stands behind them: 2 checks from 1 wallet the founder said on 2026-11-06 are not team wallets; 2 checks from 2 wallets nobody has identified\.$/)
+  assert.match(mixed.milestone2.unattributed.note, / 1 of them \(2 checks\) the founder said on 2026-11-06 are not team wallets; 2 \(2 checks\) nobody has identified, each counted as external until someone says otherwise\.$/)
+  // Both said by the founder on one day: the party line says his word with its day, and each row carries the day.
+  const oneDay = await arcSeasonReport(deps({ gateway: rows, walletLinks: [link], notTeamPayers: [{ wallet: shouty(a), saidOn: '2026-11-10' }, { wallet: b, saidOn: '2026-11-10' }] }))
+  assert.match(
+    oneDay.milestone2.externalChecks.note,
+    /By who stands behind them: 3 checks from 2 wallets the founder said on 2026-11-10 are not team wallets; 1 check from 1 wallet nobody has identified\. 3 of the 4 come from wallets linked on chain, which may be one party whose wallets the founder said on 2026-11-10 are not team wallets: 0xa1a1\.\.\.a1a1 and 0xb2b2\.\.\.b2b2; the other 1 come from 1 wallet\.$/,
+  )
+  assert.deepEqual(oneDay.usage.external.byWallet.map((w) => [w.wallet, w.identity, w.notTeamSaidOn]), [
+    [a, 'not-team', '2026-11-10'],
+    [b, 'not-team', '2026-11-10'],
+    [c, 'not-identified', undefined],
+  ])
+  assert.match(oneDay.milestone2.unattributed.note, / 2 of them \(3 checks\) the founder said on 2026-11-10 are not team wallets; 1 \(1 check\) nobody has identified, each counted as external until someone says otherwise\.$/)
+  // Said on two different days: each statement keeps its own day, and the party is left to the who-paid line.
+  const twoDays = await arcSeasonReport(deps({ gateway: rows, walletLinks: [link], notTeamPayers: [{ wallet: a, saidOn: '2026-11-06' }, { wallet: b, saidOn: '2026-11-10' }] }))
+  assert.match(
+    twoDays.milestone2.externalChecks.note,
+    /By who stands behind them: 2 checks from 1 wallet the founder said on 2026-11-06 are not team wallets; 1 check from 1 wallet the founder said on 2026-11-10 are not team wallets; 1 check from 1 wallet nobody has identified\.$/,
+  )
+  // Every unattributed wallet spoken for: nothing is said of wallets nobody has identified.
+  const allSaid = await arcSeasonReport(deps({ gateway: rows, walletLinks: [link], notTeamPayers: [a, b, c].map((wallet) => ({ wallet, saidOn: '2026-11-10' })) }))
+  assert.match(allSaid.milestone2.unattributed.note, / 3 of them \(4 checks\) the founder said on 2026-11-10 are not team wallets\.$/)
+  assert.doesNotMatch(JSON.stringify(allSaid.milestone2), /nobody has identified/)
   // Two wallets a link ties, and nothing else known of them: they may be one party, and that is all a link says.
   const unknown = await arcSeasonReport(deps({ gateway: rows, walletLinks: [link] }))
   assert.match(unknown.milestone2.externalChecks.note, /By who stands behind them: 4 checks from 3 wallets nobody has identified\. 3 of the 4 come from wallets linked on chain, which may be one party nobody has identified: 0xa1a1\.\.\.a1a1 and 0xb2b2\.\.\.b2b2; the other 1 come from 1 wallet\.$/)
@@ -2341,14 +2413,24 @@ test('a linked party is said to be one nobody has identified only when none of i
 
 test("linked payers are said to be one party only when they are one vault's owner and its agent key, and may be one otherwise", async () => {
   const note = async (over: Over) => (await arcSeasonReport(deps({ now: () => LIVE_READ, ...over }))).milestone2.externalChecks.note
-  // The medium group of the trace: two vault owners, one of whom paid the other its only USDC. Each pays, and the line says
-  // they may be one party, as the group's own confidence and the owners line do.
+  // The medium group of the trace: two vault owners, one of whom paid the other its only USDC. On the chain alone, each pays
+  // and the line says they may be one party, as the group's own confidence does.
   const [A, B] = ['0x39aefbc8388da12907a21d9de888b288a9fa5794', '0xed701ba695fbbaa7f0cd1d4cbe540e86f55c677b']
   const medium = ARC_WALLET_LINKS.find((l) => l.wallets.map(lower).includes(A))!
-  assert.match(medium.confidence, /medium for 0x39AE\.\.\.5794 with 0xeD70\.\.\.677b/)
-  const twoOwners = await note({ gateway: [gw({ payer: A }), gw({ payer: A }), gw({ payer: B }), gw({ payer: EXT_C })], walletLinks: ARC_WALLET_LINKS, vaults: ARC_OWNER_HELD_VAULTS })
+  assert.match(medium.confidence, /medium for 0x39AE\.\.\.5794 with 0xeD70\.\.\.677b on the chain alone/)
+  const ownersPay = { gateway: [gw({ payer: A }), gw({ payer: A }), gw({ payer: B }), gw({ payer: EXT_C })], vaults: ARC_OWNER_HELD_VAULTS }
+  const twoOwners = await note({ ...ownersPay, walletLinks: [{ ...medium, onePerson: undefined }] })
   assert.match(twoOwners, / 3 of the 4 come from wallets linked on chain, which may be one party nobody has identified: 0x39ae\.\.\.5794 and 0xed70\.\.\.677b; the other 1 come from 1 wallet\.$/)
   assert.doesNotMatch(twoOwners, /come from one party/)
+  // The founder said on 2026-11-10 that the two belong to one person: the line says one party, on his word and with its day,
+  // as the owners line does, and never as a chain fact.
+  const onHisWord = await note({ ...ownersPay, walletLinks: ARC_WALLET_LINKS })
+  assert.match(onHisWord, / 3 of the 4 come from one party nobody has identified: 0x39ae\.\.\.5794 and 0xed70\.\.\.677b, linked on chain, and one person on the founder's word of 2026-11-10; the other 1 come from 1 wallet\.$/)
+  assert.doesNotMatch(onHisWord, /may be one party/)
+  // His word covers only the wallets he named: the owner with its own agent key is still read through the chain alone.
+  const KEY_A = '0x707b8af7ba198e6bcf80480660fae5455e81ecd3'
+  const ownerAndKey = await note({ gateway: [gw({ payer: A }), gw({ payer: KEY_A }), gw({ payer: EXT_C })], walletLinks: ARC_WALLET_LINKS, vaults: ARC_OWNER_HELD_VAULTS })
+  assert.match(ownerAndKey, / 2 of the 3 come from wallets linked on chain, which may be one party nobody has identified: 0x39ae\.\.\.5794 and 0x707b\.\.\.ecd3; the other 1 come from 1 wallet\.$/)
 
   // A vault's owner and the agent key the flow log names for it are one party, owner first whatever order the link holds them.
   const [OWNER, KEY, KEY2] = ['0x' + 'd1'.repeat(20), '0x' + 'd2'.repeat(20), '0x' + 'd3'.repeat(20)]
@@ -2392,6 +2474,12 @@ test('the links to our own side are labeled as ours or disclosed, each with what
   const disclosed = ourSide.filter((x) => x.kind === 'disclosed')
   assert.ok(disclosed.some((x) => /paid our agent Simon 0\.001 USDC/.test(x.note) && x.evidence[0].txHash === '0x1d11b1f3fff1dea60242e637eb330303c10d2f01fff99deceaf944ce23e9edd4'))
   assert.ok(disclosed.some((x) => /0x8d58\.\.\.7bca.*signed in to our web app/.test(x.note) && x.evidence[0].explorerUrl === 'https://a-identity.xyz/api/marketplace?all=1'))
+  // What the founder said of it on 2026-11-10 is his word, with its day; a customer is only what he said it may be.
+  const funder = disclosed.find((x) => /^0x8d58\.\.\.7bca/.test(x.note))!
+  assert.match(funder.note, /It is on no list of ours\. On 2026-11-10 the founder said that the team does not know whose it is, and that it may be a customer's\.$/)
+  assert.doesNotMatch(funder.note, /nobody has said/)
+  // So is what he said of two other team members' wallets, next to what the trace itself could not rule out.
+  assert.ok(r.linkedWallets.limits.some((l) => /so a link to them cannot be ruled out\. On 2026-11-10 the founder said that two other team members made no transactions; he did not give their wallet addresses, so this trace has not checked them\.$/.test(l)))
   assert.ok(disclosed.some((x) => /0xec06\.\.\.3144 sent our buyer wallet/.test(x.note)), 'dust is disclosed too, with no relation found')
   assert.equal(ourSide.filter((x) => x.kind === 'none-found').length, 3)
   assert.ok(ourSide.some((x) => /No funding from our side/.test(x.note)))
@@ -2405,10 +2493,11 @@ test('the links to our own side are labeled as ours or disclosed, each with what
 })
 
 test('with no list named, the report reads the curated links, the labeled payers and the links to our side, as the live route does', async () => {
-  const r = await arcSeasonReport({ ...deps({ gateway: [gw({ payer: ARC_NOT_TEAM_PAYERS[0] })] }), walletLinks: undefined, notTeamPayers: undefined, ourSideLinks: undefined })
+  const r = await arcSeasonReport({ ...deps({ gateway: [gw({ payer: ARC_NOT_TEAM_PAYERS[0].wallet })] }), walletLinks: undefined, notTeamPayers: undefined, ourSideLinks: undefined })
   assert.equal(r.linkedWallets.groups.length, ARC_WALLET_LINKS.length)
   assert.equal(r.linkedWallets.ourSide.length, ARC_OUR_SIDE_LINKS.length)
   assert.equal(r.usage.external.byWallet[0].identity, 'not-team')
+  assert.equal(r.usage.external.byWallet[0].notTeamSaidOn, '2026-11-06')
 })
 
 test('the vault note says what the key comparison covers, when a vault counts, and how gas support stands', async () => {
@@ -2593,7 +2682,9 @@ test('the page shows the wallet and party counts beside the numbers, and each li
   assert.match(page, /'none-found': 'Looked for and not found'/)
   assert.match(page, /Every group of wallets the trace tied together, outside the named teams' own wallets \(\{data\.groups\.length\}\)/)
   assert.match(page, /linked with \{w\.linkedWith\.map/)
-  assert.match(page, /not a team wallet, on the founder's word of 2026-11-06/)
+  // The founder's word is labeled with the day he gave it, as the row carries it, and no day is written into the page.
+  assert.match(page, /not a team wallet, on the founder's word\{w\.notTeamSaidOn \? ` of \$\{w\.notTeamSaidOn\}` : ''\}<\/span>/)
+  assert.doesNotMatch(page, /founder's word of 20\d\d-/)
   assert.match(page, /parties=\{m2\.externalChecks\.incomplete \? undefined : m2\.externalChecks\.payers\?\.parties\}/, 'no ceiling from a log that could not be read')
   // A ceiling is shown only when it is a number below the wallets: null from an unread log, or as many parties as wallets, says nothing.
   assert.match(page, /\['Wallets', typeof parties === 'number' && parties < side\.wallets\.length \? `\$\{side\.wallets\.length\}, at most \$\{parties\} parties` : String\(side\.wallets\.length\)\]/)

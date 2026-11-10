@@ -80,6 +80,7 @@ import {
   ARC_OUR_SIDE_LINKS,
   ARC_WALLET_LINKS,
   type ArcLinkEvidence,
+  type ArcNotTeamPayer,
   type ArcOurSideKind,
   type ArcOurSideLink,
   type ArcWalletLink,
@@ -92,6 +93,7 @@ export {
   ARC_OUR_SIDE_LINKS,
   ARC_WALLET_LINKS,
   type ArcLinkEvidence,
+  type ArcNotTeamPayer,
   type ArcOurSideKind,
   type ArcOurSideLink,
   type ArcWalletLink,
@@ -190,9 +192,9 @@ export type ArcOwnerHeldVault = {
  * ArcSeasonDeps.admittedVaults reads them. An entry here for a vault already admitted that way is
  * what a person says about its owner: it wins over the stored row (labelOwners), and counts once.
  */
-/** The note on a vault the server admitted with its owner not identified, which the founder later said is not a team wallet. */
-const EXTERNAL_BY_FOUNDER_NOTE =
-  "Deploy sent by the owner's own wallet (receipt.from is owner()), its creation input is AgentSpendPolicyBytecode plus its constructor args, and its owner is none of the keys it was compared with; admitted automatically by POST /api/arc/vaults. Outside the team: on 2026-11-06 the founder confirmed that this owner is not a team wallet. The owner is not identified: nobody has said whose wallet it is."
+/** The note on a vault the server admitted with its owner not identified, which the founder later said, on saidOn, is not a team wallet. */
+const externalByFounderNote = (saidOn: string) =>
+  `Deploy sent by the owner's own wallet (receipt.from is owner()), its creation input is AgentSpendPolicyBytecode plus its constructor args, and its owner is none of the keys it was compared with; admitted automatically by POST /api/arc/vaults. Outside the team: on ${saidOn} the founder said that this owner is not a team wallet. The owner is not identified: nobody has said whose wallet it is.`
 
 export const ARC_OWNER_HELD_VAULTS: ArcOwnerHeldVault[] = [
   // The three vaults POST /api/arc/vaults admitted, deployed on 2026-11-04, 11-05 and 11-06, each with the owner
@@ -206,7 +208,7 @@ export const ARC_OWNER_HELD_VAULTS: ArcOwnerHeldVault[] = [
     deployTx: '0xbd8d1e4ab5d14e6f65837f92becf0a492165bd007e8e9308ad177f7ab3cf9d2f',
     deployBlock: '29552025',
     deployedAt: '2026-11-04',
-    note: EXTERNAL_BY_FOUNDER_NOTE,
+    note: externalByFounderNote('2026-11-06'),
   },
   {
     address: '0xa4D8052998A59017fd6816654F4C9eef62DE8182',
@@ -215,7 +217,7 @@ export const ARC_OWNER_HELD_VAULTS: ArcOwnerHeldVault[] = [
     deployTx: '0xeedb9cf539988596b145b8f467c15fe489f8f2b6f5ef5b8488bcd991e7a42e7b',
     deployBlock: '29681265',
     deployedAt: '2026-11-05',
-    note: EXTERNAL_BY_FOUNDER_NOTE,
+    note: externalByFounderNote('2026-11-06'),
   },
   {
     address: '0x033FdeECD2f60d2A0Cb78794c4Cd1F191A9DEbE5',
@@ -224,7 +226,20 @@ export const ARC_OWNER_HELD_VAULTS: ArcOwnerHeldVault[] = [
     deployTx: '0xd7ea1ee90de141eb89ac6c10b16d8066fb54d66088550dc9794569d83a5ae7fe',
     deployBlock: '29751356',
     deployedAt: '2026-11-06',
-    note: EXTERNAL_BY_FOUNDER_NOTE,
+    note: externalByFounderNote('2026-11-06'),
+  },
+  // Vault 0xcB7e...Ed41, deployed on 2026-11-07 and admitted by POST /api/arc/vaults with the owner not identified. On
+  // 2026-11-10 the founder said that its owner and agent key are not team wallets, and that neither he nor his cofounder
+  // knows whose they are, so it is labeled external here. Every field is the admitted row's as the trace of 2026-11-08
+  // recorded it, and the deploy is the first linked group's evidence in arc-season-links.ts.
+  {
+    address: '0xcB7e3b8b323B897E7E4303245dc98DE130B2Ed41',
+    owner: '0x56755b84a0825d82f9be97C8Ab057cCDC3Dc1a43',
+    ownerKind: 'external',
+    deployTx: '0x6725e2e3e1f1066e774bd35d6dee10627f12e0416d18ea96f55f4ffc9c354c47',
+    deployBlock: '30080119',
+    deployedAt: '2026-11-07',
+    note: externalByFounderNote('2026-11-10'),
   },
 ]
 
@@ -341,6 +356,8 @@ export type ArcSeasonWallet = {
   /** The partner team, when the wallet is attributed to one. */
   team?: string
   identity: ArcSeasonWalletIdentity
+  /** When identity is 'not-team': the UTC day the founder said so. */
+  notTeamSaidOn?: string
   /** The other paying wallets a link or a shared team ties to this one. Absent when none does. */
   linkedWith?: string[]
   checks: number
@@ -374,6 +391,8 @@ export type ArcSeasonOwnerLinkItem = {
   owners: string[]
   /** The counted vaults those owners deployed. */
   vaults: string[]
+  /** The UTC day the founder said those owners belong to one person, when his word covers all of them. */
+  onePersonOn?: string
   tracedOn: string
   confidence: string
   note: string
@@ -390,7 +409,7 @@ export type ArcSeasonVaultOwners = {
   linked: ArcSeasonOwnerLinkItem[]
   /** A party behind a counted vault that also paid external checks. Those count under Milestone 2, never here. */
   alsoPaid: { vaults: string[]; wallets: string[]; checks: number; note: string }[]
-  /** "6 vaults from 6 owner wallets; two of the owner wallets are linked on chain, so they may be one party: at most 5 parties." */
+  /** "6 vaults from 6 owner wallets; two of the owner wallets are linked on chain, and the founder said on 2026-11-10 that they belong to one person: at most 5 parties." */
   summary: string
 }
 
@@ -401,6 +420,8 @@ export type ArcSeasonPayerLinkItem = {
   checks: number
   /** Set when every one of them is attributed to one partner team. */
   team?: string
+  /** The UTC day the founder said those wallets belong to one person, when his word covers all of them. */
+  onePersonOn?: string
   tracedOn: string
   confidence: string
   note: string
@@ -647,8 +668,8 @@ export type ArcSeasonDeps = {
   vaults?: ArcOwnerHeldVault[]
   /** The curated links between wallets. Default ARC_WALLET_LINKS. */
   walletLinks?: ArcWalletLink[]
-  /** External payers the founder confirmed are not team wallets. Default ARC_NOT_TEAM_PAYERS. Any case. */
-  notTeamPayers?: string[]
+  /** External payers the founder said are not team wallets, each with the day he said it. Default ARC_NOT_TEAM_PAYERS. Any case. */
+  notTeamPayers?: ArcNotTeamPayer[]
   /** The curated links to our own side. Default ARC_OUR_SIDE_LINKS. */
   ourSideLinks?: ArcOurSideLink[]
   /** Vaults POST /api/arc/vaults admitted. May throw: an unreadable list is reported in
@@ -909,7 +930,8 @@ function side(checks: Check[]): ArcSeasonUsageSide {
   }
 }
 
-function byWallet(checks: Check[], teamOf: Map<string, string>, notTeam: ReadonlySet<string>, linkGroups: readonly (readonly string[])[]): ArcSeasonWallet[] {
+/** notTeam: the day the founder said each wallet is not a team wallet, by lowercase address. */
+function byWallet(checks: Check[], teamOf: Map<string, string>, notTeam: ReadonlyMap<string, string>, linkGroups: readonly (readonly string[])[]): ArcSeasonWallet[] {
   const groups = new Map<string, Check[]>()
   for (const c of checks) {
     const g = groups.get(c.payer) ?? []
@@ -925,11 +947,13 @@ function byWallet(checks: Check[], teamOf: Map<string, string>, notTeam: Readonl
       .filter((t) => Number.isFinite(Date.parse(t)))
       .sort((x, y) => Date.parse(x) - Date.parse(y))
     const team = teamOf.get(wallet)
+    const notTeamSaidOn = team ? undefined : notTeam.get(wallet)
     const linkedWith = (partyOf.get(wallet) ?? []).filter((w) => w !== wallet)
     rows.push({
       wallet,
       ...(team ? { team } : {}),
-      identity: team ? 'team' : notTeam.has(wallet) ? 'not-team' : 'not-identified',
+      identity: team ? 'team' : notTeamSaidOn ? 'not-team' : 'not-identified',
+      ...(notTeamSaidOn ? { notTeamSaidOn } : {}),
       ...(linkedWith.length ? { linkedWith } : {}),
       checks: own.length,
       usd: usd6(own.reduce((s, c) => s + c.usd, 0)),
@@ -995,6 +1019,12 @@ function linkEvidence(rows: readonly ArcLinkEvidence[], chain: ChainDescriptor):
   return rows.map((e) => ({ ...e, explorerUrl: e.txHash ? txUrl(chain, e.txHash) : (e.url ?? null) }))
 }
 
+/** The day the founder said these wallets of a link belong to one person, when his word on the link covers every one of them. */
+function onePersonOn(link: ArcWalletLink, wallets: readonly string[]): { onePersonOn?: string } {
+  const said = new Set((link.onePerson?.wallets ?? []).map((w) => w.toLowerCase()))
+  return link.onePerson && wallets.every((w) => said.has(w.toLowerCase())) ? { onePersonOn: link.onePerson.saidOn } : {}
+}
+
 /**
  * The parties these wallets can be at most: each wallet starts alone, and a group that holds two or more of them joins them.
  * A ceiling, because the chain can merge wallets and can never show that two of them are different people. Lowercased.
@@ -1040,6 +1070,7 @@ export function vaultOwners(
       {
         owners: owners.map((w) => byOwner.get(w)!.spelled),
         vaults: owners.flatMap((w) => byOwner.get(w)!.vaults),
+        ...onePersonOn(l, owners),
         tracedOn: l.tracedOn,
         confidence: l.confidence,
         note: l.note,
@@ -1051,7 +1082,10 @@ export function vaultOwners(
   const distinct = byOwner.size
   const parties = partiesAmong(byOwner.keys(), groups).length
   const lead = `${withUnit(vaults.length, 'vault', 'vaults')} from ${withUnit(distinct, 'owner wallet', 'owner wallets')}`
-  const linkClauses = linked.map((l) => `${inWords(l.owners.length)} of the owner wallets are linked on chain, so they may be one party`)
+  // A link alone says the owners may be one party. The founder's word, where he gave it, is said as his, with its day.
+  const linkClauses = linked.map(
+    (l) => `${inWords(l.owners.length)} of the owner wallets are linked on chain, ${l.onePersonOn ? `and the founder said on ${l.onePersonOn} that they belong to one person` : 'so they may be one party'}`,
+  )
   const ceiling = linked.length > 0 && !context.incomplete ? `: at most ${withUnit(parties, 'party', 'parties')}` : ''
   const short = context.incomplete ? ' The list of admitted vaults could not be read, so there may be more.' : ''
 
@@ -1093,6 +1127,7 @@ function externalPayers(
         wallets,
         checks: wallets.reduce((n, w) => n + paying.get(w)!.checks, 0),
         ...(teamNames.length === 1 && teamNames[0] ? { team: teamNames[0] } : {}),
+        ...onePersonOn(l, wallets),
         tracedOn: l.tracedOn,
         confidence: l.confidence,
         note: l.note,
@@ -1205,7 +1240,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   const teamOf = new Map(partners.map((p) => [p.wallet.toLowerCase(), p.team]))
   const walletLinks = deps.walletLinks ?? ARC_WALLET_LINKS
   const ourSideLinks = deps.ourSideLinks ?? ARC_OUR_SIDE_LINKS
-  const notTeamPayers = new Set((deps.notTeamPayers ?? ARC_NOT_TEAM_PAYERS).map((a) => a.toLowerCase()))
+  const notTeamPayers = new Map((deps.notTeamPayers ?? ARC_NOT_TEAM_PAYERS).map((p) => [p.wallet.toLowerCase(), p.saidOn]))
   // One team under one name is one party, whether or not anyone traced a link between its wallets.
   const teamGroups = [...new Set(partners.map((p) => p.team))].map((team) => partners.filter((p) => p.team === team).map((p) => p.wallet.toLowerCase()))
   const linkGroups = [...walletLinks.map((l) => l.wallets), ...teamGroups]
@@ -1226,8 +1261,6 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   const vaultListUnread = Boolean(admittedVaults && !admittedVaults.read.readable)
   const owners = vaultOwners(vaults, walletLinks, chain, { teams: teamGroups, external, incomplete: vaultListUnread })
   const payers = externalPayers(external, walletLinks, chain, { teams: teamGroups, incomplete: settlementsIncomplete })
-  // Linked wallets nobody has identified, said apart from the rest, because a share of the checks that large may be one party.
-  const unidentifiedParties = payers.linked.filter((l) => !l.team && l.wallets.every((w) => walletStats.get(w)?.identity === 'not-identified'))
   // Each vault's keys as this read knows them: the owner a counted vault carries or a flow's own record names, and every
   // operator the flow log or a flow's record names. Linked wallets are said to be one party as fact only when they are one
   // vault's owner and its agent keys: a link alone can be of medium strength, and two owners may be one party or two.
@@ -1246,19 +1279,52 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
       const owners = wallets.filter((w) => k.owners.has(w))
       return owners.length === 1 && wallets.every((w) => owners.includes(w) || k.operators.has(w))
     }) ?? null
-  const unidentifiedLine = (l: ArcSeasonPayerLinkItem): string => {
+  // Linked wallets no named team stands behind are said apart from the rest, because a share of the checks that large may be
+  // one party. Each is said with what anyone has said of its wallets: nobody, or the founder on one day that none of them is a
+  // team wallet; a party whose wallets were spoken for on different terms is left to the who-paid line. It is one party as
+  // fact through one vault's keys; otherwise one person on the founder's word, as his and with its day, where he gave it;
+  // otherwise it may be one party.
+  const saidOfParty = (l: ArcSeasonPayerLinkItem): string | null => {
+    const rows = l.wallets.map((w) => walletStats.get(w))
+    if (rows.every((w) => w?.identity === 'not-identified')) return 'nobody has identified'
+    const days = new Set(rows.map((w) => (w?.identity === 'not-team' ? w.notTeamSaidOn : undefined)))
+    const [day] = days
+    return days.size === 1 && day ? `whose wallets the founder said on ${day} are not team wallets` : null
+  }
+  const partyLine = (l: ArcSeasonPayerLinkItem, who: string): string => {
     const rest = `the other ${externalChecks.length - l.checks} come from ${withUnit(external.length - l.wallets.length, 'wallet', 'wallets')}.`
     const vault = oneVaultOf(l.wallets)
-    if (!vault) return ` ${l.checks} of the ${externalChecks.length} come from wallets linked on chain, which may be one party nobody has identified: ${l.wallets.map(shortAddress).join(' and ')}; ${rest}`
+    if (!vault && l.onePersonOn) return ` ${l.checks} of the ${externalChecks.length} come from one party ${who}: ${l.wallets.map(shortAddress).join(' and ')}, linked on chain, and one person on the founder's word of ${l.onePersonOn}; ${rest}`
+    if (!vault) return ` ${l.checks} of the ${externalChecks.length} come from wallets linked on chain, which may be one party ${who}: ${l.wallets.map(shortAddress).join(' and ')}; ${rest}`
     const keys = [...l.wallets.filter((w) => vault.owners.has(w)), ...l.wallets.filter((w) => !vault.owners.has(w))]
     const agentKeys = keys.length === 2 ? 'agent key' : `${inWords(keys.length - 1)} agent keys`
-    return ` ${l.checks} of the ${externalChecks.length} come from one party nobody has identified: ${keys.map(shortAddress).join(' and ')}, the owner and ${agentKeys} of vault ${shortAddress(vault.vault)}, linked on chain; ${rest}`
+    return ` ${l.checks} of the ${externalChecks.length} come from one party ${who}: ${keys.map(shortAddress).join(' and ')}, the owner and ${agentKeys} of vault ${shortAddress(vault.vault)}, linked on chain; ${rest}`
   }
+  const partyLines = payers.linked.flatMap((l) => {
+    const who = l.team ? null : saidOfParty(l)
+    return who ? [partyLine(l, who)] : []
+  })
+  // The founder's word that a wallet is not a team wallet, by the day he gave it, so each statement reads with its own date.
+  const notTeamByDay = sortedUnique(external.flatMap((w) => (w.notTeamSaidOn ? [w.notTeamSaidOn] : []))).map((day) => {
+    const own = external.filter((w) => w.notTeamSaidOn === day)
+    return { day, wallets: own.length, checks: own.reduce((n, w) => n + w.checks, 0) }
+  })
   const whoPaidClauses = [
     ...(payers.whoPaid.team.wallets > 0 ? [`${withUnit(payers.whoPaid.team.checks, 'check', 'checks')} from ${withUnit(payers.whoPaid.team.wallets, 'wallet', 'wallets')} of named teams`] : []),
-    ...(payers.whoPaid['not-team'].wallets > 0 ? [`${withUnit(payers.whoPaid['not-team'].checks, 'check', 'checks')} from ${withUnit(payers.whoPaid['not-team'].wallets, 'wallet', 'wallets')} the founder confirmed on 2026-11-06 are not team wallets`] : []),
+    ...notTeamByDay.map((d) => `${withUnit(d.checks, 'check', 'checks')} from ${withUnit(d.wallets, 'wallet', 'wallets')} the founder said on ${d.day} are not team wallets`),
     ...(payers.whoPaid['not-identified'].wallets > 0 ? [`${withUnit(payers.whoPaid['not-identified'].checks, 'check', 'checks')} from ${withUnit(payers.whoPaid['not-identified'].wallets, 'wallet', 'wallets')} nobody has identified`] : []),
   ]
+  // The same, said of the wallets no team is attributed: each statement of the founder's with its day, then the wallets nobody
+  // has spoken for, if any.
+  const unattributedSaid =
+    notTeamByDay.length > 0
+      ? ` ${[
+          ...notTeamByDay.map((d, i) => `${d.wallets}${i === 0 ? ' of them' : ''} (${withUnit(d.checks, 'check', 'checks')}) the founder said on ${d.day} are not team wallets`),
+          ...(payers.whoPaid['not-identified'].wallets > 0
+            ? [`${payers.whoPaid['not-identified'].wallets} (${withUnit(payers.whoPaid['not-identified'].checks, 'check', 'checks')}) nobody has identified, each counted as external until someone says otherwise`]
+            : []),
+        ].join('; ')}.`
+      : ''
 
   // Partners, each with what its wallet actually paid. A team can pay from more than one
   // wallet, so team-level metrics count distinct team names.
@@ -1537,7 +1603,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
             ? `${admittedVaults && !admittedVaults.read.readable ? '' : 'No owner-held vault yet. '}The launch-day vault${launchVault ? ` ${launchVault}` : ''} was deployed from our server key with our operating wallet as its owner, so it is not owner-held and is not counted. This count fills from vaults deployed by the owner's own wallet, each listed with its deploy hash. ${VAULT_COUNTS_ONCE} The deploy page at /app/vault/arc is one way to do that. ${GAS_SUPPORT_NOTE}`
             : `${vaults.length} of ${ARC_SEASON_TARGETS.ownerHeldVaults} vaults deployed by the owner's own wallet, which is none of the keys of ours it was compared with; GET /api/arc/vaults names any key it could not be compared with. ${VAULT_COUNTS_ONCE} ${owners.summary}${owners.linked.length > 0 ? ' Each link was traced by hand, not read live on this request, and the transactions behind it are named with it; the count does not move for it.' : ''}${owners.alsoPaid.length > 0 ? ` ${owners.alsoPaid.map((p) => p.note).join(' ')}` : ''} By whose wallet: ${vaultsByKind.team} of them someone on our own team, in their own wallet; ${vaultsByKind.external} someone outside the team; ${vaultsByKind.unstated} not identified as either. The chain cannot show which tool sent a deploy, so this count rests on the deploy transaction and the vault's code, not on proof that the page at /app/vault/arc was used. The launch-day vault${launchVault ? ` ${launchVault}` : ''} is owned by our operating wallet and is not among them. ${GAS_SUPPORT_NOTE}` +
               (unstatedVaults > 0
-                ? ` ${unstatedVaults} of them were admitted automatically after every check passed, with the owner not identified: the checks prove the owner's wallet sent the deploy and is none of the keys it was compared with, and the chain cannot say whose wallet it is, so one could be a team member's. The founder's statement of 2026-11-06 does not cover these.`
+                ? ` ${unstatedVaults} of them were admitted automatically after every check passed, with the owner not identified: the checks prove the owner's wallet sent the deploy and is none of the keys it was compared with, and the chain cannot say whose wallet it is, so one could be a team member's. The founder's word that an owner is not a team wallet, given on 2026-11-06 and 2026-11-10, does not cover these.`
                 : '') +
               ` Owner wallets have signed ${ownerActions.freezes} freeze(s) and ${ownerActions.withdrawals} withdrawal(s), each hash on its vault.` +
               (ownerActions.vaultsNotFullyRead > 0 ? ` ${ownerActions.vaultsNotFullyRead} vault(s) are not fully read yet, so there may be more; each says why on actionsRead.` : '')),
@@ -1627,7 +1693,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
             ? settlementsIncomplete
               ? 'A check counts here when a wallet outside our own paid it, on either rail.'
               : 'No paid check from a wallet outside our own yet. Every check settled so far came from our own buyer wallets, labeled internal above.'
-            : `${externalChecks.length} of ${ARC_SEASON_TARGETS.externalChecks} paid checks from wallets A-Identity does not control, on either rail. ${payers.summary} By who stands behind them: ${whoPaidClauses.join('; ')}.${unidentifiedParties.map(unidentifiedLine).join('')}`) +
+            : `${externalChecks.length} of ${ARC_SEASON_TARGETS.externalChecks} paid checks from wallets A-Identity does not control, on either rail. ${payers.summary} By who stands behind them: ${whoPaidClauses.join('; ')}.${partyLines.join('')}`) +
           (externalVaultOwners > 0
             ? ` ${externalVaultOwners} of these wallet(s) also own a vault admitted with the owner not identified, so one could be a team member's: the chain cannot say, and each counts as external until someone says otherwise.`
             : '') +
@@ -1694,7 +1760,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
             ? settlementsIncomplete
               ? `The ${unreadableSettlementLogs.join(' and the ')} could not be read on this request, so this says nothing about wallets it holds.`
               : 'Every external wallet that paid is attributed to a team, or none has paid.'
-            : `${unattributed.length} external wallet(s) paid ${unattributed.reduce((s, w) => s + w.checks, 0)} check(s) without being attributed to a team. They count as external checks, external wallets and external flows, and toward no team metric.${payers.whoPaid['not-team'].wallets > 0 ? ` ${payers.whoPaid['not-team'].wallets} of them (${withUnit(payers.whoPaid['not-team'].checks, 'check', 'checks')}) the founder confirmed on 2026-11-06 are not team wallets; ${payers.whoPaid['not-identified'].wallets} (${withUnit(payers.whoPaid['not-identified'].checks, 'check', 'checks')}) nobody has identified, each counted as external until someone says otherwise.` : ''}${teamKeysCaveat(unattributed.length)}`,
+            : `${unattributed.length} external wallet(s) paid ${unattributed.reduce((s, w) => s + w.checks, 0)} check(s) without being attributed to a team. They count as external checks, external wallets and external flows, and toward no team metric.${unattributedSaid}${teamKeysCaveat(unattributed.length)}`,
       },
     },
     afterProgram: {

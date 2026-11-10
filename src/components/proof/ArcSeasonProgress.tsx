@@ -33,6 +33,8 @@ type WalletRow = {
   team?: string
   // Whether anyone has said whose it is, and which other paying wallets are tied to it. A backend from before these sends neither.
   identity?: 'team' | 'not-team' | 'not-identified'
+  // The day the founder said a wallet is not a team wallet. A backend from before it sends none, and the label then names no day.
+  notTeamSaidOn?: string
   linkedWith?: string[]
   checks: number
   usd: number
@@ -503,7 +505,7 @@ function WalletLine({ w }: { w: WalletRow }) {
       <span className="font-mono text-xs text-foreground/80" title={w.wallet}>
         {short(w.wallet)}
         {w.team && <span className="ml-2 font-sans font-semibold text-foreground/70"> {w.team}</span>}
-        {w.identity === 'not-team' && <span className="ml-2 font-sans text-foreground/55"> not a team wallet, on the founder's word of 2026-11-06</span>}
+        {w.identity === 'not-team' && <span className="ml-2 font-sans text-foreground/55"> not a team wallet, on the founder's word{w.notTeamSaidOn ? ` of ${w.notTeamSaidOn}` : ''}</span>}
         {w.identity === 'not-identified' && <span className="ml-2 font-sans text-foreground/55"> not identified</span>}
         {w.linkedWith && w.linkedWith.length > 0 && (
           <span className="ml-2 font-sans text-foreground/55"> linked with {w.linkedWith.map((a) => short(a)).join(', ')}</span>

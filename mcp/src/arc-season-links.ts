@@ -6,8 +6,9 @@
  * held and paid checks from wallets we do not control, whoever's they are; a link tells a reader that some of those wallets
  * may be one party, so a vault or a wallet is not taken for a separate user.
  *
- * A wallet is named here only with its address and what the chain or a public record shows. The chain can only merge
- * wallets, it can never show that two wallets are different people, so every party count this feeds is a ceiling.
+ * A wallet is named here only with its address, what the chain or a public record shows, and what the founder said of it,
+ * which is written as his statement on the day he made it and never as a chain fact. The chain can only merge wallets, it
+ * can never show that two wallets are different people, so every party count this feeds is a ceiling.
  *
  * Kept as data with no imports so the report, its tests and any script read one list. Explorer links are derived by the
  * report from the registry, never typed here.
@@ -31,6 +32,10 @@ export type ArcWalletLink = {
   note: string
   /** The transactions that show the link, each one a reader can open. */
   evidence: ArcLinkEvidence[]
+  /** Wallets of this group the founder said belong to one person, and the UTC day he said it. His word, not a chain fact: the
+   *  report says it where it would otherwise say that those wallets may be one party, and it moves no count, because the link
+   *  already merges them. */
+  onePerson?: { wallets: string[]; saidOn: string }
 }
 
 const TRACED_ON = ARC_LINKS_TRACED_ON
@@ -48,7 +53,7 @@ export const ARC_WALLET_LINKS: ArcWalletLink[] = [
     wallets: ['0x56755b84a0825d82f9be97C8Ab057cCDC3Dc1a43', '0x1d54499fA6Cff560F217a2cD1013b4E12c8D7f5F', '0x24427be91913774187b8547071284506767a77c4', '0xebbaedce6b4d9339280b933726e7902c38cf5064'],
     tracedOn: TRACED_ON,
     confidence: 'High for the owner, its agent key and the wallet that funded it; medium-high for 0x2442...77c4, a payee that returned funds to the paying vault.',
-    note: "The owner and agent key of vault 0xcB7e...Ed41, the wallet that paid the owner its first money, and a payee of that vault that paid money back into it. The owner named the agent key at deploy and supplied all of its money, so the chain reads them as one party, and it is the only party that both owns a counted vault and paid external checks. As of this trace it paid 20 of them, from 2026-11-07 22:41Z to 2026-11-08 09:11Z, out of one 0.15 USDC send and two small returns from its own vault. The deploy's gas settings match a script rather than the page at /app/vault/arc. The owner and the agent key are also registered as agents on our platform (the list at GET /api/marketplace?all=1), and nobody has said whose wallets these are. A third platform wallet shares their naming and timing, but it has never sent a transaction, so the chain does not link it and it is not in this group.",
+    note: "The owner and agent key of vault 0xcB7e...Ed41, the wallet that paid the owner its first money, and a payee of that vault that paid money back into it. The owner named the agent key at deploy and supplied all of its money, so the chain reads them as one party, and it is the only party that both owns a counted vault and paid external checks. As of this trace it paid 20 of them, from 2026-11-07 22:41Z to 2026-11-08 09:11Z, out of one 0.15 USDC send and two small returns from its own vault. The deploy's gas settings match a script rather than the page at /app/vault/arc. The owner and the agent key are also registered as agents on our platform (the list at GET /api/marketplace?all=1). A third platform wallet shares their naming and timing, but it has never sent a transaction, so the chain does not link it and it is not in this group. On 2026-11-10 the founder said that the wallets of this party are not team wallets, and that neither he nor his cofounder knows whose they are.",
     evidence: [
       { txHash: '0x0cfe6cf5e89ae5080bfcbebbe97f36730611dd9643d31bffd50dce47db9b9a75', what: '2026-11-07: 0xebba...5064 sent the owner 0x5675...1a43 its first money, 0.15 USDC' },
       { txHash: '0x6725e2e3e1f1066e774bd35d6dee10627f12e0416d18ea96f55f4ffc9c354c47', what: '2026-11-07: the owner deployed vault 0xcB7e...Ed41 and named 0x1d54...7f5F as its agent key' },
@@ -63,8 +68,9 @@ export const ARC_WALLET_LINKS: ArcWalletLink[] = [
   {
     wallets: ['0x39AEfbC8388da12907A21d9De888B288a9fa5794', '0xeD701bA695FBBaa7f0CD1D4cBe540E86F55C677b', '0x707B8aF7ba198e6BCf80480660fae5455E81ecd3', '0xDB477D372DA00BaC54fF3C9d676a19e93089fe36'],
     tracedOn: TRACED_ON,
-    confidence: 'High for 0x39AE...5794 with its agent key 0x707B...ecd3; medium for 0x39AE...5794 with 0xeD70...677b, because one person with two wallets, two people acting together and a payment to a friend would all look the same.',
-    note: "0x39AE...5794, the owner of vault 0xa4D8...8182, sent 0xeD70...677b, the owner of vault 0x033F...EbE5, its first and only USDC, and vault 0x033F...EbE5 was deployed about 10 hours after vault 0xa4D8...8182. 0x39AE...5794 also funded the agent key of vault 0xa4D8...8182, and the two used a contract 0x39AE...5794 deployed. 0xDB47...fe36 is the agent key named at the second deploy and never used. The chain cannot say whose wallets these are, so the two vaults may belong to one party.",
+    confidence: "High for 0x39AE...5794 with its agent key 0x707B...ecd3; medium for 0x39AE...5794 with 0xeD70...677b on the chain alone, because one person with two wallets, two people acting together and a payment to a friend would all look the same.",
+    note: "0x39AE...5794, the owner of vault 0xa4D8...8182, sent 0xeD70...677b, the owner of vault 0x033F...EbE5, its first and only USDC, and vault 0x033F...EbE5 was deployed about 10 hours after vault 0xa4D8...8182. 0x39AE...5794 also funded the agent key of vault 0xa4D8...8182, and the two used a contract 0x39AE...5794 deployed. 0xDB47...fe36 is the agent key named at the second deploy and never used. The chain cannot say whose wallets these are. On 2026-11-10 the founder said that 0x39AE...5794 and 0xeD70...677b belong to one person, so on his word the two vaults are one party.",
+    onePerson: { wallets: ['0x39AEfbC8388da12907A21d9De888B288a9fa5794', '0xeD701bA695FBBaa7f0CD1D4cBe540E86F55C677b'], saidOn: '2026-11-10' },
     evidence: [
       { txHash: '0x4ffaba3861c5f37469daebadebce5f48023f2920e85bc66288ebae5c6de0d139', what: '2026-10-17: 0x39AE...5794 split 3 USDC through a contract, and 0.99 USDC of it went to 0xeD70...677b; 0.99 came back to 0x39AE...5794 and 1.02 went to 0x3a97...c72c, a wallet that has never moved it and whose role is unknown' },
       { txHash: '0x57940cfcb58bd8f3663e47663b94c3cacb3749f0ed274a8c486e5410a33e9d07', what: '2026-11-01: 0x39AE...5794 sent 1.5 USDC to 0x707B...ecd3, the agent key of vault 0xa4D8...8182' },
@@ -164,7 +170,7 @@ export const ARC_OUR_SIDE_LINKS: ArcOurSideLink[] = [
   },
   {
     kind: 'disclosed',
-    note: "0x8d58...7bca, the wallet that funded the owner of vault 0x30E4...ff79, signed in to our web app and followed an agent. It is on no list of ours, and nobody has said whether it is the team's or someone the team knows.",
+    note: "0x8d58...7bca, the wallet that funded the owner of vault 0x30E4...ff79, signed in to our web app and followed an agent. It is on no list of ours. On 2026-11-10 the founder said that the team does not know whose it is, and that it may be a customer's.",
     evidence: [{ url: 'https://a-identity.xyz/api/marketplace?all=1', what: 'public platform list: the activity of agent agent_mrozp31y9jtbz, 2026-09-04T20:10:55Z' }],
   },
   {
@@ -199,22 +205,30 @@ export const ARC_LINK_TRACE = {
   limits: [
     'The chain can only merge wallets, never prove they are separate people, so every party count is a ceiling. A tester the team invited also looks external here, because the chain cannot tell a tester from anyone else.',
     "Not checked: source wallets on Base and Arbitrum (except the one behind vault 0x25e4...6B90's owner), Arc Testnet before 2026-09-30, and any key the server could not compare, which GET /api/arc/vaults lists under admission.keysNotCompared.",
-    "Two team wallets known from public platform records have no Arc Mainnet activity. Other team members' personal wallets are not known to this trace, so a link to them cannot be ruled out.",
+    "Two team wallets known from public platform records have no Arc Mainnet activity. Other team members' personal wallets are not known to this trace, so a link to them cannot be ruled out. On 2026-11-10 the founder said that two other team members made no transactions; he did not give their wallet addresses, so this trace has not checked them.",
     'Not treated as links, because each serves many unrelated users: exchange hot wallets, custodial contracts, CCTP mints and relayers, Circle Gateway, Circle Bridge Kit, LI.FI and widely used contracts.',
     "Left out of the groups: the wallets behind the named teams' paying wallets. Slippay and Trustless Work agreed to be named as an integration on this page, which does not cover their other wallets. Slippay's two paying wallets count as one party because both are the team's, and the trace also found them tied on chain.",
     "Two flow records of 2026-11-08, each opened by a check that 0x1d54...7f5F, the agent key of vault 0xcB7e...Ed41, paid for, name 0x39AE...5794 and 0x8cd5...27A5, the owners of vaults 0xa4D8...8182 and 0x25e4...6B90, as payees (GET /api/x402/gateway/flows?vault=0xcB7e3b8b323B897E7E4303245dc98DE130B2Ed41). Both were still waiting for the vault owner's approval when read on 2026-11-08, so nothing was paid. A payee named in a flow is not treated as a link: the owner addresses are public on this page, and anyone can name them.",
   ],
 } as const
 
+/** A paying wallet the founder said is not a team wallet, and the UTC day he said it. His word, not a chain fact. */
+export type ArcNotTeamPayer = { wallet: string; saidOn: string }
+
 /**
- * External payers the founder confirmed on 2026-11-06 are not team wallets. It covers the unattributed wallets that had paid
- * by that day. A wallet that paid later, or an owner who deployed later, is not covered, so it reads as not identified until
- * someone says otherwise.
+ * External payers the founder said are not team wallets, each with the day he said it, so the report and the page say whose
+ * word it is and when. On 2026-11-06 he said it of the unattributed wallets that had paid by that day, and on 2026-11-10 of
+ * the wallets of the first group above, the party behind vault 0xcB7e...Ed41, of which the owner and the agent key have paid
+ * checks. A wallet he has not spoken for reads as not identified until someone says otherwise.
  */
-export const ARC_NOT_TEAM_PAYERS: string[] = [
-  '0xae93118cd57ac8645f0ac46a391eaade76d7f7ae',
-  '0xe7be265f2301e08a6eae5cfd0c1113a7cd35b3dd',
-  '0x3c27a3cab7915581941827b47417906e9bd59cf7',
+export const ARC_NOT_TEAM_PAYERS: ArcNotTeamPayer[] = [
+  { wallet: '0xae93118cd57ac8645f0ac46a391eaade76d7f7ae', saidOn: '2026-11-06' },
+  { wallet: '0xe7be265f2301e08a6eae5cfd0c1113a7cd35b3dd', saidOn: '2026-11-06' },
+  { wallet: '0x3c27a3cab7915581941827b47417906e9bd59cf7', saidOn: '2026-11-06' },
+  { wallet: '0x56755b84a0825d82f9be97c8ab057ccdc3dc1a43', saidOn: '2026-11-10' },
+  { wallet: '0x1d54499fa6cff560f217a2cd1013b4e12c8d7f5f', saidOn: '2026-11-10' },
+  { wallet: '0xebbaedce6b4d9339280b933726e7902c38cf5064', saidOn: '2026-11-10' },
+  { wallet: '0x24427be91913774187b8547071284506767a77c4', saidOn: '2026-11-10' },
 ]
 
 /**

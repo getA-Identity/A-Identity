@@ -202,7 +202,7 @@ Flat files by group: entries (`index.ts` stdio MCP, `http.ts` REST+MCP, `asp-gat
 `smoke.ts`, `http-smoke.ts`) - infra (`server.ts` tool registration, `storage.ts` persistence,
 `build-stamp.ts`) - Circle rails (`gateway.ts`, `cctp.ts`, `nanopay.ts`, `appkit.ts`,
 `circle.ts`, `circle-agent.ts`, `circle-cli.ts`, `paymaster.ts`) - Arc binding (`arc.ts`,
-`arc-contracts.ts`) - Arc Acceleration Season (`arc-season.ts` the milestone report, `arc-season-links.ts` the hand trace of linked wallets and of links to our own side,
+`arc-contracts.ts`) - Arc Acceleration Season (`arc-season.ts` the milestone report, `arc-season-links.ts` the hand trace of linked wallets and of links to our own side, with the founder's dated statements about them,
 `arc-owner-vault.ts` the owner-held vault admission rules, `arc-owner-vault-live.ts` its chain reads and the route's core, `arc-vault-sweep.ts` the server's own search for countable vaults on the chain, `arc-vault-actions.ts` the owner freezes and withdrawals read from the chain, `arc-vtp-run.ts` the Milestone 1 flow runner's rules) - auth (`auth.ts`, `oauth.ts`, `magic.ts`, `bot-auth.ts`) - domain
 (`erc8004.ts`, `reputation.ts`, `marketplace.ts`, `data.ts`) - x402/autonomy (`x402.ts`,
 `autopilot.ts`, `trust-oracle.ts`) - treasury (`treasury.ts`, `treasury-safe.ts`,
