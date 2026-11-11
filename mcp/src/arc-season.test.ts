@@ -1840,10 +1840,14 @@ const COUNTED_VAULTS: [string, string, string, string, string][] = [
 test("the counted vaults the founder spoke for are outside the team on his word, each with its day, and each owner is still not identified", async () => {
   // The three of 2026-11-06, and vault 0xcB7e...Ed41, whose owner he spoke for on 2026-11-10: its fields are held to the
   // trace's own read of it further down, where that read is written.
-  assert.equal(ARC_OWNER_HELD_VAULTS.length, 4)
+  // The fifth is the founder's own real-wallet owner test of 2026-11-11, labeled team.
+  assert.equal(ARC_OWNER_HELD_VAULTS.length, 5)
   assert.deepEqual(ARC_OWNER_HELD_VAULTS.slice(0, 3).map((v) => [v.address, v.owner, v.deployTx, v.deployBlock, v.deployedAt]), COUNTED_VAULTS)
   const saidOn = ['2026-11-06', '2026-11-06', '2026-11-06', '2026-11-10']
-  for (const [i, v] of ARC_OWNER_HELD_VAULTS.entries()) {
+  const team = ARC_OWNER_HELD_VAULTS[4]
+  assert.equal(team.ownerKind, 'team')
+  assert.match(team.note, /^The founder's real-wallet owner test, from a fresh wallet that is none of our keys\./)
+  for (const [i, v] of ARC_OWNER_HELD_VAULTS.slice(0, 4).entries()) {
     assert.equal(v.ownerKind, 'external', v.address)
     assert.match(v.note, new RegExp(`Outside the team: on ${saidOn[i]} the founder said that this owner is not a team wallet\\.`), v.address)
     assert.match(v.note, /The owner is not identified: nobody has said whose wallet it is\./, v.address)
@@ -1852,16 +1856,16 @@ test("the counted vaults the founder spoke for are outside the team on his word,
   const stored = ARC_OWNER_HELD_VAULTS.map((v) => ({ ...v, address: v.address.toLowerCase(), ownerKind: 'unstated' as const, note: 'Admitted automatically by POST /api/arc/vaults; the owner is not identified.' }))
   const r = await arcSeasonReport(deps({ vaults: ARC_OWNER_HELD_VAULTS, admittedVaults: async () => stored }))
   const v = r.milestone1.vaults
-  assert.equal(v.count, 4)
-  assert.deepEqual(v.byKind, { team: 0, external: 4, unstated: 0 })
-  assert.match(v.note, /0 of them someone on our own team, in their own wallet; 4 someone outside the team; 0 not identified as either\./)
+  assert.equal(v.count, 5)
+  assert.deepEqual(v.byKind, { team: 1, external: 4, unstated: 0 })
+  assert.match(v.note, /1 of them someone on our own team, in their own wallet; 4 someone outside the team; 0 not identified as either\./)
   assert.doesNotMatch(v.note, /admitted automatically after every check passed, with the owner not identified/)
   assert.deepEqual(
     v.items.map((i) => [i.ownerKind, i.note]),
-    ARC_OWNER_HELD_VAULTS.map((c) => ['external', c.note]),
+    ARC_OWNER_HELD_VAULTS.map((c) => [c.ownerKind, c.note]),
   )
   // GET /api/arc/vaults labels the stored rows the same way, through the same function and its defaults.
-  assert.deepEqual(labelOwners(stored).map((s) => s.ownerKind), ['external', 'external', 'external', 'external'])
+  assert.deepEqual(labelOwners(stored).map((s) => s.ownerKind), ['external', 'external', 'external', 'external', 'team'])
 })
 
 test('the founder wallet is on the internal payer list of both rails, so a check it pays can never read as external', async () => {
@@ -2029,18 +2033,18 @@ const liveShape = () =>
 test('the vault count says how many owner wallets stand behind it and how many are linked, and does not move for it', async () => {
   const r = await liveShape()
   const v = r.milestone1.vaults
-  assert.deepEqual([v.count, v.target], [6, 5], 'the count stays what it is')
-  assert.deepEqual(v.byKind, { team: 0, external: 4, unstated: 2 }, 'the four the founder spoke for, and the two nobody has')
+  assert.deepEqual([v.count, v.target], [7, 5], 'the count stays what it is')
+  assert.deepEqual(v.byKind, { team: 1, external: 4, unstated: 2 }, 'the four the founder spoke for, the two nobody has, and his own test')
   // The vault he spoke for on 2026-11-10 is the row the trace read, labeled external on his word, with its day.
   const spokenFor = ARC_OWNER_HELD_VAULTS[3]
   assert.deepEqual([spokenFor.address, spokenFor.owner, spokenFor.deployTx, spokenFor.deployBlock, spokenFor.deployedAt], NEW_VAULTS[2])
   const v6Item = v.items.find((i) => lower(i.address) === V6_VAULT)!
   assert.equal(v6Item.ownerKind, 'external')
   assert.match(v6Item.note, /Outside the team: on 2026-11-10 the founder said that this owner is not a team wallet\. The owner is not identified: nobody has said whose wallet it is\./)
-  assert.deepEqual([v.owners.distinct, v.owners.parties], [6, 5])
+  assert.deepEqual([v.owners.distinct, v.owners.parties], [7, 6])
   // Two owners a link ties may be one party on the chain; the founder said on 2026-11-10 that these two are one person's, and
   // the summary says it as his word, with its day. The ceiling does not move: the link had already merged them.
-  assert.equal(v.owners.summary, '6 vaults from 6 owner wallets; two of the owner wallets are linked on chain, and the founder said on 2026-11-10 that they belong to one person: at most 5 parties.')
+  assert.equal(v.owners.summary, '7 vaults from 7 owner wallets; two of the owner wallets are linked on chain, and the founder said on 2026-11-10 that they belong to one person: at most 6 parties.')
   assert.ok(v.note.includes(v.owners.summary), 'the note the API carries says it too')
   assert.equal(v.owners.linked.length, 1)
   const [link] = v.owners.linked
@@ -2382,7 +2386,7 @@ test('the two flow records that name other vault owners as payees are disclosed,
   }
   const r = await liveShape()
   assert.ok(r.linkedWallets.limits.includes(line), 'published with the report')
-  assert.deepEqual([r.milestone1.vaults.owners.distinct, r.milestone1.vaults.owners.parties], [6, 5])
+  assert.deepEqual([r.milestone1.vaults.owners.distinct, r.milestone1.vaults.owners.parties], [7, 6])
 })
 
 test('no wallet the trace names is on a list of ours, so the line that says none is stays true', () => {

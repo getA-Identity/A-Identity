@@ -241,6 +241,15 @@ export const ARC_OWNER_HELD_VAULTS: ArcOwnerHeldVault[] = [
     deployedAt: '2026-11-07',
     note: externalByFounderNote('2026-11-10'),
   },
+  {
+    address: '0xB863c9615bAAD2CF27c717d51B03b62AAc9bE866',
+    owner: '0xe3130cA9061FC911b7F05e66D76fF44761fEFb7E',
+    ownerKind: 'team',
+    deployTx: '0x83ecf174a36316c80e847fc0bfcec2e8037fd70dfa4bd661d44d658f3e811f09',
+    deployBlock: '30764258',
+    deployedAt: '2026-11-11',
+    note: 'The founder\'s real-wallet owner test, from a fresh wallet that is none of our keys. Deploy sent by the owner\'s own wallet (receipt.from is owner()), and its creation input is AgentSpendPolicyBytecode plus its constructor args. Read back on 2026-11-11 at block 30764615: operator 0x1FA34D9f5f45ed7DA9DE0dcD0025a0d3c8339aF5, dailyCap 1 USDC, autoApproveMax 0.25 USDC, session key valid to 2026-11-18T23:01:21Z. Checked by scripts/arc-owner-vault-check.mjs. The same hour the owner froze and unfroze it, put in and withdrew 0.02 USDC, and revoked the agent key: read back after block 30764911, frozen false, sessionKeyExpiry 1, balance 0.',
+  },
 ]
 
 /**
