@@ -73,6 +73,8 @@ export default function Feedback() {
   const [draft, setDraft] = useState<FeedbackDraft>(EMPTY)
   const [phase, setPhase] = useState<Phase>({ name: 'idle' })
   const [focused, setFocused] = useState(false)
+  // Set when Send was pressed on a note that is too short, so the length line turns into an error.
+  const [tried, setTried] = useState(false)
   const messageRef = useRef<HTMLTextAreaElement>(null)
   const notSentRef = useRef<HTMLParagraphElement>(null)
 
@@ -85,6 +87,8 @@ export default function Feedback() {
   const messageLength = draft.message.trim().length
   const canSend = messageLength >= FEEDBACK_MESSAGE_MIN && messageLength <= FEEDBACK_MESSAGE_MAX
   const sending = phase.name === 'sending'
+  const tooShort = messageLength < FEEDBACK_MESSAGE_MIN
+  const showLength = tooShort && (tried || messageLength > 0)
 
   const mood: OwlMood =
     phase.name === 'sending' || phase.name === 'sent' || phase.name === 'fallback' || phase.name === 'error'
@@ -101,7 +105,15 @@ export default function Feedback() {
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!canSend || sending) return
+    if (sending) return
+    // The button is never greyed out: a greyed button with a small hint under the field read as
+    // "Send does nothing". A note that is too short gets the reason in red and the cursor instead.
+    if (!canSend) {
+      setTried(true)
+      messageRef.current?.focus()
+      return
+    }
+    setTried(false)
     setPhase({ name: 'sending' })
     const outcome = await submitFeedback(draft)
     if (outcome.kind === 'sent') setPhase({ name: 'sent' })
@@ -116,6 +128,7 @@ export default function Feedback() {
   // The form remounts on the way back, so focus goes to the message once it is there again,
   // instead of falling to the top of the page.
   const backToForm = (draftToKeep: FeedbackDraft) => {
+    setTried(false)
     setDraft(draftToKeep)
     setPhase({ name: 'idle' })
     window.setTimeout(() => messageRef.current?.focus(), 0)
@@ -238,10 +251,18 @@ export default function Feedback() {
                         value={draft.message}
                         onChange={(e) => edit({ message: e.target.value })}
                         placeholder="How can we help?"
-                        className={cn(fieldClass, 'min-h-[8.5rem] resize-y')}
+                        aria-invalid={tried && tooShort ? true : undefined}
+                        aria-describedby={showLength ? `${uid}-length` : undefined}
+                        className={cn(fieldClass, 'min-h-[8.5rem] resize-y', tried && tooShort && 'border-term-bad/60')}
                       />
-                      {messageLength > 0 && messageLength < FEEDBACK_MESSAGE_MIN && (
-                        <p className="mt-1.5 text-xs text-foreground/70">At least {FEEDBACK_MESSAGE_MIN} characters.</p>
+                      {showLength && (
+                        <p
+                          id={`${uid}-length`}
+                          role={tried ? 'alert' : undefined}
+                          className={cn('mt-1.5 text-sm', tried ? 'font-semibold text-term-bad' : 'text-foreground/70')}
+                        >
+                          At least {FEEDBACK_MESSAGE_MIN} characters, {FEEDBACK_MESSAGE_MIN - messageLength} to go.
+                        </p>
                       )}
                     </div>
 
@@ -283,7 +304,7 @@ export default function Feedback() {
                       </p>
                     )}
 
-                    <Button type="submit" className="h-12 w-full text-[15px]" disabled={!canSend || sending} aria-busy={sending}>
+                    <Button type="submit" className="h-12 w-full text-[15px]" disabled={sending} aria-busy={sending}>
                       {sending ? (
                         <>
                           <Loader2 size={17} className="animate-spin" aria-hidden="true" />

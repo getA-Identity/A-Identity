@@ -57,6 +57,9 @@ export default function FeedbackWidget() {
   const triggerRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const firstFieldRef = useRef<HTMLInputElement>(null)
+  const messageRef = useRef<HTMLTextAreaElement>(null)
+  // Set when Send was pressed on a note that is too short, so the length line turns into an error.
+  const [tried, setTried] = useState(false)
   const uid = useId()
 
   const close = useCallback(() => {
@@ -128,9 +131,19 @@ export default function FeedbackWidget() {
   const messageLength = draft.message.trim().length
   const canSend = messageLength >= FEEDBACK_MESSAGE_MIN && messageLength <= FEEDBACK_MESSAGE_MAX
 
+  const tooShort = messageLength < FEEDBACK_MESSAGE_MIN
+  const showLength = tooShort && (tried || messageLength > 0)
+
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!canSend || phase.name === 'sending') return
+    if (phase.name === 'sending') return
+    // Never a greyed-out Send: a note that is too short gets the reason in red and the cursor.
+    if (!canSend) {
+      setTried(true)
+      messageRef.current?.focus()
+      return
+    }
+    setTried(false)
     setPhase({ name: 'sending' })
     const outcome = await submitFeedback(draft)
     if (outcome.kind === 'sent') setPhase({ name: 'sent' })
@@ -287,6 +300,7 @@ export default function FeedbackWidget() {
                       </span>
                     </div>
                     <textarea
+                      ref={messageRef}
                       id={`${uid}-message`}
                       required
                       minLength={FEEDBACK_MESSAGE_MIN}
@@ -295,10 +309,18 @@ export default function FeedbackWidget() {
                       value={draft.message}
                       onChange={(e) => setDraft((d) => ({ ...d, message: e.target.value }))}
                       placeholder="The more specific, the faster we can act on it."
-                      className={cn(fieldClass, 'min-h-[7rem] resize-y')}
+                      aria-invalid={tried && tooShort ? true : undefined}
+                      aria-describedby={showLength ? `${uid}-length` : undefined}
+                      className={cn(fieldClass, 'min-h-[7rem] resize-y', tried && tooShort && 'border-term-bad/60')}
                     />
-                    {messageLength > 0 && messageLength < FEEDBACK_MESSAGE_MIN && (
-                      <p className="mt-1 text-xs text-foreground/50">At least {FEEDBACK_MESSAGE_MIN} characters.</p>
+                    {showLength && (
+                      <p
+                        id={`${uid}-length`}
+                        role={tried ? 'alert' : undefined}
+                        className={cn('mt-1 text-xs', tried ? 'font-semibold text-term-bad' : 'text-foreground/60')}
+                      >
+                        At least {FEEDBACK_MESSAGE_MIN} characters, {FEEDBACK_MESSAGE_MIN - messageLength} to go.
+                      </p>
                     )}
                   </div>
 
@@ -348,7 +370,7 @@ export default function FeedbackWidget() {
                     <Button type="button" variant="outline" onClick={close} disabled={phase.name === 'sending'}>
                       Cancel
                     </Button>
-                    <Button type="submit" disabled={!canSend || phase.name === 'sending'} aria-busy={phase.name === 'sending'}>
+                    <Button type="submit" disabled={phase.name === 'sending'} aria-busy={phase.name === 'sending'}>
                       {phase.name === 'sending' ? (
                         <>
                           <Loader2 size={16} className="animate-spin" aria-hidden="true" />
