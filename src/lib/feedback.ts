@@ -19,11 +19,14 @@ export const FEEDBACK_KINDS = [
   { id: 'other', label: 'Other' },
 ] as const
 
-/** The /feedback page's choices, the ones the Demo Day deck points people to. */
+/**
+ * The /feedback page's choices, the ones the Demo Day deck points people to. `short` is what
+ * the page's three-way switch shows; `label` is what the email and the mailto say.
+ */
 export const INQUIRY_KINDS = [
-  { id: 'feedback', label: 'Feedback' },
-  { id: 'inquiry', label: 'General inquiry' },
-  { id: 'request', label: 'Request' },
+  { id: 'feedback', label: 'Feedback', short: 'Feedback' },
+  { id: 'inquiry', label: 'General inquiry', short: 'Inquiry' },
+  { id: 'request', label: 'Request', short: 'Request' },
 ] as const
 
 export type FeedbackKind = (typeof FEEDBACK_KINDS)[number]['id'] | (typeof INQUIRY_KINDS)[number]['id']
@@ -109,10 +112,11 @@ export function feedbackMailto(draft: FeedbackDraft): string {
 
 /**
  * Pages where the corner button stays away. The deck is presented full screen, live, and the
- * button would sit on every slide; its closing slide points to /feedback instead.
+ * button would sit on every slide; its closing slide points to /feedback instead. And /feedback
+ * is the form itself, so a second way into the same form would only cover it on a phone.
  */
 export function hidesFeedbackWidget(pathname: string): boolean {
-  return pathname === '/deck'
+  return pathname === '/deck' || pathname === '/feedback'
 }
 
 /**

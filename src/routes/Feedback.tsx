@@ -1,13 +1,13 @@
 import { useEffect, useId, useRef, useState, type FocusEvent, type FormEvent } from 'react'
 import { motion } from 'framer-motion'
-import { CalendarDays, CheckCircle2, Loader2, Mail } from 'lucide-react'
+import { Check, Loader2, Mail, Send } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import SiteFooter from '../components/sections/SiteFooter'
 import ThemeScope from '../components/ThemeScope'
 import FeedbackOwl, { type OwlMood } from '../components/FeedbackOwl'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
-import { CAL_URL, CONTACT, EASE_OUT_EXPO, SOCIALS } from '../lib/brand'
+import { CAL_URL, CONTACT, EASE_OUT_EXPO } from '../lib/brand'
 import { usePageMeta } from '../lib/head'
 import { cn } from '../lib/utils'
 import {
@@ -21,14 +21,16 @@ import {
 } from '../lib/feedback'
 
 /**
- * /feedback: feedback, general inquiries and requests, with the owl and every address that
- * reaches the team. The closing slide of the deck (Demo Day has no live Q&A) sends people here
- * through a QR code, which is why the choices differ from the corner widget's.
+ * /feedback: feedback, general inquiries and requests. The closing slide of the deck (Demo Day
+ * has no live Q&A) sends people here through a QR code, so most arrive on a phone, once.
  *
- * It posts to the same /api/feedback as the widget (src/lib/feedback.ts), so the same honest
- * outcomes apply: "It reached our inbox" only when the server said `delivered: true` after
- * the email provider accepted the message; when the server cannot send, the reason and a
- * prefilled mailto, so nothing typed is lost. The widget stays mounted on this page too.
+ * Two halves and nothing else: the owl in the deck's night sky on one side, one short form on
+ * the other, and the direct addresses in a single row underneath.
+ *
+ * It posts to the same /api/feedback as the corner widget (src/lib/feedback.ts), so the same
+ * honest outcomes apply: "Message sent" only when the server said `delivered: true` after the
+ * email provider accepted the message; when the server cannot send, the reason and a
+ * prefilled mailto, so nothing typed is lost.
  */
 
 type Phase =
@@ -41,30 +43,20 @@ type Phase =
 const EMPTY: FeedbackDraft = { kind: 'feedback', message: '', email: '', website: '' }
 
 const fieldClass =
-  'flex w-full rounded-xl border border-foreground/15 bg-card px-3.5 py-2.5 text-sm text-foreground shadow-sm transition-colors placeholder:text-foreground/40 focus:border-accent/40 focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50'
+  'flex w-full rounded-xl border border-foreground/15 bg-card px-4 py-3 text-[15px] text-foreground shadow-sm transition-colors placeholder:text-foreground/65 focus:border-accent/40 focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50'
 
-const INBOXES = [
-  { title: 'General', address: CONTACT.hello, body: 'Partnerships, press, and anything else.' },
-  { title: 'Developers and agents', address: CONTACT.agents, body: 'Integration, SDK and MCP questions.' },
+/** The direct addresses: the two inboxes, the booking link, and the three people the deck names. */
+const DIRECT = [
+  { label: 'General', value: CONTACT.hello, href: `mailto:${CONTACT.hello}` },
+  { label: 'Developers and agents', value: CONTACT.agents, href: `mailto:${CONTACT.agents}` },
+  { label: 'A call with the founders', value: 'Book 15 minutes', href: CAL_URL, external: true },
+  { label: 'Aybars Dorman, CEO', value: 'aybars@a-identity.xyz', href: 'mailto:aybars@a-identity.xyz' },
+  { label: 'Meriç Cintosun, CTO', value: 'meric@a-identity.xyz', href: 'mailto:meric@a-identity.xyz' },
+  { label: 'Müge Ayşe Polat, Head of Brand and Strategy', value: 'muge@a-identity.xyz', href: 'mailto:muge@a-identity.xyz' },
 ]
 
-/** The same three people, with the same titles, that the deck names. */
-const TEAM = [
-  { name: 'Aybars Dorman', role: 'CEO', address: 'aybars@a-identity.xyz' },
-  { name: 'Meriç Cintosun', role: 'CTO', address: 'meric@a-identity.xyz' },
-  { name: 'Müge Ayşe Polat', role: 'Head of Brand and Strategy', address: 'muge@a-identity.xyz' },
-]
-
-const SOCIAL_LINKS = [
-  { label: 'X', href: SOCIALS.x },
-  { label: 'LinkedIn', href: SOCIALS.linkedin },
-  { label: 'Discord', href: SOCIALS.discord },
-  { label: 'GitHub', href: SOCIALS.github },
-  { label: 'YouTube', href: SOCIALS.youtube },
-].filter((s) => s.href)
-
-const reveal = {
-  initial: { opacity: 0, y: 20 },
+const rise = {
+  initial: { opacity: 0, y: 16 },
   animate: { opacity: 1, y: 0 },
   transition: { duration: 0.6, ease: EASE_OUT_EXPO },
 }
@@ -73,7 +65,7 @@ export default function Feedback() {
   usePageMeta({
     title: 'Feedback and inquiries · A-Identity',
     description:
-      'Send the A-Identity team feedback, a general inquiry or a request. It is emailed to the team inbox, and every address that reaches us is on this page.',
+      'Send the A-Identity team feedback, a general inquiry or a request. It is emailed to the team inbox, and every direct address is on this page.',
     canonical: 'https://a-identity.xyz/feedback',
   })
 
@@ -92,6 +84,7 @@ export default function Feedback() {
 
   const messageLength = draft.message.trim().length
   const canSend = messageLength >= FEEDBACK_MESSAGE_MIN && messageLength <= FEEDBACK_MESSAGE_MAX
+  const sending = phase.name === 'sending'
 
   const mood: OwlMood =
     phase.name === 'sending' || phase.name === 'sent' || phase.name === 'fallback' || phase.name === 'error'
@@ -108,7 +101,7 @@ export default function Feedback() {
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!canSend || phase.name === 'sending') return
+    if (!canSend || sending) return
     setPhase({ name: 'sending' })
     const outcome = await submitFeedback(draft)
     if (outcome.kind === 'sent') setPhase({ name: 'sent' })
@@ -132,260 +125,209 @@ export default function Feedback() {
     <ThemeScope surface="background" className="w-full" style={{ fontFamily: 'var(--font-body)' }}>
       <PageHeader />
 
-      <main className="mx-auto w-full max-w-[1040px] px-5 py-14 sm:px-8 sm:py-20">
-        <div className="grid items-center gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-14">
-          <motion.div {...reveal} className="flex flex-col items-center text-center lg:items-start lg:text-left">
-            <span className="text-sm font-semibold tracking-wide text-accent">Feedback and inquiries</span>
-            <h1
-              className="mt-3 text-4xl font-bold leading-[1.1] tracking-tight text-foreground sm:text-5xl"
-              style={{ fontFamily: 'var(--font-heading)' }}
-            >
-              Tell us what you think.
-            </h1>
-            <p className="mt-4 max-w-md text-base leading-relaxed text-foreground/65 sm:text-lg">
-              Feedback, a general inquiry, or a request. Your note is emailed to the team, and we read every one.
-            </p>
-            <FeedbackOwl mood={mood} className="mt-6 self-center" />
+      <main className="mx-auto w-full max-w-[1200px] px-4 pb-16 pt-4 sm:px-6 sm:pt-6 lg:px-8 lg:pb-24">
+        <div className="grid gap-8 lg:min-h-[640px] lg:grid-cols-[1.05fr_1fr] lg:gap-12">
+          <motion.div {...rise} className="h-[340px] sm:h-[420px] lg:h-auto">
+            <FeedbackOwl mood={mood} className="h-full" />
           </motion.div>
 
-          <motion.div {...reveal} className="rounded-3xl border border-border bg-card p-6 shadow-sm sm:p-8">
-            {phase.name === 'sent' ? (
-              <div className="flex flex-col items-start gap-4 py-6" role="status">
-                <div className="flex items-center gap-2 text-base font-semibold text-ok">
-                  <CheckCircle2 size={20} aria-hidden="true" />
-                  Thanks. It reached our inbox.
-                </div>
-                <p className="text-sm text-foreground/60">
-                  {draft.email.trim()
-                    ? 'We will reply to the address you left.'
-                    : 'You did not leave an address, so we cannot reply, but we read every note.'}
-                </p>
-                <Button type="button" variant="inverse" onClick={() => backToForm(EMPTY)} autoFocus>
-                  Send another
-                </Button>
-              </div>
-            ) : phase.name === 'fallback' ? (
-              <div className="flex flex-col items-start gap-4 py-2" role="status">
-                <p ref={notSentRef} tabIndex={-1} className="text-sm font-semibold text-warn outline-none">
-                  Not sent. {phase.reason}
-                </p>
-                <p className="text-sm text-foreground/60">
-                  Your message is kept below. Send it by email instead, and it opens in your mail app with the text filled in.
-                </p>
-                <div className="w-full whitespace-pre-wrap rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm text-foreground/80">
-                  {draft.message.trim()}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button asChild>
-                    <a href={feedbackMailto(draft)}>
-                      <Mail size={16} aria-hidden="true" />
-                      Email {CONTACT.hello}
-                    </a>
-                  </Button>
-                  <Button type="button" variant="outline" onClick={() => backToForm(draft)}>
-                    Back to the form
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <form onSubmit={onSubmit} onFocus={() => setFocused(true)} onBlur={onFormBlur} noValidate>
-                {/* Everything is read-only while a send is in flight, so what was sent is what is shown. */}
-                <fieldset disabled={phase.name === 'sending'} className="flex min-w-0 flex-col gap-5">
-                  <fieldset className="min-w-0">
-                    <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground/50">
-                      What kind of note is this?
-                    </legend>
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                      {INQUIRY_KINDS.map((k) => (
-                        <label
-                          key={k.id}
-                          className="flex cursor-pointer items-center justify-center rounded-full border border-border px-2 py-2.5 text-sm font-semibold text-foreground/70 transition-colors hover:text-foreground has-[:checked]:border-foreground has-[:checked]:bg-foreground has-[:checked]:text-background has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-card"
-                        >
-                          <input
-                            type="radio"
-                            name={`${uid}-kind`}
-                            value={k.id}
-                            checked={draft.kind === k.id}
-                            onChange={() => edit({ kind: k.id as FeedbackKind })}
-                            className="sr-only"
-                          />
-                          {k.label}
-                        </label>
-                      ))}
-                    </div>
-                  </fieldset>
+          <motion.section {...rise} transition={{ ...rise.transition, delay: 0.08 }} className="flex flex-col lg:py-8">
+            <p className="text-sm font-semibold tracking-wide text-accent">Get in touch</p>
+            <h1
+              className="mt-3 text-5xl font-bold leading-[1.02] tracking-[-0.03em] text-foreground sm:text-6xl"
+              style={{ fontFamily: 'var(--font-heading)' }}
+            >
+              Let's talk.
+            </h1>
+            <p className="mt-4 max-w-md text-lg leading-relaxed text-foreground/70">
+              Feedback, a question or a request. It goes straight to the team.
+            </p>
 
-                  <div>
-                    <div className="mb-1.5 flex items-baseline justify-between gap-3">
-                      <label htmlFor={`${uid}-message`} className="text-sm font-semibold">
-                        What would you like to tell us?
+            <div className="mt-8">
+              {phase.name === 'sent' ? (
+                <div className="flex flex-col items-start gap-5 rounded-3xl border border-border bg-card p-7 shadow-sm" role="status">
+                  <div className="grid h-12 w-12 place-items-center rounded-full bg-ok/10 text-ok">
+                    <Check size={24} aria-hidden="true" />
+                  </div>
+                  <div id={`${uid}-sent`}>
+                    <p className="text-2xl font-bold tracking-tight text-foreground" style={{ fontFamily: 'var(--font-heading)' }}>
+                      Message sent.
+                    </p>
+                    <p className="mt-2 text-foreground/70 wrap-anywhere">
+                      {draft.email.trim()
+                        ? `We will reply to ${draft.email.trim()}.`
+                        : 'You left no address, so we cannot reply, but we read every note.'}
+                    </p>
+                  </div>
+                  <Button type="button" variant="outline" onClick={() => backToForm(EMPTY)} aria-describedby={`${uid}-sent`} autoFocus>
+                    Send another
+                  </Button>
+                </div>
+              ) : phase.name === 'fallback' ? (
+                <div className="flex flex-col items-start gap-4 rounded-3xl border border-border bg-card p-7 shadow-sm" role="status">
+                  <p ref={notSentRef} tabIndex={-1} className="font-semibold text-term-warn outline-none">
+                    Not sent. {phase.reason}
+                  </p>
+                  <p className="text-sm text-foreground/70">
+                    Your message is kept below. Email it instead, and it opens in your mail app with the text filled in.
+                  </p>
+                  <div className="w-full whitespace-pre-wrap wrap-anywhere rounded-xl bg-background px-4 py-3 text-sm text-foreground/80">
+                    {draft.message.trim()}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button asChild>
+                      <a href={feedbackMailto(draft)}>
+                        <Mail size={16} aria-hidden="true" />
+                        Email {CONTACT.hello}
+                      </a>
+                    </Button>
+                    <Button type="button" variant="outline" onClick={() => backToForm(draft)}>
+                      Back to the form
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <form onSubmit={onSubmit} onFocus={() => setFocused(true)} onBlur={onFormBlur} noValidate>
+                  {/* Everything is read-only while a send is in flight, so what was sent is what is shown. */}
+                  <fieldset disabled={sending} className="flex min-w-0 flex-col gap-4">
+                    <fieldset className="min-w-0">
+                      <legend className="sr-only">Topic</legend>
+                      <div className="grid grid-cols-3 gap-1 rounded-full border border-border bg-card p-1 shadow-sm">
+                        {INQUIRY_KINDS.map((k) => {
+                          const active = draft.kind === k.id
+                          return (
+                            <label
+                              key={k.id}
+                              className="relative flex cursor-pointer items-center justify-center rounded-full px-2 py-2.5 text-sm font-semibold has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring"
+                            >
+                              {active && (
+                                <motion.span
+                                  layoutId={`${uid}-topic`}
+                                  className="absolute inset-0 rounded-full bg-foreground"
+                                  transition={{ type: 'spring', stiffness: 500, damping: 40 }}
+                                />
+                              )}
+                              <input
+                                type="radio"
+                                name={`${uid}-kind`}
+                                value={k.id}
+                                checked={active}
+                                onChange={() => edit({ kind: k.id as FeedbackKind })}
+                                className="sr-only"
+                              />
+                              <span className={cn('relative transition-colors', active ? 'text-background' : 'text-foreground/70 hover:text-foreground')}>
+                                {k.short}
+                              </span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </fieldset>
+
+                    <div>
+                      <label htmlFor={`${uid}-message`} className="sr-only">
+                        How can we help?
                       </label>
-                      <span
-                        className={cn(
-                          'font-mono text-[11px] tabular-nums',
-                          draft.message.length > FEEDBACK_MESSAGE_MAX ? 'text-danger' : 'text-foreground/50',
-                        )}
-                      >
-                        {draft.message.length}/{FEEDBACK_MESSAGE_MAX}
-                      </span>
+                      <textarea
+                        ref={messageRef}
+                        id={`${uid}-message`}
+                        required
+                        minLength={FEEDBACK_MESSAGE_MIN}
+                        maxLength={FEEDBACK_MESSAGE_MAX}
+                        rows={5}
+                        value={draft.message}
+                        onChange={(e) => edit({ message: e.target.value })}
+                        placeholder="How can we help?"
+                        className={cn(fieldClass, 'min-h-[8.5rem] resize-y')}
+                      />
+                      {messageLength > 0 && messageLength < FEEDBACK_MESSAGE_MIN && (
+                        <p className="mt-1.5 text-xs text-foreground/70">At least {FEEDBACK_MESSAGE_MIN} characters.</p>
+                      )}
                     </div>
-                    <textarea
-                      ref={messageRef}
-                      id={`${uid}-message`}
-                      required
-                      minLength={FEEDBACK_MESSAGE_MIN}
-                      maxLength={FEEDBACK_MESSAGE_MAX}
-                      rows={6}
-                      value={draft.message}
-                      onChange={(e) => edit({ message: e.target.value })}
-                      placeholder="Your feedback, your question, or what you need from us."
-                      className={cn(fieldClass, 'min-h-[9rem] resize-y')}
-                    />
-                    {messageLength > 0 && messageLength < FEEDBACK_MESSAGE_MIN && (
-                      <p className="mt-1 text-xs text-foreground/50">At least {FEEDBACK_MESSAGE_MIN} characters.</p>
+
+                    <div>
+                      <label htmlFor={`${uid}-email`} className="sr-only">
+                        Your email, so we can reply (optional)
+                      </label>
+                      <Input
+                        id={`${uid}-email`}
+                        type="email"
+                        autoComplete="email"
+                        inputMode="email"
+                        maxLength={254}
+                        value={draft.email}
+                        onChange={(e) => edit({ email: e.target.value })}
+                        placeholder="Your email, so we can reply (optional)"
+                        className="h-12 px-4 text-[15px] placeholder:text-foreground/65"
+                      />
+                    </div>
+
+                    {/* The honeypot, as in the widget: hidden from people and from the tab order,
+                        so only a form filler writes into it, and the server quietly drops that. */}
+                    <div className="hidden" aria-hidden="true">
+                      <label htmlFor={`${uid}-website`}>Website</label>
+                      <input
+                        id={`${uid}-website`}
+                        name="website"
+                        type="text"
+                        tabIndex={-1}
+                        autoComplete="off"
+                        value={draft.website}
+                        onChange={(e) => setDraft((d) => ({ ...d, website: e.target.value }))}
+                      />
+                    </div>
+
+                    {phase.name === 'error' && (
+                      <p className="rounded-xl border border-danger/30 bg-card px-4 py-3 text-sm text-danger" role="alert">
+                        {phase.reason}
+                      </p>
                     )}
-                  </div>
 
-                  <div>
-                    <label htmlFor={`${uid}-email`} className="mb-1.5 block text-sm font-semibold">
-                      Email, so we can reply <span className="font-normal text-foreground/50">(optional)</span>
-                    </label>
-                    <Input
-                      id={`${uid}-email`}
-                      type="email"
-                      autoComplete="email"
-                      inputMode="email"
-                      maxLength={254}
-                      value={draft.email}
-                      onChange={(e) => edit({ email: e.target.value })}
-                      placeholder="you@example.com"
-                    />
-                  </div>
-
-                  {/* The honeypot, as in the widget: hidden from people and from the tab order,
-                      so only a form filler writes into it, and the server quietly drops that. */}
-                  <div className="hidden" aria-hidden="true">
-                    <label htmlFor={`${uid}-website`}>Website</label>
-                    <input
-                      id={`${uid}-website`}
-                      name="website"
-                      type="text"
-                      tabIndex={-1}
-                      autoComplete="off"
-                      value={draft.website}
-                      onChange={(e) => setDraft((d) => ({ ...d, website: e.target.value }))}
-                    />
-                  </div>
-
-                  {phase.name === 'error' && (
-                    <p className="rounded-xl border border-danger/30 bg-danger/5 px-3.5 py-2.5 text-sm text-danger" role="alert">
-                      {phase.reason}
-                    </p>
-                  )}
-
-                  <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                    <p className="max-w-xs text-xs text-foreground/50">
-                      Along with your note we send the page, your browser's user agent, your account if you are signed in, and a salted connection marker, never your IP address.
-                    </p>
-                    <Button
-                      type="submit"
-                      disabled={!canSend || phase.name === 'sending'}
-                      aria-busy={phase.name === 'sending'}
-                    >
-                      {phase.name === 'sending' ? (
+                    <Button type="submit" className="h-12 w-full text-[15px]" disabled={!canSend || sending} aria-busy={sending}>
+                      {sending ? (
                         <>
-                          <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+                          <Loader2 size={17} className="animate-spin" aria-hidden="true" />
                           Sending
                         </>
                       ) : (
-                        'Send'
+                        <>
+                          Send message
+                          <Send size={16} aria-hidden="true" />
+                        </>
                       )}
                     </Button>
-                  </div>
-                </fieldset>
-              </form>
-            )}
-          </motion.div>
+
+                    <p className="text-xs leading-relaxed text-foreground/70">
+                      We attach the page, your browser details, your account if you are signed in, and a hashed
+                      connection marker. Never your IP address.
+                    </p>
+                  </fieldset>
+                </form>
+              )}
+            </div>
+          </motion.section>
         </div>
 
-        <section className="mt-16 sm:mt-20" aria-labelledby={`${uid}-reach`}>
-          <h2
-            id={`${uid}-reach`}
-            className="text-2xl font-bold tracking-tight text-foreground"
-            style={{ fontFamily: 'var(--font-heading)' }}
-          >
-            Other ways to reach us
+        <section aria-labelledby={`${uid}-direct`} className="mt-16 border-t border-border pt-10 lg:mt-20">
+          <h2 id={`${uid}-direct`} className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/70">
+            Reach us directly
           </h2>
-
-          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {INBOXES.map((box) => (
-              <div key={box.address} className="rounded-2xl border border-border bg-card p-5">
-                <div className="flex items-center gap-2">
-                  <div className="grid h-8 w-8 place-items-center rounded-lg bg-accent/10 text-accent">
-                    <Mail size={16} aria-hidden="true" />
-                  </div>
-                  <h3 className="font-semibold text-foreground">{box.title}</h3>
-                </div>
-                <p className="mt-2 text-sm text-foreground/60">{box.body}</p>
-                <a href={`mailto:${box.address}`} className="mt-3 inline-block break-all text-sm font-semibold text-accent hover:underline">
-                  {box.address}
-                </a>
+          <dl className="mt-6 grid gap-x-10 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
+            {DIRECT.map((d) => (
+              <div key={d.href}>
+                <dt className="text-sm text-foreground/70">{d.label}</dt>
+                <dd className="mt-1">
+                  <a
+                    href={d.href}
+                    {...(d.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                    className="break-all text-[15px] font-semibold text-foreground transition-colors hover:text-accent"
+                  >
+                    {d.value}
+                  </a>
+                </dd>
               </div>
             ))}
-            <div className="rounded-2xl border border-border bg-card p-5 sm:col-span-2 lg:col-span-1">
-              <div className="flex items-center gap-2">
-                <div className="grid h-8 w-8 place-items-center rounded-lg bg-accent/10 text-accent">
-                  <CalendarDays size={16} aria-hidden="true" />
-                </div>
-                <h3 className="font-semibold text-foreground">Book a call</h3>
-              </div>
-              <p className="mt-2 text-sm text-foreground/60">Fifteen minutes with the founders, at a time that suits you.</p>
-              <a
-                href={CAL_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-3 inline-block text-sm font-semibold text-accent hover:underline"
-              >
-                Pick a time
-              </a>
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-4 lg:grid-cols-[2fr_1fr]">
-            <div className="rounded-2xl border border-border bg-card p-5">
-              <h3 className="font-semibold text-foreground">The team</h3>
-              <ul className="mt-3 divide-y divide-border">
-                {TEAM.map((p) => (
-                  <li key={p.address} className="flex flex-col gap-0.5 py-2.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
-                    <span className="text-sm text-foreground">
-                      <span className="font-semibold">{p.name}</span>
-                      <span className="text-foreground/55">, {p.role}</span>
-                    </span>
-                    <a href={`mailto:${p.address}`} className="break-all text-sm font-semibold text-accent hover:underline">
-                      {p.address}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="rounded-2xl border border-border bg-card p-5">
-              <h3 className="font-semibold text-foreground">Follow along</h3>
-              <ul className="mt-3 flex flex-wrap gap-2">
-                {SOCIAL_LINKS.map((s) => (
-                  <li key={s.label}>
-                    <a
-                      href={s.href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex rounded-full border border-border px-3.5 py-1.5 text-sm font-semibold text-foreground/75 transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
-                    >
-                      {s.label}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
+          </dl>
         </section>
       </main>
 

@@ -1,147 +1,182 @@
 import { useEffect, useRef } from 'react'
-import { AnimatePresence, motion, useMotionValue, useReducedMotion, useSpring, type Variants } from 'framer-motion'
-import OwlMark, { type OwlVerdict } from './OwlMark'
+import { motion, useMotionValue, useReducedMotion, useSpring, type Variants } from 'framer-motion'
+import { Github } from 'lucide-react'
+import DiscordIcon from './DiscordIcon'
+import LinkedInIcon from './LinkedInIcon'
+import XIcon from './XIcon'
+import YouTubeIcon from './YouTubeIcon'
+import { SOCIALS } from '../lib/brand'
 import { cn } from '../lib/utils'
 
 /**
- * The owl on /feedback: the flat OwlMark, brought to life around the form.
+ * The visual half of /feedback: the deck's night sky (navy depth, two drifting glows, a faint
+ * grid, the orbit rings) with the rendered owl floating in it, and the social row along the
+ * bottom.
  *
- * It floats, blinks, leans toward the pointer and tilts its head while someone types. Its
- * eyes report the send the same way they report a verdict everywhere else: accent while
- * nothing has happened, green once the email went out, amber when the server could not send
+ * The owl is the same soft render the deck and the landing use, and it stays that owl: the
+ * verdict-eyed renders are a different, patterned model, and a bird that changes species on
+ * Send reads as a glitch. The outcome is told by the light behind it instead, in the verdict
+ * colours: accent at rest, green once the email went out, amber when the server could not send
  * and the mailto takes over, red on an error worth retrying. Green only ever follows a
  * delivered send, because the page only reaches `sent` on `delivered: true`.
  *
- * Decorative: the form says everything this shows in words, so the whole stage is hidden
- * from assistive tech. Reduced motion gets a still owl, decided here rather than left to
- * MotionConfig, because an infinite keyframe loop collapsed to zero duration is still a loop.
- * The markup is the same either way; only the animation is skipped.
+ * The panel is always the dark scope, like the deck, whatever the page theme. The owl and the
+ * sky are decorative and hidden from assistive tech; the social links are not. Reduced motion
+ * gets a still owl, decided here rather than left to MotionConfig, because an infinite loop
+ * collapsed to zero duration is still a loop.
  */
 
 export type OwlMood = 'idle' | 'typing' | 'sending' | 'sent' | 'fallback' | 'error'
 
-const VERDICT: Record<OwlMood, OwlVerdict> = {
-  idle: 'neutral',
-  typing: 'neutral',
-  sending: 'neutral',
-  sent: 'allow',
-  fallback: 'warn',
-  error: 'deny',
-}
+type Tone = 'accent' | 'ok' | 'warn' | 'danger'
+const TONES: Tone[] = ['accent', 'ok', 'warn', 'danger']
 
-const LINE: Record<OwlMood, string> = {
-  idle: 'Tell me anything.',
-  typing: 'I am listening.',
-  sending: 'Flying it over...',
-  sent: 'Delivered. Thank you!',
-  fallback: 'Email works too.',
-  error: 'Hmm. Try once more?',
+const TONE: Record<OwlMood, Tone> = {
+  idle: 'accent',
+  typing: 'accent',
+  sending: 'accent',
+  sent: 'ok',
+  fallback: 'warn',
+  error: 'danger',
 }
 
 /**
- * What each mood adds on top of the float. The float runs on its own wrapper, so a mood
- * change never restarts it, and every keyframe list here starts and ends at rest.
+ * What each mood adds on top of the float, which runs on its own wrapper so a mood change
+ * never restarts it. Every keyframe list starts and ends at rest, and the sending wiggle runs
+ * on rotateZ, which composes with rotate, so a tilt eases back instead of snapping.
  */
 const MOOD: Variants = {
-  idle: { y: 0, x: 0, rotate: 0, rotateZ: 0, transition: { rotate: { duration: 0.4 } } },
-  typing: { y: 0, x: 0, rotate: 7, rotateZ: 0, transition: { rotate: { type: 'spring', stiffness: 200, damping: 14 } } },
-  // The wiggle runs on rotateZ, which composes with rotate, so the tilt eases back instead of snapping.
-  sending: { y: 0, x: 0, rotate: 0, rotateZ: [0, -4, 4, 0], transition: { rotate: { duration: 0.3 }, rotateZ: { duration: 0.6, repeat: Infinity, ease: 'easeInOut' } } },
-  sent: { y: [0, -26, 0, -12, 0], x: 0, rotate: 0, rotateZ: 0, transition: { y: { duration: 1, ease: 'easeOut' } } },
-  fallback: { y: 0, x: 0, rotate: -8, rotateZ: 0, transition: { rotate: { type: 'spring', stiffness: 160, damping: 12 } } },
-  error: { y: 0, x: [0, -7, 7, -5, 5, 0], rotate: 0, rotateZ: 0, transition: { x: { duration: 0.5 } } },
+  idle: { y: 0, x: 0, rotate: 0, rotateZ: 0, transition: { rotate: { duration: 0.5 } } },
+  typing: { y: 0, x: 0, rotate: 4, rotateZ: 0, transition: { rotate: { type: 'spring', stiffness: 120, damping: 14 } } },
+  sending: { y: 0, x: 0, rotate: 0, rotateZ: [0, -3, 3, 0], transition: { rotate: { duration: 0.3 }, rotateZ: { duration: 0.7, repeat: Infinity, ease: 'easeInOut' } } },
+  sent: { y: [0, -30, 0, -12, 0], x: 0, rotate: 0, rotateZ: 0, transition: { y: { duration: 1.1, ease: 'easeOut' } } },
+  fallback: { y: 0, x: 0, rotate: -5, rotateZ: 0, transition: { rotate: { type: 'spring', stiffness: 140, damping: 12 } } },
+  error: { y: 0, x: [0, -9, 9, -6, 6, 0], rotate: 0, rotateZ: 0, transition: { x: { duration: 0.5 } } },
 }
 
-const FLOAT = { duration: 3.2, repeat: Infinity, ease: 'easeInOut' } as const
+const SOCIAL_LINKS = [
+  { href: SOCIALS.x, label: 'A-Identity on X', Icon: XIcon },
+  { href: SOCIALS.linkedin, label: 'A-Identity on LinkedIn', Icon: LinkedInIcon },
+  { href: SOCIALS.youtube, label: 'A-Identity on YouTube', Icon: YouTubeIcon },
+  { href: SOCIALS.discord, label: 'Join the A-Identity Discord', Icon: DiscordIcon },
+  { href: SOCIALS.github, label: 'A-Identity on GitHub', Icon: Github },
+].filter((s) => s.href)
 
-/** The facial disc's ink, the fixed brand colour OwlMark draws it in; a lid that matches it reads as a closed eye. */
-const LID = '#192837'
-/** The eye centres and the ring's outer radius on OwlMark's 64-unit grid. */
-const EYES = [24.2, 39.8]
-const EYE_Y = 23.4
-const LID_R = 8.6
+const GRID_MASK = 'radial-gradient(ellipse 75% 65% at 50% 40%, black, transparent 85%)'
 
-export default function FeedbackOwl({
-  mood,
-  className = '',
-  stageClassName = 'h-44 w-44 sm:h-52 sm:w-52 lg:h-60 lg:w-60',
-}: {
-  mood: OwlMood
-  className?: string
-  /** The owl's box. Sized in classes rather than a prop so a phone gets a smaller owl above the form. */
-  stageClassName?: string
-}) {
+export default function FeedbackOwl({ mood, className = '' }: { mood: OwlMood; className?: string }) {
   const still = useReducedMotion() ?? false
-  const hostRef = useRef<HTMLDivElement>(null)
+  const stageRef = useRef<HTMLDivElement>(null)
   const lean = useMotionValue(0)
-  const leanSpring = useSpring(lean, { stiffness: 120, damping: 14 })
+  const leanSpring = useSpring(lean, { stiffness: 110, damping: 16 })
 
   // A few degrees toward the pointer, wherever it is on the page. Never wired for reduced
   // motion, and harmless on touch, where there is no hover to follow.
   useEffect(() => {
     if (still) return
     const onMove = (e: PointerEvent) => {
-      const host = hostRef.current
-      if (!host) return
-      const r = host.getBoundingClientRect()
+      const stage = stageRef.current
+      if (!stage) return
+      const r = stage.getBoundingClientRect()
       const dx = e.clientX - (r.left + r.width / 2)
-      lean.set(Math.max(-8, Math.min(8, dx / 60)))
+      lean.set(Math.max(-5, Math.min(5, dx / 90)))
     }
     window.addEventListener('pointermove', onMove, { passive: true })
     return () => window.removeEventListener('pointermove', onMove)
   }, [still, lean])
 
+  const spin = (dir: 1 | -1, duration: number) =>
+    still ? {} : { animate: { rotate: 360 * dir }, transition: { duration, repeat: Infinity, ease: 'linear' as const } }
+  const drift = (x: number[], y: number[], duration: number) =>
+    still ? {} : { animate: { x, y }, transition: { duration, repeat: Infinity, ease: 'easeInOut' as const } }
+
   return (
-    <div aria-hidden="true" className={cn('flex select-none flex-col items-center', className)}>
-      <div className="flex h-12 items-end">
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div
-            key={mood}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.18 }}
-            className="relative rounded-2xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm"
-          >
-            {LINE[mood]}
-            <span className="absolute -bottom-[7px] left-1/2 h-3 w-3 -translate-x-1/2 rotate-45 border-b border-r border-border bg-card" />
-          </motion.div>
-        </AnimatePresence>
+    <div className={cn('dark relative isolate overflow-hidden rounded-[28px] bg-background text-foreground', className)}>
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0">
+        <div className="absolute inset-0" style={{ background: 'radial-gradient(120% 90% at 50% 0%, var(--card), var(--background) 65%)' }} />
+        <motion.div
+          className="absolute -left-28 -top-36 h-[460px] w-[460px] rounded-full blur-[110px]"
+          style={{ background: 'color-mix(in srgb, var(--accent) 40%, transparent)' }}
+          {...drift([0, 60, 0], [0, 40, 0], 18)}
+        />
+        <motion.div
+          className="absolute -bottom-44 -right-28 h-[460px] w-[460px] rounded-full blur-[120px]"
+          style={{ background: 'color-mix(in srgb, var(--usdc) 28%, transparent)' }}
+          {...drift([0, -50, 0], [0, -30, 0], 22)}
+        />
+        <div
+          className="absolute inset-0 opacity-50"
+          style={{
+            backgroundImage:
+              'linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)',
+            backgroundSize: '48px 48px',
+            maskImage: GRID_MASK,
+            WebkitMaskImage: GRID_MASK,
+          }}
+        />
       </div>
 
-      <div ref={hostRef} className={cn('relative mt-4', stageClassName)}>
-        <div className="absolute -inset-[12%] rounded-full bg-[radial-gradient(closest-side,color-mix(in_oklab,var(--color-accent)_22%,transparent),transparent)]" />
-        <motion.div className="relative h-full w-full" style={{ rotate: still ? 0 : leanSpring, transformOrigin: '50% 90%' }}>
-          <motion.div className="relative h-full w-full" animate={still ? undefined : { y: [0, -8, 0] }} transition={FLOAT}>
-            <motion.div className="relative h-full w-full" variants={MOOD} animate={still ? undefined : mood}>
-              <OwlMark verdict={VERDICT[mood]} size={240} className="block h-full w-full drop-shadow-xl" />
-              <svg viewBox="0 0 64 64" className="absolute inset-0 h-full w-full" focusable="false">
-                {EYES.map((cx) => (
-                  // framer-motion places an SVG element's transform origin on its own box, so
-                  // originY 0 is the top of the lid: it closes downward over the eye.
-                  <motion.ellipse
-                    key={cx}
-                    cx={cx}
-                    cy={EYE_Y}
-                    rx={LID_R}
-                    ry={LID_R}
-                    fill={LID}
-                    style={{ originY: 0 }}
-                    initial={{ scaleY: 0 }}
-                    animate={still ? undefined : { scaleY: [0, 0, 1, 0, 0] }}
-                    transition={{ duration: 4.2, times: [0, 0.9, 0.93, 0.96, 1], repeat: Infinity, ease: 'easeInOut' }}
-                  />
-                ))}
-              </svg>
+      <div aria-hidden="true" className="absolute inset-x-0 bottom-16 top-0 flex items-center justify-center">
+        <div ref={stageRef} className="relative aspect-square h-[84%] max-h-[460px]">
+          {/* The outcome light: one layer per tone, crossfaded, so the colour change is a fade
+              rather than a jump. It breathes while a send is in flight. */}
+          {TONES.map((tone) => (
+            <motion.div
+              key={tone}
+              // The class is what the prerendered page shows before framer takes over the opacity
+              // inline, so only the resting accent layer is lit there.
+              className={cn('absolute inset-[4%] rounded-full blur-[80px]', tone === 'accent' ? 'opacity-45' : 'opacity-0')}
+              style={{ background: `color-mix(in srgb, var(--${tone}) 70%, transparent)` }}
+              initial={false}
+              animate={{
+                opacity: TONE[mood] !== tone ? 0 : mood === 'sending' && !still ? [0.45, 0.85, 0.45] : tone === 'accent' ? 0.45 : 1,
+              }}
+              transition={mood === 'sending' && !still ? { duration: 1.2, repeat: Infinity, ease: 'easeInOut' } : { duration: still ? 0 : 0.6 }}
+            />
+          ))}
+          <motion.svg viewBox="0 0 100 100" className="absolute inset-[2%] h-[96%] w-[96%]" {...spin(1, 70)}>
+            <circle cx="50" cy="50" r="49" fill="none" stroke="var(--accent)" strokeOpacity="0.5" strokeWidth="0.25" strokeDasharray="0.8 2.4" />
+            <circle cx="50" cy="1" r="0.9" fill="var(--accent)" />
+          </motion.svg>
+          <motion.svg viewBox="0 0 100 100" className="absolute inset-[16%] h-[68%] w-[68%]" {...spin(-1, 50)}>
+            <circle cx="50" cy="50" r="49" fill="none" stroke="var(--usdc)" strokeOpacity="0.45" strokeWidth="0.3" strokeDasharray="6 5" />
+            <circle cx="99" cy="50" r="1.1" fill="var(--usdc)" />
+          </motion.svg>
+          <motion.div className="absolute inset-0" style={{ rotate: still ? 0 : leanSpring, transformOrigin: '50% 85%' }}>
+            <motion.div className="absolute inset-0" animate={still ? undefined : { y: [0, -12, 0] }} transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}>
+              <motion.div className="absolute inset-0" variants={MOOD} animate={still ? undefined : mood}>
+                <img
+                  src="/mascots/owl-soft.png"
+                  alt=""
+                  width={700}
+                  height={700}
+                  draggable={false}
+                  className="absolute inset-0 h-full w-full select-none object-contain"
+                  style={{ filter: 'drop-shadow(0 28px 40px rgba(0,0,0,0.45))' }}
+                />
+              </motion.div>
             </motion.div>
           </motion.div>
-        </motion.div>
-        <motion.div
-          className="absolute -bottom-1 left-1/4 h-3 w-1/2 rounded-[50%] bg-foreground/40 blur-[3px]"
-          initial={{ scaleX: 1, opacity: 0.3 }}
-          animate={still ? undefined : { scaleX: [1, 0.84, 1], opacity: [0.3, 0.18, 0.3] }}
-          transition={FLOAT}
-        />
+        </div>
+      </div>
+
+      <div className="absolute inset-x-0 bottom-0 flex h-16 items-center justify-between gap-4 border-t border-border/60 bg-background/45 px-5 sm:px-6">
+        <span className="hidden text-sm text-foreground/60 sm:block">Follow A-Identity</span>
+        <ul className="mx-auto flex items-center gap-1 sm:mx-0">
+          {SOCIAL_LINKS.map(({ href, label, Icon }) => (
+            <li key={label}>
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={label}
+                className="grid h-9 w-9 place-items-center rounded-full text-foreground/70 transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Icon size={17} />
+              </a>
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   )
