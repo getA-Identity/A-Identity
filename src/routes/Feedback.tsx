@@ -1,13 +1,14 @@
 import { useEffect, useId, useRef, useState, type FocusEvent, type FormEvent } from 'react'
 import { motion } from 'framer-motion'
-import { Check, Loader2, Mail, Send } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, Check, Loader2, Mail, Send } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import PageHeader from '../components/PageHeader'
 import SiteFooter from '../components/sections/SiteFooter'
 import ThemeScope from '../components/ThemeScope'
 import FeedbackOwl, { type OwlMood } from '../components/FeedbackOwl'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
-import { CAL_URL, CONTACT, EASE_OUT_EXPO } from '../lib/brand'
+import { CONTACT, EASE_OUT_EXPO, MEETING_URL } from '../lib/brand'
 import { usePageMeta } from '../lib/head'
 import { cn } from '../lib/utils'
 import {
@@ -21,8 +22,10 @@ import {
 } from '../lib/feedback'
 
 /**
- * /feedback: feedback, general inquiries and requests. The closing slide of the deck (Demo Day
- * has no live Q&A) sends people here through a QR code, so most arrive on a phone, once.
+ * /connect (and /feedback, the same page): two next steps first, verifying an agent or partner
+ * and booking an investor call, then feedback, general inquiries and requests. The closing slide
+ * of the deck (Demo Day has no live Q&A) sends people to /connect through a QR code, so most
+ * arrive on a phone, once; /start redirects there too.
  *
  * Two halves and nothing else: the owl in the deck's night sky on one side, one short form on
  * the other, and the direct addresses in a single row underneath.
@@ -49,11 +52,29 @@ const fieldClass =
 const DIRECT = [
   { label: 'General', value: CONTACT.hello, href: `mailto:${CONTACT.hello}` },
   { label: 'Developers and agents', value: CONTACT.agents, href: `mailto:${CONTACT.agents}` },
-  { label: 'A call with the founders', value: 'Book 15 minutes', href: CAL_URL, external: true },
-  { label: 'Aybars Dorman, CEO', value: 'aybars@a-identity.xyz', href: 'mailto:aybars@a-identity.xyz' },
+  { label: 'A call with the founders', value: 'Book a call', href: MEETING_URL, external: true },
+  { label: 'Aybars Dorman, CEO', value: CONTACT.ceo, href: `mailto:${CONTACT.ceo}` },
   { label: 'Meriç Cintosun, CTO', value: 'meric@a-identity.xyz', href: 'mailto:meric@a-identity.xyz' },
   { label: 'Müge Ayşe Polat, Head of Brand and Strategy', value: 'muge@a-identity.xyz', href: 'mailto:muge@a-identity.xyz' },
 ]
+
+const ctaClass =
+  'group flex items-center gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm transition-colors hover:border-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+
+const META = {
+  '/connect': {
+    title: 'Connect · A-Identity',
+    description:
+      'Verify an agent or partner, book a call with the A-Identity founders, or send feedback, a general inquiry or a request.',
+    canonical: 'https://a-identity.xyz/connect',
+  },
+  '/feedback': {
+    title: 'Feedback and inquiries · A-Identity',
+    description:
+      'Send the A-Identity team feedback, a general inquiry or a request. It is emailed to the team inbox, and every direct address is on this page.',
+    canonical: 'https://a-identity.xyz/feedback',
+  },
+} as const
 
 const rise = {
   initial: { opacity: 0, y: 16 },
@@ -61,13 +82,8 @@ const rise = {
   transition: { duration: 0.6, ease: EASE_OUT_EXPO },
 }
 
-export default function Feedback() {
-  usePageMeta({
-    title: 'Feedback and inquiries · A-Identity',
-    description:
-      'Send the A-Identity team feedback, a general inquiry or a request. It is emailed to the team inbox, and every direct address is on this page.',
-    canonical: 'https://a-identity.xyz/feedback',
-  })
+export default function Feedback({ path = '/feedback' }: { path?: keyof typeof META }) {
+  usePageMeta(META[path])
 
   const uid = useId()
   const [draft, setDraft] = useState<FeedbackDraft>(EMPTY)
@@ -153,10 +169,29 @@ export default function Feedback() {
               Let's talk.
             </h1>
             <p className="mt-4 max-w-md text-lg leading-relaxed text-foreground/70">
-              Feedback, a question or a request. It goes straight to the team.
+              Verify an agent, book a call, or write to us. Notes go straight to the team.
             </p>
 
-            <div className="mt-8">
+            <div className="mt-7 grid gap-3 sm:grid-cols-2">
+              <Link to="/explorer" className={ctaClass}>
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-accent text-sm font-bold text-white">1</span>
+                <span className="min-w-0 flex-1 text-[15px] font-semibold leading-snug text-foreground">Verify your agent or partner</span>
+                <ArrowRight size={16} className="shrink-0 text-foreground/50 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+              </Link>
+              <a href={MEETING_URL} target="_blank" rel="noopener noreferrer" className={ctaClass}>
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-accent text-sm font-bold text-white">2</span>
+                <span className="min-w-0 flex-1 text-[15px] font-semibold leading-snug text-foreground">Book an investor call</span>
+                <ArrowUpRight size={16} className="shrink-0 text-foreground/50" aria-hidden="true" />
+              </a>
+            </div>
+
+            <p className="mt-7 flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.16em] text-foreground/70">
+              <span className="h-px flex-1 bg-border" aria-hidden="true" />
+              Or write to us
+              <span className="h-px flex-1 bg-border" aria-hidden="true" />
+            </p>
+
+            <div className="mt-5">
               {phase.name === 'sent' ? (
                 <div className="flex flex-col items-start gap-5 rounded-3xl border border-border bg-card p-7 shadow-sm" role="status">
                   <div className="grid h-12 w-12 place-items-center rounded-full bg-ok/10 text-ok">

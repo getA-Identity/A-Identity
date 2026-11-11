@@ -128,6 +128,9 @@ export default function App() {
         <Route path="/brand-kit" element={<Navigate to="/brand" replace />} />
         <Route path="/contact" element={<Contact />} />
         <Route path="/feedback" element={<Feedback />} />
+        <Route path="/connect" element={<Feedback path="/connect" />} />
+        {/* The short link from the deck; vercel.json redirects it too, before the app loads. */}
+        <Route path="/start" element={<Navigate to="/connect" replace />} />
         <Route path="/faq" element={<Faq />} />
         <Route path="/blog" element={<Blog />} />
         <Route path="/blog/:slug" element={<BlogPost />} />

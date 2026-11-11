@@ -5,6 +5,11 @@
       "source": "/blog/instant-finality-algorand-agents",
       "destination": "/blog",
       "permanent": true
+    },
+    {
+      "source": "/start",
+      "destination": "/connect",
+      "permanent": false
     }
   ],
   "rewrites": [

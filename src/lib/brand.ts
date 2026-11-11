@@ -22,6 +22,13 @@ const DOCS_ENV = (import.meta.env.VITE_DOCS_URL as string | undefined)?.trim()
  */
 export const CAL_URL = 'https://cal.com/meric-cintosun-knbum1/secret'
 
+/**
+ * The company's own meeting calendar (Google Calendar booking page), which the /connect and
+ * /feedback page and its investor-call button use. CAL_URL stays where it is embedded, because a
+ * Google booking page does not render inside an iframe.
+ */
+export const MEETING_URL = 'https://calendar.app.google/V4ZWdcrRSn3aTfro7'
+
 export const DOCS_URL = DOCS_ENV ? DOCS_ENV.replace(/\/$/, '') : 'https://a-identity.mintlify.site'
 
 /** The three open protocols A-Identity connects, each with its own color. */
@@ -196,6 +203,7 @@ export const ASK_AI_LINKS = [
 export const CONTACT = {
   agents: 'agents@a-identity.xyz',
   hello: 'hello@a-identity.xyz',
+  ceo: 'ceo@a-identity.xyz',
 } as const
 
 export const BACKGROUND_VIDEO =

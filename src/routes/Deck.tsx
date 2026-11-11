@@ -872,7 +872,7 @@ function SlideClose() {
   const print = usePrint()
   const links = [
     ['Product', 'a-identity.xyz'],
-    ['Contact', 'a-identity.xyz/feedback'],
+    ['Contact', 'a-identity.xyz/connect'],
     ['Arc Mainnet receipts', 'a-identity.xyz/proof/arc'],
     ['Code', 'github.com/getA-Identity/A-Identity'],
     ['X', 'x.com/ai_dentity'],
@@ -924,14 +924,15 @@ function SlideClose() {
               transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
             />
             {/* Demo Day has no live Q&A, so the last slide hands the audience a way in: a QR to
-                /feedback. public/qr/feedback.svg encodes https://a-identity.xyz/feedback?ref=demoday,
-                so the visits it brings can be told apart; public/qr/feedback.png is the same code
-                for a deck built elsewhere. Cream and ink are the brand's fixed colours, kept in both
-                themes like a logo, because a QR scans best dark on light. */}
+                /connect (verify an agent, book an investor call, or write to us). public/qr/connect.svg
+                encodes https://a-identity.xyz/connect?ref=demoday, so the visits it brings can be told
+                apart; public/qr/connect.png is the same code for a deck built elsewhere. Cream and ink
+                are the brand's fixed colours, kept in both themes like a logo, because a QR scans best
+                dark on light. */}
             <div className="relative rounded-[32px] bg-cream p-6 shadow-2xl">
-              <img src="/qr/feedback.svg" alt="QR code for a-identity.xyz/feedback" className="h-[330px] w-[330px]" draggable={false} />
-              <p className="mt-3 text-center text-[14px] font-semibold uppercase tracking-[0.18em] text-ink/60">Feedback, inquiries, requests</p>
-              <p className="mt-1 text-center text-[24px] font-semibold text-ink">a-identity.xyz/feedback</p>
+              <img src="/qr/connect.svg" alt="QR code for a-identity.xyz/connect" className="h-[330px] w-[330px]" draggable={false} />
+              <p className="mt-3 text-center text-[14px] font-semibold uppercase tracking-[0.18em] text-ink/60">Verify, book a call, write to us</p>
+              <p className="mt-1 text-center text-[24px] font-semibold text-ink">a-identity.xyz/connect</p>
             </div>
             {/* Perched on the card's top edge, clear of the code and its quiet zone. */}
             <Owl src="/mascots/owl-soft.png" className="absolute -top-[182px] right-[8px] w-[190px]" />

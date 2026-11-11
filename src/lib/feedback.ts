@@ -112,11 +112,11 @@ export function feedbackMailto(draft: FeedbackDraft): string {
 
 /**
  * Pages where the corner button stays away. The deck is presented full screen, live, and the
- * button would sit on every slide; its closing slide points to /feedback instead. And /feedback
- * is the form itself, so a second way into the same form would only cover it on a phone.
+ * button would sit on every slide; its closing slide points to /connect instead. And /feedback
+ * and /connect are the form itself, so a second way into the same form would only cover it on a phone.
  */
 export function hidesFeedbackWidget(pathname: string): boolean {
-  return pathname === '/deck' || pathname === '/feedback'
+  return pathname === '/deck' || pathname === '/feedback' || pathname === '/connect'
 }
 
 /**
