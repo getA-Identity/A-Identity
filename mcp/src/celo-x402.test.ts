@@ -10,6 +10,10 @@ import {
   celoServeTool,
   celoProof,
   celoIdentitySummary,
+  celoPauseResponse,
+  celoSettlementPause,
+  celoStatusReport,
+  _setCeloSettlementPauseForTests,
   type CeloX402Status,
 } from './celo-x402.js'
 import { getChainById, requireChain } from './chains/index.js'
@@ -260,6 +264,8 @@ test('a settle refusal is a 502 with no resubmission: exactly one verify and one
     persist: async (r) => { persisted.push(r) },
     handlers: { reputation_score: async () => { handlerRan = true; return {} } },
     env: CONFIGURED_ENV,
+    // The chain is not read in this test: what a read adds is pinned further down.
+    authorizationUsed: async () => null,
   })
   assert.equal(out.httpStatus, 502)
   assert.ok((out.body as { reason: string }).reason.includes('settlement rejected'))
@@ -520,6 +526,8 @@ test('a settle timeout tells the buyer the money may have moved, because the fac
     persist: async (r) => { persisted.push(r) },
     handlers: { verify_agent: async () => { handlerRan = true; return {} } },
     env: CONFIGURED_ENV,
+    // With the chain unreadable, the maybe is all that can honestly be said.
+    authorizationUsed: async () => null,
   })
   assert.equal(out.httpStatus, 502)
   const body = out.body as { error: string; note: string }
@@ -531,4 +539,137 @@ test('a settle timeout tells the buyer the money may have moved, because the fac
   assert.equal(fac.calls.filter((u) => u.endsWith('/settle')).length, 1)
   assert.equal(handlerRan, false)
   assert.deepEqual(persisted, [], 'nothing may be recorded as settled when we do not know that it was')
+})
+
+// ── what a failed settle leaves open, settled by the chain ────────────────────────
+
+const T0 = new Date('2026-11-11T00:00:00.000Z')
+/** The live answer of 2026-11-11, word for word, when the first outside buyer of /check/celo signed. */
+const OUT_OF_FUNDS = jsonRes(402, {
+  success: false,
+  transaction: '',
+  network: 'celo',
+  payer: BUYER,
+  error: 'insufficient_credits',
+  errorMessage: 'Out of mainnet settlement funds (this settlement costs 1405 micro-USD). Top up at x402.celo.org.',
+})
+
+test('an empty settlement balance at the facilitator pauses the rail: 503, nothing charged, and the challenge waits too', async () => {
+  // The facilitator refused to broadcast for us, the chain says the nonce is unspent, so the
+  // buyer is told nothing was charged, and nobody else is asked to sign until a top-up.
+  _setCeloSettlementPauseForTests(null)
+  try {
+    const status = celoX402Status(CONFIGURED_ENV)
+    const fac = fakeFacilitator({ settle: OUT_OF_FUNDS })
+    const persisted: CeloSettlementRecord[] = []
+    let handlerRan = false
+    const deps = {
+      fetchImpl: fac.fetchImpl,
+      persist: async (r: CeloSettlementRecord) => { persisted.push(r) },
+      handlers: { risk_check: async () => { handlerRan = true; return {} } },
+      env: CONFIGURED_ENV,
+      now: () => T0,
+      authorizationUsed: async () => false,
+    }
+    const out = await celoServeTool('risk_check', { agentId: '#9759' }, paymentHeader(status), status, deps)
+    assert.equal(out.httpStatus, 503)
+    const body = out.body as { error: string; reason: string; charged: unknown; note: string; since: string; until: string }
+    assert.equal(body.error, 'celo settlement paused')
+    assert.match(body.reason, /settlement funds/)
+    assert.equal(body.charged, false)
+    assert.match(body.note, /nothing was charged/)
+    assert.match(body.note, /x402\.celo\.org/)
+    assert.equal(body.since, T0.toISOString())
+    assert.equal(body.until, new Date(T0.getTime() + 15 * 60_000).toISOString())
+    assert.equal(handlerRan, false)
+    assert.deepEqual(persisted, [])
+
+    // During the pause: the status says so, the challenge is refused, and a paid call is not even attempted.
+    const later = new Date(T0.getTime() + 60_000)
+    const report = celoStatusReport(CONFIGURED_ENV, later) as { settlement: { paused: boolean; until?: string } }
+    assert.equal(report.settlement.paused, true)
+    assert.equal(report.settlement.until, body.until)
+    assert.equal(celoPauseResponse(later)?.httpStatus, 503)
+    const callsBefore = fac.calls.length
+    const again = await celoServeTool('risk_check', { agentId: '#9759' }, paymentHeader(status), status, { ...deps, now: () => later })
+    assert.equal(again.httpStatus, 503)
+    assert.equal(fac.calls.length, callsBefore, 'a paused rail does not call the facilitator')
+
+    // After it: the pause has expired on its own, and the next attempt is a real one.
+    const after = new Date(T0.getTime() + 16 * 60_000)
+    assert.equal(celoPauseResponse(after), null)
+    assert.deepEqual(celoSettlementPause(after), { paused: false })
+    const retry = await celoServeTool('risk_check', { agentId: '#9759' }, paymentHeader(status), status, { ...deps, now: () => after })
+    assert.equal(retry.httpStatus, 503, 'still out of funds: the attempt re-arms the pause')
+    assert.equal(fac.calls.length, callsBefore + 2, 'the retry went to the facilitator (verify, settle)')
+  } finally {
+    _setCeloSettlementPauseForTests(null)
+  }
+})
+
+test('a settle the facilitator did not confirm but the chain did is served and recorded from the read-back', async () => {
+  // The case the old 8s cap produced ~16% of the time: the transfer lands, the answer does
+  // not arrive. The buyer paid, so the buyer is served, the proof log says so, and the
+  // facilitator's own record supplies the hash.
+  const status = celoX402Status(CONFIGURED_ENV)
+  const fac = fakeFacilitator({ settle: 'throw' })
+  const persisted: CeloSettlementRecord[] = []
+  let handlerRan = 0
+  const TX = '0x' + 'ee'.repeat(32)
+  const asked: string[] = []
+  const out = await celoServeTool('verify_agent', { agentId: '#9759' }, paymentHeader(status), status, {
+    fetchImpl: fac.fetchImpl,
+    persist: async (r) => { persisted.push(r) },
+    handlers: { verify_agent: async () => { handlerRan++; return { ok: true } } },
+    env: CONFIGURED_ENV,
+    now: () => T0,
+    authorizationUsed: async (payer, nonce) => { asked.push(`${payer}:${nonce}`); return true },
+    settleStatus: async () => ({ status: 'consumed', tx: TX }),
+  })
+  assert.equal(out.httpStatus, 200)
+  const body = out.body as { paid: boolean; settlement: { tx?: string; confirmedBy: string; facilitatorAnswer?: string; note?: string; settledAt: string } }
+  assert.equal(body.paid, true)
+  assert.equal(body.settlement.confirmedBy, 'read-back')
+  assert.equal(body.settlement.tx, TX)
+  assert.equal(body.settlement.settledAt, T0.toISOString())
+  assert.match(body.settlement.facilitatorAnswer ?? '', /facilitator unreachable/)
+  assert.match(body.settlement.note ?? '', /spent on-chain/)
+  assert.equal(handlerRan, 1)
+  assert.equal(persisted.length, 1)
+  assert.equal(persisted[0].tx, TX)
+  assert.equal(persisted[0].payer, BUYER)
+  assert.deepEqual(asked, [`${BUYER}:0x${'22'.repeat(32)}`], 'the read is for the buyer and the nonce that was signed')
+  // Still exactly one settle attempt: the chain, not a resubmission, is what confirmed it.
+  assert.equal(fac.calls.filter((u) => u.endsWith('/settle')).length, 1)
+})
+
+test('a settle failure with the authorization unspent says nothing was charged; an unreadable chain keeps the honest maybe', async () => {
+  const status = celoX402Status(CONFIGURED_ENV)
+  const run = async (settle: FakeResponse | 'throw', used: boolean | null) => {
+    const fac = fakeFacilitator({ settle })
+    const persisted: CeloSettlementRecord[] = []
+    const out = await celoServeTool('risk_check', { agentId: '#1' }, paymentHeader(status), status, {
+      fetchImpl: fac.fetchImpl,
+      persist: async (r) => { persisted.push(r) },
+      handlers: { risk_check: async () => ({}) },
+      env: CONFIGURED_ENV,
+      authorizationUsed: async () => used,
+    })
+    assert.deepEqual(persisted, [])
+    return { status: out.httpStatus, body: out.body as { error: string; charged: unknown; note: string } }
+  }
+  const refusedUnspent = await run(jsonRes(500, { error: 'settlement rejected' }), false)
+  assert.equal(refusedUnspent.status, 502)
+  assert.equal(refusedUnspent.body.charged, false)
+  assert.match(refusedUnspent.body.note, /unspent on-chain, so nothing was charged/)
+  const timedOutUnspent = await run('throw', false)
+  assert.equal(timedOutUnspent.status, 502)
+  assert.equal(timedOutUnspent.body.charged, false)
+  assert.doesNotMatch(timedOutUnspent.body.note, /may have moved/, 'the chain said the nonce is unspent, so the money did not move')
+  const timedOutUnknown = await run('throw', null)
+  assert.equal(timedOutUnknown.body.charged, 'unknown')
+  assert.match(timedOutUnknown.body.note, /may have moved/)
+  const refusedUnknown = await run(jsonRes(500, { error: 'settlement rejected' }), null)
+  assert.equal(refusedUnknown.body.charged, 'unknown')
+  assert.match(refusedUnknown.body.note, /could not be read/)
 })

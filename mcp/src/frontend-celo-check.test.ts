@@ -39,7 +39,16 @@ type Terms = {
   validSeconds: number
   domain: { name: string; version: string }
 }
-type RailStatus = { network: string; chain: string; payTo: string; facilitator: string; usdc: string; explorer: string | null; prices: Record<string, number> }
+type RailStatus = {
+  network: string
+  chain: string
+  payTo: string
+  facilitator: string
+  usdc: string
+  explorer: string | null
+  prices: Record<string, number>
+  pause: { since: string; until: string; reason: string } | null
+}
 type Stop = { kind: string; text?: string; reason?: string; tx?: string | null; payTo?: string; status?: number; wallet?: string }
 type Answer = { decision: string | null; risk: string | null; reasons: string[]; agentId: string; tx: string | null; payer: string | null; raw: Record<string, unknown> }
 type End = { kind: 'paid'; answer: Answer } | { kind: 'stopped'; stop: Stop }
@@ -468,7 +477,20 @@ test('every ending says what happened to the money, and only the true ones say n
     { status: 402, body: challenge, kind: 'refused', charged: 'no' },
     { status: 501, body: { error: 'celo x402 not configured' }, kind: 'unavailable', charged: 'no' },
     { status: 502, body: { error: 'celo facilitator verify failed', reason: 'facilitator answered 503' }, kind: 'unavailable', charged: 'no' },
-    { status: 502, body: { error: 'celo facilitator settle failed', reason: 'timeout' }, kind: 'ambiguous', charged: 'maybe' },
+    { status: 502, body: { error: 'celo facilitator settle failed', reason: 'timeout', charged: 'unknown' }, kind: 'ambiguous', charged: 'maybe' },
+    { status: 502, body: { error: 'celo facilitator settle failed', reason: 'settlement rejected', charged: false }, kind: 'settle_failed', charged: 'no' },
+    {
+      status: 503,
+      body: {
+        error: 'celo settlement paused',
+        reason: 'Out of mainnet settlement funds (this settlement costs 1405 micro-USD). Top up at x402.celo.org.',
+        since: '2026-11-11T00:00:00.000Z',
+        until: '2026-11-11T00:15:00.000Z',
+        charged: false,
+      },
+      kind: 'paused',
+      charged: 'no',
+    },
     { status: 500, body: { error: 'tool execution failed after settlement', settlement: { settled: true, tx: SETTLE_TX } }, kind: 'paid_unreadable', charged: 'yes' },
     { status: 418, body: {}, kind: 'unexpected', charged: 'maybe' },
   ]
@@ -512,4 +534,44 @@ test('the Celo pay check is routed, in the sitemap, smoked and published for age
   const lib = repo('src/lib/celo/x402pay.ts')
   assert.doesNotMatch(lib, /^import (?!type )/m, 'the pay module has no runtime imports, so this suite can load it')
   assert.doesNotMatch(lib, /0x[0-9a-fA-F]{40}/, 'no address is typed into the pay module')
+})
+
+test('a paused rail is refused before the wallet is asked anything', async () => {
+  // The rail pauses itself after the facilitator refuses to settle for us (an empty
+  // settlement balance, 2026-11-11). The page reads that from the status and stops at
+  // the door: no quote, no wallet, no signature for nothing.
+  const p = await pay()
+  const paused = p.readStatus({
+    ...statusBody(),
+    settlement: { paused: true, since: '2026-11-11T00:00:00.000Z', until: '2026-11-11T00:15:00.000Z', reason: 'Out of mainnet settlement funds' },
+  })
+  assert.ok(paused && paused.pause, 'the status carries the pause')
+  assert.equal(paused.pause.until, '2026-11-11T00:15:00.000Z')
+  const open = p.readStatus({ ...statusBody(), settlement: { paused: false } })
+  assert.equal(open?.pause, null)
+
+  const { wallet, calls } = fakeWallet()
+  let quoted = 0
+  const end = await p.purchase({
+    tool: TOOL,
+    agentId: '#9759',
+    status: paused,
+    expectedNetwork: celo.caip2,
+    wallet,
+    quote: async () => {
+      quoted++
+      return quote()
+    },
+    post: async () => ({ status: 500, body: {} }),
+    randomBytes: bytes32,
+    now: () => NOW,
+    step: () => {},
+    alive: () => true,
+  })
+  assert.ok(end && end.kind === 'stopped')
+  assert.equal(end.stop.kind, 'paused')
+  assert.match(p.stopText(end.stop), /paused/)
+  assert.match(p.stopText(end.stop), /Nothing was charged\.$/)
+  assert.equal(quoted, 0)
+  assert.deepEqual(calls, [])
 })

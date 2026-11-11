@@ -426,7 +426,7 @@ export default function CeloCheck() {
 
   const mood: Mood =
     view.s === 'paid' ? (view.answer.decision ? VERDICT[view.answer.decision].mood : 'curious') : view.s === 'stopped' ? (moneyMayBeOut(view.stop) ? 'error' : 'curious') : inFlight ? 'thinking' : 'idle'
-  const canPay = !inFlight && status !== 'down'
+  const canPay = !inFlight && status !== 'down' && !rail?.pause
 
   return (
     <ThemeScope surface="background" className="flex min-h-screen w-full flex-col" style={{ fontFamily: 'var(--font-body)' }}>
@@ -510,7 +510,13 @@ export default function CeloCheck() {
           </div>
 
           <p className="mt-3 text-center text-xs text-foreground/50">
-            {rail ? (
+            {rail?.pause ? (
+              <span className="font-semibold text-warn">
+                Settlement is paused on our side: the facilitator refused our last settlement ({rail.pause.reason}). Nothing can be bought until our
+                balance there is topped up, and nothing is charged. The rail tries again after{' '}
+                {rail.pause.until ? new Date(rail.pause.until).toLocaleTimeString() : 'a while'}.
+              </span>
+            ) : rail ? (
               <>
                 Pays <AddrLink address={rail.payTo} /> through {rail.facilitator.replace(/^https?:\/\//, '')}. Price and payee read live from the rail; the quote is
                 refused if either differs.

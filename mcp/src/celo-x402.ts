@@ -52,6 +52,114 @@ const FACILITATOR_TESTNET = 'https://api.x402.sepolia.celo.org'
 const FACILITATOR_VERIFY_TIMEOUT_MS = 8000
 const FACILITATOR_SETTLE_TIMEOUT_MS = 20000
 
+// ── the settlement pause ──────────────────────────────────────────────────────────
+
+/**
+ * The facilitator settles on credit: each mainnet settlement is charged to OUR seller
+ * account (gas at cost plus 0.3% of the payment, per its /api/config read on 2026-11-11),
+ * and when that balance is empty /settle answers 402 insufficient_credits and broadcasts
+ * nothing. The first outside buyer of /check/celo met exactly that on 2026-11-11, after a
+ * signature that was then good for nothing. Until the account is topped up at
+ * x402.celo.org every attempt ends the same way, so the rail pauses itself for a while
+ * after such an answer: the challenge and the paid call both answer 503 with the reason,
+ * and no buyer signs for nothing. Nothing here can read the balance, so the pause expires
+ * on its own; the next attempt after it either settles or re-arms it.
+ */
+const SETTLEMENT_PAUSE_MS = 15 * 60_000
+let settlementPause: { since: Date; reason: string } | null = null
+
+const TOP_UP_NOTE =
+  'Our settlement balance at the Celo facilitator (x402.celo.org) is empty, so it refuses to broadcast: nothing is served and nothing is charged until it is topped up. The rail answers 503 for 15 minutes after such a refusal, then tries again.'
+
+export type CeloSettlementPause = { paused: false } | { paused: true; since: string; until: string; reason: string }
+
+/** Whether the rail is holding off on settlements right now, and why. */
+export function celoSettlementPause(now: Date = new Date()): CeloSettlementPause {
+  if (!settlementPause) return { paused: false }
+  const until = settlementPause.since.getTime() + SETTLEMENT_PAUSE_MS
+  if (now.getTime() >= until) {
+    settlementPause = null
+    return { paused: false }
+  }
+  return { paused: true, since: settlementPause.since.toISOString(), until: new Date(until).toISOString(), reason: settlementPause.reason }
+}
+
+/** The 503 the rail answers while paused, for the challenge and the paid call alike; null when it is not paused. */
+export function celoPauseResponse(now: Date = new Date()): { httpStatus: 503; body: Record<string, unknown> } | null {
+  const p = celoSettlementPause(now)
+  if (!p.paused) return null
+  return {
+    httpStatus: 503,
+    body: { error: 'celo settlement paused', reason: p.reason, since: p.since, until: p.until, charged: false, note: TOP_UP_NOTE },
+  }
+}
+
+/** Tests arm and clear the pause through this; nothing in production calls it. */
+export function _setCeloSettlementPauseForTests(p: { since: Date; reason: string } | null): void {
+  settlementPause = p
+}
+
+/** EIP-3009 on Circle's USDC: whether an authorizer's nonce has been spent. Read live on
+ *  Celo on 2026-11-11: false for a fresh nonce, true for the nonce of a 2026-08-09 settlement. */
+const USDC_AUTHORIZATION_ABI = [
+  {
+    type: 'function',
+    name: 'authorizationState',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'authorizer', type: 'address' },
+      { name: 'nonce', type: 'bytes32' },
+    ],
+    outputs: [{ type: 'bool' }],
+  },
+] as const
+
+/** Whether the buyer's authorization is spent on-chain: the fact that settles what a failed
+ *  /settle leaves open. Null when the chain could not be read, never a guess. */
+async function readAuthorizationUsed(chain: ChainDescriptor, payer: string, nonce: string): Promise<boolean | null> {
+  const usdc = chain.contracts.usdc
+  if (!usdc || !/^0x[0-9a-fA-F]{40}$/.test(payer) || !/^0x[0-9a-fA-F]{64}$/.test(nonce)) return null
+  try {
+    const client = await evmPublicClient(chain)
+    const used = await raceTimeout(
+      client.readContract({
+        address: usdc as `0x${string}`,
+        abi: USDC_AUTHORIZATION_ABI,
+        functionName: 'authorizationState',
+        args: [payer as `0x${string}`, nonce as `0x${string}`],
+      }),
+      CELO_READ_TIMEOUT_MS,
+    )
+    return typeof used === 'boolean' ? used : null
+  } catch {
+    return null
+  }
+}
+
+/** The facilitator's own record of one authorization (GET /settle/status, live on
+ *  2026-11-11: status "unspent" or "consumed", source "chain", transaction when it has it).
+ *  Used for the hash after a read-back; null when it does not answer. */
+async function readSettleStatus(
+  fetchImpl: typeof fetch,
+  facilitator: string,
+  asset: string,
+  payer: string,
+  nonce: string,
+): Promise<{ status: string | null; tx: string | null } | null> {
+  try {
+    const url = `${facilitator}/settle/status?asset=${encodeURIComponent(asset)}&payer=${encodeURIComponent(payer)}&nonce=${encodeURIComponent(nonce)}`
+    const res = await fetchImpl(url, { signal: AbortSignal.timeout(5000) })
+    const json = (await res.json()) as Record<string, unknown> | null
+    if (res.status !== 200 || !json || typeof json !== 'object') return null
+    return {
+      status: typeof json.status === 'string' ? json.status : null,
+      tx: typeof json.transaction === 'string' && json.transaction.startsWith('0x') ? json.transaction : null,
+    }
+  } catch {
+    return null
+  }
+}
+
 /** EIP-712 domain of Celo USDC, read live from BOTH networks' contracts on 2026-08-09
  *  (name() = "USDC", version() = "2"). Part of the challenge so a buyer can sign the
  *  EIP-3009 authorization without an extra on-chain read. */
@@ -496,6 +604,11 @@ export type CeloServeDeps = {
   handlers?: Partial<Record<CeloToolName, (input: CeloToolInput) => Promise<unknown>>>
   env?: NodeJS.ProcessEnv
   now?: () => Date
+  /** Whether the buyer's EIP-3009 nonce is spent on-chain (USDC authorizationState): the read
+   *  that settles what a failed /settle left open. Null when the chain could not be read. */
+  authorizationUsed?: (payer: string, nonce: string) => Promise<boolean | null>
+  /** The facilitator's own view of one authorization (GET /settle/status), for the hash after a read-back. */
+  settleStatus?: (payer: string, nonce: string) => Promise<{ status: string | null; tx: string | null } | null>
 }
 
 /** Replace the ASP tool meta's OKX network line with this rail's, so a Celo buyer's
@@ -599,6 +712,10 @@ export async function celoServeTool(
       ? { httpStatus: 501, body: { error: 'celo x402 not configured', reason: 'network descriptor missing from the registry' } }
       : { httpStatus: gate.httpStatus, body: gate.body }
   }
+  // While the rail is paused (the facilitator refused to settle for us), a paid call is not
+  // attempted: the routes refuse first, and a direct caller meets the same wall here.
+  const pausedNow = celoPauseResponse(now())
+  if (pausedNow) return pausedNow
 
   // 1. Decode the X-PAYMENT header (base64 JSON, x402 v2 exact payload).
   let paymentPayload: Record<string, unknown>
@@ -668,7 +785,72 @@ export async function celoServeTool(
   // 3. /settle - the facilitator broadcasts the EIP-3009 transfer. X-API-Key is OUR
   // seller credential; `network` uses the facilitator's v1 label, which its /supported
   // lists as exactly our registry slug ('celo' / 'celo-sepolia').
-  let settle: { status: number; json: Record<string, unknown> | null }
+  // The two reads that settle what a failed /settle leaves open: whether the buyer's nonce
+  // is spent on-chain (the fact), and the facilitator's own record of it (the hash).
+  const authorizationUsed = deps.authorizationUsed ?? ((p: string, n: string) => readAuthorizationUsed(chain, p, n))
+  const settleStatus = deps.settleStatus ?? ((p: string, n: string) => readSettleStatus(fetchImpl, status.facilitator, requirements.asset, p, n))
+  const nonce = typeof authorization?.nonce === 'string' ? authorization.nonce : null
+
+  // 4. Record the settlement durably, then serve. The record happens even if the
+  // handler fails: the money moved, and the proof log must say so. `confirmedBy` says who
+  // established that: the facilitator's answer, or the chain read after it failed to answer.
+  const serveSettled = async (s: { settleTx?: string; credits?: number; confirmedBy: 'facilitator' | 'read-back'; facilitatorAnswer?: string }) => {
+    const record: CeloSettlementRecord = {
+      ts: now().toISOString(),
+      tool,
+      amountUsd: CELO_TOOL_PRICES_USD[tool],
+      ...(payer ? { payer } : {}),
+      ...(s.settleTx ? { tx: s.settleTx } : {}),
+      network: status.network,
+      ...(s.credits !== undefined ? { facilitatorCredits: s.credits } : {}),
+    }
+    await persist(record)
+
+    const settlement = {
+      settled: true,
+      network: status.network,
+      facilitator: status.facilitator,
+      ...(s.settleTx ? { tx: s.settleTx } : {}),
+      ...(payer ? { payer } : {}),
+      ...(s.credits !== undefined ? { facilitatorCredits: s.credits } : {}),
+      settledAt: record.ts,
+      confirmedBy: s.confirmedBy,
+      ...(s.facilitatorAnswer
+        ? {
+            facilitatorAnswer: s.facilitatorAnswer,
+            note: "the facilitator did not confirm this settlement, but the buyer's authorization is spent on-chain, so the payment is real: recorded and served",
+          }
+        : {}),
+    }
+
+    const handler = deps.handlers?.[tool] ?? defaultHandlers(status)[tool]
+    try {
+      const result = await handler(input)
+      return {
+        httpStatus: 200,
+        body: {
+          paid: true,
+          tool,
+          priceUsd: CELO_TOOL_PRICES_USD[tool],
+          settlement,
+          result,
+        },
+      }
+    } catch (e) {
+      return {
+        httpStatus: 500,
+        body: {
+          error: 'tool execution failed after settlement',
+          reason: e instanceof Error ? e.message : 'handler error',
+          settlement,
+          note: 'the payment DID settle and is recorded in /api/celo/proof; contact the operator with the settledAt timestamp',
+        },
+      }
+    }
+  }
+
+  let settle: { status: number; json: Record<string, unknown> | null } | null = null
+  let settleError: string | null = null
   try {
     settle = await facilitatorPost(
       fetchImpl,
@@ -682,83 +864,75 @@ export async function celoServeTool(
       FACILITATOR_SETTLE_TIMEOUT_MS,
     )
   } catch (e) {
+    settleError = e instanceof Error ? e.message : 'network error'
+  }
+  if (settle && settle.status === 200 && settle.json && (settle.json.success === true || settle.json.settled === true)) {
+    const credits = typeof settle.json.credits === 'number' ? settle.json.credits : undefined
+    const settleTx = typeof settle.json.transaction === 'string' && settle.json.transaction.startsWith('0x') ? settle.json.transaction : undefined
+    return serveSettled({ settleTx, credits, confirmedBy: 'facilitator' })
+  }
+
+  // The facilitator did not confirm a settlement. What that means for the buyer's money is
+  // read from the chain rather than guessed: a spent nonce is a payment that landed (served
+  // and recorded, whatever the facilitator said), an unspent one is a payment that never
+  // happened, and a chain that cannot be read leaves the honest maybe.
+  const said = settle?.json ?? null
+  const reason =
+    settleError ??
+    ((typeof said?.errorMessage === 'string' && said.errorMessage) ||
+      (typeof said?.error === 'string' && said.error) ||
+      `facilitator answered ${settle?.status} with success=${String(said?.success)}`)
+  const used = payer && nonce ? await authorizationUsed(payer, nonce) : null
+  if (used === true) {
+    const st = payer && nonce ? await settleStatus(payer, nonce) : null
+    return serveSettled({ settleTx: st?.tx ?? undefined, confirmedBy: 'read-back', facilitatorAnswer: reason })
+  }
+  const outOfCredits = said?.error === 'insufficient_credits' || /insufficient_credits|settlement funds/i.test(reason)
+  if (outOfCredits) {
+    settlementPause = { since: now(), reason }
+    const paused = celoPauseResponse(now())
+    return {
+      httpStatus: 503,
+      body: {
+        ...(paused?.body ?? { error: 'celo settlement paused', reason }),
+        charged: used === false ? false : 'unknown',
+        note:
+          used === false
+            ? `the facilitator refused before broadcasting and the buyer's authorization is unspent on-chain: nothing was charged and nothing was served. ${TOP_UP_NOTE}`
+            : `the facilitator refused to settle; the chain could not be read to confirm that nothing moved, so check the payTo address on the explorer. ${TOP_UP_NOTE}`,
+      },
+    }
+  }
+  if (used === false) {
     return {
       httpStatus: 502,
       body: {
         error: 'celo facilitator settle failed',
-        reason: e instanceof Error ? e.message : 'network error',
-        note: 'settlement is AMBIGUOUS and the money may have moved: the facilitator broadcasts before it answers, so a timeout here can still land the transfer on-chain. The tool was NOT served and this payment was NOT resubmitted (that could double-settle). Check the payTo address on the explorer before retrying, and retry only with a FRESH payment.',
+        reason,
+        charged: false,
+        note: "the buyer's authorization is unspent on-chain, so nothing was charged. The tool was not served and this payment was not resubmitted; retry with a fresh payment.",
       },
     }
   }
-  if (
-    settle.status !== 200 ||
-    !settle.json ||
-    (settle.json.success !== true && settle.json.settled !== true)
-  ) {
+  if (settleError !== null) {
     return {
       httpStatus: 502,
       body: {
         error: 'celo facilitator settle failed',
-        reason:
-          (typeof settle.json?.errorMessage === 'string' && settle.json.errorMessage) ||
-          (typeof settle.json?.error === 'string' && settle.json.error) ||
-          `facilitator answered ${settle.status} with success=${String(settle.json?.success)}`,
-        note: 'the tool was not served. This payment was not resubmitted; retry with a fresh payment.',
+        reason,
+        charged: 'unknown',
+        note: 'settlement is AMBIGUOUS and the money may have moved: the facilitator broadcasts before it answers, so a timeout here can still land the transfer on-chain, and the chain could not be read to tell. The tool was NOT served and this payment was NOT resubmitted (that could double-settle). Check the payTo address on the explorer before retrying, and retry only with a FRESH payment.',
       },
     }
   }
-  const credits = typeof settle.json.credits === 'number' ? settle.json.credits : undefined
-  const settleTx = typeof settle.json.transaction === 'string' && settle.json.transaction.startsWith('0x')
-    ? settle.json.transaction
-    : undefined
-
-  // 4. Record the settlement durably, then serve. The record happens even if the
-  // handler fails: the money moved, and the proof log must say so.
-  const record: CeloSettlementRecord = {
-    ts: now().toISOString(),
-    tool,
-    amountUsd: CELO_TOOL_PRICES_USD[tool],
-    ...(payer ? { payer } : {}),
-    ...(settleTx ? { tx: settleTx } : {}),
-    network: status.network,
-    ...(credits !== undefined ? { facilitatorCredits: credits } : {}),
-  }
-  await persist(record)
-
-  const settlement = {
-    settled: true,
-    network: status.network,
-    facilitator: status.facilitator,
-    ...(settleTx ? { tx: settleTx } : {}),
-    ...(payer ? { payer } : {}),
-    ...(credits !== undefined ? { facilitatorCredits: credits } : {}),
-    settledAt: record.ts,
-  }
-
-  const handler = deps.handlers?.[tool] ?? defaultHandlers(status)[tool]
-  try {
-    const result = await handler(input)
-    return {
-      httpStatus: 200,
-      body: {
-        paid: true,
-        tool,
-        priceUsd: CELO_TOOL_PRICES_USD[tool],
-        settlement,
-        result,
-      },
-    }
-  } catch (e) {
-    return {
-      httpStatus: 500,
-      body: {
-        error: 'tool execution failed after settlement',
-        reason: e instanceof Error ? e.message : 'handler error',
-        settlement,
-        note: 'the payment DID settle and is recorded in /api/celo/proof; contact the operator with the settledAt timestamp',
-      },
-    }
+  return {
+    httpStatus: 502,
+    body: {
+      error: 'celo facilitator settle failed',
+      reason,
+      charged: 'unknown',
+      note: 'the tool was not served. This payment was not resubmitted; retry with a fresh payment. The chain could not be read to confirm that nothing moved.',
+    },
   }
 }
 
@@ -784,7 +958,7 @@ function internalPayers(env: NodeJS.ProcessEnv): Set<string> {
 /** GET /api/celo/status body: rail config (fail-closed truth), registry facts for both
  *  Celo descriptors, and ERC-8004 resolver readiness. No external calls - this must be
  *  fast and honest even when RPCs are down. */
-export function celoStatusReport(env: NodeJS.ProcessEnv = process.env) {
+export function celoStatusReport(env: NodeJS.ProcessEnv = process.env, now: Date = new Date()) {
   const status = celoX402Status(env)
   const describe = (id: string) => {
     const c = getChainById(id)
@@ -813,6 +987,9 @@ export function celoStatusReport(env: NodeJS.ProcessEnv = process.env) {
     rail: 'celo-x402',
     ...status,
     tools: CELO_TOOLS.map((t) => ({ name: t, priceUsd: CELO_TOOL_PRICES_USD[t], method: `POST /api/celo/tools/${t}` })),
+    // Whether settlements are being attempted right now: false after the facilitator
+    // refused to settle for us (an empty settlement balance), for 15 minutes.
+    settlement: celoSettlementPause(now),
     chains: { celo: describe('celo'), 'celo-sepolia': describe('celo-sepolia') },
     kyaAnchoring: 'not wired on Celo: a ValidationRegistry proxy is deployed there (read live 2026-10-11), but the descriptor does not set it, so KYA is not anchored on-chain',
   }

@@ -15,6 +15,7 @@ import {
   CELO_TOOLS,
   CELO_TOOL_CARDS,
   celoChallenge,
+  celoPauseResponse,
   celoPaywallGate,
   celoProof,
   celoServeTool,
@@ -55,6 +56,15 @@ export async function handleCeloRoutes(ctx: RouteCtx): Promise<boolean> {
       return true
     }
     const tool = name as CeloToolName
+
+    // While the rail is paused (the facilitator refused to settle for us, an empty
+    // settlement balance), neither the challenge nor the paid call is served: a buyer
+    // would otherwise sign for nothing. The body says why and until when.
+    const paused = celoPauseResponse()
+    if (paused) {
+      sendJson(res, paused.httpStatus, paused.body)
+      return true
+    }
 
     // A probing GET sees the full contract: the 402 challenge + the tool card.
     if (req.method === 'GET') {

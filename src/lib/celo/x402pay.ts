@@ -78,6 +78,8 @@ export type RailStatus = {
   usdc: string
   explorer: string | null
   prices: Partial<Record<CeloTool, number>>
+  /** Set while the rail is holding off on settlements (the facilitator refused to settle for us); nothing can be bought. */
+  pause: { since: string; until: string; reason: string } | null
 }
 
 /**
@@ -93,6 +95,7 @@ export function readStatus(body: unknown): RailStatus | null {
         payTo?: unknown
         facilitator?: unknown
         tools?: unknown
+        settlement?: unknown
         chains?: Record<string, { usdc?: unknown; explorer?: unknown } | undefined>
       }
     | null
@@ -104,6 +107,15 @@ export function readStatus(body: unknown): RailStatus | null {
   for (const t of Array.isArray(b.tools) ? (b.tools as { name?: unknown; priceUsd?: unknown }[]) : []) {
     if (t && typeof t.name === 'string' && typeof t.priceUsd === 'number' && t.priceUsd > 0) prices[t.name as CeloTool] = t.priceUsd
   }
+  const s = (b.settlement && typeof b.settlement === 'object' ? b.settlement : {}) as { paused?: unknown; since?: unknown; until?: unknown; reason?: unknown }
+  const pause =
+    s.paused === true
+      ? {
+          since: typeof s.since === 'string' ? s.since : '',
+          until: typeof s.until === 'string' ? s.until : '',
+          reason: typeof s.reason === 'string' && s.reason ? s.reason : 'the facilitator refused to settle for us',
+        }
+      : null
   return {
     network: b.network,
     chain: b.chain,
@@ -112,6 +124,7 @@ export function readStatus(body: unknown): RailStatus | null {
     usdc: chain.usdc,
     explorer: typeof chain.explorer === 'string' ? chain.explorer : null,
     prices,
+    pause,
   }
 }
 
@@ -309,6 +322,10 @@ export type Stop =
   | { kind: 'wallet'; wallet: string; text: string }
   | { kind: 'refused'; reason: string }
   | { kind: 'unavailable'; reason: string }
+  /** The rail is holding off on settlements; nothing was attempted. */
+  | { kind: 'paused'; reason: string; until: string | null }
+  /** The facilitator did not settle, and the server read the authorization as unspent on-chain. */
+  | { kind: 'settle_failed'; reason: string }
   | { kind: 'ambiguous'; payTo: string }
   | { kind: 'paid_unreadable'; tx: string | null }
   | { kind: 'unexpected'; status: number }
@@ -355,11 +372,17 @@ export function readAnswer(httpStatus: number, body: unknown, payTo: string): En
   if (httpStatus === 400) return { kind: 'stopped', stop: { kind: 'refusal', text: error || 'the server did not accept the input' } }
   if (httpStatus === 402) return { kind: 'stopped', stop: { kind: 'refused', reason: str(b.verifyError) ?? 'the payment did not verify' } }
   if (httpStatus === 501) return { kind: 'stopped', stop: { kind: 'unavailable', reason: 'the Celo rail is not configured on the server' } }
+  // The rail is holding off on settlements (the facilitator refused to settle for us): nothing was attempted.
+  if (httpStatus === 503) return { kind: 'stopped', stop: { kind: 'paused', reason: str(b.reason) ?? (error || 'settlement is paused'), until: str(b.until) } }
   if (httpStatus === 502) {
-    // The server says which facilitator call failed. A settle that timed out may still have
-    // landed on-chain, so it is the one ending that is not "nothing was charged".
-    if (/settle/i.test(error)) return { kind: 'stopped', stop: { kind: 'ambiguous', payTo } }
-    return { kind: 'stopped', stop: { kind: 'unavailable', reason: str(b.reason) ?? error ?? 'the facilitator did not answer' } }
+    const reason = str(b.reason) ?? (error || 'the facilitator did not answer')
+    if (/settle/i.test(error)) {
+      // After a failed settle the server reads the chain: an unspent authorization is a
+      // payment that never happened; anything else stays the honest maybe.
+      if (b.charged === false) return { kind: 'stopped', stop: { kind: 'settle_failed', reason } }
+      return { kind: 'stopped', stop: { kind: 'ambiguous', payTo } }
+    }
+    return { kind: 'stopped', stop: { kind: 'unavailable', reason } }
   }
   if (httpStatus === 500 && Object.keys(settlement).length > 0) return { kind: 'stopped', stop: { kind: 'paid_unreadable', tx: str(settlement.tx) } }
   return { kind: 'stopped', stop: { kind: 'unexpected', status: httpStatus } }
@@ -378,6 +401,10 @@ export function stopText(stop: Stop): string {
       return `The facilitator did not accept the payment: ${stop.reason}. Nothing was charged.`
     case 'unavailable':
       return `The check could not be made right now: ${stop.reason}. Nothing was charged.`
+    case 'paused':
+      return `Settlement is paused on our side: ${stop.reason}. ${stop.until ? `It is tried again after ${stop.until}. ` : ''}Nothing was charged.`
+    case 'settle_failed':
+      return `The facilitator did not complete the payment: ${stop.reason}. Your authorization is unspent on-chain. Nothing was charged.`
     case 'ambiguous':
       return `The facilitator did not answer in time, and your payment may still have gone through. Check ${stop.payTo} on the explorer before paying again.`
     case 'paid_unreadable':
@@ -424,6 +451,8 @@ export async function purchase(a: {
   step: (s: Step) => void
   alive: () => boolean
 }): Promise<End | null> {
+  // The rail says it is not settling right now: stop at the door, before the quote and the wallet.
+  if (a.status.pause) return { kind: 'stopped', stop: { kind: 'paused', reason: a.status.pause.reason, until: a.status.pause.until || null } }
   a.step('quoting')
   let terms: Terms
   try {
