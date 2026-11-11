@@ -595,7 +595,7 @@ Live today:
   ERC-8004 authors did. What is ours is agent **#0**, the registry's first mint.
   Payments settle here in USDG (`0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`,
   Paxos Global Dollar) through our own first-party x402 facilitator, the same one
-  we run on every chain we sell on (others serve this chain too): the buyer signs an EIP-3009 authorization and pays no gas, we
+  that sells on Arc Mainnet (others serve this chain too): the buyer signs an EIP-3009 authorization and pays no gas, we
   broadcast it, and nothing counts as settled without a receipt carrying the
   matching Transfer log. No canonical Circle USDC is published for this chain, so
   the registry asserts none. From 2026-08-28 an AgentSpendPolicy vault was live here
@@ -621,7 +621,8 @@ Live today:
   from its owner key, renewed to 2026-11-15. It is retired: its owner is our former
   operating wallet 0xd305607510E0Db2c95807173c7A05BEA53c1ed36, whose key someone else also
   holds, the contract has no owner transfer, and the 0.01 USDC it still holds cannot be
-  recovered while that key's gas is swept. Do not fund it. Agent #1259 is still owned by
+  withdrawn by that key while its gas is swept; the agent key 0x8C8D...3349 can still pay it
+  out through pay() until its session key lapses on 2026-11-15. Do not fund it. Agent #1259 is still owned by
   that wallet, and its reputation is anchored on the canonical ReputationRegistry by our
   oracle validator.
 - **OKX X Layer mainnet** (`eip155:196`). ERC-8004 identity
@@ -632,8 +633,9 @@ Live today:
   `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` and reputation
   `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`; our agent is #9759. x402 settles
   in native USDC through the first-party facilitator Celo runs, not one of ours. Every
-  payment so far is internal: read on 2026-10-11, all 501 USDC payments into the payTo
-  came from our own buyer wallet on 2026-08-09, and none has arrived since. Celo has a
+  payment it took through 2026-10-11 was internal: read that day, all 501 USDC payments
+  into the payTo of the time came from our own buyer wallet on 2026-08-09, and no outside
+  wallet had sent it USDC by that read. Celo has a
   ValidationRegistry proxy that we do not wire, so KYA is not anchored on-chain there.
   A person can buy one check from a browser wallet at https://a-identity.xyz/check/celo:
   one EIP-3009 signature, no gas, a verdict with reasons and a receipt on /proof/celo.

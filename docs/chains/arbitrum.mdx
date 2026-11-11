@@ -49,8 +49,9 @@ trust calls in native Circle USDC.
 
   **We are not first here, and do not claim to be.** Coinbase's x402 facilitator and
   others already serve Arbitrum One, and gasless EIP-3009 relaying on this USDC contract
-  predates us by years. We run our own facilitator so that one code path and one receipt
-  standard cover every chain we sell on.
+  predates us by years. We ran our own facilitator here so that one code path and one
+  receipt standard covered every EVM chain our EIP-3009 rail sold on; it has been paused
+  here since 2026-11-11, and no rail of ours sells on Arbitrum One now.
 
   **"Settled" has layers on an L2.** We wait the descriptor's confirmations, which is the
   sequencer's ordering commitment, and we record the block. That is not Ethereum finality,
@@ -98,18 +99,21 @@ The vault caps the agent key at 1 USDC a day and 0.25 USDC per payment. Since 20
 the agent key is a separate wallet from the owner key and its session key runs to
 2026-11-15. As of 2026-11-11 the vault is retired: its owner is our former operating wallet,
 whose key someone else has also held since at least 2026-11-01, and the contract has no owner
-transfer. It still holds 0.01 USDC, which cannot be recovered while gas sent to its owner is
-swept. Never fund it. Before paying here, [/check/arbitrum](https://a-identity.xyz/check/arbitrum)
+transfer. It still holds 0.01 USDC (read live 2026-11-11), which we cannot withdraw through
+its owner while gas sent to that address is swept; the agent key 0x8C8D...3349 can still pay
+it out through pay() until its session key lapses on 2026-11-15. Never fund it. Before
+paying here, [/check/arbitrum](https://a-identity.xyz/check/arbitrum)
 answers whether a token is native Circle USDC and whether the payee is a registered agent;
 the chain itself confirms it is an Arbitrum chain through the ArbSys precompile.
 
 ## The price, and where it comes from
 
-The base price of a tool is identical on every chain we sell on. The only difference is a
-disclosed settlement fee, because we broadcast on the buyer's behalf and that costs gas.
-On Arbitrum One a real settlement measured **103569 gas at 0.02 gwei**, about
-**0.00000207 ETH**, so the fee here is **$0.005** rather than the $0.02 charged on
-Robinhood Chain, where the same settlement costs measurably more. The measurement lives in
+The base price of a tool is identical on every chain we sell on. While our rail ran here,
+the only difference was a disclosed settlement fee, because we broadcast on the buyer's
+behalf and that costs gas. On Arbitrum One a real settlement measured
+**103569 gas at 0.02 gwei**, about **0.00000207 ETH**, so the fee here was **$0.005**
+rather than the $0.02 charged on Robinhood Chain, where the same settlement costs
+measurably more. The rail has been paused here since 2026-11-11. The measurement lives in
 the chain registry beside the token, so the number is traceable rather than asserted.
 
 ## Verify it yourself
@@ -126,8 +130,10 @@ curl -s https://a-identity-backend.onrender.com/api/proof/arbitrum
 
 ## Where Arbitrum One fits
 
-It is the chain where our rail can be compared. [Robinhood Chain](/chains/robinhood) is an
-Arbitrum L2 and is where the same engine settles in USDG, Paxos's dollar, rather than USDC;
+It is the chain where our rail could be compared against a well-served baseline, and can
+be again once it runs; its past receipts are on
+[/proof/arbitrum](https://a-identity.xyz/proof/arbitrum). [Robinhood Chain](/chains/robinhood)
+is an Arbitrum L2 and is where the same engine settles in USDG, Paxos's dollar, rather than USDC;
 [Arc](/chains/arc) holds escrow; [Celo](/chains/celo) settles through someone else's
 facilitator. Being live on Robinhood Chain and being live on Arbitrum One
 are two different statements, and both are true.

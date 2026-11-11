@@ -118,8 +118,8 @@ export default function Hero() {
       </motion.p>
 
       {/* The networks line, set in full foreground so it is the second thing a visitor reads.
-          Eight mainnets settle real money today (the FAQ lists them); the three named here
-          are the ones the proof pages lead with. */}
+          Eight mainnets are live and six accept real payments today (the FAQ lists them); the
+          three named here are the ones the proof pages lead with. */}
       <motion.p
         custom={2.5}
         variants={fadeUp}

@@ -22,8 +22,9 @@ our EIP-3009 facilitator and Circle Gateway nanopayments (see `src/x402-3009/` a
 off our internal lists is labeled external, a few have paid, and `GET /api/arc/season` keeps the
 two apart. Escrow, KYA anchoring and the console's register and anchor flows still run on Arc
 testnet, while `/app/vault/arc` deploys a vault on Arc Mainnet from the owner's own wallet. Other mainnets
-carrying our own traffic and real value: OKX X Layer, Celo, Base, Robinhood Chain,
-Arbitrum One and Algorand. Stellar pubnet is `live` too, not `beta`: the Soroban spend vault holds real
+carrying our own traffic and real value: Celo, Base, Robinhood Chain and Algorand, and, until
+their rails stopped, OKX X Layer (delisted 2026-09-26) and Arbitrum One (our EIP-3009 rail
+paused there on 2026-11-11). Stellar pubnet is `live` too, not `beta`: the Soroban spend vault holds real
 USDC under its on-ledger policy, and since 2026-08-28 the Soroban x402 rail SELLS on both
 Stellar networks from the hosted deployment, which `/api/x402/stellar/status` answers for
 itself. Two payment
@@ -279,7 +280,8 @@ It refuses unless the owner's own wallet sent the deploy (`owner() == receipt.fr
 is none of our keys, the operator is set and is not the owner, `usdc()` is the registry USDC,
 `dailyCap` and `autoApproveMax` are not 0, and the session key outlives the chain's current
 block time. Exit 0 admitted, 1 refused, 2 usage. The launch-day vault (deploy `0xabf41b6f`) is
-refused: its owner is our operating wallet.
+refused: its owner is our former operating wallet `0xd305...ed36`, retired on 2026-11-11 and still
+on our key list.
 
 ### Rehearse the vault page on a real chain
 
@@ -342,8 +344,8 @@ CONFIRM_ARC_VTP_RUN=yes node --env-file=.env scripts/arc-vtp-runner.mjs \
 curl -s https://a-identity.xyz/api/arc/season | jq '.milestone1.checks | {count, target, linked, unlinked}'
 ```
 
-`--allow` flows pay Simon, an agent in our own account, and expect ALLOW and a `Paid` transaction. `--deny` flows name our
-operating wallet (agent #0, internal) and expect `TrustDenyError`, which is what its 25 flows got on 2026-11-01 and
+`--allow` flows pay Simon, an agent in our own account, and expect ALLOW and a `Paid` transaction. `--deny` flows named our
+operating wallet of the time (the owner of agent #0 then, internal) and expected `TrustDenyError`, which is what its 25 flows got on 2026-11-01 and
 2026-11-02 UTC. It is off-platform, so since the rule changed on 2026-11-04 it forecasts WARN and the plan refuses any
 `--deny`: Milestone 1's 100 flows finished on 2026-11-02 and are not to be run again, and no other payee replaces it.
 The historical run's totals were `--allow 75 --deny 25`, and that invocation now ends REFUSED. Other flags: `--amount-units`

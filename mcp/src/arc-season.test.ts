@@ -645,7 +645,7 @@ test('vault and refusal items derive their explorer links from the registry and 
   assert.doesNotMatch(vaults.note, /No owner-held vault yet/)
   assert.equal(vaults.items[0].ownerKind, 'external')
   // Past 0 the note still says the launch-day vault is not counted, and the page keeps showing it.
-  assert.match(vaults.note, /launch-day vault 0x[0-9a-fA-F]{40} is owned by our operating wallet and is not among them/)
+  assert.match(vaults.note, /launch-day vault 0x[0-9a-fA-F]{40} is owned by our former operating wallet and is not among them/)
   const page = readFileSync(new URL('../../src/components/proof/ArcSeasonProgress.tsx', import.meta.url), 'utf8')
   assert.match(page, /metric=\{m1\.vaults\} keepNote/)
   assert.match(page, /ownerKind\?: 'team' \| 'external'/, 'a backend from before the label must still render')
@@ -791,7 +791,7 @@ test('with no vault, no chain is read for owner actions', async () => {
 test('with the curated lists empty, the notes say why the launch-day vault and refusal do not count', async () => {
   const r = await arcSeasonReport(deps({ vaults: [], refusals: [], partners: [] }))
   // The address comes from the provenance ledger, not from a second copy in the report.
-  assert.match(r.milestone1.vaults.note, /launch-day vault 0x[0-9a-fA-F]{40} was deployed from our server key with our operating wallet as its owner/)
+  assert.match(r.milestone1.vaults.note, /launch-day vault 0x[0-9a-fA-F]{40} was deployed from our server key with our former operating wallet as its owner/)
   assert.match(r.milestone1.vaults.note, /not owner-held and is not counted/)
   assert.match(r.milestone1.refusals.note, /simulation/)
   assert.match(r.milestone1.refusals.note, /no hash and is not counted/)
@@ -2534,7 +2534,7 @@ test('the vault note says what the key comparison covers, when a vault counts, a
   assert.doesNotMatch(note, /A-Identity's servers never held/, 'not a claim the comparison cannot carry')
   assert.match(note, /A vault counts once its agent key has an end date, the second confirmation on \/app\/vault\/arc: a deploy that stopped before that, or a deploy on Arc Testnet, is not counted\./)
   assert.equal(ARC_GAS_SUPPORT.owners, 0)
-  assert.match(note, /Gas support for owners without USDC on Arc \(up to 0\.08 USDC from our operating wallet for the network fees\) ended on 2026-11-10, when we found that someone else also holds that wallet's key/)
+  assert.match(note, /Gas support for owners without USDC on Arc \(up to 0\.08 USDC from our former operating wallet for the network fees\) ended on 2026-11-10, when we found that someone else also holds that wallet's key/)
   assert.doesNotMatch(note, /can receive up to 0\.08 USDC/, 'no promise of a payout from an exposed wallet')
   assert.match(note, new RegExp(`No owner received any, as read from that wallet's sends on ${ARC_GAS_SUPPORT.readOn}, and any such transfer is public on chain`))
   assert.doesNotMatch(note, /nothing will be sent from it|None has so far|still signed by the owner/, 'no promise about a wallet someone else holds the key of')

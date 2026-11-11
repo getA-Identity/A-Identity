@@ -300,7 +300,7 @@ export const CHAINS: readonly Chain[] = [
     "protocols": {
       "payment": {
         "x402": true,
-        "note": "x402 settling in USDG (Paxos Global Dollar) through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. We run our own so one code path and one receipt standard cover every chain we sell on; other facilitators serve this chain too."
+        "note": "x402 settling in USDG (Paxos Global Dollar) through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. We run our own so one code path and one receipt standard cover every EVM chain it sells on (since 2026-11-11, here and Arc Mainnet); other facilitators serve this chain too."
       },
       "identity": {
         "standard": "ERC-8004",

@@ -872,15 +872,19 @@ test('our launch-day vault and our key are labelled from the build, with no answ
   }
   const mainnet = PROVENANCE.find((p) => p.chain === 'arc-mainnet')
   const launchDay = mainnet?.contracts.find((c) => c.name === 'AgentSpendPolicy vault')?.address ?? ''
-  const operating = mainnet?.agent?.owner ?? ''
+  const agentOwner = mainnet?.agent?.owner ?? ''
   const net = ARC_MAINNET?.caip2 ?? ''
   const testnet = CHAINS.find((c) => c.id === 'arc')?.caip2 ?? ''
-  assert.ok(launchDay && operating && net && testnet)
+  assert.ok(launchDay && agentOwner && net && testnet)
   // No list from the backend at all: the labels hold, in any address case.
   assert.equal(ours.isOurVault(net, launchDay), true)
   assert.equal(ours.isOurVault(net, launchDay.toUpperCase().replace('0X', '0x')), true)
-  assert.equal(ours.isOurKey(net, operating), true)
-  assert.equal(ours.isOurKey(net, operating.toLowerCase()), true)
+  assert.equal(ours.isOurKey(net, agentOwner), true)
+  assert.equal(ours.isOurKey(net, agentOwner.toLowerCase()), true)
+  // The former operating wallet, which still owns the launch-day vault, stays ours too.
+  // The launch-day vault's owner, our operating wallet until 2026-11-11, pinned as a wallet rather than read from an env-var name.
+  assert.equal(ours.isOurKey(net, '0xd305607510E0Db2c95807173c7A05BEA53c1ed36'), true)
+  assert.equal(ours.isOurKey(testnet, '0xd305607510E0Db2c95807173c7A05BEA53c1ed36'), true)
   // The network matters: the same address elsewhere is someone else's claim to make.
   assert.equal(ours.isOurVault(testnet, launchDay), false)
   // Nobody else is called ours, and the backend can only add to the list.

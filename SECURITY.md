@@ -9,15 +9,17 @@ What is accurate today, and what the registry
 ([`mcp/src/chains/registry.ts`](mcp/src/chains/registry.ts)) will confirm, because it is the
 single source of truth and a test fails the build if any other file disagrees:
 
-- **13 chains, 8 of them mainnet.** Seven of those mainnets are `live` and carry our own
-  traffic: OKX X Layer, Celo, Robinhood Chain, Arbitrum One, **Base**, **Stellar pubnet**
-  and **Algorand**. Avalanche is the only `planned` entry, and every `beta` entry is a
-  testnet mirror (Stellar, Algorand, Robinhood Chain, Celo Sepolia). Base and Stellar pubnet
-  were listed here as "mainnet (`beta`)" until 2026-08-30, days after both went live and
-  both started settling real value. That understated the blast radius of two keys, which is
-  the only direction this document must never be wrong in.
-- **Circle Arc is testnet and is still `live`.** Both statements hold; Arc being test money
-  is not a statement about the seven mainnets.
+- **14 chains, 9 of them mainnet.** Eight of those mainnets are `live`: Arc Mainnet,
+  OKX X Layer, Celo, Robinhood Chain, Arbitrum One, **Base**, **Stellar pubnet** and
+  **Algorand**; nothing of ours has sold on X Layer since OKX.AI delisted the oracle on
+  2026-09-26, or on Arbitrum One since our EIP-3009 rail paused there on 2026-11-11.
+  Avalanche is the only `planned` entry, and every `beta` entry is a testnet mirror
+  (Stellar, Algorand, Robinhood Chain, Celo Sepolia). Base and Stellar pubnet were listed
+  here as "mainnet (`beta`)" until 2026-08-30, days after both went live and both started
+  settling real value. That understated the blast radius of two keys, which is the only
+  direction this document must never be wrong in.
+- **Circle Arc testnet is still `live`, and Arc Mainnet has been live beside it since 2026-09-16.**
+  Arc testnet being test money is not a statement about the eight live mainnets.
 - **Money moves.** x402 calls settle in real Circle USDC on Arc Mainnet, Celo and Base,
   USDG (Paxos Global Dollar) on Robinhood Chain, SEP-41 USDC on
   Stellar (pubnet since 2026-08-27, and testnet), and the Circle USDC ASA on Algorand

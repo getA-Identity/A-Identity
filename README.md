@@ -486,7 +486,7 @@ Base carries the canonical ERC-8004 identity and reputation registries (verified
 2026-08-28 by reading each proxy's EIP-1967 implementation slot and matching the
 implementation code byte for byte against Arbitrum One), our agent #73232 (minted
 2026-08-27 UTC, tx `0xb428bf8e`), native Circle USDC, the Gateway hop, and the same
-first-party x402 facilitator that serves Arc Mainnet and Robinhood Chain, settling in
+first-party x402 facilitator that serves Arc Mainnet and Robinhood Chain, which settled here in
 native USDC: the first settlement landed 2026-08-27 UTC (tx `0xb59ae67c`, 102828 gas, the
 receipt carrying the matching Transfer log). Since 2026-11-11 that rail has been paused on Base and
 Arbitrum One until its new gas-only broadcaster has gas there. A second rail sells the same tools here

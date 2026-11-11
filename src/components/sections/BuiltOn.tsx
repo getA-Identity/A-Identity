@@ -158,7 +158,7 @@ const RAILS: Rail[] = [
     tileBg: '#ffffff',
     color: '#0000FF',
     role: 'Where the agent economy already trades.',
-    detail: 'Live: the canonical ERC-8004 registries carry our agent #73232, and x402 settled in native Circle USDC through our own EIP-3009 facilitator until 2026-11-11; that rail is paused here until the new key that broadcasts its settlements has gas on Base. The adapter that first proved the core was chain-agnostic moved real money here.',
+    detail: 'Live: the canonical ERC-8004 registries carry our agent #73232, and x402 settled in native Circle USDC through our own EIP-3009 facilitator until 2026-11-11; that rail is paused here until the new key that broadcasts its settlements has gas on Base, and Circle Gateway nanopayments still sell here. The adapter that first proved the core was chain-agnostic moved real money here.',
     chain: 'base',
   },
   {
@@ -170,7 +170,7 @@ const RAILS: Rail[] = [
     tileBg: '#CCFF00',
     color: '#CCFF00',
     role: 'Where retail agents will trade.',
-    detail: 'Agent #0 on the mainnet ERC-8004 registry is this product, and paid calls settle here in USDG through an x402 facilitator we run ourselves, the same one on every chain we sell on. The buyer signs and pays no gas; we broadcast.',
+    detail: 'Agent #0 on the mainnet ERC-8004 registry is this product, and paid calls settle here in USDG through an x402 facilitator we run ourselves, the same one that sells on Arc Mainnet. The buyer signs and pays no gas; we broadcast.',
     chain: 'rhchain',
   },
   {
@@ -182,7 +182,7 @@ const RAILS: Rail[] = [
     tileBg: '#ffffff',
     color: '#28A0F0',
     role: 'Where the rail can be compared.',
-    detail: 'The same engine, settling in native Circle USDC until 2026-11-11; it is paused here until the new key that broadcasts its settlements has gas on Arbitrum One. Other facilitators already serve this chain, which is the point: here you can check our receipts against a baseline. The fee is lower than on Robinhood Chain because a settlement measurably costs less.',
+    detail: 'The same engine, settling in native Circle USDC until 2026-11-11; it is paused here until the new key that broadcasts its settlements has gas on Arbitrum One. Other facilitators already serve this chain, which is the point: here you can check our receipts against a baseline. Its fee was lower than on Robinhood Chain because a settlement measurably costs less.',
     chain: 'arbitrum',
   },
   {
@@ -191,8 +191,8 @@ const RAILS: Rail[] = [
     Mark: OkxMark,
     tileBg: 'color-mix(in srgb, var(--foreground) 7%, var(--card))',
     color: 'var(--foreground)',
-    role: 'Where trust checks are sold.',
-    detail: 'The Trust Oracle answers per-call over x402 and settles in USD\u20AE0 on mainnet, 120 settlements and counting.',
+    role: 'Where trust checks were sold first.',
+    detail: 'The Trust Oracle sold per-call checks here over x402, in USD\u20AE0 on mainnet, until OKX.AI delisted it on 2026-09-26: 120 settlements, every one paid by our own buyer wallet. Nothing of ours sells here now.',
     chain: 'xlayer',
   },
   {

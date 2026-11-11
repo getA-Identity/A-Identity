@@ -6,10 +6,12 @@ human sets, and can then pay other agents.
 
 Live: **https://a-identity.xyz** · backend **https://a-identity-backend.onrender.com**.
 
-The registry holds **14 chains**. Nine are `live`, and eight of those are mainnets carrying
+The registry holds **14 chains**. Nine are `live`, and eight of those are mainnets that have carried
 our own traffic and real money: **Arc Mainnet** (live since it opened on 2026-09-16),
 **OKX X Layer**, **Celo**, **Robinhood Chain**, **Arbitrum One**, **Base**, **Stellar**
-(pubnet) and **Algorand**. The ninth live chain is
+(pubnet) and **Algorand**. Nothing of ours has sold on X Layer since OKX.AI delisted the oracle
+on 2026-09-26, or on Arbitrum One since our EIP-3009 rail paused there on 2026-11-11. The ninth
+live chain is
 **Circle Arc** (5042002), which is a testnet, so value moving there is test value; Arc is
 where phase 1 started and it still carries all three ERC-8004 registries (identity +
 reputation + validation), which is what makes KYA anchorable there. No mainnet descriptor
@@ -458,14 +460,17 @@ day it lands rather than the day someone remembers to add it.
   are owned by `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, our server-held operating wallet until
   2026-11-11. Someone else also holds that key and the contract has no owner transfer, so those three
   are retired: the founder emptied the Robinhood Chain vault on 2026-11-10 and the Arc Mainnet vault
-  on 2026-11-11, and the Arbitrum One vault still holds 0.01 USDC that cannot be recovered while the
-  owner key's gas is swept, so it must not be funded. The *limit* holds either way, because the
+  on 2026-11-11, and the Arbitrum One vault still holds 0.01 USDC that the owner key cannot withdraw
+  while its gas is swept, so the vault must not be funded; the agent key `0x8C8D...3349` can still pay
+  it out through `pay()` until its session key lapses on 2026-11-15. The *limit* holds either way, because the
   contract reverts an over-limit `pay()`; the contract itself is not externally audited. On the vaults we operate the
   agent does not sign its own payments - moving those is the roadmap (agent-held key / Circle
   programmable wallet). We say this plainly.
 - **Which money is real**: Arc testnet is a testnet, so everything in the "Arc testnet" section above is
   real tech and test money. The eight live mainnets above are not: Arc Mainnet, X Layer, Celo, Robinhood
-  Chain, Arbitrum One, Base, Stellar pubnet and Algorand settle real value, in small deliberate
-  amounts, and [SECURITY.md](SECURITY.md) says which key spends where. This line used to read
+  Chain, Arbitrum One, Base, Stellar pubnet and Algorand have settled real value, in small deliberate
+  amounts (nothing of ours has sold on X Layer since OKX.AI delisted the oracle on 2026-09-26, or on
+  Arbitrum One since our EIP-3009 rail paused there on 2026-11-11), and [SECURITY.md](SECURITY.md)
+  says which key spends where. This line used to read
   "Testnet: Arc testnet, test USDC" and nothing else, which was true of Arc and wrong about the
   product.

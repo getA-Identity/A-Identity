@@ -864,7 +864,7 @@ export const CHAINS: ChainDescriptor[] = [
     },
     payment: {
       x402: true,
-      note: 'x402 settling in USDG (Paxos Global Dollar) through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. We run our own so one code path and one receipt standard cover every chain we sell on; other facilitators serve this chain too.',
+      note: 'x402 settling in USDG (Paxos Global Dollar) through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. We run our own so one code path and one receipt standard cover every EVM chain it sells on (since 2026-11-11, here and Arc Mainnet); other facilitators serve this chain too.',
     },
   },
   {
@@ -936,9 +936,11 @@ export const CHAINS: ChainDescriptor[] = [
     ecosystem: 'evm',
     testnet: false,
     // LIVE since 2026-08-13, and it cleared the same bar as the others rather than a
-    // softer one: agent #1259 is minted here AND money moves here (first settlement
+    // softer one: agent #1259 was minted here AND money moved here (first settlement
     // 0x69abb8a9, block 494160024, a real USDC transfer proven by its receipt). It was
     // beta for a few hours in between, when identity was real and no rail settled yet.
+    // Since 2026-11-11 no rail of ours sells here (EIP-3009 paused); it stays live on that
+    // record, as X Layer did after its delisting.
     status: 'live',
     evmChainId: 42161,
     cctpDomain: 3,

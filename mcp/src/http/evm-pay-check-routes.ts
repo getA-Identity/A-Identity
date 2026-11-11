@@ -1,8 +1,9 @@
 /**
  * GET /api/robinhood/check?q=... and GET /api/arbitrum/check?q=...: the free "Before you pay"
- * answer for the two Arbitrum chains we settle on. Paste a token address, a wallet, an agent id
- * or an x402 link; the answer says whether the dollar is the real one, whether the signing
- * domain is proven, and whether the payee is a registered agent (see evm-pay-check/check.ts).
+ * answer for the two Arbitrum chains we have settled on (Arbitrum One's rail paused on 2026-11-11).
+ * Paste a token address, a wallet, an agent id or an x402 link; the answer says whether the
+ * dollar is the real one, whether the signing domain is proven, and whether the payee is a
+ * registered agent (see evm-pay-check/check.ts).
  *
  * The slug is the one /proof/:rail already uses, so /check/robinhood and /proof/robinhood name
  * the same chain. Free and public, so it is bounded twice like the Algorand check: per client IP

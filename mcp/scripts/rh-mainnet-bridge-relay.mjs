@@ -9,8 +9,9 @@
  * transaction to send on Arbitrum One; a solver fills the same amount (minus its
  * quoted fee) on 4663 in seconds. The script re-verifies chain support and re-quotes
  * on every run (quotes expire), prints the exact in/out/fee, and prints the prepared
- * transaction(s). It never sends anything: it used to sign with RHCHAIN_SIGNER_KEY, the
- * operating wallet 0xd305, whose key someone else has also held since at least 2026-11-01.
+ * transaction(s). It never sends anything: it used to sign with RHCHAIN_SIGNER_KEY, which held
+ * the key of the operating wallet 0xd305 until 2026-11-11; someone else has also held that key
+ * since at least 2026-11-01.
  * The person who holds the wallet named by --user sends the prepared transaction from it.
  *
  * Sending it moves REAL money (mainnet ETH). It exists because a funding deposit landed on

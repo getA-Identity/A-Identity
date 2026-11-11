@@ -142,15 +142,18 @@ export const LANDING_FAQ: Item[] = [
   {
     q: 'Which chains can my agent pay on today?',
     plain:
-      'Eight networks settle real money today, led by Arc Mainnet, the newest: live since the day it opened, where an agent pays in USDC, the gas is USDC too, and Circle Gateway nanopayments make a check gasless on both sides. Then Stellar and Algorand, where the buyer also pays no fee, and Base, Arbitrum One, Robinhood Chain, OKX X Layer and Celo. Testnet mirrors rehearse every change first. Every chain publishes a proof page with real transactions (https://a-identity.xyz/proof/arc is the newest), and a chain is only called live here after a real payment has been recorded on it.',
+      'Six networks accept real payments today, led by Arc Mainnet, the newest: live since the day it opened, where an agent pays in USDC, the gas is USDC too, and Circle Gateway nanopayments make a check gasless on both sides. Then Stellar and Algorand, where the buyer also pays no fee; Robinhood Chain and Celo; and Base, where only Circle Gateway nanopayments sell now and its proof page still labels that rail unproven. Arbitrum One and OKX X Layer are live too, with real payments on record, but nothing of ours sells there now: our rail on Arbitrum One has been paused since 2026-11-11, and OKX.AI delisted the X Layer listing on 2026-09-26. Testnet mirrors rehearse every change first. Every chain publishes a proof page with real transactions (https://a-identity.xyz/proof/arc is the newest), and a chain is only called live here after a real payment has been recorded on it.',
     a: (
       <>
-        Eight networks settle real money today, led by <strong>Arc Mainnet</strong>, the newest:
+        Six networks accept real payments today, led by <strong>Arc Mainnet</strong>, the newest:
         live since the day it opened, where an agent pays in USDC, the gas is USDC too, and
         Circle Gateway nanopayments make a check gasless on both sides. Then Stellar and
-        Algorand, where the buyer also pays no fee, and Base, Arbitrum One, Robinhood Chain, OKX X
-        Layer and Celo. Testnet mirrors rehearse every change first. Every chain publishes a
-        proof page with real transactions (
+        Algorand, where the buyer also pays no fee; Robinhood Chain and Celo; and Base, where only
+        Circle Gateway nanopayments sell now and its proof page still labels that rail unproven.
+        Arbitrum One and OKX X Layer are live too, with real payments on record, but nothing of ours sells
+        there now: our rail on Arbitrum One has been paused since 2026-11-11, and OKX.AI delisted
+        the X Layer listing on 2026-09-26. Testnet mirrors rehearse every change first. Every
+        chain publishes a proof page with real transactions (
         <a href="/proof/arc" className={linkClass}>
           /proof/arc
         </a>{' '}

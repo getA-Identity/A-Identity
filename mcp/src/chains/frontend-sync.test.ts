@@ -38,7 +38,7 @@ test('the Arc ledger module names the launch-day vault and our owner key, and on
   const caip2 = CHAINS.find((c) => c.id === 'arc-mainnet')?.caip2
   assert.ok(vault && caip2, 'the ledger no longer lists the launch-day vault')
   assert.deepEqual(facts.vaults.find((v) => v.address === vault.address)?.network, caip2)
-  assert.ok(facts.keys[caip2]?.includes(String(mainnet?.agent?.owner).toLowerCase()), 'our operating wallet is not in the key list')
+  assert.ok(facts.keys[caip2]?.includes(String(mainnet?.agent?.owner).toLowerCase()), 'our Arc Mainnet agent owner is not in the key list')
   assert.deepEqual(Object.keys(facts.keys).sort(), ARC_PAGE_CHAINS.map((id) => CHAINS.find((c) => c.id === id)?.caip2).sort())
 
   // A key an owner holds is never labelled ours, and one of ours always is, whichever way it is listed.

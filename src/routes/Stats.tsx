@@ -159,11 +159,11 @@ const CHAIN_NOTES: Partial<Record<ChainId, string>> = {
   'arc-mainnet':
     "Circle's stablecoin-native L1, selling since 2026-09-16 on two rails at once: our own EIP-3009 facilitator, whose gas is itself USDC, and Circle Gateway nanopayments, which Gateway batches on-chain. Both rails' rows are on this one card.",
   base:
-    'The same facilitator and the same engine, settling in native Circle USDC until 2026-11-11, when the rail paused here until its new gas key holds ETH on Base. Agent #73232 is ours on the canonical registry. The rail\'s first settlement was broadcast from an operator machine and lives on the proof page; this card counts only what the production facilitator has settled here, read live, so the two can differ.',
+    'The same facilitator and the same engine, settling in native Circle USDC until 2026-11-11, when the rail paused here until its new gas key holds ETH on Base; Circle Gateway nanopayments still sell here, and their rows land on this same card. Agent #73232 is ours on the canonical registry, still held by our former operating wallet, whose key someone else has also held since at least 2026-11-01. The EIP-3009 rail\'s first settlement here was broadcast from an operator machine and lives on the proof page; this card counts only what the production rails have settled here, read live, so the two can differ.',
   arbitrum:
     'The same facilitator and the same engine, settling in native Circle USDC until 2026-11-11, when the rail paused here until its new gas key holds ETH on Arbitrum One. Other facilitators already serve this chain, which is the point: here our receipts can be compared against a baseline.',
   rhchain:
-    'We run our own x402 facilitator here, as on every chain we sell on, though other facilitators serve this chain too: the buyer signs and pays no gas, we broadcast, and a settlement only counts once the receipt carries the matching transfer.',
+    'We run our own x402 facilitator here, as on Arc Mainnet, though other facilitators serve this chain too: the buyer signs and pays no gas, we broadcast, and a settlement only counts once the receipt carries the matching transfer.',
   stellar:
     'The buyer signs a Soroban authorization entry and pays no fee; whoever assembles the transaction pays it, and a row counts only after our own read of the SEP-41 transfer event.',
   algorand:

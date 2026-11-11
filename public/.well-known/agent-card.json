@@ -224,7 +224,7 @@
       "owner": "0xd305607510E0Db2c95807173c7A05BEA53c1ed36",
       "tx": "0x23275840eb9a8b85a752769c113109a753f39b592236c85093cf94f6a517b2f3",
       "explorer": "https://arbiscan.io/tx/0x23275840eb9a8b85a752769c113109a753f39b592236c85093cf94f6a517b2f3",
-      "note": "ERC-8004 IdentityRegistry on Arbitrum One, the same canonical address X Layer and Robinhood Chain carry. Our x402 rail settled here too, in native Circle USDC through our own EIP-3009 facilitator, until it paused here on 2026-11-11; the line here used to say no rail of ours did."
+      "note": "ERC-8004 IdentityRegistry on Arbitrum One, the same canonical address X Layer and Robinhood Chain carry. Our x402 rail settled here too, in native Circle USDC through our own EIP-3009 facilitator, until it paused here on 2026-11-11; the line here used to say no rail of ours did. Agent #1259's owner, 0xd305...ed36, was our operating wallet until 2026-11-11; someone else has also held its key since at least 2026-11-01, so never pay or fund that address."
     },
     {
       "chain": "eip155:8453",
@@ -234,7 +234,7 @@
       "owner": "0xd305607510E0Db2c95807173c7A05BEA53c1ed36",
       "tx": "0xb428bf8e79df3c44157c134df1858eb75fe3758b74868445c1dcd07948705bf0",
       "explorer": "https://basescan.org/tx/0xb428bf8e79df3c44157c134df1858eb75fe3758b74868445c1dcd07948705bf0",
-      "note": "ERC-8004 IdentityRegistry on Base, the same canonical address X Layer, Arbitrum One and Robinhood Chain carry. Our own EIP-3009 facilitator settled here in native Circle USDC until it paused here on 2026-11-11; Circle Gateway nanopayments still sell here."
+      "note": "ERC-8004 IdentityRegistry on Base, the same canonical address X Layer, Arbitrum One and Robinhood Chain carry. Our own EIP-3009 facilitator settled here in native Circle USDC until it paused here on 2026-11-11; Circle Gateway nanopayments still sell here. Agent #73232's owner, 0xd305...ed36, was our operating wallet until 2026-11-11; someone else has also held its key since at least 2026-11-01, so never pay or fund that address."
     },
     {
       "chain": "eip155:4663",

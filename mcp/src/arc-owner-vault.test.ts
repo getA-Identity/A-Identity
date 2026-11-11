@@ -401,6 +401,9 @@ test('the live sources name the launch-day vault owner, both rails\' buyers and 
     assert.ok(OURS.byAddress.has(address.toLowerCase()), address)
     assert.ok(committedOurKeys().includes(address.toLowerCase()), `${address} is on the list the page is generated from`)
   }
+  // The two wallets whose keys someone else has also held since at least 2026-11-01 stay ours with no env at all,
+  // so a vault either one owns is refused whether or not its key is still in any server's env.
+  for (const exposed of ['0xd305607510e0db2c95807173c7a05bea53c1ed36', '0xf43f43d8aee114a71b164e1f6214bc7625a5742d']) assert.ok(committedOurKeys().includes(exposed), `${exposed} is exposed and must stay ours with no env`)
   // The env lists the rails read are honored too, so a wallet added there is refused here.
   const extra = '0x6666666666666666666666666666666666666666'
   const withEnv = collectOurAddresses(liveOurAddressSources({ X402_GATEWAY_INTERNAL_PAYERS: extra } as NodeJS.ProcessEnv))

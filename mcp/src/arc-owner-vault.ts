@@ -143,13 +143,17 @@ export const OUR_KEY_PUBLIC_ADDRESSES: Readonly<Record<string, string | null>> =
   ARC_VALIDATOR_KEY: '0xee602A161232Aac1436E812676b6626382FC84a9',
   // x402-gateway/rail.ts: the buyer wallet and the vaults' agent key, 0x8C8D...3349.
   X402_3009_BUYER_KEY: '0x8c8d9cd12d8896a40cf2115ee731258bb4983349',
-  X402_3009_SIGNER_KEY: null,
+  // The EIP-3009 broadcaster since 2026-11-11, read live from /api/facilitator/status: a new
+  // gas-only key that pays gas on Robinhood Chain and Arc Mainnet and receives nothing.
+  X402_3009_SIGNER_KEY: '0x760342469785d06Dc23F8b491a53cA2ebbEaa849',
   X402_3009_FUNDER_KEY: null,
   X402_GATEWAY_BUYER_KEY: null,
   CELO_BUYER_KEY: '0x8C8D9cd12d8896A40cf2115Ee731258Bb4983349',
   CCTP_EVM_SIGNER_KEY: null,
   ARC_MAINNET_SIGNER_KEY: '0xd305607510E0Db2c95807173c7A05BEA53c1ed36',
-  ARC_SIGNER_KEY: '0xd305607510E0Db2c95807173c7A05BEA53c1ed36',
+  // The Arc testnet signer, a new key since 2026-11-11. It was 0xd305...ed36 until then, which
+  // stays ours through the other signer names in this table.
+  ARC_SIGNER_KEY: '0xCE398f99dbC1cA6Cd4901Bff294bd950CEd5055c',
   BASE_SIGNER_KEY: '0xd305607510E0Db2c95807173c7A05BEA53c1ed36',
   RHCHAIN_SIGNER_KEY: '0xd305607510E0Db2c95807173c7A05BEA53c1ed36',
   RHCHAIN_TESTNET_SIGNER_KEY: '0xd305607510E0Db2c95807173c7A05BEA53c1ed36',
