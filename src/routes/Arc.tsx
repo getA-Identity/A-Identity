@@ -21,7 +21,8 @@ const ARC_TILE = 'linear-gradient(155deg, #011667 0%, #3B1046 55%, #7B0E25 100%)
  * /arc: Arc Mainnet, the day it opened and every day after.
  *
  * The page leads with what already exists on the network rather than with what could: the
- * agent we minted, the vault holding real USDC, and both payment rails with their receipts.
+ * agent we minted, the vault that held real USDC until we retired it on 2026-11-11, and both
+ * payment rails with their receipts.
  * Every number and every receipt is read from the backend (the proof ledger and the two
  * rails' own proof endpoints), so nothing here is typed by hand and nothing goes stale
  * without the page noticing. What still runs on Arc testnet is said on the page, not hidden.
@@ -192,7 +193,7 @@ function WhatRuns({ proof }: { proof: ProofNetwork | null }) {
       {
         icon: ShieldCheck,
         title: 'A budget the contract enforces',
-        body: 'A spend vault holds real USDC under a $1 daily cap. It paid inside its policy. On launch day a payment over its limit came back as AboveAutoApprove in simulation, with nothing broadcast. On 2026-11-01 a 0.50 payment was mined and the contract reverted it on chain with the same error (tx 0x134de0b2...).',
+        body: 'A spend vault held real USDC under a $1 daily cap. It paid inside its policy. On launch day a payment over its limit came back as AboveAutoApprove in simulation, with nothing broadcast. On 2026-11-01 a 0.50 payment was mined and the contract reverted it on chain with the same error (tx 0x134de0b2...). On 2026-11-11 the founder emptied the vault and it is retired: someone else also holds the key of its owner, our former operating wallet, and the contract has no owner transfer.',
         artifact: receipt(proof, 'settlement', /vault/i),
       },
       {
@@ -286,7 +287,7 @@ export default function Arc() {
   usePageMeta({
     title: 'A-Identity is live on Arc Mainnet | Trust before your agent pays',
     description:
-      'Arc Mainnet opened on 2026-09-16 and A-Identity went live on it the same day: an agent on the canonical ERC-8004 registry, a spend vault holding real USDC, and trust checks paid in USDC through Circle Gateway nanopayments.',
+      'Arc Mainnet opened on 2026-09-16 and A-Identity went live on it the same day: an agent on the canonical ERC-8004 registry, a spend vault that held real USDC until 2026-11-11, and trust checks paid in USDC through Circle Gateway nanopayments.',
     canonical: 'https://a-identity.xyz/arc',
   })
 

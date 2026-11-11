@@ -231,7 +231,7 @@ export default function VaultStatus({
             <span className="flex flex-wrap items-center gap-2">
               <Mono>{v.owner}</Mono>
               <CopyButton text={v.owner} label="Copy" />
-              {ownerIsOurKey && <Chip tone="warn">Our operating wallet</Chip>}
+              {ownerIsOurKey && <Chip tone="warn">One of our keys</Chip>}
               <Explorer href={addressUrl(chain, v.owner)} />
             </span>
           </Field>

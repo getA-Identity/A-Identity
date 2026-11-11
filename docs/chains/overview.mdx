@@ -16,7 +16,7 @@ nothing is deployed yet.
 
 | Chain | CAIP-2 | Status | What is deployed |
 | --- | --- | --- | --- |
-| [Arc Mainnet](/chains/arc#arc-mainnet) | `eip155:5042` | live | Agent #0 on the canonical ERC-8004 registry, an AgentSpendPolicy vault with real USDC, x402 via our EIP-3009 facilitator and Circle Gateway nanopayments |
+| [Arc Mainnet](/chains/arc#arc-mainnet) | `eip155:5042` | live | Agent #0 on the canonical ERC-8004 registry, an AgentSpendPolicy vault that held real USDC until the founder emptied it on 2026-11-11 (retired: someone else also holds its owner key), x402 via our EIP-3009 facilitator and Circle Gateway nanopayments |
 | [Circle Arc](/chains/arc) (testnet) | `eip155:5042002` | live | ERC-8004 identity, reputation and validation, ERC-8183 escrow, AgentSpendPolicy vaults, USDC |
 | [Stellar](/chains/stellar) | `stellar:pubnet` | live | An `AgentSpendPolicy` Soroban vault holding real Circle USDC under a 1 USDC daily cap, with a typed `DailyCapExceeded` refusal on the ledger; the Soroban x402 rail sells here too (first mainnet sale 2026-08-27, buyer signs an authorization entry and pays no fee). No ERC-8004 on either Stellar network: that standard is EVM-only |
 | [Stellar (testnet)](/chains/stellar) | `stellar:testnet` | beta | The same vault wasm plus the Soroban x402 rail end to end, in test money: the buyer signs an authorization entry and pays no fee |
@@ -25,10 +25,10 @@ nothing is deployed yet.
 | [OKX X Layer](/chains/xlayer) | `eip155:196` | live | Canonical ERC-8004 identity; the trust oracle sold here over x402 until OKX.AI delisted it on 2026-09-26 |
 | [Robinhood Chain](/chains/robinhood) | `eip155:4663` | live | Canonical ERC-8004 identity and reputation, agent #0, and our own x402 facilitator settling in USDG |
 | [Celo](/chains/celo) | `eip155:42220` | live | Canonical ERC-8004 identity and reputation, agent #9759, x402 over USDC via the first-party Celo facilitator |
-| [Base](/chains/base) | `eip155:8453` | live | Canonical ERC-8004 identity and reputation registries, deployed by their authors and read live; agent #73232 is ours; x402 settles in native Circle USDC through our own EIP-3009 facilitator (first settlement 2026-08-27 UTC); plus the Gateway hop that mints on Base Sepolia |
+| [Base](/chains/base) | `eip155:8453` | live | Canonical ERC-8004 identity and reputation registries, deployed by their authors and read live; agent #73232 is ours; x402 settled in native Circle USDC through our own EIP-3009 facilitator (first settlement 2026-08-27 UTC; paused since 2026-11-11, until its new broadcaster key has gas here); plus the Gateway hop that mints on Base Sepolia |
 | [Robinhood Chain Testnet](/chains/robinhood) | `eip155:46630` | beta | The full canonical ERC-8004 trio plus a deployed AgentSpendPolicy vault |
 | [Celo Sepolia](/chains/celo) | `eip155:11142220` | beta | Same ERC-8004 pair as Arc, x402 over testnet USDC |
-| [Arbitrum One](/chains/arbitrum) | `eip155:42161` | live | Canonical ERC-8004 identity and reputation, agent #1259, and x402 settling in native Circle USDC through our own facilitator |
+| [Arbitrum One](/chains/arbitrum) | `eip155:42161` | live | Canonical ERC-8004 identity and reputation, agent #1259, and x402 settled in native Circle USDC through our own facilitator (paused since 2026-11-11, until its new broadcaster key has gas here) |
 | Avalanche C-Chain | `eip155:43114` | planned | Descriptor only |
 
 <Note>
@@ -66,6 +66,6 @@ Two consequences worth stating plainly, because they are easy to get wrong:
 | X Layer | Through the OKX facilitator, as a listed ASP service. |
 | Celo | Through Celo's own first-party x402 facilitator, EIP-3009, buyer pays no gas. |
 | Robinhood Chain | Through **our own** facilitator, the same one on every chain we sell on (others serve this chain too): EIP-3009, buyer pays no gas, and settlement is proven by a receipt carrying the matching Transfer log. |
-| Arbitrum One | The same facilitator and the same engine, settling in native Circle USDC. Other facilitators already serve this chain, so here you can compare ours against a baseline. The disclosed fee is lower because a settlement measurably costs less: 103569 gas at 0.02 gwei. |
-| Base | The same facilitator and the same engine again, settling in native Circle USDC with the signing domain proven against the live DOMAIN_SEPARATOR. The first settlement's receipt (102828 gas at 0.006 gwei) is what set the disclosed fee. |
+| Arbitrum One | The same facilitator and the same engine, settling in native Circle USDC. Other facilitators already serve this chain, so here you can compare ours against a baseline. The disclosed fee is lower because a settlement measurably costs less: 103569 gas at 0.02 gwei. Paused since 2026-11-11, until the facilitator's new broadcaster key has gas on this chain. |
+| Base | The same facilitator and the same engine again, settling in native Circle USDC with the signing domain proven against the live DOMAIN_SEPARATOR. The first settlement's receipt (102828 gas at 0.006 gwei) is what set the disclosed fee. Paused since 2026-11-11, until the facilitator's new broadcaster key has gas on this chain. |
 | Stellar | Through our own Soroban facilitator, on both networks: the buyer signs an authorization entry (no per-token domain to prove; the protocol fixes the preimage), we assemble and pay the fee, and a sale counts only once the SEP-41 transfer event bound to that authorization's nonce is read back. |

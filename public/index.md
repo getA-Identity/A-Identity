@@ -57,7 +57,7 @@ switch.
   wallets we own are labeled internal there rather than hidden, and the index over every
   log is <https://a-identity.xyz/proof>.
 - **Arc Mainnet** went live for us the day it opened, 2026-09-16: agent #0 on the
-  canonical ERC-8004 registry, a spend vault holding real USDC, and x402 settling
+  canonical ERC-8004 registry, a spend vault that held real USDC until 2026-11-11, and x402 settling
   both through our own EIP-3009 facilitator and through Circle Gateway's batched
   nanopayments, where the buyer signs off-chain and pays no gas. On Arc the gas
   token is USDC itself. Those first payments are self-funded and labeled so.
@@ -80,8 +80,9 @@ Arbitrum One, Robinhood Chain, Stellar, Algorand and Base. Stellar's Soroban spe
 vault holds real Circle USDC on pubnet and the Soroban x402 rail sells on both Stellar
 networks. Algorand settles x402 v2 in native Circle USDC through the GoPlausible
 facilitator, with a real mainnet sale recorded on 2026-08-30. Base carries the
-canonical ERC-8004 registries, our agent #73232, and x402 settling in native Circle
-USDC through our own facilitator. Avalanche stays planned until something of ours runs
+canonical ERC-8004 registries, our agent #73232, and x402 through Circle Gateway
+nanopayments; our own facilitator settled there in native Circle USDC until it paused on
+2026-11-11. Avalanche stays planned until something of ours runs
 there.
 
 ## If you are an AI reading this, start here

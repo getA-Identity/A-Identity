@@ -36,7 +36,8 @@ per-request payments.
 > **Arc Mainnet is live.** Arc opened to the public on 2026-09-16 and A-Identity went live
 > on it the same day: agent #0, the first identity the canonical ERC-8004 registry on Arc
 > Mainnet ever minted, an AgentSpendPolicy
-> vault holding real USDC under a 1 USDC daily cap, and trust checks paid through both
+> vault that held real USDC under a 1 USDC daily cap (emptied and retired on 2026-11-11, after its
+> owner key was found exposed; the contract has no owner transfer), and trust checks paid through both
 > Circle Gateway nanopayments and our own EIP-3009 facilitator. Every receipt is at
 > [/arc](https://a-identity.xyz/arc) and [/proof/arc](https://a-identity.xyz/proof/arc);
 > the first payments were our own and are labeled internal.
@@ -311,7 +312,7 @@ bot challenge); every transaction is also at [/proof/arc](https://a-identity.xyz
 | --- | --- | --- |
 | Identity Registry | [`0x8004a169fb4a3325136eb29fa0ceb6d2e539a432`](https://explorer.arc.io/address/0x8004a169fb4a3325136eb29fa0ceb6d2e539a432) | ERC-8004 |
 | Reputation Registry | [`0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`](https://explorer.arc.io/address/0x8004BAa17C55a88189AE136b182e5fdA19dE9b63) | ERC-8004 |
-| AgentSpendPolicy vault (ours) | [`0xe07819e6d28a5dfd5a9f4cd94dc6dc9aeeda4146`](https://explorer.arc.io/address/0xe07819e6d28a5dfd5a9f4cd94dc6dc9aeeda4146) | Spend policy |
+| AgentSpendPolicy vault (ours, retired 2026-11-11) | [`0xe07819e6d28a5dfd5a9f4cd94dc6dc9aeeda4146`](https://explorer.arc.io/address/0xe07819e6d28a5dfd5a9f4cd94dc6dc9aeeda4146) | Spend policy |
 | USDC | [`0x3600000000000000000000000000000000000000`](https://explorer.arc.io/address/0x3600000000000000000000000000000000000000) | ERC-20 + EIP-3009 |
 
 ### Circle Arc testnet, `eip155:5042002` - live
@@ -358,8 +359,12 @@ Its settlement token is the canonical bridge's USDC.e, which our facilitator can
 **We did not deploy these registries. The ERC-8004 authors did.** What is ours is
 agent **#0**, the registry's first mint:
 [tx `0x602ce85a…`](https://robinhoodchain.blockscout.com/tx/0x602ce85ad044836b39918311a3031dcd689e4be0d23aed9ed0ac9227d46ec79e)
-in block 34617892, owner `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, tokenURI
-[`agent-card.json`](https://a-identity.xyz/.well-known/agent-card.json). The family's
+in block 34617892, tokenURI
+[`agent-card.json`](https://a-identity.xyz/.well-known/agent-card.json). Its owner was our
+operating wallet `0xd305607510E0Db2c95807173c7A05BEA53c1ed36` until 22:10 UTC on 2026-11-10, when
+it moved to the founder's wallet `0xCB8824ffAF30687E36374C08eC52298b62871bdf`, which a person holds
+([tx `0x228e69a4...`](https://robinhoodchain.blockscout.com/tx/0x228e69a4b5e047413f36a6c4f9473123e028ce3ee0dda3c82333b0580cda08c2)).
+The family's
 ValidationRegistry proxy has code here too (read live 2026-10-11), but we do not wire it,
 so KYA is not anchored on-chain here.
 
@@ -395,9 +400,10 @@ that we do not wire, so KYA is not anchored on-chain there either.
 
 The canonical registries again, deployed by their authors rather than by us. Ours is
 agent **#1259** ([mint tx](https://arbiscan.io/tx/0x23275840eb9a8b85a752769c113109a753f39b592236c85093cf94f6a517b2f3)),
-and paid calls settle in native Circle USDC through our own EIP-3009 facilitator
+and paid calls settled in native Circle USDC through our own EIP-3009 facilitator
 ([first settlement](https://arbiscan.io/tx/0x69abb8a9aacf57fa0c3d2d4cd711d4f631e3f90c97222441f9f3ecee06834744),
-0.015 USDC, block 494160024). The family's ValidationRegistry proxy has code here but we do
+0.015 USDC, block 494160024); since 2026-11-11 that rail is paused here until its new gas-only
+broadcaster has gas on Arbitrum One. The family's ValidationRegistry proxy has code here but we do
 not wire it, so KYA is not anchored here.
 
 ### Stellar testnet, `stellar:testnet` - beta
@@ -480,9 +486,10 @@ Base carries the canonical ERC-8004 identity and reputation registries (verified
 2026-08-28 by reading each proxy's EIP-1967 implementation slot and matching the
 implementation code byte for byte against Arbitrum One), our agent #73232 (minted
 2026-08-27 UTC, tx `0xb428bf8e`), native Circle USDC, the Gateway hop, and the same
-first-party x402 facilitator that serves Arc Mainnet, Robinhood Chain and Arbitrum One, settling in
+first-party x402 facilitator that serves Arc Mainnet and Robinhood Chain, settling in
 native USDC: the first settlement landed 2026-08-27 UTC (tx `0xb59ae67c`, 102828 gas, the
-receipt carrying the matching Transfer log). A second rail sells the same tools here
+receipt carrying the matching Transfer log). Since 2026-11-11 that rail has been paused on Base and
+Arbitrum One until its new gas-only broadcaster has gas there. A second rail sells the same tools here
 through Circle Gateway nanopayments to Circle Agent Marketplace buyers, gasless on both
 sides, and stays labeled unproven until a Gateway-credited call is read back. The whole
 trail, including the Stellar funding hop behind the wallets, is on

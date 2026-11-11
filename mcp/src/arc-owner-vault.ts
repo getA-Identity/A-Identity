@@ -207,8 +207,8 @@ export function collectOurAddresses(s: OurAddressSources): OurAddresses {
   }
 
   // Agent owners first, grouped, so one wallet that owns our agent on six chains reads as
-  // one line. The ledger itself calls the Arc Mainnet agent owner the operating wallet: it
-  // minted agent #0 there and owns the launch-day vault.
+  // one line. No role is read into the owner: until 2026-11-11 the Arc Mainnet agent owner was
+  // the operating wallet, and since then it is the founder's own wallet.
   const agentChains = new Map<string, string[]>()
   for (const p of s.provenance) {
     if (p.agent && EVM_ADDRESS.test(p.agent.owner)) {
@@ -221,7 +221,7 @@ export function collectOurAddresses(s: OurAddressSources): OurAddresses {
   }
   for (const [address, chains] of agentChains) {
     const label = `our agent's owner in the provenance ledger on ${chains.join(', ')}`
-    add(address, chains.includes(ADMISSION_CHAIN) ? `the operating wallet (${label})` : label)
+    add(address, label)
   }
   for (const a of s.gatewayInternalPayers) add(a, 'x402-gateway internal payer')
   for (const a of s.facilitatorInternalPayers) add(a, 'x402-3009 internal payer')

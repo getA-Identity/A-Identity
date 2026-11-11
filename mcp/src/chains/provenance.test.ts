@@ -552,11 +552,15 @@ test('how to check Arc Mainnet says what actually carries its payments, and a Ga
   // The rows that have no block number are not promised one.
   assert.doesNotMatch(text, /in the block named/)
   assert.match(text, /a payment row links the transaction only/)
-  // Where our facilitator leads, Gateway is still the exception, so a rail is described by what carries it.
+  // Where our facilitator is paused, the pause is said and Gateway is described as what sells, never as the exception.
   const baseText = (await howToVerify(['base'])).join('\n')
-  assert.match(baseText, /Payments on Base go through the EIP-3009 facilitator we run/)
-  assert.match(baseText, /Circle Gateway sales are the exception: Circle broadcasts the batch/)
+  assert.match(baseText, /On Base the EIP-3009 facilitator we run has been paused since 2026-11-11/)
+  assert.match(baseText, /Circle Gateway nanopayments are the rail that sells here: Circle broadcasts the batch/)
+  assert.doesNotMatch(baseText, /go through the EIP-3009 facilitator|Circle Gateway sales are the exception/)
   assert.doesNotMatch(baseText, /nearly all counted payments/)
+  const arbitrumText = (await howToVerify(['arbitrum'])).join('\n')
+  assert.match(arbitrumText, /On Arbitrum One the EIP-3009 facilitator we run has been paused since 2026-11-11/)
+  assert.doesNotMatch(arbitrumText, /go through the EIP-3009 facilitator/)
 })
 
 test('the registry line is derived from the registry and admits that mainnet and testnet differ', async () => {

@@ -100,7 +100,7 @@ const owner = await client.readContract({
 | IdentityRegistry | mainnet | [`0x8004a169fb4a3325136eb29fa0ceb6d2e539a432`](https://robinhoodchain.blockscout.com/address/0x8004a169fb4a3325136eb29fa0ceb6d2e539a432) |
 | ReputationRegistry | mainnet | [`0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`](https://robinhoodchain.blockscout.com/address/0x8004BAa17C55a88189AE136b182e5fdA19dE9b63) |
 | USDG (settlement) | mainnet | [`0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`](https://robinhoodchain.blockscout.com/address/0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168) |
-| AgentSpendPolicy vault (ours) | mainnet | [`0x05a6aad7124c2f1c7b82b03e0bbe3867bc500073`](https://robinhoodchain.blockscout.com/address/0x05a6aad7124c2f1c7b82b03e0bbe3867bc500073) |
+| AgentSpendPolicy vault (ours, retired) | mainnet | [`0x05a6aad7124c2f1c7b82b03e0bbe3867bc500073`](https://robinhoodchain.blockscout.com/address/0x05a6aad7124c2f1c7b82b03e0bbe3867bc500073) |
 | IdentityRegistry | testnet | [`0x8004A818BFB912233c491871b3d84c89A494BD9e`](https://explorer.testnet.chain.robinhood.com/address/0x8004A818BFB912233c491871b3d84c89A494BD9e) |
 | ReputationRegistry | testnet | [`0x8004B663056A597Dffe9eCcC1965A193B7388713`](https://explorer.testnet.chain.robinhood.com/address/0x8004B663056A597Dffe9eCcC1965A193B7388713) |
 | ValidationRegistry | testnet | [`0x8004Cb1BF31DAf7788923b405b754f57acEB4272`](https://explorer.testnet.chain.robinhood.com/address/0x8004Cb1BF31DAf7788923b405b754f57acEB4272) |
@@ -120,8 +120,11 @@ The **AgentSpendPolicy vault** is ours: 1 USDG a day, 0.25 USDG per payment for 
 key, and anything above is refused with the contract's typed `AboveAutoApprove` error and
 left to the owner. Since 2026-10-01 the agent key (`0x8C8D...3349`) is a separate wallet
 from the owner key (`0xd305...ed36`), and its session key, renewed on 2026-11-08, runs to 2027-01-07. The owner is
-still a server-held key; the transactions are listed on
-[/proof/robinhood](https://a-identity.xyz/proof/robinhood).
+our former operating wallet: someone else has also held its key since at least 2026-11-01, that key
+has not been on our servers since 2026-11-11, and the contract has no owner transfer, so the vault
+is retired. It was emptied at 22:10 UTC on 2026-11-10 (withdraw tx
+`0xa67afdaec4cfe6fb8a8b851cc60b3a77ff66c1ba1e196ac489c3a69a3374041d`); do not fund it. The
+transactions are listed on [/proof/robinhood](https://a-identity.xyz/proof/robinhood).
 
 Before an agent pays here, [/check/robinhood](https://a-identity.xyz/check/robinhood)
 (or `GET /api/robinhood/check?q=...`, or the MCP tool `evm_pay_check`) answers whether a

@@ -58,7 +58,7 @@ export const CHAINS: ChainDescriptor[] = [
     // 'Arc' it has carried on every surface since launch.
     shortName: 'Arc Mainnet',
     color: '#2775CA',
-    role: 'Circle\'s stablecoin-native L1 on mainnet: agent #0 on the canonical ERC-8004 registry, a spend vault holding real USDC, and x402 settling through our own EIP-3009 facilitator and Circle Gateway nanopayments.',
+    role: 'Circle\'s stablecoin-native L1 on mainnet: agent #0 on the canonical ERC-8004 registry, a spend vault that held real USDC until 2026-11-11, and x402 settling through our own EIP-3009 facilitator and Circle Gateway nanopayments.',
     ecosystem: 'evm',
     testnet: false,
     // LIVE since 2026-09-16, the day the network opened, on the bar every other chain met:
@@ -715,7 +715,7 @@ export const CHAINS: ChainDescriptor[] = [
     name: 'Base',
     shortName: 'Base',
     color: '#0052FF',
-    role: 'Coinbase-ecosystem EVM rail: canonical ERC-8004 registries live, our agent #73232, and x402 settling in native Circle USDC through our own EIP-3009 facilitator.',
+    role: 'Coinbase-ecosystem EVM rail: canonical ERC-8004 registries live, our agent #73232, and x402 selling through Circle Gateway nanopayments; our own EIP-3009 facilitator has been paused here since 2026-11-11.',
     ecosystem: 'evm',
     testnet: false,
     status: 'live',
@@ -788,10 +788,12 @@ export const CHAINS: ChainDescriptor[] = [
     payment: {
       x402: true,
       note:
-        'x402 settling in native Circle USDC through our own first-party EIP-3009 ' +
+        'x402 settled in native Circle USDC through our own first-party EIP-3009 ' +
         'facilitator: the buyer signs, we broadcast and pay the gas. The signing domain is ' +
         'proven against the live DOMAIN_SEPARATOR, and the first settlement landed ' +
-        '2026-08-27 UTC (tx 0xb59ae67c) with the receipt carrying the matching Transfer log.',
+        '2026-08-27 UTC (tx 0xb59ae67c) with the receipt carrying the matching Transfer log. ' +
+        'That rail has been paused here since 2026-11-11, until the new gas-only key holds ETH on Base; ' +
+        'Circle Gateway nanopayments still sell here.',
     },
   },
   {
@@ -930,7 +932,7 @@ export const CHAINS: ChainDescriptor[] = [
     name: 'Arbitrum One',
     shortName: 'Arbitrum',
     color: '#28A0F0',
-    role: 'DeFi gateway: large protocol ecosystem, our ERC-8004 agent #1259, and x402 settling in native Circle USDC through our own EIP-3009 facilitator.',
+    role: 'DeFi gateway: large protocol ecosystem, our ERC-8004 agent #1259, and x402 in native Circle USDC through our own EIP-3009 facilitator, paused here since 2026-11-11.',
     ecosystem: 'evm',
     testnet: false,
     // LIVE since 2026-08-13, and it cleared the same bar as the others rather than a
@@ -1001,7 +1003,7 @@ export const CHAINS: ChainDescriptor[] = [
     },
     payment: {
       x402: true,
-      note: 'x402 settling in native Circle USDC through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. The fee is lower here than on Robinhood Chain because the gas measurably is.',
+      note: 'x402 settled in native Circle USDC through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. The fee is lower here than on Robinhood Chain because the gas measurably is. Paused here since 2026-11-11, until the new gas-only key holds ETH on Arbitrum One.',
     },
   },
   {

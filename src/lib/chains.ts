@@ -81,7 +81,7 @@ export const CHAINS: readonly Chain[] = [
     ],
     "rpcUrl": "https://rpc.mainnet.arc.io",
     "explorer": "https://explorer.arc.io",
-    "role": "Circle's stablecoin-native L1 on mainnet: agent #0 on the canonical ERC-8004 registry, a spend vault holding real USDC, and x402 settling through our own EIP-3009 facilitator and Circle Gateway nanopayments.",
+    "role": "Circle's stablecoin-native L1 on mainnet: agent #0 on the canonical ERC-8004 registry, a spend vault that held real USDC until 2026-11-11, and x402 settling through our own EIP-3009 facilitator and Circle Gateway nanopayments.",
     "status": "live",
     "protocols": {
       "payment": {
@@ -252,12 +252,12 @@ export const CHAINS: readonly Chain[] = [
     ],
     "rpcUrl": "https://mainnet.base.org",
     "explorer": "https://basescan.org",
-    "role": "Coinbase-ecosystem EVM rail: canonical ERC-8004 registries live, our agent #73232, and x402 settling in native Circle USDC through our own EIP-3009 facilitator.",
+    "role": "Coinbase-ecosystem EVM rail: canonical ERC-8004 registries live, our agent #73232, and x402 selling through Circle Gateway nanopayments; our own EIP-3009 facilitator has been paused here since 2026-11-11.",
     "status": "live",
     "protocols": {
       "payment": {
         "x402": true,
-        "note": "x402 settling in native Circle USDC through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. The signing domain is proven against the live DOMAIN_SEPARATOR, and the first settlement landed 2026-08-27 UTC (tx 0xb59ae67c) with the receipt carrying the matching Transfer log."
+        "note": "x402 settled in native Circle USDC through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. The signing domain is proven against the live DOMAIN_SEPARATOR, and the first settlement landed 2026-08-27 UTC (tx 0xb59ae67c) with the receipt carrying the matching Transfer log. That rail has been paused here since 2026-11-11, until the new gas-only key holds ETH on Base; Circle Gateway nanopayments still sell here."
       },
       "identity": {
         "standard": "ERC-8004",
@@ -339,12 +339,12 @@ export const CHAINS: readonly Chain[] = [
     ],
     "rpcUrl": "https://arb1.arbitrum.io/rpc",
     "explorer": "https://arbiscan.io",
-    "role": "DeFi gateway: large protocol ecosystem, our ERC-8004 agent #1259, and x402 settling in native Circle USDC through our own EIP-3009 facilitator.",
+    "role": "DeFi gateway: large protocol ecosystem, our ERC-8004 agent #1259, and x402 in native Circle USDC through our own EIP-3009 facilitator, paused here since 2026-11-11.",
     "status": "live",
     "protocols": {
       "payment": {
         "x402": true,
-        "note": "x402 settling in native Circle USDC through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. The fee is lower here than on Robinhood Chain because the gas measurably is."
+        "note": "x402 settled in native Circle USDC through our own first-party EIP-3009 facilitator: the buyer signs, we broadcast and pay the gas. The fee is lower here than on Robinhood Chain because the gas measurably is. Paused here since 2026-11-11, until the new gas-only key holds ETH on Arbitrum One."
       },
       "identity": {
         "standard": "ERC-8004",

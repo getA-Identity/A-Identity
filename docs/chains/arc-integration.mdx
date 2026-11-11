@@ -7,7 +7,8 @@ Your agent pays for APIs or services on Arc Mainnet. Before each payment it buys
 trust check from A-Identity, paid in USDC through Circle Gateway nanopayments (the buyer
 signs, nobody pays gas, Circle batches the settlement), and acts on the answer. This page
 is the whole integration. Every endpoint, header, price and address on it was read from
-the running service and from Circle's own endpoints on 2026-11-04, except the
+the running service and from Circle's own endpoints on 2026-11-04, except our `payTo`, which
+moved at 18:35 UTC on 2026-11-11 to the address in the challenge below, and the
 [verifyThenPay section](#verify-then-pay-from-a-vault), which is dated on its own. The ten
 minutes start once your wallet holds USDC on Arc Mainnet; [getting it there](#what-you-need)
 is the slow part for most teams.
@@ -436,10 +437,13 @@ Memo. So a payment names no check; the server links them by vault, payee, amount
 
 **Whose keys.** A vault you deploy at [/app/vault/arc](https://a-identity.xyz/app/vault/arc) is
 yours: your wallet is the owner, your own agent is the operator, and A-Identity holds neither key.
-The check's payer defaults to the operator and can be a separate key. Our own flows run
+The check's payer defaults to the operator and can be a separate key. Our own flows ran
 through our launch-day vault `0xe07819e6d28a5dfd5a9f4cd94dc6dc9aeeda4146`, whose owner is our
-operating wallet and whose operator is our env-gated key, so they are not owner-held and are
-labeled internal.
+former operating wallet and whose operator was our env-gated key, so they are not owner-held and
+are labeled internal. That vault is retired: someone else has also held its owner's key since at
+least 2026-11-01, and the contract has no owner transfer, so the founder emptied it at about 00:38
+UTC on 2026-11-11 (withdraw tx `0xaa4714de40e7b0f47736b13df013e770fa52e569f3b5fc3568559194282913d1`).
+Do not fund it.
 
 **Five things the contract does that an owner should know.** Each is pinned by a test in
 `mcp/test-sol/AgentSpendPolicy.olx.t.sol`. The vault page says them where you act on them, but a call

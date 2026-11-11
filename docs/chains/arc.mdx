@@ -64,13 +64,21 @@ primary settlement rail.
 
 Arc Mainnet is in the registry as `arc-mainnet` with status **live** since 2026-09-16, the
 day it opened: agent #0 on the canonical registry is ours, an AgentSpendPolicy vault
-(`0xe07819e6d28a5dfd5a9f4cd94dc6dc9aeeda4146`) holds real USDC under dust caps, and paid
+(`0xe07819e6d28a5dfd5a9f4cd94dc6dc9aeeda4146`) held real USDC under dust caps, and paid
 calls settled through both our EIP-3009 facilitator and Circle Gateway nanopayments. The first
 payments were self-funded and labeled internal, and wallets off our internal lists have paid for
 a few checks since, labeled external; the split and each transaction are at
 [/proof/arc](https://a-identity.xyz/proof/arc). It is a separate descriptor from the testnet on purpose,
 with its own signer variable (`ARC_MAINNET_SIGNER_KEY`), so a testnet key can never become
 a mainnet key by a rename.
+
+That vault is retired. Its owner is our former operating wallet
+`0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, whose key someone else has also held since at
+least 2026-11-01, and the contract has no owner transfer, so the founder emptied the vault at
+about 00:38 UTC on 2026-11-11 (withdraw tx
+`0xaa4714de40e7b0f47736b13df013e770fa52e569f3b5fc3568559194282913d1`). Do not fund it. At about
+the same time agent #0 moved to `0xCB8824ffAF30687E36374C08eC52298b62871bdf`, the founder's
+wallet, which a person holds (tx `0x651650cf324e38dfb91865b71acef7e645ba983c34ba3a94bc7619444503205f`).
 
 | Field | Value |
 | --- | --- |

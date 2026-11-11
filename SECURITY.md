@@ -18,10 +18,12 @@ single source of truth and a test fails the build if any other file disagrees:
   the only direction this document must never be wrong in.
 - **Circle Arc is testnet and is still `live`.** Both statements hold; Arc being test money
   is not a statement about the seven mainnets.
-- **Money moves.** x402 calls settle in real USD₮0 on X Layer, real Circle USDC on Celo,
-  Arbitrum One and Base, USDG (Paxos Global Dollar) on Robinhood Chain, SEP-41 USDC on
+- **Money moves.** x402 calls settle in real Circle USDC on Arc Mainnet, Celo and Base,
+  USDG (Paxos Global Dollar) on Robinhood Chain, SEP-41 USDC on
   Stellar (pubnet since 2026-08-27, and testnet), and the Circle USDC ASA on Algorand
-  mainnet (since 2026-08-30).
+  mainnet (since 2026-08-30). They settled in real Circle USDC on Arbitrum One until our
+  EIP-3009 rail paused there on 2026-11-11, and in real USD₮0 on X Layer until OKX.AI
+  delisted the oracle on 2026-09-26.
 - **We hold no user keys.** Agent wallet keys are generated in the browser
   ([`src/components/app/agent/RegisterForm.tsx`](src/components/app/agent/RegisterForm.tsx));
   the server only ever sees public addresses. That part of the old text was and remains
@@ -32,8 +34,10 @@ single source of truth and a test fails the build if any other file disagrees:
 ## The keys that actually matter
 
 Our facilitators run a "the buyer signs, we broadcast and pay the gas" model. That means
-**every signer below is a hot wallet**: it sits in the host environment, it is used without
-human interaction on each request, and on seven of these chains it spends real money. The
+**every signer below that is set is a hot wallet**: it sits in the host environment, it is used
+without human interaction on each request, and on a mainnet it spends real money. Four of the
+mainnet rows have been unset since 2026-11-11 (see
+[The 2026-11-11 rotation](#the-2026-11-11-rotation)). The
 previous version of this file listed exactly one of them and described it as test funds.
 
 No secret is committed to git. Runtime credentials live in the host env (Render) and, for
@@ -62,7 +66,9 @@ values, such as the WalletConnect project id.
 `AVAX_SIGNER_KEY` is the only row left that is dormant, and it is dormant by funding rather
 than by nature: a key set on it is a mainnet key the moment somebody sends it gas.
 `ARC_MAINNET_SIGNER_KEY` stopped being dormant on 2026-09-16; on Arc the gas is USDC itself,
-so funding the gas IS funding the key, and today it holds the same operator key as Base. Stellar
+so funding the gas IS funding the key, and until 2026-11-11 it held the same operator key as Base,
+our operating wallet then, which left the server env that day (see
+[The 2026-11-11 rotation](#the-2026-11-11-rotation)). Stellar
 pubnet stopped being hypothetical on 2026-08-24, when burner keys were funded there, a
 contract was deployed and 1 USDC moved through it, and it stopped being a vault-only story
 on 2026-08-27, when the first x402 sale settled on that network. Those pubnet burners are
@@ -75,7 +81,7 @@ not spend.
 
 | Env var | What it is |
 | --- | --- |
-| `X402_3009_SIGNER_KEY` | Broadcaster for the EIP-3009 rail. Overrides the chain signer when set, so it can be the wallet paying gas on Robinhood Chain and Arbitrum One mainnet ([`x402-3009/engine.ts:528`](mcp/src/x402-3009/engine.ts#L528)). |
+| `X402_3009_SIGNER_KEY` | Broadcaster for the EIP-3009 rail. Overrides the chain signer when set (`signerKey()` in [`x402-3009/engine.ts`](mcp/src/x402-3009/engine.ts)). Since 2026-11-11 its address is `0x760342469785d06Dc23F8b491a53cA2ebbEaa849`, a new random key that only pays gas: it broadcasts on Robinhood Chain and Arc Mainnet and receives nothing. The rail is paused on Base and Arbitrum One until this key has gas there. |
 | `X402_STELLAR_TESTNET_FEE_PAYER` | Pays the network fee for every Stellar settlement we broadcast. **Live in production since 2026-08-24.** |
 | `X402_STELLAR_PUBNET_FEE_PAYER` | The same role on pubnet, spending **real value** on every mainnet Stellar sale. **Set on the hosted deployment**, which `/api/x402/stellar/status` answers for itself; without it the pubnet rail is fail-closed. Since 2026-09-15 its value is the dedicated XLM-only account `GAFVDEN6BC52WWPRPINOVENMXW3FU4LCSVVVA5C67RLPG4GAK6BE4SXY`; the first two mainnet sales (2026-08-27 and 2026-08-28) were broadcast by the vault operator key, before that split. See [Stellar operational posture](#stellar-operational-posture) below. |
 | `X402_STELLAR_TESTNET_OZ_KEY` / `X402_STELLAR_PUBNET_OZ_KEY` | OpenZeppelin Channels API keys, the fallback broadcaster. |
@@ -102,11 +108,12 @@ not spend.
 Priority is by blast radius, and the mainnet signers now sit above everything that used to
 be at the top of this list.
 
-1. **The seven live mainnet signers** (`XLAYER_SIGNER_KEY`, `CELO_SIGNER_KEY`,
-   `RHCHAIN_SIGNER_KEY`, `ARB_SIGNER_KEY`, `BASE_SIGNER_KEY`,
+1. **The live mainnet signers** (`XLAYER_SIGNER_KEY`, `CELO_SIGNER_KEY`,
    `STELLAR_PUBNET_SIGNER_SECRET`, `ALGORAND_MAINNET_SIGNER_MNEMONIC`),
-   `X402_3009_SIGNER_KEY` and `X402_STELLAR_PUBNET_FEE_PAYER`. These hold real value and
-   sign without a human. Sweep the balance to a fresh key, set the new key in the Render env,
+   `X402_3009_SIGNER_KEY` and `X402_STELLAR_PUBNET_FEE_PAYER`, and `RHCHAIN_SIGNER_KEY`,
+   `ARB_SIGNER_KEY`, `BASE_SIGNER_KEY` and `ARC_MAINNET_SIGNER_KEY` whenever they are set
+   again (they left the server env on 2026-11-11). These hold real value and sign without a
+   human. Sweep the balance to a fresh key, set the new key in the Render env,
    redeploy, then confirm a settlement lands before considering it done. Two of them need a
    step the EVM keys do not: a fresh Stellar account has to open its USDC trustline and a
    fresh Algorand account has to opt in to the USDC ASA before either can receive anything,
@@ -125,6 +132,39 @@ be at the top of this list.
 
 Any credential that has ever been pasted into a chat, a screenshot or a shared document
 should be treated as exposed regardless of where it sits in this list.
+
+### The 2026-11-11 rotation
+
+Recorded here because it is the case the guidance above exists for.
+
+- **Two addresses retired as exposed.** `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, our
+  operating wallet until 2026-11-11: someone else has also held its key since at least
+  2026-11-01 (an EIP-7702 sweeper delegation on Base and Arbitrum One, set by
+  `0xd9D6FE80E840c190dD44fcc21dE58AA5fFd4894B`). And `0xF43F43D8aee114a71B164e1f6214BC7625a5742D`,
+  the Celo pay-to and the owner of Celo agent #9759 until 2026-11-11, which came from the same
+  personal seed: one block after #9759 moved off it, someone else used its key to take its CELO.
+  Neither receives our payments any more. Do not pay or fund either.
+- **Off the server.** The four mainnet chain signer variables in the table above that held `0xd305`
+  (`RHCHAIN_SIGNER_KEY`, `ARB_SIGNER_KEY`, `BASE_SIGNER_KEY` and `ARC_MAINNET_SIGNER_KEY`) were
+  removed from the server env on 2026-11-11. Not confirmed removed yet: `CELO_SIGNER_KEY`, whose
+  committed address is the exposed `0xF43F`, `RHCHAIN_TESTNET_SIGNER_KEY`, whose committed address
+  is `0xd305`, and `XLAYER_SIGNER_KEY`. Any of them still set comes off the server next.
+- **A new key, for gas only.** `X402_3009_SIGNER_KEY` is now
+  `0x760342469785d06Dc23F8b491a53cA2ebbEaa849`: it broadcasts EIP-3009 settlements on Robinhood
+  Chain and Arc Mainnet, pays their gas and receives nothing, and the rail stays paused on Base
+  and Arbitrum One until it has gas there. The pay-to of the Circle Gateway and EIP-3009 rails
+  moved to the founder's wallet `0xCB8824ffAF30687E36374C08eC52298b62871bdf`, which a person
+  holds, at 18:35 UTC that day, and Celo's at 01:04 UTC. The Arc testnet signer `ARC_SIGNER_KEY`
+  is new too: `0xCE398f99dbC1cA6Cd4901Bff294bd950CEd5055c`.
+- **The rule from here.** A server key is random, derived from no seed, made for one role and
+  never imported into a wallet app. Both retired addresses came from one personal seed, and
+  `0xd305` held several roles at once: signer, receiver and vault owner.
+- **What `0xd305` still owns.** The three launch-day AgentSpendPolicy vaults, which have no owner
+  transfer and so are retired (see the operator custody note in [ARCHITECTURE.md](ARCHITECTURE.md)),
+  Arbitrum One agent #1259, Base agent #73232, Arc testnet agent #849980, Robinhood Chain testnet
+  agent #0 and the platform's Arc testnet anchors. Arc Mainnet #0 and Robinhood Chain #0 moved from it to the founder's wallet,
+  and Celo #9759 moved there from `0xF43F`. Past receipts and settlements stay attributed to the
+  address they were paid to.
 
 ## Known limitations
 

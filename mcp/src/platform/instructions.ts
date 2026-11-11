@@ -27,7 +27,11 @@ import { isAccountId, type BroadcastHooks, type Unconfirmed } from '../chains/in
  *  chain read as an infrastructure hiccup. Names, not codes, because the adapters surface
  *  the name. */
 const VAULT_POLICY_ERRORS = new Set([
-  // Solidity (mcp/contracts/AgentSpendPolicy.sol)
+  // Solidity (mcp/contracts/AgentSpendPolicy.sol). NotOperator and NotOwner say the vault no
+  // longer accepts the server's key: after the 2026-11-11 key rotation, every vault whose
+  // operator is the old signer answers NotOperator until its owner sets the new one. Falling
+  // through on that would pay from the server's own gas key with no vault policy at all.
+  'NotOperator', 'NotOwner',
   'IsFrozen', 'ZeroAddress', 'TransferFailed',
   // Shared by both implementations
   'SessionKeyExpired', 'PayeeNotAllowed', 'AboveAutoApprove', 'DailyCapExceeded',

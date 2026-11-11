@@ -34,8 +34,9 @@ transfer can't blind-unlock the resource, and every proof is spendable exactly o
 ## Settlement
 
 The x402 standard is asset- and network-agnostic, and so is our use of it. Paid calls
-settle in **USDC** on Arc Mainnet, Base, Arbitrum One, Stellar, Algorand and Celo, and in
-**USDG** on Robinhood Chain; the Trust Oracle's 120 settlements on X Layer, all from our
+settle in **USDC** on Arc Mainnet, Base (through Circle Gateway), Stellar, Algorand and Celo,
+and in **USDG** on Robinhood Chain; they settled in USDC on Arbitrum One too until our rail
+there paused on 2026-11-11; the Trust Oracle's 120 settlements on X Layer, all from our
 own buyer wallet, were in USD₮0. Arc Mainnet leads: gas there is paid in USDC itself and
 finality is sub-second. Every 402 challenge states its own price, network and asset. What makes a payment count
 differs by rail and is stated, not blurred: on our EIP-3009, Stellar and Algorand rails we

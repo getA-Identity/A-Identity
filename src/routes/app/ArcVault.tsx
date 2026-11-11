@@ -13,7 +13,7 @@
  * Unlike the Stellar page, controls exist for Arc MAINNET vaults, on purpose: an owner-held vault
  * on Arc Mainnet is what this page is for. They are labelled real money, they open only for a
  * vault whose code is the build this page deploys, and our own launch-day vault is view only and
- * labelled as deployed with our server key.
+ * labelled as deployed with our former server key, and as retired since 2026-11-11.
  *
  * Whichever view holds an owner's vault asks the server to count it on /proof/arc (useVaultCount):
  * no wallet, best effort, and no control on the page waits for it.
@@ -392,7 +392,7 @@ export default function ArcVault() {
                     Arc Mainnet - real USDC
                   </span>
                 )}
-                {ours && <Chip tone="warn">Ours: server key</Chip>}
+                {ours && <Chip tone="warn">Ours: retired</Chip>}
               </div>
               <button
                 type="button"

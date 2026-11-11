@@ -84,11 +84,14 @@ A payment is checked in depth - a limit you set is enforced in **three** ways:
    console deploys on Arc testnet name the human's own wallet as **`owner`** (freeze / override /
    withdraw) and the **server signer as the delegated `operator`** that calls `pay()` on the
    agent's behalf, so the *limit* holds whoever signs, while *initiating* the payment is a
-   delegated action. Our launch-day Arc Mainnet vault is different: our server-held operating wallet
-   is its owner, the contract has no owner transfer, and since 2026-09-25 its `operator` is a
-   separate agent key that we also hold. An owner-held Arc Mainnet vault is different again: the
-   owner's own wallet deploys it from `/app/vault/arc` and is its `owner`, the owner's own agent key
-   is its `operator`, and we hold neither key. The live count is on `/proof/arc`. Roadmap: hand the
+   delegated action. Our launch-day Arc Mainnet vault is different: its owner is
+   `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, our server-held operating wallet until 2026-11-11,
+   the contract has no owner transfer, and since 2026-09-25 its `operator` is a separate agent key
+   that we also hold. Someone else has also held that owner key since at least 2026-11-01, so the
+   founder emptied the vault on 2026-11-11 and it is retired. An owner-held Arc Mainnet vault is
+   different again: the owner's own wallet deploys it from `/app/vault/arc` and is its `owner`, the
+   owner's own agent key is its `operator`, and we hold neither key. The live count is on
+   `/proof/arc`. Roadmap: hand the
    `operator` role on the server-operated vaults to an agent-held key / Circle programmable wallet.
 3. **Circle Agent Wallet** (`mcp/src/circle-agent.ts`) - a hosted, Developer-Controlled wallet
    whose policy engine screens each transfer at the wallet layer (sanctions / allow-block / freeze).
@@ -231,7 +234,7 @@ per settlement" model.
   complete [`0x245f0ee7…`](https://explorer.testnet.arc.io/tx/0x245f0ee76a6d8dd21e8a14cbd1f489a3d80a1824113316f3b39c58c0e50f25e3)
 - **Circle Gateway** - USDC deposited on Arc, then moved to **Base Sepolia gaslessly** via the
   Forwarding Service and minted there in ~6s (verified live on prod). Recipient balance on Base:
-  [signer on Basescan](https://sepolia.basescan.org/address/0xd305607510E0Db2c95807173c7A05BEA53c1ed36).
+  [recipient on Basescan, our signer until 2026-11-11](https://sepolia.basescan.org/address/0xd305607510E0Db2c95807173c7A05BEA53c1ed36).
 
 ### Robinhood Chain (mainnet + testnet)
 
@@ -240,9 +243,13 @@ put them at their canonical cross-chain addresses. What is ours is the identity 
 
 - **Mainnet agent #0** (`eip155:4663`) - the registry's **first mint**. Mint tx:
   [`0x602ce85a…`](https://robinhoodchain.blockscout.com/tx/0x602ce85ad044836b39918311a3031dcd689e4be0d23aed9ed0ac9227d46ec79e)
-  in block 34617892, owner `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, tokenURI
+  in block 34617892, tokenURI
   [`agent-card.json`](https://a-identity.xyz/.well-known/agent-card.json) - so the card and the
-  token point at each other. Identity registry
+  token point at each other. Its owner was our operating wallet
+  `0xd305607510E0Db2c95807173c7A05BEA53c1ed36` until 22:10 UTC on 2026-11-10, when it moved to the
+  founder's wallet `0xCB8824ffAF30687E36374C08eC52298b62871bdf`, which a person holds (tx
+  [`0x228e69a4...`](https://robinhoodchain.blockscout.com/tx/0x228e69a4b5e047413f36a6c4f9473123e028ce3ee0dda3c82333b0580cda08c2)).
+  Identity registry
   [`0x8004a169…`](https://robinhoodchain.blockscout.com/address/0x8004a169fb4a3325136eb29fa0ceb6d2e539a432),
   reputation
   [`0x8004BAa1…`](https://robinhoodchain.blockscout.com/address/0x8004BAa17C55a88189AE136b182e5fdA19dE9b63).
@@ -363,6 +370,9 @@ authors**; registering is permissionless, so what is ours is the agent and the r
   That measurement is what the disclosed settlement fee is derived from, not a guess.
 - **Arbitrum One agent #1259** and the first settlement `0x69abb8a9…` (2026-08-13), same
   first-party EIP-3009 facilitator, buyer signs and pays no gas.
+- **Since 2026-11-11 the EIP-3009 rail has been paused on both**, until its new gas-only broadcaster
+  has gas there. Both agents are still owned by `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, our
+  operating wallet until that day, whose key someone else has also held since at least 2026-11-01.
 - Both chains carry the family's ValidationRegistry proxy (read live 2026-10-11), but we do not
   wire it, so KYA is verified off-chain here and recorded rather than anchored.
 
@@ -444,9 +454,13 @@ day it lands rather than the day someone remembers to add it.
   vault `operator` that submits `pay()` on the agent's behalf (a delegated action), and on our own
   three mainnet vaults the operator is an agent key we also hold. The human `owner` is the user's own
   wallet on vaults a user deploys (Stellar, and Arc Mainnet from `/app/vault/arc`, where the operator
-  is the owner's own agent key and we hold neither), while our own three mainnet vaults are owned by
-  our server-held operating wallet. The *limit* holds either way, because the contract reverts an
-  over-limit `pay()`; the contract itself is not externally audited. On the vaults we operate the
+  is the owner's own agent key and we hold neither), while our own three launch-day mainnet vaults
+  are owned by `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, our server-held operating wallet until
+  2026-11-11. Someone else also holds that key and the contract has no owner transfer, so those three
+  are retired: the founder emptied the Robinhood Chain vault on 2026-11-10 and the Arc Mainnet vault
+  on 2026-11-11, and the Arbitrum One vault still holds 0.01 USDC that cannot be recovered while the
+  owner key's gas is swept, so it must not be funded. The *limit* holds either way, because the
+  contract reverts an over-limit `pay()`; the contract itself is not externally audited. On the vaults we operate the
   agent does not sign its own payments - moving those is the roadmap (agent-held key / Circle
   programmable wallet). We say this plainly.
 - **Which money is real**: Arc testnet is a testnet, so everything in the "Arc testnet" section above is

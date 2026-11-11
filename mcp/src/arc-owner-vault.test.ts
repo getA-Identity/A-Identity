@@ -77,8 +77,10 @@ const DEPLOYED = 1_793_400_000n // 2026-10-30T22:40:00Z
 const ARGS = { owner: OWNER, operator: OPERATOR, usdc: USDC, dailyCap: 1_000_000n, autoApproveMax: 250_000n }
 const INPUT = encodeCreationInput(bytecode, abi, ARGS)
 const OURS: OurAddresses = collectOurAddresses(liveOurAddressSources({} as NodeJS.ProcessEnv))
-/** Our operating wallet, read from the ledger the way the script reads it. */
-const OPERATING = getAddress(PROVENANCE.find((p) => p.chain === ADMISSION_CHAIN)!.agent!.owner)
+/** Our operating wallet until 2026-11-11, which still owns the launch-day vault: the committed address of the Arc Mainnet signer. */
+const OPERATING = getAddress(OUR_KEY_PUBLIC_ADDRESSES.ARC_MAINNET_SIGNER_KEY!)
+/** The ledger's Arc Mainnet agent owner, read the way the script reads it: the founder's wallet since 2026-11-11. */
+const AGENT_OWNER = getAddress(PROVENANCE.find((p) => p.chain === ADMISSION_CHAIN)!.agent!.owner)
 
 const STATE: VaultState = {
   owner: OWNER,
@@ -295,7 +297,8 @@ test('the owner is matched against our keys whatever its case, and the refusal n
   for (const owner of [OPERATING, OPERATING.toLowerCase()]) {
     const r = run({ deployer: { from: OPERATING, nonce: 3 }, receipt: byUs.receipt, tx: byUs.tx, state: { owner } })
     const refusal = r.v.refusals.find((c) => c.id === 'owner-not-ours')!
-    assert.match(refusal.detail, /is ours: the operating wallet/)
+    assert.match(refusal.detail, /is ours: our agent's owner in the provenance ledger on /)
+    assert.match(refusal.detail, /the committed address of ARC_MAINNET_SIGNER_KEY/)
     assert.match(refusal.detail, /x402-gateway internal payer/)
   }
   // An operator that is ours is fine, and said: the agent that pays may be ours, the owner may not.
@@ -363,7 +366,7 @@ test('ours: agent owners, both rails, the validator, env receiving wallets, and 
     env,
   })
   const of = (a: string) => ours.byAddress.get(a.toLowerCase()) ?? []
-  assert.deepEqual(of(OPERATING), [`the operating wallet (our agent's owner in the provenance ledger on ${ADMISSION_CHAIN}, base)`])
+  assert.deepEqual(of(OPERATING), [`our agent's owner in the provenance ledger on ${ADMISSION_CHAIN}, base`])
   assert.deepEqual(of(OPERATOR), ['provenance account on stellar-testnet: deployer'])
   assert.deepEqual(of(OWNER), [], 'an owner the ledger labels as not ours is not ours')
   assert.deepEqual(of('0x4444444444444444444444444444444444444444'), ['x402-gateway internal payer', 'x402-3009 internal payer'])
@@ -384,7 +387,8 @@ test('ours: agent owners, both rails, the validator, env receiving wallets, and 
 })
 
 test('the live sources name the launch-day vault owner, both rails\' buyers and every EVM signer env var', () => {
-  assert.match(OURS.byAddress.get(OPERATING.toLowerCase())!.join('; '), /^the operating wallet \(our agent's owner in the provenance ledger on arc-mainnet/)
+  assert.match(OURS.byAddress.get(OPERATING.toLowerCase())!.join('; '), /the committed address of ARC_MAINNET_SIGNER_KEY/)
+  assert.match(OURS.byAddress.get(AGENT_OWNER.toLowerCase())!.join('; '), /^our agent's owner in the provenance ledger on arc-mainnet/)
   for (const a of [...gatewayInternalPayers({} as NodeJS.ProcessEnv), ...facilitatorInternalPayers({} as NodeJS.ProcessEnv)]) {
     assert.ok(OURS.byAddress.has(a.toLowerCase()), `${a} is on a rail's internal list and must be ours`)
   }

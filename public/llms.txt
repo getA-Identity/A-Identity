@@ -33,9 +33,11 @@ can still DENY on its limits.
 ## Status, stated plainly
 
 - Arc Mainnet is **live** for us since the day it opened (2026-09-16): agent #0, a spend
-  vault holding real USDC, and x402 settled on both our EIP-3009 facilitator and Circle
-  Gateway. The first payments were self-funded; a few checks have since been paid by wallets
-  off our internal lists, labeled external (live split: https://a-identity.xyz/proof/arc).
+  vault that held real USDC until it was emptied and retired on 2026-11-11 (its owner key was
+  exposed, and the contract has no owner transfer), and x402 settled on both our EIP-3009
+  facilitator and Circle Gateway. The first payments were self-funded; a few checks have
+  since been paid by wallets off our internal lists, labeled external (live split:
+  https://a-identity.xyz/proof/arc).
   Escrow and KYA anchoring still run on Arc testnet, in
   test money.
 - A-Identity is a member of the Circle Alliance Program (https://www.circle.com/alliance-program).

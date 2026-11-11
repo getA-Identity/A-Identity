@@ -14,8 +14,10 @@ Forbidden error without one. Spending limits are enforced on-chain regardless of
 caller. Where a vault is owner-signed, the server never holds the owner's key: on Stellar
 pubnet, and on an Arc Mainnet vault deployed from
 [/app/vault/arc](https://a-identity.xyz/app/vault/arc), whose owner is the wallet that
-deployed it. The EVM mainnet vaults we deployed ourselves are owned by our operating wallet,
-as the proof pages state. The two `verify_then_pay` tools take no session and never sign:
+deployed it. The EVM mainnet vaults we deployed ourselves are owned by our former operating wallet,
+as the proof pages state. Its key has not been on our servers since 2026-11-11, someone else has
+also held that key since at least 2026-11-01, and the vault contract has no owner transfer, so those
+vaults are retired: do not fund them. The two `verify_then_pay` tools take no session and never sign:
 what they hand back is sent with your own key.
 
 The `resolve_agent` tool reads **live from the ERC-8004 IdentityRegistry on every chain that

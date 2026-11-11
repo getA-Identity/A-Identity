@@ -64,7 +64,7 @@ export type RoadmapItem = {
 }
 
 /** The day this data was last revised. The page's dateline and the markdown header. */
-export const ROADMAP_UPDATED = '2026-11-09'
+export const ROADMAP_UPDATED = '2026-11-11'
 
 export const ROADMAP_SITE = 'https://a-identity.xyz'
 
@@ -415,7 +415,7 @@ export const ROADMAP_ITEMS: readonly RoadmapItem[] = [
     id: 'arc-mainnet-live',
     title: 'Arc Mainnet live on the day it opened',
     summary:
-      'Agent #0 on the canonical ERC-8004 registry, the registry\'s first mint, is ours. An AgentSpendPolicy vault holds real USDC under dust caps, and paid trust calls settled on both rails that day: our own EIP-3009 facilitator and Circle Gateway nanopayments.',
+      'Agent #0 on the canonical ERC-8004 registry, the registry\'s first mint, is ours. An AgentSpendPolicy vault held real USDC under dust caps (emptied by the founder and retired on 2026-11-11, because someone else also holds its owner key), and paid trust calls settled on both rails that day: our own EIP-3009 facilitator and Circle Gateway nanopayments.',
     status: 'shipped',
     track: 'chains',
     date: '2026-09-16',
@@ -736,7 +736,7 @@ export const ROADMAP_ITEMS: readonly RoadmapItem[] = [
       { label: 'Partner guide', href: 'https://a-identity.mintlify.site/chains/arc-integration' },
     ],
     details:
-      'A vault counts only when its owner key is none of the keys of ours it was compared with, so the launch-day vault, owned by our operating wallet, does not. The browser deployer is live at /app/vault/arc. The 100 flows and the two refusals are done, on our own wallets and labeled so; the vaults count as their owners deploy them, and /proof/arc has the live count and who stands behind it. Targets are the Deliverable 1 commitments as Circle revised them on 2026-10-19; the counts are read from the settlement logs on every request, and the curated lists fill only when the evidence exists.',
+      'A vault counts only when its owner key is none of the keys of ours it was compared with, so the launch-day vault, owned by our former operating wallet and retired on 2026-11-11, does not. The browser deployer is live at /app/vault/arc. The 100 flows and the two refusals are done, on our own wallets and labeled so; the vaults count as their owners deploy them, and /proof/arc has the live count and who stands behind it. Targets are the Deliverable 1 commitments as Circle revised them on 2026-10-19; the counts are read from the settlement logs on every request, and the curated lists fill only when the evidence exists.',
   },
   {
     id: 'arc-season-m2',

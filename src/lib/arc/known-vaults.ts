@@ -6,7 +6,8 @@
  * No address is typed into the frontend. A vault the backend lists shows up here on its next
  * deploy, and the paste box reads any vault whether or not the backend is awake. Our own vault is
  * labelled as ours wherever it appears, backend awake or not, with the custody the ledger records:
- * it was deployed with our server key, its owner is our operating wallet, and it is not owner-held.
+ * it was deployed with our former server key, its owner is our former operating wallet, whose key
+ * someone else also holds, so it is retired (2026-11-11), and it is not owner-held.
  */
 import { getAddress, isAddress, type Address } from 'viem'
 import { apiFetch, readJson } from '../api'
@@ -30,7 +31,7 @@ export type KnownVault = {
 
 export type KnownVaults = {
   vaults: KnownVault[]
-  /** Addresses of keys the ledger names as ours (the operating wallet), per CAIP-2, lowercased. */
+  /** Addresses of keys the ledger names as ours (our former operating wallet among them), per CAIP-2, lowercased. */
   ourKeys: Record<string, string[]>
   /** Set when the owner-held list could not be read; ours still shows, from the build. */
   partial: string | null
@@ -130,6 +131,6 @@ function knownFrom(proof: { networks?: ProofNetwork[] } | null, season: SeasonRe
 }
 
 /** The label every view of our own vault carries, word for word, wherever it appears. */
-export const OURS_LABEL = 'Deployed with our server key, not user-owned.'
+export const OURS_LABEL = 'Deployed with our former server key, not user-owned.'
 export const OURS_DETAIL =
-  'Its owner is our operating wallet, a key our server holds, and this contract has no owner transfer. View only here, and not counted as an owner-held vault.'
+  'Its owner is our former operating wallet, whose key someone else has also held since at least 2026-11-01, and this contract has no owner transfer, so the founder emptied it on 2026-11-11 and it is retired: do not send it USDC. View only here, and not counted as an owner-held vault.'

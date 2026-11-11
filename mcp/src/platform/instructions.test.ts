@@ -359,7 +359,9 @@ test('NEGATIVE CONTROL: a cap or allowlist refusal is the vault, not the session
   __resetPlatformStateForTests()
   const agent = seedVaultAgent()
 
-  for (const reason of ['DailyCapExceeded', 'PayeeNotAllowed', 'IsFrozen']) {
+  // NotOperator and NotOwner too: a vault that no longer takes our key is a vault answer, and
+  // falling through would pay from the server's gas key with no policy (the 2026-11-11 rotation).
+  for (const reason of ['DailyCapExceeded', 'PayeeNotAllowed', 'IsFrozen', 'NotOperator', 'NotOwner']) {
     const ix = seedInstruction(agent)
     await withSettlement(
       { policyPay: async () => ({ executed: false as const, reverted: true as const, reason }) },

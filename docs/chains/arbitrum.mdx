@@ -1,10 +1,10 @@
 ---
 title: "Build on Arbitrum One"
-description: "Arbitrum One network config, the canonical ERC-8004 registries already deployed there, and our x402 rail settling in native Circle USDC."
+description: "Arbitrum One network config, the canonical ERC-8004 registries already deployed there, and our x402 rail in native Circle USDC, paused since 2026-11-11."
 ---
 
 Arbitrum One is the largest Ethereum L2 by usage, and the chain whose stack Robinhood
-Chain is built on. A-Identity holds an ERC-8004 agent identity here and settles paid
+Chain is built on. A-Identity holds an ERC-8004 agent identity here and has settled paid
 trust calls in native Circle USDC.
 
 ## Why Arbitrum One
@@ -17,7 +17,7 @@ trust calls in native Circle USDC.
     The canonical identity and reputation registries were deployed here by their authors, at the same addresses X Layer, Celo and Robinhood Chain carry.
   </Card>
   <Card title="A well-served baseline" icon="scale-balanced">
-    Other x402 facilitators already serve this chain. Ours runs beside them on purpose: it is where you can check our rail against something you can compare it to.
+    Other x402 facilitators already serve this chain. Ours ran beside them on purpose, so you could check our rail against something to compare it to. It has been paused since 2026-11-11, until its new gas key holds ETH here.
   </Card>
 </CardGroup>
 
@@ -25,6 +25,11 @@ trust calls in native Circle USDC.
   Arbitrum One is **live** for us: agent #1259 is ours on the canonical registry, and a
   real settlement in USDC has gone through our own facilitator. Everything on this page is
   checkable at [/proof/arbitrum](https://a-identity.xyz/proof/arbitrum).
+
+  Since 2026-11-11 our EIP-3009 rail has been paused on Arbitrum One, until its new gas-only
+  broadcaster key has gas on this chain. Agent #1259 is still held by our former operating
+  wallet `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, which also owns the vault below; someone
+  else has also held that wallet's key since at least 2026-11-01, so never pay or fund it.
 </Note>
 
 ## Network config
@@ -82,7 +87,7 @@ const owner = await client.readContract({
 | IdentityRegistry | [`0x8004a169fb4a3325136eb29fa0ceb6d2e539a432`](https://arbiscan.io/address/0x8004a169fb4a3325136eb29fa0ceb6d2e539a432) |
 | ReputationRegistry | [`0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`](https://arbiscan.io/address/0x8004BAa17C55a88189AE136b182e5fdA19dE9b63) |
 | USDC (settlement) | [`0xaf88d065e77c8cC2239327C5EDb3A432268e5831`](https://arbiscan.io/address/0xaf88d065e77c8cC2239327C5EDb3A432268e5831) |
-| AgentSpendPolicy vault (ours) | [`0xac6c5c9af62bc482ffeef882a6ac4678513be6db`](https://arbiscan.io/address/0xac6c5c9af62bc482ffeef882a6ac4678513be6db) |
+| AgentSpendPolicy vault (ours, retired) | [`0xac6c5c9af62bc482ffeef882a6ac4678513be6db`](https://arbiscan.io/address/0xac6c5c9af62bc482ffeef882a6ac4678513be6db) |
 
 We deployed none of these except the vault. The registries were already live and
 registering on them is permissionless; what is ours is agent #1259, the vault and the rail
@@ -91,7 +96,10 @@ we do not wire it, so a KYA result is not anchored on-chain here.
 
 The vault caps the agent key at 1 USDC a day and 0.25 USDC per payment. Since 2026-10-01
 the agent key is a separate wallet from the owner key and its session key runs to
-2026-11-15. Before paying here, [/check/arbitrum](https://a-identity.xyz/check/arbitrum)
+2026-11-15. As of 2026-11-11 the vault is retired: its owner is our former operating wallet,
+whose key someone else has also held since at least 2026-11-01, and the contract has no owner
+transfer. It still holds 0.01 USDC, which cannot be recovered while gas sent to its owner is
+swept. Never fund it. Before paying here, [/check/arbitrum](https://a-identity.xyz/check/arbitrum)
 answers whether a token is native Circle USDC and whether the payee is a registered agent;
 the chain itself confirms it is an Arbitrum chain through the ArbSys precompile.
 

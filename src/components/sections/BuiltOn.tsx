@@ -122,7 +122,7 @@ const RAILS: Rail[] = [
     color: '#3B1B6E',
     whiteMark: true,
     role: 'The featured network, live on mainnet.',
-    detail: 'Live on Arc Mainnet since the day it opened: our agent #0, a spend vault holding real USDC, and checks paid through Circle Gateway nanopayments. KYA attestations and escrow run on Arc testnet, all with sub-second finality and gas paid in USDC.',
+    detail: 'Live on Arc Mainnet since the day it opened: our agent #0, a spend vault that held real USDC until we retired it on 2026-11-11, and checks paid through Circle Gateway nanopayments. KYA attestations and escrow run on Arc testnet, all with sub-second finality and gas paid in USDC.',
     chain: 'arc',
   },
   {
@@ -158,7 +158,7 @@ const RAILS: Rail[] = [
     tileBg: '#ffffff',
     color: '#0000FF',
     role: 'Where the agent economy already trades.',
-    detail: 'Live: the canonical ERC-8004 registries carry our agent #73232, and x402 settles in native Circle USDC through our own EIP-3009 facilitator. The adapter that first proved the core was chain-agnostic now moves real money here.',
+    detail: 'Live: the canonical ERC-8004 registries carry our agent #73232, and x402 settled in native Circle USDC through our own EIP-3009 facilitator until 2026-11-11; that rail is paused here until the new key that broadcasts its settlements has gas on Base. The adapter that first proved the core was chain-agnostic moved real money here.',
     chain: 'base',
   },
   {
@@ -182,7 +182,7 @@ const RAILS: Rail[] = [
     tileBg: '#ffffff',
     color: '#28A0F0',
     role: 'Where the rail can be compared.',
-    detail: 'The same engine, settling in native Circle USDC. Other facilitators already serve this chain, which is the point: here you can check our receipts against a baseline. The fee is lower than on Robinhood Chain because a settlement measurably costs less.',
+    detail: 'The same engine, settling in native Circle USDC until 2026-11-11; it is paused here until the new key that broadcasts its settlements has gas on Arbitrum One. Other facilitators already serve this chain, which is the point: here you can check our receipts against a baseline. The fee is lower than on Robinhood Chain because a settlement measurably costs less.',
     chain: 'arbitrum',
   },
   {

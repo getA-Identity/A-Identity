@@ -153,7 +153,7 @@
           "id": "arc-mainnet",
           "name": "Arc Mainnet",
           "chainId": 5042,
-          "role": "Circle's stablecoin-native L1 on mainnet: agent #0 on the canonical ERC-8004 registry, a spend vault holding real USDC, and x402 settling through our own EIP-3009 facilitator and Circle Gateway nanopayments.",
+          "role": "Circle's stablecoin-native L1 on mainnet: agent #0 on the canonical ERC-8004 registry, a spend vault that held real USDC until 2026-11-11, and x402 settling through our own EIP-3009 facilitator and Circle Gateway nanopayments.",
           "x402": true,
           "status": "live"
         },
@@ -201,7 +201,7 @@
           "id": "base",
           "name": "Base",
           "chainId": 8453,
-          "role": "Coinbase-ecosystem EVM rail: canonical ERC-8004 registries live, x402 wired to settle in native Circle USDC through our own EIP-3009 facilitator.",
+          "role": "Coinbase-ecosystem EVM rail: canonical ERC-8004 registries live, our agent #73232, and x402 selling through Circle Gateway nanopayments; our own EIP-3009 facilitator has been paused here since 2026-11-11.",
           "x402": true,
           "status": "live"
         },
@@ -225,7 +225,7 @@
           "id": "arbitrum",
           "name": "Arbitrum One",
           "chainId": 42161,
-          "role": "DeFi gateway: large protocol ecosystem, our ERC-8004 agent #1259, and x402 settling in native Circle USDC through our own EIP-3009 facilitator.",
+          "role": "DeFi gateway: large protocol ecosystem, our ERC-8004 agent #1259, and x402 in native Circle USDC through our own EIP-3009 facilitator, paused here since 2026-11-11.",
           "x402": true,
           "status": "live"
         },
@@ -384,7 +384,7 @@
         "deliver"
       ],
       "trust": "Both agents verify each other via ERC-8004 before value moves. Reputation gate (default: 300+).",
-      "settlement": "x402 in stablecoins. Eight mainnets have settled real payments: Arc Mainnet, Stellar pubnet, Algorand, Base, Robinhood Chain, Arbitrum One, OKX X Layer and Celo. On Arc Mainnet, Base, Robinhood Chain and Arbitrum One the buyer signs an EIP-3009 authorization and our own facilitator broadcasts it (Arc Mainnet also sells through Circle Gateway nanopayments); on Stellar the buyer signs a Soroban authorization entry and pays no fee; on Algorand the buyer signs a fee-zero ASA transfer and the GoPlausible facilitator broadcasts it; on Celo the facilitator Celo operates settles. Each rail is proven on its own page under https://a-identity.xyz/proof, and nearly every payment on every rail came from wallets we own and is labeled internal; a few checks on Arc Mainnet were paid by wallets off our internal lists and are labeled external (live split: https://a-identity.xyz/api/arc/season). The testnet mirrors stay beta and Avalanche is planned. No shared accounts or API keys.",
+      "settlement": "x402 in stablecoins. Eight mainnets have settled real payments: Arc Mainnet, Stellar pubnet, Algorand, Base, Robinhood Chain, Arbitrum One, OKX X Layer and Celo. On Arc Mainnet and Robinhood Chain the buyer signs an EIP-3009 authorization and our own facilitator broadcasts it, as it did on Base and Arbitrum One until that rail paused there on 2026-11-11; Arc Mainnet and Base also sell through Circle Gateway nanopayments, the only rail of ours on Base now; on Stellar the buyer signs a Soroban authorization entry and pays no fee; on Algorand the buyer signs a fee-zero ASA transfer and the GoPlausible facilitator broadcasts it; on Celo the facilitator Celo operates settles. Each rail is proven on its own page under https://a-identity.xyz/proof, and nearly every payment on every rail came from wallets we own and is labeled internal; a few checks on Arc Mainnet were paid by wallets off our internal lists and are labeled external (live split: https://a-identity.xyz/api/arc/season). The testnet mirrors stay beta and Avalanche is planned. No shared accounts or API keys.",
       "chains_supported": [
         "arc-mainnet",
         "arc",

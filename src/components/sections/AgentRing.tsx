@@ -78,7 +78,7 @@ export const OUR_AGENTS: OnchainAgent[] = [
     tx: '0xb428bf8e79df3c44157c134df1858eb75fe3758b74868445c1dcd07948705bf0',
     note: 'Reputation anchored by our oracle validator.',
     mission:
-      'The identity behind the Base x402 rail, settling native Circle USDC. Its operating wallets were funded from Stellar pubnet USDC through a NEAR Intents swap; USDC now crosses between Stellar and EVM natively through Circle CCTP, proven both ways on testnet.',
+      'The identity behind the Base x402 rail, settling native Circle USDC. That rail has been paused here since 2026-11-11, until the new key that broadcasts its settlements has gas on Base. Its operating wallets were funded from Stellar pubnet USDC through a NEAR Intents swap; USDC now crosses between Stellar and EVM natively through Circle CCTP, proven both ways on testnet.',
     anchor: { score: 60, tx: '0x4f0295d12dcdc356cc7ac12b8317f1ff07289e4584725895f9b482a2223b2aa6' },
   },
   {
@@ -100,7 +100,7 @@ export const OUR_AGENTS: OnchainAgent[] = [
     tx: '0x23275840eb9a8b85a752769c113109a753f39b592236c85093cf94f6a517b2f3',
     note: 'Reputation anchored by our oracle validator.',
     mission:
-      'The identity behind the Arbitrum One x402 rail, settling native Circle USDC through our own EIP-3009 facilitator, next to well-served alternatives on purpose.',
+      'The identity behind the Arbitrum One x402 rail, settling native Circle USDC through our own EIP-3009 facilitator, next to well-served alternatives on purpose. That rail has been paused here since 2026-11-11, until the new key that broadcasts its settlements has gas on Arbitrum One.',
     anchor: { score: 60, tx: '0x435a5c62bda28db23505812b9deb93dfce7aff3831e8449a5274fd0e7ecc376a' },
   },
   {

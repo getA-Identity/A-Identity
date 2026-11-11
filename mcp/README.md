@@ -16,7 +16,7 @@ runs without an explicit human action, and without a signer key every write retu
 **Not testnet only.** This line used to say it was, which was true of Arc and never true of
 the registry. Arc was the phase-1 network on testnet and has been `live` on Arc Mainnet
 (`eip155:5042`) since the day it opened, 2026-09-16: agent #0 on the canonical ERC-8004
-registry, an `AgentSpendPolicy` vault holding real USDC, and x402 selling there through both
+registry, an `AgentSpendPolicy` vault that held real USDC until 2026-11-11, and x402 selling there through both
 our EIP-3009 facilitator and Circle Gateway nanopayments (see `src/x402-3009/` and
 `src/x402-gateway/` below). The first payments were self-funded and labeled internal; a wallet
 off our internal lists is labeled external, a few have paid, and `GET /api/arc/season` keeps the
@@ -28,7 +28,8 @@ USDC under its on-ledger policy, and since 2026-08-28 the Soroban x402 rail SELL
 Stellar networks from the hosted deployment, which `/api/x402/stellar/status` answers for
 itself. Two payment
 rails of our own sell across these chains - `x402-3009/` (self-facilitated EIP-3009, on Arc
-Mainnet, Base, Arbitrum One and Robinhood Chain) and `x402-stellar/` (Soroban, on the two Stellar networks) - and each chain
+Mainnet and Robinhood Chain, and paused on Base and Arbitrum One since 2026-11-11, until its
+gas-only broadcaster has gas there) and `x402-stellar/` (Soroban, on the two Stellar networks) - and each chain
 has its own signer env var. [`src/chains/registry.ts`](src/chains/registry.ts)
 is the source of truth for which is which, and [`../SECURITY.md`](../SECURITY.md) lists every
 key and what it can spend.
@@ -123,8 +124,9 @@ Directories:
   receipt carrying a matching `Transfer` log. Chain-generic, so a chain joins by declaring a
   `settlementTokens` entry. Its EIP-712 signing domain is PROVEN against the token's live
   `DOMAIN_SEPARATOR` rather than pasted; if it cannot be proven, no challenge is served.
-  Sells on Arc Mainnet (USDC, the ERC-20 face of the gas token), Base, Arbitrum One (native
-  Circle USDC on both) and Robinhood Chain (USDG); `GET /api/facilitator/status` lists the
+  Sells on Arc Mainnet (USDC, the ERC-20 face of the gas token) and Robinhood Chain (USDG); it
+  sold on Base and Arbitrum One (native Circle USDC on both) until 2026-11-11 and has been paused
+  there since, until its gas-only broadcaster has gas. `GET /api/facilitator/status` lists the
   configured networks and their fees.
 - `src/x402-gateway/` - the Circle Gateway batched rail (Nanopayments) for Circle Agent
   Marketplace buyers: the buyer signs an EIP-3009 authorization against Gateway's

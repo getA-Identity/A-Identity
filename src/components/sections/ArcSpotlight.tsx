@@ -43,7 +43,10 @@ export default function ArcSpotlight() {
 
   const mint = net?.artifactsLinked.find((a) => a.kind === 'mint')
   const verified = Boolean(net?.live.reachable && net.live.matchesLedger)
-  const owner = net?.agent?.owner
+  // The ledger's owner is shown only while ownerOf(0) agrees with it, so a token that has moved (as #0
+  // did on 2026-11-11, to the founder's wallet, before the ledger recorded it) is never shown under an
+  // address that no longer holds it.
+  const owner = verified ? net?.agent?.owner : undefined
 
   return (
     <section className="relative w-full bg-background px-5 py-12 sm:px-8 sm:py-16" aria-labelledby="arc-spotlight-title">
@@ -81,7 +84,7 @@ export default function ArcSpotlight() {
 
             <motion.p {...revealAt(2)} className="mt-5 max-w-[48ch] text-[17px] font-medium leading-relaxed text-white/85">
               The day Arc opened, A-Identity minted the first identity on its ERC-8004 registry, then put a spend vault
-              holding real USDC and two payment rails beside it.
+              and two payment rails beside it.
             </motion.p>
 
             <motion.div {...revealAt(3)} className="mt-8 flex flex-wrap items-center gap-3">

@@ -1,10 +1,10 @@
 ---
 title: "Build on Base"
-description: "Base network config, the canonical ERC-8004 registries verified live there, and our x402 rail wired to settle in native Circle USDC."
+description: "Base network config, the canonical ERC-8004 registries verified live there, and our x402 rail in native Circle USDC, paused since 2026-11-11, beside Circle Gateway."
 ---
 
 Base is Coinbase's Ethereum L2 and one of the busiest agent ecosystems on any chain.
-A-Identity holds ERC-8004 agent **#73232** on the canonical registry here and settles
+A-Identity holds ERC-8004 agent **#73232** on the canonical registry here and has settled
 paid trust calls in native Circle USDC through its own EIP-3009 facilitator.
 
 ## Why Base
@@ -27,6 +27,11 @@ paid trust calls in native Circle USDC through its own EIP-3009 facilitator.
   the receipt carrying the matching Transfer log. Everything on this page, including
   the Stellar funding hop behind the operating wallets, is checkable at
   [/proof/base](https://a-identity.xyz/proof/base).
+
+  Since 2026-11-11 our EIP-3009 rail has been paused on Base, until its new gas-only broadcaster
+  key has gas on this chain. Agent #73232 is still held by our former operating wallet
+  `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`; someone else has also held that wallet's key
+  since at least 2026-11-01, so never pay or fund it.
 </Note>
 
 ## Network config
@@ -111,6 +116,8 @@ curl -sX POST https://mainnet.base.org -H 'content-type: application/json' \
 curl -sX POST https://mainnet.base.org -H 'content-type: application/json' \
   -d '{"jsonrpc":"2.0","id":2,"method":"eth_call","params":[{"to":"0x8004a169fb4a3325136eb29fa0ceb6d2e539a432","data":"0x6352211e0000000000000000000000000000000000000000000000000000000000011e10"},"latest"]}'
 # -> 0x...d305607510e0db2c95807173c7a05bea53c1ed36
+# That is our former operating wallet; someone else has also held its key since at least
+# 2026-11-01, so never pay or fund it.
 
 # Our provenance ledger for this rail, re-read live on every request.
 curl -s https://a-identity-backend.onrender.com/api/proof/base
@@ -118,8 +125,8 @@ curl -s https://a-identity-backend.onrender.com/api/proof/base
 
 ## Where Base fits
 
-[Arbitrum One](/chains/arbitrum) is where the same rail runs against a well-served
-baseline; [Robinhood Chain](/chains/robinhood) is where it settles in Paxos USDG rather
+[Arbitrum One](/chains/arbitrum) is where the same rail ran against a well-served
+baseline until 2026-11-11; [Robinhood Chain](/chains/robinhood) is where it settles in Paxos USDG rather
 than USDC; [Arc](/chains/arc) holds escrow and the spend vault. Base is
 where the agent ecosystem itself lives, and the [Gateway](/chains/gateway) hop already
 proves USDC minted on Base Sepolia from an Arc deposit.

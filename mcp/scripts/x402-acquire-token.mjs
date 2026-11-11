@@ -7,7 +7,7 @@
  * settles on a permissionless chain. Relay quotes and executes a same-chain swap from
  * native ETH into the settlement token in one transaction.
  *
- * Prepared-or-executed: without --execute (or without X402_3009_BUYER_KEY) it prints the
+ * Prepared-or-executed: without --execute (or without X402_3009_FUNDER_KEY) it prints the
  * exact transactions it would send and stops. With both, it sends them and then proves
  * the acquisition by reading balanceOf BEFORE and AFTER; a run that does not increase the
  * balance is reported as a failure, never as a success.
@@ -60,7 +60,9 @@ const pub = createPublicClient({ chain: viemChain, transport: http(RPC, { timeou
 // The wallet that SPENDS native gas for the swap. Separate from the recipient on
 // purpose: the buyer wallet only ever needs to hold the settlement token, because on
 // this rail it signs and never broadcasts.
-const key = process.env.X402_3009_FUNDER_KEY ?? process.env.RHCHAIN_SIGNER_KEY
+// Only the funder key: RHCHAIN_SIGNER_KEY held the operating wallet 0xd305, whose key someone else has also held
+// since at least 2026-11-01, so it is no fallback here.
+const key = process.env.X402_3009_FUNDER_KEY
 const account = key ? privateKeyToAccount(key.startsWith('0x') ? key : `0x${key}`) : null
 const buyer = arg('recipient', '') || account?.address || ''
 if (!buyer) {
@@ -121,7 +123,7 @@ if (txs.some((t) => t.chainId !== chain.evmChainId)) {
 if (!account || !EXECUTE) {
   console.log('\nPREPARED (nothing was broadcast):')
   console.log(JSON.stringify(txs.map((t) => ({ chainId: t.chainId, to: t.to, value: t.value, dataBytes: (String(t.data ?? '0x').length - 2) / 2 })), null, 2))
-  console.log(account ? '\nRe-run with --execute to send these.' : '\nSet X402_3009_BUYER_KEY and re-run with --execute to send these.')
+  console.log(account ? '\nRe-run with --execute to send these.' : '\nSet X402_3009_FUNDER_KEY and re-run with --execute to send these.')
   process.exit(0)
 }
 

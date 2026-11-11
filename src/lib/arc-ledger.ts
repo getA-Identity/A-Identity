@@ -23,12 +23,13 @@ export const ARC_LEDGER_VAULTS: readonly { network: string; address: string; nam
 /** Per CAIP-2, the keys that are ours on Arc, lowercased: the committed list admission uses. */
 export const ARC_LEDGER_KEYS: Readonly<Record<string, readonly string[]>> = {
   "eip155:5042": [
-    "0xd305607510e0db2c95807173c7a05bea53c1ed36",
+    "0xcb8824ffaf30687e36374c08ec52298b62871bdf",
     "0x03f1fb189e461b88f3e8ba7100b29b594e5f98a9",
     "0x432bd8bb5b9e199677e6a3fa72ac9739030953fd",
     "0x4e26ae66840134ac5979c56ba2509f3956b93431",
     "0x86dc9716eb00164183d43f8e1273888c7eba3cb4",
     "0x8c8d9cd12d8896a40cf2115ee731258bb4983349",
+    "0xd305607510e0db2c95807173c7a05bea53c1ed36",
     "0xee602a161232aac1436e812676b6626382fc84a9",
     "0xf43f43d8aee114a71b164e1f6214bc7625a5742d"
   ],
@@ -39,6 +40,7 @@ export const ARC_LEDGER_KEYS: Readonly<Record<string, readonly string[]>> = {
     "0x4e26ae66840134ac5979c56ba2509f3956b93431",
     "0x86dc9716eb00164183d43f8e1273888c7eba3cb4",
     "0x8c8d9cd12d8896a40cf2115ee731258bb4983349",
+    "0xcb8824ffaf30687e36374c08ec52298b62871bdf",
     "0xee602a161232aac1436e812676b6626382fc84a9",
     "0xf43f43d8aee114a71b164e1f6214bc7625a5742d"
   ]
