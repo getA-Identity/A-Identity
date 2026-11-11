@@ -995,6 +995,20 @@ export function celoStatusReport(env: NodeJS.ProcessEnv = process.env, now: Date
   }
 }
 
+/**
+ * Where Celo payments went before the pay-to address in CELO_PAYTO, newest first. Rows carry no
+ * pay-to of their own, so this is how a settlement recorded before a switch stays attributed to the
+ * address it was actually paid to. 0xF43F was the Celo pay-to until the restart that moved CELO_PAYTO
+ * to a wallet a person holds; someone else also holds its key, so nothing should be paid to it.
+ */
+export const CELO_PREVIOUS_PAYTO = [
+  {
+    address: '0xf43f43d8aee114a71b164e1f6214bc7625a5742d',
+    until: '2026-11-11T01:04:32Z',
+    note: 'The Celo pay-to until 2026-11-11 01:04 UTC. Someone else also holds its key: do not pay it.',
+  },
+] as const
+
 /** GET /api/celo/proof body: the durable settlement log, aggregated. Honest zeros when
  *  nothing has settled; totals cover the retained window (last CELO_SETTLEMENTS_CAP). */
 export async function celoProof(
@@ -1024,6 +1038,7 @@ export async function celoProof(
   return {
     network: status.network,
     payTo: status.payTo,
+    previousPayTo: CELO_PREVIOUS_PAYTO,
     configured: status.configured,
     totalSettlements: all.length,
     totalUsd: round(totalUsd),

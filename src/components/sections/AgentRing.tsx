@@ -20,7 +20,8 @@ import { EASE_OUT_EXPO } from '../../lib/brand'
  * backs naturally, the way a real carousel of cards would.
  *
  * The agent list is a hand-typed mirror of public/.well-known/agent-card.json
- * `registrations` plus mcp/src/chains/provenance.ts; nothing here is invented
+ * `registrations` plus mcp/src/chains/provenance.ts, with owners as ownerOf read live
+ * on 2026-11-11, after the rescue moved three agents to a wallet a person holds; nothing here is invented
  * and the one agent with no recorded mint tx (#8913) says so instead of
  * faking a receipt.
  */
@@ -53,7 +54,9 @@ const ORACLE = 'A-Identity Trust Oracle'
 
 const OWNER_EVM = '0xd305607510E0Db2c95807173c7A05BEA53c1ed36'
 const OWNER_OKX = '0x169ead25d35c146f3f3a7d2936ae37eab2e256d1'
-const OWNER_CELO = '0xF43F43D8aee114a71B164e1f6214BC7625a5742D'
+// The founder's own wallet, which a person holds: the rescue of 2026-11-10/11 moved Robinhood Chain #0, Celo #9759
+// and Arc Mainnet #0 here from server keys someone else also holds.
+const OWNER_FOUNDER = '0xCB8824ffAF30687E36374C08eC52298b62871bdf'
 
 export const OUR_AGENTS: OnchainAgent[] = [
   {
@@ -82,7 +85,7 @@ export const OUR_AGENTS: OnchainAgent[] = [
     chain: 'rhchain',
     tokenId: '0',
     identity: ORACLE,
-    owner: OWNER_EVM,
+    owner: OWNER_FOUNDER,
     tx: '0x602ce85ad044836b39918311a3031dcd689e4be0d23aed9ed0ac9227d46ec79e',
     note: "The registry's first mint, and it is ours.",
     mission:
@@ -123,11 +126,11 @@ export const OUR_AGENTS: OnchainAgent[] = [
     chain: 'celo',
     tokenId: '9759',
     identity: ORACLE,
-    owner: OWNER_CELO,
+    owner: OWNER_FOUNDER,
     tx: '0x0a821026621e5b35ff5602f81348b276b0d0f1b61a3892365658295fc5bcb22e',
     note: 'The identity behind the Celo x402 rail.',
     mission:
-      'The identity behind the Celo x402 rail, where payments settle in USDC through the first-party facilitator Celo runs. Owned by the wallet that receives those payments.',
+      'The identity behind the Celo x402 rail, where payments settle in USDC through the first-party facilitator Celo runs. Owned by the wallet that receives those payments. It moved on 2026-11-11 from 0xF43F...742D, whose key someone else also holds: do not pay that address.',
   },
   {
     chain: 'rhchain-testnet',

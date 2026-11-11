@@ -134,7 +134,7 @@ export const PROVENANCE: ChainProvenance[] = [
   {
     chain: 'arc-mainnet',
     summary:
-      'Arc Mainnet opened publicly on 2026-09-16, and the same day agent #0 on its canonical ERC-8004 registry became ours: the first token that registry minted. Paid trust calls settled here on both of our rails that day, our own EIP-3009 facilitator and Circle Gateway nanopayments, an AgentSpendPolicy vault holds real USDC under dust caps with its source verified on Sourcify, and our oracle validator anchored the agent\'s reputation. Since 2026-09-25 the vault\'s agent key is a different key from its owner\'s, and settlements have also gone through Arc\'s predeployed Memo and Multicall3From contracts. Gas on this chain is USDC itself, so every cost below is an exact dollar figure with no price feed. The operating wallet was funded by burning native Circle USDC on Base through CCTP V2 with Circle\'s Forwarding Service, which minted it here without any Arc gas of ours.',
+      'Arc Mainnet opened publicly on 2026-09-16, and the same day agent #0 on its canonical ERC-8004 registry became ours: the first token that registry minted. Paid trust calls settled here on both of our rails that day, our own EIP-3009 facilitator and Circle Gateway nanopayments, an AgentSpendPolicy vault, its source verified on Sourcify, held real USDC under dust caps until the founder emptied it on 2026-11-11, and our oracle validator anchored the agent\'s reputation. Since 2026-09-25 the vault\'s agent key is a different key from its owner\'s, and settlements have also gone through Arc\'s predeployed Memo and Multicall3From contracts. Gas on this chain is USDC itself, so every cost below is an exact dollar figure with no price feed. The operating wallet was funded by burning native Circle USDC on Base through CCTP V2 with Circle\'s Forwarding Service, which minted it here without any Arc gas of ours.',
     agent: { tokenId: '0', caip: 'eip155:5042:8004/0', owner: OWNER, tokenUri: AGENT_CARD },
     contracts: [
       {
@@ -200,7 +200,7 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: '0x1d9f57113cee71e6a0aa73d0905d02f88a08877489c05828e604db2a48412844',
         onChain: 'arc-mainnet',
         blockNumber: 21156191,
-        note: '194916 gas at 143.09 gwei, 0.0279 USDC. ownerOf(0) reads back to the operator wallet and tokenURI(0) to the agent card.',
+        note: '194916 gas at 143.09 gwei, 0.0279 USDC. ownerOf(0) read back to the operator wallet and tokenURI(0) to the agent card; on 2026-11-11 the founder moved the agent to 0xCB88...1bdf (see the caveats).',
       },
       {
         kind: 'funding',
@@ -416,7 +416,7 @@ export const PROVENANCE: ChainProvenance[] = [
       'Every payment listed in this ledger is self-funded: every payer, every receiving address and every account that broadcasts is ours, except Circle\'s Gateway batches and forwarded mint. Each one is labeled internal and always will be, and it is evidence the rails work on Arc Mainnet, not evidence of demand. This ledger is not the whole settlement log: wallets we do not control have also paid checks on Arc Mainnet, and GET /api/arc/season counts those as external, apart from ours.',
       'The Circle Gateway sale is Circle\'s batch transaction, not ours: we broadcast nothing on that rail. Gateway credited the call first (transfer 5958b158-6603-4165-a0a9-cfab2bec2ea7) and applied the net position on-chain later in a batch that may carry other parties\' transfers too, so the batch hash proves settlement of a net position rather than a one-to-one payment.',
       'We deployed nothing here except the vault. The registries, USDC, CCTP, Gateway, Memo and Multicall3From are their authors\' contracts; registration is permissionless.',
-      'The vault\'s owner is still the operating wallet, a server-held key, and this contract has no owner transfer, so moving the owner to a wallet a person holds means deploying a new vault. What the 2026-09-25 split fixed is the other half: the agent key can no longer act as the owner.',
+      'The vault\'s owner is still the operating wallet 0xd305...ed36, a server-held key that someone else has also held since at least 2026-11-01, and this contract has no owner transfer, so moving the owner to a wallet a person holds means deploying a new vault. At about 00:38 UTC on 2026-11-11 the founder emptied the vault and moved agent #0 to 0xCB88...1bdf, a wallet a person holds; the agent\'s owner field above still names 0xd305 until this ledger records the move, which is why the live read says ownerOf no longer matches. What the 2026-09-25 split fixed is the other half: the agent key can no longer act as the owner.',
       'The Memo and Multicall3From receipts are test settlements to our own wallet. The product\'s payment path on this chain does not route through either contract yet, and the /api/arc/memos read still points at Arc testnet.',
       'The block explorer, explorer.arc.io, opens in a browser without signing in, but its JSON API still answered non-browser clients with a bot challenge on 2026-10-11. Every transaction here is also readable over RPC, though not from every host: on 2026-10-11 Circle\'s primary endpoint, dRPC and QuickNode returned all 19 Arc Mainnet receipts in this list, while the Blockdaemon host returned none of them and served old blocks without their transactions.',
       'KYA is not anchored on Arc Mainnet. This caveat used to say the family has no ValidationRegistry, and that was wrong: docs.arc.io lists one at 0x8004Cc8439f36fd5F9F049D9fF86523Df6dAAB58, and read live on 2026-10-11 it is a 130-byte EIP-1967 proxy that already had code here on 2026-09-15, whose implementation (0xdb31f5d9..., getVersion 2.0.0) is the one the same proxy on Base points to, and whose getIdentityRegistry() returns the IdentityRegistry above. It is not in the registry descriptor yet and nothing of ours has been written to it. Arc\'s reference ERC-8183 escrow is documented for testnet only and has no code here, so escrow stays on testnet.',
@@ -458,7 +458,7 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: '0x602ce85ad044836b39918311a3031dcd689e4be0d23aed9ed0ac9227d46ec79e',
         onChain: 'rhchain',
         blockNumber: 34617892,
-        note: 'ownerOf(0) and tokenURI(0) still read back to the values recorded here; the page re-reads them live.',
+        note: 'ownerOf(0) read back to the owner recorded here until the founder moved the agent to 0xCB88...1bdf at 22:10 UTC on 2026-11-10; tokenURI(0) still reads back to the agent card, and the page re-reads both live.',
       },
       {
         kind: 'settlement',
@@ -554,7 +554,8 @@ export const PROVENANCE: ChainProvenance[] = [
       'No canonical Circle USDC is documented for this chain, so the registry asserts none. USDG is named as what it is, in its own field.',
       'We run our own x402 facilitator here so one code path and one receipt standard cover every chain we sell on, not because nobody else serves this chain: as of 2026-09-30 other facilitators do (at least one hosted service lists USDG on this chain, and open-source ones predate our launch), and gasless EIP-3009 relaying on USDG predates us by weeks. On-chain an x402 settlement is indistinguishable from any other relayed authorization.',
       'This is an Arbitrum L2: we wait the descriptor\'s confirmations and record the block, but soft finality is not L1 finality, and the proof page does not claim otherwise.',
-      'The vault\'s owner is the operating wallet 0xd305...ed36, a server-held key that also broadcasts and receives the x402 settlements here, and this contract has no owner transfer, so moving the owner to a wallet a person holds means deploying a new vault. What the 2026-10-01 split fixed is the other half: the agent key 0x8C8D...3349 can no longer act as the owner.',
+      'The vault\'s owner is the operating wallet 0xd305...ed36, a server-held key that broadcasts the x402 settlements here and received them until 2026-11-11, when the pay-to moved to 0xCB88...1bdf, a wallet a person holds (someone else has also held 0xd305\'s key since at least 2026-11-01), and this contract has no owner transfer, so moving the owner to a wallet a person holds means deploying a new vault. What the 2026-10-01 split fixed is the other half: the agent key 0x8C8D...3349 can no longer act as the owner.',
+      'At 22:10 UTC on 2026-11-10 the founder moved agent #0 from the operating wallet to 0xCB88...1bdf, a wallet a person holds, and emptied the vault into it. The agent\'s owner field above still names 0xd305 until this ledger records the move, which is why the live read says ownerOf no longer matches.',
       'The settlements recorded here are self-funded tests. The buyer wallet and the receiving address are both ours, and the receiving address is the same account that broadcasts. Labeled internal, always: evidence the rail works, not evidence of demand.',
     ],
   },
@@ -712,7 +713,7 @@ export const PROVENANCE: ChainProvenance[] = [
       'Gasless EIP-3009 relaying on this USDC contract predates us by years and runs constantly. We did not bring gasless USDC to Arbitrum and do not claim to; on-chain an x402 settlement is indistinguishable from any other relayed authorization.',
       'The settlements recorded here are self-funded tests. The buyer wallet and the receiving address are both ours, and the receiving address is the same account that broadcasts. They are labeled internal and always will be: this is evidence the rail works, not evidence of demand.',
       'KYA is not anchored on Arbitrum One. This caveat used to say the family has no ValidationRegistry, and that was wrong: read live 2026-10-11, the family\'s ValidationRegistry proxy has code here and returns this chain\'s identity registry. It is not wired, so a KYA result is still verified off-chain and recorded, not anchored.',
-      'The vault\'s owner is the operating wallet 0xd305...ed36, a server-held key that also broadcasts and receives the x402 settlements here, and this contract has no owner transfer, so moving the owner to a wallet a person holds means deploying a new vault. What the 2026-10-01 split fixed is the other half: the agent key 0x8C8D...3349 can no longer act as the owner.',
+      'The vault\'s owner is the operating wallet 0xd305...ed36, a server-held key that broadcasts the x402 settlements here and received them until 2026-11-11, when the pay-to moved to 0xCB88...1bdf, a wallet a person holds (someone else has also held 0xd305\'s key since at least 2026-11-01), and this contract has no owner transfer, so moving the owner to a wallet a person holds means deploying a new vault. What the 2026-10-01 split fixed is the other half: the agent key 0x8C8D...3349 can no longer act as the owner.',
       'Robinhood Chain is an Arbitrum L2, and being live there is a different statement from being live on Arbitrum One. Both are true today; neither substitutes for the other.',
       'This is an L2 that settles to Ethereum, so "settled" has layers and we name them: we wait the descriptor\'s confirmations, which is the sequencer\'s ordering commitment, and we record the block. That is not Ethereum finality, and these USDC cannot leave for Ethereum until the fraud-proof window passes.',
     ],
@@ -1674,7 +1675,7 @@ export const PROVENANCE: ChainProvenance[] = [
   {
     chain: 'celo',
     summary:
-      'Agent #9759 on the canonical ERC-8004 IdentityRegistry, registered 2026-08-09 by the same wallet that receives Celo x402 payments. Payments here settle through the first-party facilitator Celo runs rather than a rail of ours, and this entry was added 2026-08-30, when an inventory found the registration recorded nowhere in the repo. The two settlement rows were added 2026-10-11, each from a receipt read that day.',
+      'Agent #9759 on the canonical ERC-8004 IdentityRegistry, registered 2026-08-09 by 0xF43F...742D, the wallet that received Celo x402 payments until 2026-11-11, when the founder moved both the agent and the pay-to to 0xCB88...1bdf, a wallet a person holds, because 0xF43F comes from the same seed as 0xd305...ed36, whose key someone else holds; one block after the agent moved, someone else used 0xF43F\'s key to take its CELO. Payments here settle through the first-party facilitator Celo runs rather than a rail of ours, and this entry was added 2026-08-30, when an inventory found the registration recorded nowhere in the repo. The two settlement rows were added 2026-10-11, each from a receipt read that day.',
     agent: {
       tokenId: '9759',
       caip: 'eip155:42220:8004/9759',
@@ -1696,7 +1697,7 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: '0x0a821026621e5b35ff5602f81348b276b0d0f1b61a3892365658295fc5bcb22e',
         onChain: 'celo',
         blockNumber: 74379462,
-        note: 'register on 2026-08-09 from the Celo payTo wallet. The hash was recovered from the explorer on 2026-08-30, because nothing in the repo had recorded it; ownerOf(9759) and tokenURI(9759) were re-read live the same day and match this entry, and again on 2026-10-11.',
+        note: 'register on 2026-08-09 from 0xF43F...742D, the Celo payTo wallet of the time. The hash was recovered from the explorer on 2026-08-30, because nothing in the repo had recorded it; ownerOf(9759) and tokenURI(9759) were re-read live the same day and match this entry, and again on 2026-10-11.',
       },
       {
         kind: 'settlement',
@@ -1718,7 +1719,7 @@ export const PROVENANCE: ChainProvenance[] = [
       },
     ],
     caveats: [
-      'The owner is the Celo payTo wallet, not the wallet that owns every other EVM agent of ours. Deliberate at registration time, but it means this identity and the payment recipient are the same key.',
+      'Until 2026-11-11 the owner was the Celo payTo wallet 0xF43F...742D, not the wallet that owned every other EVM agent of ours: deliberate at registration time, but it made this identity and the payment recipient the same key. That key is held by someone else too, and on 2026-11-11 the agent moved to 0xCB88...1bdf, the wallet a person holds that also holds Arc Mainnet and Robinhood Chain agent #0; the owner field above still names the registration wallet until this ledger records the move. Since the move the identity and the payment recipient are again one key, now one a person holds.',
       'No reputation anchor exists for #9759 yet; the oracle validator has never written on this chain. getClients(9759) on the ReputationRegistry still returned an empty list on 2026-10-11.',
       'The x402 rail here is Celo\'s own first-party facilitator, not our EIP-3009 rail, so settlement receipts follow their format rather than ours.',
       'Every payment this rail has taken is internal. Read from the explorer on 2026-10-11: the payTo has received 501 USDC transferWithAuthorization payments, 0.975 USDC in all, every one from our buyer wallet 0x8c8d9cd1... and every one on 2026-08-09 between 13:16 and 14:42 UTC. Its only other USDC inflow is 1.806565 from a CELO swap the payTo made itself, 1.2 of which it then sent to that same buyer wallet to fund the run. No outside wallet has ever sent it USDC, and nothing has arrived since.',
@@ -1957,7 +1958,7 @@ export const PROOF_RAILS: ProofRail[] = [
     slug: 'celo',
     title: 'Celo',
     lede:
-      "Agent #9759 on the canonical ERC-8004 registry, registered from the same wallet that receives Celo x402 payments. The payment rail here is not ours: settlement runs through the first-party facilitator Celo operates, so receipts follow their format rather than ours. Every payment it has taken so far came from our own buyer wallet. The identity provenance and two settlement receipts are on this page; the live settlement log has its own surface at /celo-proof.",
+      "Agent #9759 on the canonical ERC-8004 registry, registered from the wallet that received Celo x402 payments until 2026-11-11; both the agent and the pay-to moved that day to a wallet a person holds. The payment rail here is not ours: settlement runs through the first-party facilitator Celo operates, so receipts follow their format rather than ours. Every payment it has taken so far came from our own buyer wallet. The identity provenance and two settlement receipts are on this page; the live settlement log has its own surface at /celo-proof.",
     chains: ['celo'],
   },
 ]

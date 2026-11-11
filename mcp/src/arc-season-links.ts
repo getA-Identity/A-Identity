@@ -234,6 +234,7 @@ export const ARC_NOT_TEAM_PAYERS: ArcNotTeamPayer[] = [
 /**
  * Who has received gas support from our operating wallet. Read from its full USDC outflow on the date below, by hand: the log
  * of sends had no sent line, and every outflow went to our own addresses, none of them to a vault owner. Say it again when it
- * changes: whoever sends one has to change this with the hash.
+ * changes: whoever sends one has to change this with the hash. It ended on 2026-11-10: someone else also holds that wallet's
+ * key, so nothing is sent from it again, and the count stays what this read found.
  */
 export const ARC_GAS_SUPPORT = { readOn: ARC_LINKS_TRACED_ON, owners: 0 } as const

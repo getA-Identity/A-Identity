@@ -245,7 +245,15 @@ jobs:
                     console.log('::error::The ' + process.env.RAIL + ' rail answered 402 with no accepts list, so there is nothing a buyer could pay.');
                     process.exit(1);
                   }
-                  console.log('402 challenge served, payable on ' + accepts.map((a) => a.network).join(', '));
+                  // Someone else holds the keys of these two former pay-to addresses (found 2026-11-10 and
+                  // 2026-11-11), so a challenge that names either one would send a buyer's money to them.
+                  const exposed = ['0xd305607510e0db2c95807173c7a05bea53c1ed36', '0xf43f43d8aee114a71b164e1f6214bc7625a5742d'];
+                  const bad = accepts.filter((a) => exposed.includes(String(a.payTo || '').toLowerCase()));
+                  if (bad.length) {
+                    console.log('::error::The ' + process.env.RAIL + ' rail asks buyers to pay ' + bad[0].payTo + ', an address whose key someone else holds. Fix its pay-to env on Render now.');
+                    process.exit(1);
+                  }
+                  console.log('402 challenge served, payable on ' + accepts.map((a) => a.network).join(', ') + ' to ' + [...new Set(accepts.map((a) => a.payTo))].join(', '));
                 "
                 exit 0 ;;
               200)

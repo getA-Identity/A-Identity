@@ -157,7 +157,7 @@ returns a band and flags, no verdict and no reasons, and is rate limited.
           "network": "eip155:5042",
           "asset": "0x3600000000000000000000000000000000000000",
           "amount": "5000",
-          "payTo": "0xd305607510e0db2c95807173c7a05bea53c1ed36",
+          "payTo": "0xcb8824ffaf30687e36374c08ec52298b62871bdf",
           "maxTimeoutSeconds": 3600,
           "resource": "https://a-identity.xyz/api/x402/gateway/tools/risk_check",
           "extra": {
@@ -255,7 +255,7 @@ returns a band and flags, no verdict and no reasons, and is rate limited.
         "signature": "0x...",
         "authorization": {
           "from": "0xYourWallet",
-          "to": "0xd305607510e0db2c95807173c7a05bea53c1ed36",
+          "to": "0xcb8824ffaf30687e36374c08ec52298b62871bdf",
           "value": "5000",
           "validAfter": "<unix seconds>",
           "validBefore": "<unix seconds>",
@@ -306,7 +306,8 @@ returns a band and flags, no verdict and no reasons, and is rate limited.
     `decision` is `ALLOW`, `WARN` or `DENY`. On `DENY`, do not make the payment. `WARN` is not
     a go-ahead: hold the payment for a person, which is what `verifyThenPay` does by itself. The
     `settlement` block above is a real row from the proof log (a `verify_agent` call our own
-    wallet paid on 2026-09-24, labeled internal there); yours carries your payer and your
+    wallet paid on 2026-09-24, labeled internal there, to our former operating wallet; since
+    2026-11-11 `payTo` is the address in the challenge above); yours carries your payer and your
     tool. A fresh call comes back as `credited` with no `tx` until Gateway's on-chain batch
     lands, and the proof page upgrades the row to `completed` with the batch hash when it does.
 
@@ -509,14 +510,15 @@ from an explorer or a script reaches the contract with none of the page's checks
 | `ALLOW` or `WARN`, on a payment above the vault's ceiling or off its allowlist | No automatic payment, whatever `payOnWarn` says: the vault would refuse the operator. The answer is the verdict plus a prepared `ownerPay` (`awaiting_human`, `ownerHandoff.ownerOnly` names the gate). | The owner |
 
 Four real addresses show the verdicts, each with the day it was read. A check on any of them costs
-0.005 USDC. The first three are ours, a payment to any of them is a real transfer to us, and their
-reputations come from our own demo payments, so they show the rule path, not independent trust.
+0.005 USDC. The first two are ours, a payment to either is a real transfer to us, and their
+reputations come from our own demo payments, so they show the rule path, not independent trust. The
+third was ours and is not anymore: do not pay it.
 
 | Payee | What it is | Verdict |
 | --- | --- | --- |
 | Simon, `0x03f1fb189E461B88f3e8bA7100B29B594E5f98A9` | A platform agent in our own account, holding Arc Mainnet ERC-8004 #104498 | `ALLOW`, reputation 555, on 2026-11-02; the free read shows 553 on 2026-11-04, still over the 500 it needs, and this one moves with its reputation, so read the live answer |
 | Meridian, `0x4e26Ae66840134Ac5979c56ba2509F3956b93431` | Our showcase agent, a platform agent holding Arc Mainnet ERC-8004 #4306 | `WARN`, reputation 469 (below 500), on 2026-11-02, and the same on the free read of 2026-11-04; this one moves with its reputation, so read the live answer |
-| Our operating wallet, `0xd305607510e0db2c95807173c7a05bea53c1ed36` (internal) | Holds Arc Mainnet agent #0, off-platform | `WARN` since 2026-11-04, reputation 60: we hold no record of it. It got `DENY` on 2026-11-02, under the older rule, and those recorded flows stand |
+| Our former operating wallet, `0xd305607510e0db2c95807173c7a05bea53c1ed36` | Someone else has also held its key since at least 2026-11-01. It receives nothing of ours since 2026-11-11, when payments moved to `0xCB8824ffAF30687E36374C08eC52298b62871bdf`, a wallet a person holds, and it held Arc Mainnet agent #0 until that day. Do not pay it | `WARN` since 2026-11-04, reputation 60: we hold no record of it. It got `DENY` on 2026-11-02, under the older rule, and those recorded flows stand |
 | `0xA65F35B21aB90D088c1197728cDd0563c1308735` | An agent on our platform named `test`, which we are not vouching for in any way | `DENY` by the rule, from the free reads on 2026-11-04 (`/api/reputation`: Sybil high, both of its 2 jobs hired by its own operator, reputation 90). The Sybil flag is the evidence: the low score alone would be `WARN`. No check was bought on it, so read the live answer, and do not pay it to see |
 
 A payee that holds no agent on Arc Mainnet passes the free checks, and the check is then bought for

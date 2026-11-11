@@ -316,6 +316,8 @@ test('a handler failure after settlement is a 500 that still records the settlem
 test('celoProof aggregates the injected store honestly, zeros included', async () => {
   const empty = await celoProof({} as NodeJS.ProcessEnv, async () => [])
   assert.equal(empty.configured, false)
+  // Settlements recorded before the 2026-11-11 switch stay attributed to the address they were paid to.
+  assert.deepEqual(empty.previousPayTo.map((p) => [p.address, p.until]), [['0xf43f43d8aee114a71b164e1f6214bc7625a5742d', '2026-11-11T01:04:32Z']])
   assert.equal(empty.totalSettlements, 0)
   assert.equal(empty.totalUsd, 0)
   assert.deepEqual(empty.byTool, {})

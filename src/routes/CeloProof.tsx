@@ -57,6 +57,8 @@ type CeloSettlement = {
 type CeloProofData = {
   network?: string
   payTo?: string
+  /** Where payments went before the current pay-to, newest first; an older backend omits it. */
+  previousPayTo?: { address: string; until: string; note?: string }[]
   configured: boolean
   totalSettlements: number
   totalUsd: number
@@ -323,6 +325,12 @@ export default function CeloProof() {
                     <Skeleton />
                   )}
                 </StatusRow>
+                {p?.previousPayTo?.map((prev) => (
+                  <StatusRow key={prev.address} label={`Pay-to until ${prev.until.slice(0, 16).replace('T', ' ')} UTC`}>
+                    <AddrLink addr={prev.address} />
+                    {prev.note && <span className="mt-1 block text-[10px] leading-relaxed text-term-warn">{prev.note}</span>}
+                  </StatusRow>
+                ))}
                 <StatusRow label="Facilitator">
                   {st ? (st.facilitator ?? <span className="text-foreground/40">not set</span>) : <Skeleton />}
                 </StatusRow>
@@ -398,8 +406,8 @@ export default function CeloProof() {
               <h2 className="text-lg font-bold tracking-tight text-foreground">Recent settlements</h2>
               <p className="mt-1 text-sm leading-relaxed text-foreground/55">
                 Internal and test traffic is labeled. Each row links to its settlement
-                transaction, and the pay-to address above opens the full on-chain history
-                behind this log.
+                transaction. A row recorded before a pay-to switch was paid to the earlier
+                address above, with its end date; later rows to the current one.
               </p>
               {p == null ? (
                 <div className="mt-5 space-y-2">
