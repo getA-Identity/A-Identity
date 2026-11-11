@@ -250,6 +250,27 @@ export const ARC_OWNER_HELD_VAULTS: ArcOwnerHeldVault[] = [
     deployedAt: '2026-11-11',
     note: 'The founder\'s real-wallet owner test, from a fresh wallet that is none of our keys. Deploy sent by the owner\'s own wallet (receipt.from is owner()), and its creation input is AgentSpendPolicyBytecode plus its constructor args. Read back on 2026-11-11 at block 30764615: operator 0x1FA34D9f5f45ed7DA9DE0dcD0025a0d3c8339aF5, dailyCap 1 USDC, autoApproveMax 0.25 USDC, session key valid to 2026-11-18T23:01:21Z. Checked by scripts/arc-owner-vault-check.mjs. The same hour the owner froze and unfroze it, put in and withdrew 0.02 USDC, and revoked the agent key: read back after block 30764911, frozen false, sessionKeyExpiry 1, balance 0.',
   },
+  // The two vaults POST /api/arc/vaults admitted on 2026-11-06 and 11-07 with the owner not identified. On 2026-11-11
+  // the founder said that both owners are outside the team, so each is labeled external here. Nobody has said whose
+  // wallets they are. Every field was re-read from the chain that day by scripts/arc-owner-vault-check.mjs.
+  {
+    address: '0x9aCeD7d5442aED2c8aCB0Ab249B46b3A17aF0619',
+    owner: '0xD4F1254C803662c46D9c21f80F4F3c15FF57e2c9',
+    ownerKind: 'external',
+    deployTx: '0x6bda1b2faa57bf0f4330fbb8aef38152a9a0f19ddfe465c31d94837fa59ee9ab',
+    deployBlock: '29879919',
+    deployedAt: '2026-11-06',
+    note: externalByFounderNote('2026-11-11'),
+  },
+  {
+    address: '0x30E423f2b00eb8654a021AaA2bd9acAd20A1ff79',
+    owner: '0x363daf2A42D5055Dac91163f0eA29ca05c378f01',
+    ownerKind: 'external',
+    deployTx: '0xdb11b831e432660077a05cdced0614a880b5872e2a2a12eb7eb87617053602e9',
+    deployBlock: '29967114',
+    deployedAt: '2026-11-07',
+    note: externalByFounderNote('2026-11-11'),
+  },
 ]
 
 /**
