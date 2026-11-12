@@ -10,14 +10,15 @@ import { NETWORKS } from "../collect/networks.ts";
 import { createReader, type RpcReader } from "../collect/rpc.ts";
 import { registryReasons } from "../engine/rules.ts";
 import type { Decision, Network, Verdict } from "../engine/types.ts";
+import { ORACLE_METHODS, REGISTRY_GAS_TGAS } from "./abi.ts";
 import type { LoadedKey } from "./keys.ts";
 import { prepare, send, viewFunction, type Call, type Executed, type Pending, type Prepared, type Rejected } from "./send.ts";
 
-/** Methods the oracle's function-call key is limited to (deployment amendment A3). */
-export const ORACLE_METHODS = ["set_verdict", "set_verdicts", "clear_verdict", "clear_reports"] as const;
+// The oracle's methods (deployment amendment A3) and the gas figures live in abi.ts, with no
+// imports, so the demo and the oracle read them without near-api-js; re-exported here.
+export { ORACLE_METHODS, REGISTRY_GAS_TGAS };
 /** The registry's REPORT_DEPOSIT: 0.01 NEAR, kept in full as the price of a report. */
 export const REPORT_DEPOSIT = "10000000000000000000000";
-export const REGISTRY_GAS_TGAS = { set_verdict: 30, set_verdicts: 100, clear: 30, report: 30, owner: 30 } as const;
 /** The registry's own limits (rules.rs). */
 export const REGISTRY_LIMITS = { reasons: 8, code_bytes: 32, evidence_bytes: 256, code_hash_bytes: 64, score_max: 1000, batch: 20 } as const;
 

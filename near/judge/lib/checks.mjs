@@ -236,7 +236,8 @@ function eventMatches(event, want) {
 
 function describeEvent(event) {
   const data = event.data && typeof event.data === 'object' ? event.data : {};
-  const keys = ['payee', 'amount', 'reason', 'source', 'by_owner', 'held_id', 'account_id', 'verdict'];
+  // `kind` is what a vault 0.2.0 hold says the vault saw; a held request's `reason` is the agent's own text.
+  const keys = ['payee', 'amount', 'reason', 'kind', 'source', 'by_owner', 'held_id', 'account_id', 'verdict'];
   const shown = keys.filter((key) => key in data).map((key) => `${key}=${short(data[key], 40)}`);
   return `${event.event}{${shown.join(' ')}}`;
 }

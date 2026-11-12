@@ -20,8 +20,25 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 const isAccount = (v: unknown): v is string => typeof v === 'string' && isNearAccountId(v)
 const optString = (v: unknown): string | null | undefined => (v === null ? null : typeof v === 'string' ? v : undefined)
 
-/** The version string the vault crate reports in get_config. */
+/** Every vault build reports a get_config().version that starts with this. */
 export const VAULT_VERSION_PREFIX = 'agent-spend-policy '
+
+/** The build this page is written against (lib.rs VERSION): it reads every field of it. */
+export const VAULT_VERSION = 'agent-spend-policy 0.2.0'
+
+/**
+ * Where a vault's build stands against the one this page is written for. `earlier` is a build
+ * before 0.2.0: its holds carry no kind, its refusal counters have no bound and no forget
+ * method, and it does not refuse relayed agent calls. `newer` may add fields this page does not
+ * show. `unknown` is a version string this page cannot read as one.
+ */
+export function vaultBuild(version: string): 'current' | 'earlier' | 'newer' | 'unknown' {
+  if (version === VAULT_VERSION) return 'current'
+  const m = /^agent-spend-policy (\d+)\.(\d+)\.(\d+)$/.exec(version)
+  if (!m) return 'unknown'
+  const [maj, min] = [Number(m[1]), Number(m[2])]
+  return maj > 0 || min > 2 || (min === 2 && Number(m[3]) > 0) ? 'newer' : 'earlier'
+}
 
 /** get_config(). */
 export type VaultConfig = {
@@ -82,6 +99,20 @@ export function parseAgents(v: unknown): AgentKeyRecord[] | null {
   return out
 }
 
+/**
+ * What the VAULT saw when it held a payment (types.rs HoldKind), recorded on the hold and on its
+ * payment_held event from 0.2.0 on. The hold's `reason` is the vault's code for a held pay but
+ * the agent's own free text for a request, and that text can read like a vault code, so what a
+ * hold means is read from `kind`, never from `reason`.
+ */
+export const HOLD_KINDS = ['registry_warn', 'unknown_payee', 'agent_request'] as const
+export type HoldKind = (typeof HOLD_KINDS)[number]
+
+/** A hold kind, or null: absent (a build before 0.2.0) or a value this page does not know. */
+export function parseHoldKind(v: unknown): HoldKind | null {
+  return typeof v === 'string' && (HOLD_KINDS as readonly string[]).includes(v) ? (v as HoldKind) : null
+}
+
 /** list_held() entry: a payment waiting for the owner. */
 export type HeldPayment = {
   id: string
@@ -90,9 +121,14 @@ export type HeldPayment = {
   payee: string
   amount: bigint
   memo: string | null
+  /** The vault's code for a held pay, or the agent's own words for a request. Never decides what is shown. */
   reason: string
   createdAtS: bigint
   expiresAtS: bigint
+  /** What the vault saw; null when the build records none, or one this page does not know. */
+  kind: HoldKind | null
+  /** The kind exactly as the vault wrote it, for one this page does not know; null when absent. */
+  kindText: string | null
 }
 
 export function parseHeld(v: unknown): HeldPayment[] | null {
@@ -107,6 +143,8 @@ export function parseHeld(v: unknown): HeldPayment[] | null {
     const expires = u128(h.expires_at_s)
     const memo = optString(h.memo)
     if (id === null || paymentId === null || amount === null || created === null || expires === null || memo === undefined) return null
+    // Absent on a build before 0.2.0, which is shown as unclassified; a kind that is there must be a string.
+    if (!(h.kind === undefined || h.kind === null || typeof h.kind === 'string')) return null
     out.push({
       id: id.toString(),
       paymentId: paymentId.toString(),
@@ -117,6 +155,8 @@ export function parseHeld(v: unknown): HeldPayment[] | null {
       reason: h.reason,
       createdAtS: created,
       expiresAtS: expires,
+      kind: parseHoldKind(h.kind),
+      kindText: typeof h.kind === 'string' ? h.kind : null,
     })
   }
   return out
@@ -173,14 +213,60 @@ export function parseVerdict(v: unknown): { ok: true; verdict: VerdictRecord | n
   }
 }
 
-/** The held reasons the vault itself writes; anything else is the agent's own words from request_payment. */
+/** The held reasons the vault writes for a held pay (lib.rs). A request's reason is the agent's own text, whatever it says. */
 export const REASON_REGISTRY_WARN = 'RegistryWarn'
 export const REASON_UNKNOWN_PAYEE = 'UnknownPayee'
 
-export function heldReason(reason: string): { title: string; kind: 'warn' | 'unknown' | 'agent' } {
-  if (reason === REASON_REGISTRY_WARN) return { title: 'The registry warned about this payee', kind: 'warn' }
-  if (reason === REASON_UNKNOWN_PAYEE) return { title: 'Nobody has judged this payee yet', kind: 'unknown' }
-  return { title: `The agent asked for approval: "${reason}"`, kind: 'agent' }
+/** A hold as the owner reads it: the label and the sentence come from `kind` alone. */
+export type HoldReading = {
+  /** The pill. */
+  label: 'Registry warned' | 'Unknown payee' | 'Agent asked' | 'Unclassified'
+  tone: 'warn' | 'accent' | 'muted'
+  /** Why the vault held it, in one sentence, from `kind` alone. */
+  title: string
+  /**
+   * The agent's own text from request_payment, when the reason is certainly the agent's: the
+   * vault writes no other text than its two codes, and only with the kind they name. Shown as
+   * the agent's words, never as the vault's. Null for a held pay, whose reason is the vault's code.
+   */
+  agentWords: string | null
+  /** A hold with no kind (a build before 0.2.0): the stored reason, which that build does not attribute. */
+  unattributed: string | null
+}
+
+export function readHold(h: { kind: HoldKind | null; kindText?: string | null; reason: string }): HoldReading {
+  const text = h.reason.trim() === '' ? null : h.reason
+  const vaultCode = (h.kind === 'registry_warn' && h.reason === REASON_REGISTRY_WARN) || (h.kind === 'unknown_payee' && h.reason === REASON_UNKNOWN_PAYEE)
+  switch (h.kind) {
+    case 'registry_warn':
+      return { label: 'Registry warned', tone: 'warn', title: 'The registry answered WARN for this payee when the vault held the payment', agentWords: vaultCode ? null : text, unattributed: null }
+    case 'unknown_payee':
+      return {
+        label: 'Unknown payee',
+        tone: 'warn',
+        title: 'Never judged: the registry had no verdict on this payee, you had not listed it, and the vault had never paid it',
+        agentWords: vaultCode ? null : text,
+        unattributed: null,
+      }
+    case 'agent_request':
+      return {
+        label: 'Agent asked',
+        tone: 'accent',
+        title: 'The agent asked for your approval about a payee the registry allowed, or one the vault already knew',
+        agentWords: text,
+        unattributed: null,
+      }
+    default:
+      return {
+        label: 'Unclassified',
+        tone: 'muted',
+        title: h.kindText
+          ? `Unclassified: the vault recorded a kind this page does not know ("${h.kindText}"), so it does not guess from the reason text`
+          : 'Unclassified: this vault build does not record why it held a payment, so the page does not guess from the reason text',
+        agentWords: null,
+        unattributed: text,
+      }
+  }
 }
 
 /** The methods a function-call key the vault creates may call: the contract's AGENT_METHODS. */

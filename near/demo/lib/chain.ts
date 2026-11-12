@@ -204,6 +204,16 @@ export function vaultEvents(o: ParsedOutcome, vaultId: string): Array<{ event: s
   return eventsOf(o, 'a_identity_vault', vaultId).flatMap((e) => eventItems(e.data).map((data) => ({ event: e.event, data })));
 }
 
+/**
+ * The `kind` the vault recorded on the payment_held event of payment `paymentId`: what the VAULT
+ * saw (registry_warn, unknown_payee, agent_request), never the agent's words. null when the
+ * transaction holds no such event, or the event has no kind (a vault build before 0.2.0).
+ */
+export function holdKindIn(o: ParsedOutcome, vaultId: string, paymentId: string): string | null {
+  const held = vaultEvents(o, vaultId).find((e) => e.event === 'payment_held' && e.data.payment_id === paymentId);
+  return held && typeof held.data.kind === 'string' ? held.data.kind : null;
+}
+
 export type FtTransfer = { executorId: string; old_owner_id: string; new_owner_id: string; amount: string; memo?: string };
 
 /** NEP-141 ft_transfer events emitted by the token's OWN receipts. A log line printed by any other

@@ -40,7 +40,23 @@ fn a_registered_key_signing_for_another_account_is_not_an_agent() {
         assert_panics_with("NotAgent", || {
             let _ = v.record_refusal(newcomer(), U128(1), "guard_deny".to_owned());
         });
+        assert!(
+            events().is_empty(),
+            "{account}: a refused record logs nothing"
+        );
+        env_as(account.clone(), agent(), 0, vec![]);
+        assert_panics_with("NotAgent", || {
+            let _ = v.request_payment(newcomer(), U128(10), None, "why".to_owned());
+        });
+        assert!(
+            events().is_empty(),
+            "{account}: a refused request logs nothing"
+        );
     }
+    assert_eq!(v.guard_refusal_count(newcomer()), 0);
+    assert_eq!(v.guard_refusal_payees(), 0);
+    assert_eq!(v.spent_today(), U128(0));
+    assert!(v.list_held(None, None).is_empty());
 }
 
 /// The agent key's own transaction, as a contract further along its call chain sees it. The key

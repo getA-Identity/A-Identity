@@ -13,16 +13,49 @@ import assert from 'node:assert/strict'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { existsSync } from 'node:fs'
 import { formatGrouped, formatNear, formatUnits, isU128, parseUnits, tgas, U128_MAX } from './units.ts'
-import { isNearAccountId, isNearTxHash, shortKey } from './ids.ts'
+import { accountIdsIn, isNearAccountId, isNearTxHash, shortKey } from './ids.ts'
 import { classifyViewError, decodeResult, encodeArgs, judgeReply, nearRpc, NearUnreachable, parseAccessKeys, parseAccountView, viewCall, txStatus } from './rpc.ts'
-import { eventsOf, heldReason, isAgentMethodList, parseAgents, parseHeld, parseVaultConfig, parseVerdict, payOutcomeOf, tokenTransfersOf, txVerdict, vaultEventsOf } from './abi.ts'
-import { dayResetsAtS, keyExpired, keyRows, ownerPayNote, predictAgentPay, registryDown, vaultHeadline } from './model.ts'
-import { prepareFreeze, prepareFund, prepareOwnerPay, prepareOwnerReject, prepareSetAllowed, prepareSetHoldUnknown, prepareSetPolicy, prepareUnfreeze, prepareWithdraw, totalDeposit, totalTgas } from './calls.ts'
+import {
+  eventsOf,
+  HOLD_KINDS,
+  isAgentMethodList,
+  parseAgents,
+  parseHeld,
+  parseHoldKind,
+  parseVaultConfig,
+  parseVerdict,
+  payOutcomeOf,
+  readHold,
+  tokenTransfersOf,
+  txVerdict,
+  VAULT_VERSION,
+  vaultBuild,
+  vaultEventsOf,
+  type HeldPayment,
+} from './abi.ts'
+import { approvalMakesKnown, dayResetsAtS, keyExpired, keyRows, ownerPayNote, predictAgentPay, registryDown, vaultHeadline } from './model.ts'
+import {
+  FORGET_BATCH_MAX,
+  prepareForgetCounters,
+  prepareFreeze,
+  prepareFund,
+  prepareOwnerPay,
+  prepareOwnerReject,
+  prepareSetAllowed,
+  prepareSetHoldUnknown,
+  prepareSetPolicy,
+  prepareUnfreeze,
+  prepareWithdraw,
+  totalDeposit,
+  totalTgas,
+} from './calls.ts'
+import { VAULT_ERRORS, vaultErrorText } from './errors.ts'
 import { describeEvent } from './events.ts'
 import { loadKnownTxs, rememberTx } from './txlog.ts'
 import { NEAR_CHAIN, NEAR_RPC_URLS, REGISTRY_USDC, REGISTRY_VAULT, nearAccountUrl, nearTxUrl } from './chain.ts'
-import { ALLOWLIST_READ_LIMIT, payeesInView, readNearVault } from './read.ts'
+import { ALLOWLIST_READ_LIMIT, counterSlotsOf, MAX_GUARD_PAYEES, MAX_REFUSAL_PAYEES, payeesInView, readNearVault } from './read.ts'
 
 const VAULT = 'vault.aid-demo-owner.testnet'
 const OWNER = 'aid-demo-owner.testnet'
@@ -181,6 +214,83 @@ test('a missing vault reads as not deployed, live, with the block that said so',
   assert.equal(r.state === 'missing' && r.blockHeight, 277301738)
 })
 
+/**
+ * A host that answers every read readNearVault makes, from a table of view answers by method
+ * name. A method missing from the table answers the way nearcore does for a build without it.
+ */
+function vaultHost(views: Record<string, unknown>): typeof fetch {
+  return (async (_url: string | URL | Request, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as { method: string; params: Record<string, string> }
+    const p = body.params
+    if (body.method === 'block') return json(200, { result: { header: { height: 300, timestamp_nanosec: '1762950000000000000' } } })
+    if (p.request_type === 'view_account') return json(200, { result: { amount: '5000000000000000000000000', locked: '0', code_hash: 'EvWjFzPqL1iVaSVAg1gWMoH3uqrC2iqyUVRqF3dqkbZG', storage_usage: 900, block_height: 300 } })
+    if (p.request_type === 'view_access_key_list') return json(200, { result: { block_height: 300, keys: [] } })
+    if (p.request_type === 'call_function') {
+      if (!(p.method_name in views)) return json(200, { result: { block_height: 300, logs: [], error: 'wasm execution failed with error: FunctionCallError(MethodResolveError(MethodNotFound))' } })
+      return json(200, { result: { block_height: 300, logs: [], result: [...new TextEncoder().encode(JSON.stringify(views[p.method_name]))] } })
+    }
+    return json(500, {})
+  }) as typeof fetch
+}
+
+const VAULT_VIEWS: Record<string, unknown> = {
+  get_config: null,
+  today: '20404',
+  spent_today: '0',
+  remaining_today: '5000000',
+  list_agents: [],
+  list_held: [HELD_JSON_FOR_READ()],
+  list_allowlist: [],
+  guard_refusal_payees: 3,
+  refusal_payees: 1,
+  ft_metadata: { symbol: 'USDC', name: 'USD Coin', decimals: 6 },
+  ft_balance_of: '2000000',
+  storage_balance_of: { total: '1250000000000000000000', available: '0' },
+}
+
+function HELD_JSON_FOR_READ() {
+  return { id: '1', payment_id: '4', agent_pk: AGENT_PK, payee: 'aid-demo-merchamt.testnet', amount: '500000', memo: 'INV-1002', reason: 'UnknownPayee', created_at_s: '1762940000', expires_at_s: '1763026400', kind: 'unknown_payee' }
+}
+
+test('a live 0.2.0 vault is read with its holds kinds and its two counter totals', async () => {
+  const views = { ...VAULT_VIEWS, get_config: { ...CONFIG, version: 'agent-spend-policy 0.2.0' } }
+  const r = await readNearVault(HOSTS, VAULT, null, { fetchImpl: vaultHost(views) })
+  assert.equal(r.state, 'live')
+  if (r.state !== 'live') return
+  assert.equal(r.snapshot.held[0].kind, 'unknown_payee')
+  assert.deepEqual(r.snapshot.counters, { state: 'read', guard: 3, registry: 1 })
+  assert.equal(vaultBuild(r.snapshot.config.version), 'current')
+})
+
+test('a live 0.1.0 vault is still read: holds unclassified, counter totals not reported, nothing refused', async () => {
+  const { guard_refusal_payees: _g, refusal_payees: _r, ...older } = VAULT_VIEWS
+  void _g
+  void _r
+  const { kind: _k, ...oldHeld } = HELD_JSON_FOR_READ()
+  void _k
+  const views = { ...older, get_config: { ...CONFIG, version: 'agent-spend-policy 0.1.0' }, list_held: [oldHeld] }
+  const r = await readNearVault(HOSTS, VAULT, null, { fetchImpl: vaultHost(views) })
+  assert.equal(r.state, 'live')
+  if (r.state !== 'live') return
+  assert.equal(r.snapshot.held[0].kind, null)
+  assert.equal(readHold(r.snapshot.held[0]).label, 'Unclassified')
+  assert.deepEqual(r.snapshot.counters, { state: 'not-reported' })
+  assert.equal(vaultBuild(r.snapshot.config.version), 'earlier')
+  // A contract that is not a vault build at all is still "not this vault".
+  const other = await readNearVault(HOSTS, VAULT, null, { fetchImpl: vaultHost({ ...views, get_config: { ...CONFIG, version: 'some-token 1.0.0' } }) })
+  assert.equal(other.state, 'not-vault')
+})
+
+test('the counter totals: read, not reported by an earlier build, or unread, never a guess', () => {
+  const ok = (value: unknown) => ({ ok: true as const, value, blockHeight: 1, host: 'h' })
+  const failed = (why: 'no-method' | 'panic' | 'other', detail: string) => ({ ok: false as const, why, detail, blockHeight: 1, host: 'h' })
+  assert.deepEqual(counterSlotsOf(ok(100), ok(0)), { state: 'read', guard: 100, registry: 0 })
+  assert.deepEqual(counterSlotsOf(failed('no-method', 'MethodNotFound'), failed('no-method', 'MethodNotFound')), { state: 'not-reported' })
+  assert.deepEqual(counterSlotsOf(ok(1), failed('other', 'boom')), { state: 'unread', why: 'boom' })
+  assert.deepEqual(counterSlotsOf(ok('1'), ok(0)), { state: 'unread', why: 'an answer that is not a count' })
+  assert.deepEqual(counterSlotsOf(null, ok(0)), { state: 'unread', why: 'no host answered' })
+})
+
 test('a transaction nobody has seen is unknown, one a host has not finished is pending', async () => {
   const unknownTx = { error: { name: 'HANDLER_ERROR', cause: { name: 'UNKNOWN_TRANSACTION', info: {} }, data: 'does not exist' } }
   assert.deepEqual(
@@ -208,7 +318,7 @@ const CONFIG = {
   auto_approve_max: '1000000',
   allowlist_enabled: false,
   token_storage_deposit: '1250000000000000000000',
-  version: 'agent-spend-policy 0.1.0',
+  version: 'agent-spend-policy 0.2.0',
   hold_unknown: true,
 }
 
@@ -224,19 +334,67 @@ test('get_config is read only when it is the vault shape', () => {
   assert.equal(parseVaultConfig(null), null)
 })
 
-test('agents and held payments are read field by field', () => {
+/** A list_held entry as vault 0.2.0 serializes it (types.rs HeldPaymentView): `kind` last. */
+const HELD_JSON = { id: '3', payment_id: '9', agent_pk: AGENT_PK, payee: 'aid-demo-merchant.testnet', amount: '250000', memo: null, reason: 'UnknownPayee', created_at_s: '100', expires_at_s: '86500', kind: 'unknown_payee' }
+
+test('agents and held payments are read field by field, the hold kind included', () => {
   const agents = parseAgents([{ public_key: AGENT_PK, label: 'demo agent', expires_at_s: '1763000000', revoked: false, added_at_s: '1762900000' }])
   assert.equal(agents?.[0].expiresAtS, 1_763_000_000n)
   assert.equal(parseAgents([{ public_key: AGENT_PK, label: 'x', expires_at_s: 1, revoked: false, added_at_s: '1' }]), null)
-  const held = parseHeld([
-    { id: '3', payment_id: '9', agent_pk: AGENT_PK, payee: 'aid-demo-merchant.testnet', amount: '250000', memo: null, reason: 'UnknownPayee', created_at_s: '100', expires_at_s: '86500' },
-  ])
+  const held = parseHeld([HELD_JSON])
   assert.equal(held?.[0].amount, 250_000n)
   assert.equal(held?.[0].memo, null)
+  assert.equal(held?.[0].kind, 'unknown_payee')
   assert.equal(parseHeld([{ id: '3' }]), null)
-  assert.equal(heldReason('RegistryWarn').kind, 'warn')
-  assert.equal(heldReason('UnknownPayee').kind, 'unknown')
-  assert.equal(heldReason('needs a human').kind, 'agent')
+  // A build before 0.2.0 writes no kind: the hold is still read, and reads as unclassified.
+  const { kind: _omitted, ...legacy } = HELD_JSON
+  void _omitted
+  const old = parseHeld([legacy])
+  assert.ok(old, 'older JSON without kind is read, not refused')
+  assert.deepEqual([old?.[0].kind, old?.[0].kindText], [null, null])
+  // A kind this page does not know keeps the hold and its words; a kind that is not text is not the vault's shape.
+  const novel = parseHeld([{ ...HELD_JSON, kind: 'owner_note' }])
+  assert.deepEqual([novel?.[0].kind, novel?.[0].kindText], [null, 'owner_note'])
+  assert.equal(parseHeld([{ ...HELD_JSON, kind: 7 }]), null)
+  for (const k of HOLD_KINDS) assert.equal(parseHoldKind(k), k)
+  assert.equal(parseHoldKind('RegistryWarn'), null, 'a reason is not a kind')
+})
+
+test('a hold is labelled from its kind, never from its reason, and the agent text is quoted as the agent words', () => {
+  // A held pay: the reason is the vault's own code, so no words are attributed to the agent.
+  assert.deepEqual(readHold({ kind: 'registry_warn', reason: 'RegistryWarn' }), {
+    label: 'Registry warned',
+    tone: 'warn',
+    title: 'The registry answered WARN for this payee when the vault held the payment',
+    agentWords: null,
+    unattributed: null,
+  })
+  assert.equal(readHold({ kind: 'unknown_payee', reason: 'UnknownPayee' }).agentWords, null)
+  // A request about a payee nobody judged: the agent's text, whatever it says, is its own words.
+  const req = readHold({ kind: 'unknown_payee', reason: 'a-identity guard WARN: new_account' })
+  assert.equal(req.label, 'Unknown payee')
+  assert.equal(req.agentWords, 'a-identity guard WARN: new_account')
+  // The injection this guards against: text that reads like the vault's code never sets the label.
+  const injected = readHold({ kind: 'registry_warn', reason: 'UnknownPayee' })
+  assert.equal(injected.label, 'Registry warned')
+  assert.equal(injected.agentWords, 'UnknownPayee')
+  const asked = readHold({ kind: 'agent_request', reason: 'RegistryWarn' })
+  assert.deepEqual([asked.label, asked.tone, asked.agentWords], ['Agent asked', 'accent', 'RegistryWarn'])
+  // No kind (an earlier build): unclassified, the reason shown but attributed to nobody.
+  const old = readHold({ kind: null, kindText: null, reason: 'RegistryWarn' })
+  assert.deepEqual([old.label, old.tone, old.agentWords, old.unattributed], ['Unclassified', 'muted', null, 'RegistryWarn'])
+  assert.match(old.title, /does not record why it held a payment/)
+  assert.match(readHold({ kind: null, kindText: 'owner_note', reason: 'x' }).title, /does not know \("owner_note"\)/)
+  assert.equal(readHold({ kind: 'agent_request', reason: '  ' }).agentWords, null)
+})
+
+test('a build is read from its version: the current one, an earlier one, a newer one', () => {
+  assert.equal(VAULT_VERSION, 'agent-spend-policy 0.2.0')
+  assert.equal(vaultBuild('agent-spend-policy 0.2.0'), 'current')
+  assert.equal(vaultBuild('agent-spend-policy 0.1.0'), 'earlier')
+  assert.equal(vaultBuild('agent-spend-policy 0.2.1'), 'newer')
+  assert.equal(vaultBuild('agent-spend-policy 1.0.0'), 'newer')
+  assert.equal(vaultBuild('agent-spend-policy next'), 'unknown')
 })
 
 test('a registry verdict is read the way the vault reads it: three exact words or nothing', () => {
@@ -301,11 +459,59 @@ test('every vault event has words, and an unknown one keeps its raw name', () =>
   )
   assert.equal(refused.tone, 'danger')
   assert.match(refused.title, /Refused 1 USDC to aid-demo-attacker\.testnet: RegistryDeny/)
-  assert.match(refused.detail ?? '', /A-Identity registry; registry reasons: drainer\. Nothing moved\./)
-  const held = describeEvent({ standard: 'a_identity_vault', event: 'payment_held', data: { held_id: '4', payee: 'new.testnet', amount: '500000', reason: 'UnknownPayee' }, receiptId: 'r', executorId: VAULT }, 6, 'USDC')
-  assert.match(held.detail ?? '', /Nobody has judged this payee yet/)
-  assert.equal(describeEvent({ standard: 'a_identity_vault', event: 'frozen_set', data: { frozen: true }, receiptId: 'r', executorId: VAULT }, 6, 'USDC').tone, 'danger')
-  assert.equal(describeEvent({ standard: 'a_identity_vault', event: 'brand_new', data: {}, receiptId: 'r', executorId: VAULT }, 6, 'USDC').title, 'brand_new')
+  assert.match(refused.detail ?? '', /A-Identity registry; registry reasons: drainer\. The registry flags this payee, and the vault refuses it even when the owner approves\. Nothing moved\./)
+  const at = (event: string, data: Record<string, unknown>) => describeEvent({ standard: 'a_identity_vault', event, data, receiptId: 'r', executorId: VAULT }, 6, 'USDC')
+  const held = at('payment_held', { held_id: '4', payee: 'new.testnet', amount: '500000', reason: 'UnknownPayee', kind: 'unknown_payee' })
+  assert.equal(held.title, 'Held 0.5 USDC to new.testnet for the owner (#4): Unknown payee')
+  assert.match(held.detail ?? '', /^Never judged: .* Nothing moved\.$/)
+  assert.doesNotMatch(held.detail ?? '', /agent wrote/)
+  // A request's reason is the agent's own words, quoted and attributed; the label is the kind's.
+  const asked = at('payment_held', { held_id: '5', payee: 'shop.testnet', amount: '1', reason: 'UnknownPayee', kind: 'agent_request' })
+  assert.match(asked.title, /: Agent asked$/)
+  assert.match(asked.detail ?? '', /The agent wrote, in its own words: "UnknownPayee"\./)
+  // An event from a build before 0.2.0: unclassified, and the reason attributed to nobody.
+  const old = at('payment_held', { held_id: '6', payee: 'new.testnet', amount: '1', reason: 'RegistryWarn' })
+  assert.match(old.title, /: Unclassified$/)
+  assert.match(old.detail ?? '', /Reason stored with it: "RegistryWarn" \(this build does not record whether the vault or the agent wrote it\)/)
+  // A vault error name gets its meaning; an agent's recorded refusal keeps its own text alone.
+  assert.match(at('payment_refused', { payee: 'x.testnet', amount: '1', reason: 'StorageNotCovered', source: 'policy', registry_reasons: [] }).detail ?? '', /0\.01 NEAR headroom/)
+  assert.match(at('payment_refused', { payee: 'x.testnet', amount: '1', reason: 'GuardRefusalLimitReached', source: 'policy', registry_reasons: [] }).detail ?? '', /100 payees already have a counter/)
+  assert.equal(at('payment_refused', { payee: 'x.testnet', amount: '1', reason: 'NotAgent', source: 'agent_guard', registry_reasons: [] }).detail, "Decided by the agent's own guard. Nothing moved.")
+  // The two 0.2.0 owner events.
+  const forgotGuard = at('guard_refusals_forgotten', { payee: 'made-up.testnet', count: 3 })
+  assert.equal(forgotGuard.title, "The owner removed the agent's recorded refusals of made-up.testnet (the count was 3)")
+  assert.equal(forgotGuard.account, 'made-up.testnet')
+  assert.equal(at('refusals_forgotten', { payee: 'aid-demo-merchamt.testnet', count: 2 }).title, 'The owner removed the registry refusal count of aid-demo-merchamt.testnet (it was 2)')
+  assert.match(at('refusals_forgotten', { payee: 'a.testnet', count: '2' }).title, /an unreadable count/)
+  assert.match(at('held_rejected', { held_id: '7' }).detail ?? '', /revocation of the agent key/)
+  assert.equal(at('frozen_set', { frozen: true }).tone, 'danger')
+  assert.equal(at('brand_new', {}).title, 'brand_new')
+})
+
+test('every vault error name has words, in the order error.rs freezes, the 0.2.0 names included', () => {
+  const source = fileURLToPath(new URL('../../../near/contracts/agent-spend-policy/src/error.rs', import.meta.url))
+  if (existsSync(source)) {
+    const names = [...readFileSync(source, 'utf8').matchAll(/Error::(\w+) => "(\w+)",/g)].map((m) => m[2])
+    assert.deepEqual(names, [...VAULT_ERRORS], 'errors.ts follows error.rs, append-only')
+  }
+  for (const name of VAULT_ERRORS) assert.ok(vaultErrorText(name), name)
+  for (const name of ['GuardRefusalLimitReached', 'StorageNotCovered', 'InitNotAllowed']) assert.ok(VAULT_ERRORS.includes(name as (typeof VAULT_ERRORS)[number]), name)
+  assert.equal(vaultErrorText('FiatToken: paused'), null, "a token's message is not the vault's")
+  assert.equal(vaultErrorText(null), null)
+})
+
+test('the version, the bounds and the hold kinds this page reads are the vault crate own', () => {
+  const src = (f: string) => fileURLToPath(new URL(`../../../near/contracts/agent-spend-policy/src/${f}`, import.meta.url))
+  if (!existsSync(src('lib.rs'))) return
+  const lib = readFileSync(src('lib.rs'), 'utf8')
+  assert.match(lib, new RegExp(`pub const VERSION: &str = "${VAULT_VERSION}";`))
+  assert.match(lib, new RegExp(`pub const MAX_FORGET_BATCH: usize = ${FORGET_BATCH_MAX};`))
+  assert.match(lib, new RegExp(`pub const MAX_GUARD_PAYEES: u32 = ${MAX_GUARD_PAYEES};`))
+  assert.match(lib, new RegExp(`pub const MAX_REFUSAL_PAYEES: u32 = ${MAX_REFUSAL_PAYEES};`))
+  const types = readFileSync(src('types.rs'), 'utf8')
+  const body = types.slice(types.indexOf('pub enum HoldKind'), types.indexOf('\n}', types.indexOf('pub enum HoldKind')))
+  const variants = [...body.matchAll(/^ {4}([A-Z]\w*),$/gm)].map((m) => m[1].replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase())
+  assert.deepEqual(variants, [...HOLD_KINDS])
 })
 
 // -- what the reads mean -------------------------------------------------------------------
@@ -406,6 +612,24 @@ test('the headline never promises a registry check the vault cannot make', () =>
   assert.equal(registryDown({ registryId: null, registryLive: null }), false)
 })
 
+test('approving a payee the vault never paid makes it known, and the approve copy says what that means', () => {
+  const base = { holdUnknown: true, listed: false, paidCount: 0, kind: 'unknown_payee' as const }
+  assert.equal(approvalMakesKnown(base), true)
+  assert.equal(approvalMakesKnown({ ...base, paidCount: 2 }), false, 'paid before: already known, whatever the kind recorded at hold time')
+  assert.equal(approvalMakesKnown({ ...base, listed: true }), false, 'listed: already known')
+  assert.equal(approvalMakesKnown({ ...base, holdUnknown: false }), false, 'with hold_unknown off, known or not changes nothing')
+  assert.equal(approvalMakesKnown({ ...base, holdUnknown: null }), false)
+  assert.equal(approvalMakesKnown({ ...base, paidCount: null }), true, 'not read: the kind says it was never paid')
+  assert.equal(approvalMakesKnown({ ...base, paidCount: null, kind: 'agent_request' }), false)
+  const note = ownerPayNote({ registryId: REGISTRY, registryLive: true, payeeDenied: false, firstPayment: true })
+  assert.match(note.text, /makes this payee known to the vault: a payee becomes known once paid, so later agent payments to it go through within the limits without waiting for you, unless the registry warns about it \(held again\) or flags it \(refused\)\./)
+  assert.doesNotMatch(ownerPayNote({ registryId: REGISTRY, registryLive: true, payeeDenied: false }).text, /becomes known/)
+  assert.doesNotMatch(ownerPayNote({ registryId: REGISTRY, registryLive: true, payeeDenied: true, firstPayment: true }).text, /becomes known/, 'a DENY refuses the approval: nothing becomes known')
+  assert.match(ownerPayNote({ registryId: null, registryLive: null, payeeDenied: false, firstPayment: true }).text, /without waiting for you\.$/)
+  assert.match(prepareOwnerPay(VAULT, '3', REGISTRY, { firstPayment: true }).what, /becomes known once paid/)
+  assert.deepEqual(prepareOwnerPay(VAULT, '3', REGISTRY, { firstPayment: true }).actions, prepareOwnerPay(VAULT, '3', REGISTRY).actions, 'the words change, never the call')
+})
+
 test('the approve panel says what owner_pay does with this vault registry', () => {
   const live = ownerPayNote({ registryId: REGISTRY, registryLive: true, payeeDenied: false })
   assert.equal(live.blocked, null)
@@ -424,7 +648,7 @@ test('the approve panel says what owner_pay does with this vault registry', () =
 })
 
 test('every held payee is read, and only the allowlist is capped', () => {
-  const held = (payee: string, id: number) => ({ id: String(id), paymentId: String(id), agentPk: 'ed25519:x', payee, amount: 1n, memo: null, reason: 'UnknownPayee', createdAtS: 0n, expiresAtS: 1n })
+  const held = (payee: string, id: number): HeldPayment => ({ id: String(id), paymentId: String(id), agentPk: 'ed25519:x', payee, amount: 1n, memo: null, reason: 'UnknownPayee', createdAtS: 0n, expiresAtS: 1n, kind: 'unknown_payee', kindText: 'unknown_payee' })
   const twentyHeld = Array.from({ length: 20 }, (_, i) => held(`held-${i}.testnet`, i))
   const allowlist = Array.from({ length: 30 }, (_, i) => `listed-${i}.testnet`)
   const payees = payeesInView({ held: twentyHeld, allowlist }, ['checked.testnet'])
@@ -479,6 +703,31 @@ test('owner calls carry the deposit the contract demands and explicit gas', () =
   for (const tx of [prepareUnfreeze(VAULT), prepareOwnerPay(VAULT, '1', REGISTRY), prepareSetPolicy(VAULT, { dailyCap: 1n, autoApproveMax: 1n, allowlistEnabled: false })]) {
     assert.equal(tx.receiverId, VAULT)
   }
+})
+
+test('forgetting counters: 1 yoctoNEAR, at most 50 payees a transaction, duplicates dropped, bad ids refused', () => {
+  const names = Array.from({ length: 101 }, (_, i) => `made-up-${i}.testnet`)
+  const txs = prepareForgetCounters(VAULT, 'guard', [...names, names[0]])
+  assert.equal(FORGET_BATCH_MAX, 50)
+  assert.deepEqual(
+    txs.map((t) => (t.actions[0].params.args.payees as string[]).length),
+    [50, 50, 1],
+  )
+  for (const t of txs) {
+    assert.equal(t.receiverId, VAULT)
+    assert.equal(t.actions.length, 1)
+    assert.deepEqual([t.actions[0].params.methodName, t.actions[0].params.deposit, t.actions[0].params.gas], ['forget_guard_refusals', '1', '100000000000000'])
+  }
+  assert.match(txs[0].what, /^Forget the agent's recorded refusals of 50 payees \(transaction 1 of 3\)/)
+  const one = prepareForgetCounters(VAULT, 'registry', ['aid-demo-merchamt.testnet'])
+  assert.equal(one.length, 1)
+  assert.deepEqual(one[0].actions[0].params.args, { payees: ['aid-demo-merchamt.testnet'] })
+  assert.equal(one[0].actions[0].params.methodName, 'forget_refusals')
+  assert.match(one[0].what, /^Forget the registry refusal counts of 1 payee: .* no registry verdict changes\.$/)
+  assert.throws(() => prepareForgetCounters(VAULT, 'guard', []))
+  assert.throws(() => prepareForgetCounters(VAULT, 'guard', ['Not An Account']))
+  assert.deepEqual(accountIdsIn('a.testnet, b.testnet\nb.testnet;  Bad!  c.testnet'), { ids: ['a.testnet', 'b.testnet', 'c.testnet'], invalid: ['Bad!'] })
+  assert.deepEqual(accountIdsIn('   '), { ids: [], invalid: [] })
 })
 
 test('funding is one transaction to the token: registration only when needed, then ft_transfer_call', () => {

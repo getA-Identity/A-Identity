@@ -4,6 +4,9 @@
 //   the AGENT signs as the VAULT account itself, with the function-call key the vault created
 //     for it (receiver = the vault, methods = pay, request_payment, record_refusal). That key
 //     cannot attach a deposit, call the token, move NEAR or touch keys: the protocol refuses.
+//     The agent's transaction must be its own: from vault 0.2.0 on, a NEP-366 delegate action
+//     the key signed and someone else relayed is refused NotAgent (the signer must be the vault),
+//     so every agent call is paid from the key's own allowance. This client never relays.
 //   the OWNER signs as the owner account with a full-access key. Methods that change policy or
 //     move money require exactly 1 yoctoNEAR, which only a full-access key can attach; freeze
 //     deliberately does not, so it works in one click.
@@ -12,32 +15,16 @@
 
 import { NETWORKS } from "../collect/networks.ts";
 import { createReader, type RpcReader } from "../collect/rpc.ts";
+import { isValidAccountId } from "../engine/account.ts";
 import type { Network } from "../engine/types.ts";
+import { AGENT_METHODS, MAX_FORGET_BATCH, VAULT_GAS_TGAS, type HoldKind } from "./abi.ts";
 import type { LoadedKey } from "./keys.ts";
 import { payOutcomeOf, vaultEventFor, type NearEvent, type PayOutcome } from "./outcome.ts";
 import { prepare, send, viewFunction, type Call, type Executed, type Pending, type Prepared, type Rejected } from "./send.ts";
 
-/** The only methods an agent key may call (the contract's AGENT_METHODS). */
-export const AGENT_METHODS = ["pay", "request_payment", "record_refusal"] as const;
-
-/**
- * Prepaid gas per method, in Tgas. The agent figures are the contract's own: AGENT_PREPAID_GAS
- * in near/contracts/agent-spend-policy/src/lib.rs (73: measured, the registry check plus
- * storage_deposit, ft_transfer and the callbacks cannot be scheduled below 51, and 73 keeps 30
- * percent over that floor) and its 10 Tgas for record_refusal. A test reads the contract source
- * so the two numbers cannot drift apart. The protocol holds 0.001 NEAR per prepaid Tgas from the
- * key's allowance until the receipts finish, so a payment in flight holds 0.073 NEAR of it.
- */
-export const VAULT_GAS_TGAS = {
-  pay: 73,
-  request_payment: 73,
-  record_refusal: 10,
-  owner_pay: 100,
-  withdraw: 50,
-  add_agent_key: 40,
-  register_with_token: 30,
-  owner_default: 30,
-} as const;
+// The agent methods and the gas figures live in abi.ts (no imports, so the demo and the oracle
+// read them without near-api-js); re-exported here, where the SDK has always offered them.
+export { AGENT_METHODS, VAULT_GAS_TGAS };
 
 export const ONE_YOCTO = "1";
 const U128_MAX = (1n << 128n) - 1n;
@@ -53,8 +40,9 @@ export type VaultConfig = {
   auto_approve_max: string;
   allowlist_enabled: boolean;
   token_storage_deposit: string;
+  /** "agent-spend-policy 0.2.0" for the build this SDK is written against (abi.ts VAULT_VERSION). */
   version: string;
-  /** Present from vault v1.1 on. */
+  /** Present from vault v1.1 (amendment A1) on. */
   hold_unknown?: boolean;
 };
 
@@ -65,9 +53,14 @@ export type HeldPayment = {
   payee: string;
   amount: string;
   memo: string | null;
+  /** The vault's code for a held pay (RegistryWarn, UnknownPayee), or the agent's own words for a
+   * request, which can read like either. Decide what the hold means from `kind`, never from this. */
   reason: string;
   created_at_s: string;
   expires_at_s: string;
+  /** What the vault itself saw when it held the payment (abi.ts HoldKind), from 0.2.0 on. Absent
+   * on an earlier build, whose holds say nothing reliable about why they wait. */
+  kind?: HoldKind;
 };
 
 export type AgentKeyView = { public_key: string; label: string; expires_at_s: string; revoked: boolean; added_at_s: string };
@@ -115,6 +108,34 @@ export function truncateBytes(text: string, max = MAX_TEXT_BYTES): string {
     if (enc.encode(out + ch).length > max) break;
     out += ch;
   }
+  return out;
+}
+
+/**
+ * The payee list of one forget_guard_refusals or forget_refusals call, checked before anything is
+ * built: 1 to MAX_FORGET_BATCH valid account ids, each once. The contract skips a repeat without
+ * an event but counts it toward MAX_FORGET_BATCH, so repeats are dropped here first. An invalid
+ * id would make the whole call fail to deserialize.
+ */
+export function checkForgetList(payees: readonly string[]): string[] {
+  const unique = [...new Set(payees)];
+  if (unique.length === 0) throw new VaultArgumentError("name at least one payee whose counter to forget");
+  const bad = unique.find((p) => !isValidAccountId(p));
+  if (bad !== undefined) throw new VaultArgumentError(`not a NEAR account id: ${JSON.stringify(bad)}`);
+  if (unique.length > MAX_FORGET_BATCH) {
+    throw new VaultArgumentError(
+      `at most ${MAX_FORGET_BATCH} payees per call, got ${unique.length}: the vault refuses more (BatchTooLarge), because each removal logs one event and a receipt may log at most 16384 bytes; split the list with chunkPayees`,
+    );
+  }
+  return unique;
+}
+
+/** A payee list of any length as calls of at most `max` payees each, duplicates dropped, order kept. */
+export function chunkPayees(payees: readonly string[], max: number = MAX_FORGET_BATCH): string[][] {
+  if (!Number.isInteger(max) || max < 1) throw new VaultArgumentError(`chunk size must be a positive whole number, got ${max}`);
+  const unique = [...new Set(payees)];
+  const out: string[][] = [];
+  for (let i = 0; i < unique.length; i += max) out.push(unique.slice(i, i + max));
   return out;
 }
 
@@ -193,11 +214,27 @@ export function vaultClient(opts: VaultClientOptions) {
     /** `allowance` is yoctoNEAR of gas allowance; the vault refuses 0 rather than make it unlimited. */
     addAgentKey: (k: { publicKey: string; label: string; expiresAtS: string; allowance: string }) =>
       asOwner("add_agent_key", { public_key: k.publicKey, label: k.label, expires_at_s: k.expiresAtS, allowance: k.allowance }, ONE_YOCTO, VAULT_GAS_TGAS.add_agent_key),
+    /**
+     * Revoke an agent key: refused by the contract at once, then deleted from the account. From
+     * vault 0.2.0 on it also drops every held payment the key asked for (one held_rejected each),
+     * and a payment of the key still in flight is refused NotAgent instead of held; the agent asks
+     * again with its new key.
+     */
     revokeAgentKey: (publicKey: string) => asOwner("revoke_agent_key", { public_key: publicKey }, ONE_YOCTO),
     forgetAgentKey: (publicKey: string) => asOwner("forget_agent_key", { public_key: publicKey }, ONE_YOCTO),
     setAgentExpiry: (publicKey: string, expiresAtS: string) => asOwner("set_agent_expiry", { public_key: publicKey, expires_at_s: expiresAtS }, ONE_YOCTO),
     withdraw: (amount: string) => asOwner("withdraw", { amount: checkAmount(amount) }, ONE_YOCTO, VAULT_GAS_TGAS.withdraw),
     registerWithToken: () => asOwner("register_with_token", {}, "0", VAULT_GAS_TGAS.register_with_token),
+    /**
+     * Remove the agent's recorded-refusal counters of `payees` (0.2.0 on), freeing their slots
+     * under MAX_GUARD_PAYEES and their storage stake. One guard_refusals_forgotten event per
+     * removed counter, with the count it had; a payee with no counter is skipped. At most
+     * MAX_FORGET_BATCH payees per call (checkForgetList); chunkPayees splits a longer list.
+     */
+    forgetGuardRefusals: (payees: readonly string[]) =>
+      asOwner("forget_guard_refusals", { payees: checkForgetList(payees) }, ONE_YOCTO, VAULT_GAS_TGAS.forget_counters),
+    /** The same for the registry refusal counters (refusal_count), under MAX_REFUSAL_PAYEES; one refusals_forgotten each. */
+    forgetRefusals: (payees: readonly string[]) => asOwner("forget_refusals", { payees: checkForgetList(payees) }, ONE_YOCTO, VAULT_GAS_TGAS.forget_counters),
 
     // -- views (final block) --
     getConfig: () => viewFunction<VaultConfig>(reader, vaultId, "get_config"),
@@ -213,5 +250,9 @@ export function vaultClient(opts: VaultClientOptions) {
     refusalCount: (payee: string) => viewFunction<number>(reader, vaultId, "refusal_count", { payee }),
     guardRefusalCount: (payee: string) => viewFunction<number>(reader, vaultId, "guard_refusal_count", { payee }),
     paidCount: (payee: string) => viewFunction<number>(reader, vaultId, "paid_count", { payee }),
+    /** How many payees have a guard refusal counter, at most MAX_GUARD_PAYEES (0.2.0 on). */
+    guardRefusalPayees: () => viewFunction<number>(reader, vaultId, "guard_refusal_payees"),
+    /** How many payees have a registry refusal counter, at most MAX_REFUSAL_PAYEES (0.2.0 on). */
+    refusalPayees: () => viewFunction<number>(reader, vaultId, "refusal_payees"),
   };
 }

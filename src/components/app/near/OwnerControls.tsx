@@ -8,10 +8,19 @@
  *
  * Money moves only two ways here, both signed by the owner: into the vault through the token's
  * ft_transfer_call, and out of it with withdraw, which can only pay the owner.
+ *
+ * Refusal counters (vault 0.2.0 on) are bounded at 100 payees each, and only the owner can free a
+ * slot. The vault keeps a count per payee, not a list, so the page cannot enumerate them: the
+ * owner names the payees (the payees in view with a count are one click away; the rest are in
+ * the payment_refused events), and a list longer than 50 goes out as several transactions,
+ * because the vault refuses more in one call (BatchTooLarge).
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { ArrowDownToLine, ArrowUpFromLine, ListChecks, Settings2, ShieldQuestion, Snowflake, Sun } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpFromLine, Eraser, ListChecks, Settings2, ShieldQuestion, Snowflake, Sun } from 'lucide-react'
+import { vaultBuild } from '../../../lib/near/abi'
 import {
+  FORGET_BATCH_MAX,
+  prepareForgetCounters,
   prepareFreeze,
   prepareFund,
   prepareSetAllowed,
@@ -22,13 +31,13 @@ import {
   type PreparedTx,
 } from '../../../lib/near/calls'
 import { NEAR_RPC_URLS } from '../../../lib/near/chain'
-import { isNearAccountId } from '../../../lib/near/ids'
-import { MAX_ALLOWLIST, type VaultSnapshot } from '../../../lib/near/read'
+import { accountIdsIn, isNearAccountId } from '../../../lib/near/ids'
+import { MAX_ALLOWLIST, MAX_GUARD_PAYEES, MAX_REFUSAL_PAYEES, type PayeeFacts, type VaultSnapshot } from '../../../lib/near/read'
 import { viewCall } from '../../../lib/near/rpc'
 import { formatGrouped, formatNear, formatUnits, parseUnits, u128 } from '../../../lib/near/units'
 import { ActionFlow, type ActionContext } from './ActionFlow'
-import { INPUT } from './styles'
-import { Card, Pill } from './ui'
+import { BUTTON_QUIET, INPUT } from './styles'
+import { Card, Meter, Pill } from './ui'
 
 type OwnerFacts = { balance: bigint | null; registered: boolean | null; registrationMin: bigint | null }
 
@@ -58,7 +67,7 @@ function useOwnerFacts(s: VaultSnapshot): OwnerFacts | null {
   return facts && facts.key === key ? facts.f : null
 }
 
-export default function OwnerControls({ s, ctx }: { s: VaultSnapshot; ctx: ActionContext }) {
+export default function OwnerControls({ s, ctx, byPayee }: { s: VaultSnapshot; ctx: ActionContext; byPayee?: Map<string, PayeeFacts> }) {
   const isOwner = ctx.wallet.accountId === s.config.ownerId
   const facts = useOwnerFacts(s)
   return (
@@ -86,6 +95,7 @@ export default function OwnerControls({ s, ctx }: { s: VaultSnapshot; ctx: Actio
           <HoldUnknownControl s={s} ctx={ctx} />
           <PolicyControl s={s} ctx={ctx} />
           <AllowlistControl s={s} ctx={ctx} />
+          <CountersControl s={s} ctx={ctx} byPayee={byPayee} />
           <FundControl s={s} ctx={ctx} facts={facts} />
           <WithdrawControl s={s} ctx={ctx} facts={facts} />
         </div>
@@ -249,6 +259,126 @@ function AllowlistControl({ s, ctx }: { s: VaultSnapshot; ctx: ActionContext }) 
       </div>
       <div className="mt-3">
         <ActionFlow ctx={ctx} tx={tx} invalid={invalid} label={mode === 'add' ? 'Sign: add to the list' : 'Sign: remove from the list'} />
+      </div>
+    </Panel>
+  )
+}
+
+/** One counter total against its bound of 100, with what the bound does when it is reached. */
+function SlotMeter({ label, used, max, atBound }: { label: string; used: number; max: number; atBound: string }) {
+  return (
+    <div className="min-w-0 rounded-lg border border-border bg-card px-3 py-2">
+      <p className="text-xs font-semibold text-foreground">
+        {label}: {used} of {max} payees
+      </p>
+      <Meter value={BigInt(used)} max={BigInt(max)} label={`${label}: ${used} of ${max} payees`} />
+      <p className="mt-1 text-[11px] text-foreground/80">{atBound}</p>
+    </div>
+  )
+}
+
+function CountersControl({ s, ctx, byPayee }: { s: VaultSnapshot; ctx: ActionContext; byPayee?: Map<string, PayeeFacts> }) {
+  const [which, setWhich] = useState<'guard' | 'registry'>('guard')
+  const [text, setText] = useState('')
+  const c = s.counters
+  const build = vaultBuild(s.config.version)
+  // A build before 0.2.0 has no forget methods; the views answering says the build has them.
+  const supported = c.state === 'read' || (c.state === 'unread' && (build === 'current' || build === 'newer'))
+  if (!supported) {
+    return (
+      <Panel title="Refusal counters" icon={<Eraser size={14} />}>
+        <p className="text-xs text-foreground/85">
+          {c.state === 'not-reported' || build === 'earlier'
+            ? `${s.config.version} keeps no bound on its refusal counters and has no method to forget them; both arrived in agent-spend-policy 0.2.0, so there is nothing to set here.`
+            : `The counter totals did not answer, and ${s.config.version} is not a build this page knows, so it builds no forget call.`}
+        </p>
+      </Panel>
+    )
+  }
+  const inView = byPayee
+    ? [...byPayee.values()].filter((f) => ((which === 'guard' ? f.guardRefusals : f.refusalCount) ?? 0) > 0).map((f) => f.payee)
+    : []
+  const { ids, invalid } = accountIdsIn(text)
+  let txs: PreparedTx[] = []
+  let invalidText: string | null = null
+  if (invalid.length > 0) invalidText = `Not NEAR account ids: ${invalid.slice(0, 5).join(', ')}${invalid.length > 5 ? ` and ${invalid.length - 5} more` : ''}.`
+  else if (ids.length === 0) invalidText = 'Name the payees whose counters to forget, one per line or separated by commas.'
+  else txs = prepareForgetCounters(s.vaultId, which, ids)
+  return (
+    <Panel title="Refusal counters" icon={<Eraser size={14} />}>
+      {c.state === 'read' ? (
+        <div className="mb-3 grid gap-2 sm:grid-cols-2">
+          <SlotMeter
+            label="Agent's recorded refusals"
+            used={c.guard}
+            max={MAX_GUARD_PAYEES}
+            atBound="At the bound, a record_refusal naming a new payee is refused (GuardRefusalLimitReached) and writes nothing."
+          />
+          <SlotMeter
+            label="Registry refusal counts"
+            used={c.registry}
+            max={MAX_REFUSAL_PAYEES}
+            atBound="At the bound, a registry DENY of a new payee is still refused on chain, just not counted."
+          />
+        </div>
+      ) : (
+        <p className="mb-3 text-xs text-foreground/85">The counter totals did not answer ({c.why}), so the page cannot say how full they are.</p>
+      )}
+      <p className="mb-3 text-xs text-foreground/85">
+        Each counter is a storage entry the vault pays for, and any agent key, a prompt-injected one included, can record refusals against names it makes up. Forgetting removes
+        the counters you name, frees their slots and returns their storage stake; the log keeps each count. The vault keeps a count per payee, not a list, so name them: the
+        agent's records are its payment_refused events with source agent_guard, a registry DENY's are those with source registry. Revoke a key before clearing what it filled.
+      </p>
+      <div role="radiogroup" aria-label="Which counters" className="mb-2 flex w-fit rounded-full border border-border p-0.5 text-xs font-semibold">
+        {(['guard', 'registry'] as const).map((w) => (
+          <button
+            key={w}
+            type="button"
+            role="radio"
+            aria-checked={which === w}
+            onClick={() => setWhich(w)}
+            className={`rounded-full px-3 py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${which === w ? 'bg-foreground text-background' : 'text-foreground'}`}
+          >
+            {w === 'guard' ? "The agent's records" : 'Registry refusals'}
+          </button>
+        ))}
+      </div>
+      <label className="block text-[11px] font-semibold text-foreground/80">
+        Payee accounts
+        <textarea
+          className={`${INPUT} min-h-[4.5rem] font-mono text-xs`}
+          placeholder={'made-up-name.testnet\nanother.testnet'}
+          spellCheck={false}
+          autoComplete="off"
+          autoCapitalize="off"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+        />
+      </label>
+      {inView.length > 0 && (
+        <button type="button" className={`${BUTTON_QUIET} mt-2`} onClick={() => setText([...new Set([...ids, ...inView])].join('\n'))}>
+          Add the {inView.length} payee{inView.length === 1 ? '' : 's'} in view with a count
+        </button>
+      )}
+      {txs.length > 1 && (
+        <p className="mt-2 text-xs text-foreground/85">
+          {ids.length} payees take {txs.length} transactions: the vault takes at most {FORGET_BATCH_MAX} names a call, because each removal logs a line and one receipt may log at most
+          16384 bytes. Sign them one by one.
+        </p>
+      )}
+      <div className="mt-3 space-y-4">
+        {txs.length === 0 ? (
+          <ActionFlow ctx={ctx} tx={null} invalid={invalidText} label="Sign: forget these counters" />
+        ) : (
+          txs.map((tx, i) => (
+            <ActionFlow
+              key={`${which}:${i}:${(tx.actions[0].params.args.payees as string[])[0]}`}
+              ctx={ctx}
+              tx={tx}
+              label={txs.length > 1 ? `Sign transaction ${i + 1} of ${txs.length}` : 'Sign: forget these counters'}
+            />
+          ))
+        )}
       </div>
     </Panel>
   )

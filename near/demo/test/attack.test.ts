@@ -158,7 +158,8 @@ describe('scripted run against the in-memory chain', () => {
     }
     // Phase c told the whole on-chain story, with the expiry of the DENY it wrote.
     const cNotes = r.phases.find((p) => p.id === 'c')?.notes.join(' | ') ?? '';
-    assert.match(cNotes, /direct pay: held UnknownPayee/);
+    assert.match(cNotes, /direct pay: held UnknownPayee \(kind unknown_payee\), nothing moved/);
+    assert.match(r.phases.find((p) => p.id === 'b')?.notes.join(' | ') ?? '', /recorded on chain as the guard's refusal \(payment_refused, source agent_guard\)/);
     assert.match(cNotes, /oracle: written DENY/);
     assert.match(cNotes, /retry: refused RegistryDeny/);
     assert.match(cNotes, /owner approval: refused RegistryDeny/);
@@ -169,6 +170,14 @@ describe('scripted run against the in-memory chain', () => {
     // The exact expiry, as the registry reports it (block time + ttl), and the evidence it stores.
     assert.ok(lines.some((l) => /registry now: DENY \[lookalike_new_account\] .* evidence near-snapshot sha256:[0-9a-f]{64} block:277300000 .* expires 2026-12-12T16:13:20Z \(get_verdict expires_at_ns\)/.test(l)));
     assert.match(cNotes, /registry DENY expires 2026-12-12T16:13:20Z/);
+    // Every hold says what the VAULT saw (its kind), and a request's reason is the agent's words.
+    assert.match(r.phases.find((p) => p.id === 'setup')?.notes.join(' | ') ?? '', /held \d+ \(kind unknown_payee\), approved/);
+    assert.match(r.phases.find((p) => p.id === 'd')?.notes.join(' | ') ?? '', /held \d+ \(kind unknown_payee; the agent's own reason: "new_account"\)/);
+    assert.ok(lines.some((l) => /vault answered held UnknownPayee \(payment \d+, held \d+, kind unknown_payee\)/.test(l)));
+    assert.ok(lines.some((l) => /payment_held\{payment_id \d+, held_id \d+, payee aid-demo-merchamt\.testnet, amount 500000, reason UnknownPayee, kind unknown_payee\}/.test(l)));
+    const heldEvents = log.record.txs.flatMap((t) => t.events.filter((e) => e.event === 'payment_held').map((e) => (e.data as { kind?: string }).kind));
+    assert.deepEqual(heldEvents, ['unknown_payee', 'unknown_payee', 'unknown_payee'], 'setup, c and d each recorded the kind on chain');
+    assert.ok(!lines.some((l) => /WARNING: the vault reports/.test(l)), 'a 0.2.0 vault raises no version warning');
     // The known payees and where they came from, on the guard's line and in the preflight.
     assert.ok(lines.some((l) => /known payees \(demo config \[aid-demo-merchant\.testnet\] plus the vault allowlist \[\]\): aid-demo-merchant\.testnet/.test(l)));
     // The direct calls are named as scripted, never as an agent's or a model's choice.
@@ -243,7 +252,7 @@ describe('scripted run against the in-memory chain', () => {
     // A leftover hold for a payee the registry already judged: the oracle's first record is
     // skipped_has_verdict, written before any snapshot creates the folder.
     chain.setVerdict(ACC.newVendor, 'WARN', ['low_activity']);
-    chain.held.set('99', { id: '99', payment_id: '99', agent_pk: 'ed25519:FAKE-agent-function-call-key', payee: ACC.newVendor, amount: '1', memo: null, reason: 'RegistryWarn', created_at_s: '1794500000', expires_at_s: '9999999999' });
+    chain.held.set('99', { id: '99', payment_id: '99', agent_pk: 'ed25519:FAKE-agent-function-call-key', payee: ACC.newVendor, amount: '1', memo: null, reason: 'RegistryWarn', created_at_s: '1794500000', expires_at_s: '9999999999', kind: 'registry_warn' });
     const dir = join(mkdtempSync(join(tmpdir(), 'aid-demo-logs-')), 'fresh', 'oracle');
     const { deps } = build(chain, { oracleSaveDir: dir });
     const r = await runDemo(options({ phases: ['c'] }), deps);
@@ -259,6 +268,57 @@ describe('scripted run against the in-memory chain', () => {
     await runDemo(options({ phases: ['c'], ttlDenyS: 86_400 }), deps);
     const written = chain.sent.find((p) => p.actions[0]?.type === 'FunctionCall' && p.actions[0].methodName === 'set_verdict');
     assert.equal(written?.actions[0]?.type === 'FunctionCall' ? written.actions[0].args.ttl_s : null, '86400');
+  });
+});
+
+describe('vault builds', () => {
+  test('a 0.1.0 vault: the preflight says so, and every hold prints with no kind rather than a guess from its reason', async () => {
+    const chain = new FakeChain({ holdUnknown: true, legacy: true });
+    const { deps, lines } = build(chain);
+    const r = await runDemo(options({ phases: ['setup', 'c'] }), deps);
+    assert.deepEqual(result(r.phases), { setup: 'PASS', c: 'PASS' });
+    assert.ok(lines.some((l) => /WARNING: the vault reports agent-spend-policy 0\.1\.0; the demo is written for agent-spend-policy 0\.2\.0/.test(l)));
+    assert.match(r.phases.find((p) => p.id === 'c')?.notes.join(' | ') ?? '', /direct pay: held UnknownPayee \(kind not reported \(a vault build before 0\.2\.0\)\)/);
+    assert.ok(lines.some((l) => /vault answered held .*kind not reported/.test(l)));
+  });
+
+  test('0.2.0 can refuse to record a guard refusal: still nothing moves, but phase b says it was not recorded and fails', async () => {
+    const chain = new FakeChain({ holdUnknown: true });
+    chain.refuseRecordsWith = 'GuardRefusalLimitReached';
+    const { deps } = build(chain);
+    const r = await runDemo(options({ phases: ['b'] }), deps);
+    assert.deepEqual(result(r.phases), { b: 'FAIL' });
+    const notes = r.phases[0]?.notes.join(' | ') ?? '';
+    assert.match(notes, /NOT recorded as the guard's refusal: the vault refused the record itself \(GuardRefusalLimitReached, source policy\); nothing moved/);
+    assert.match(notes, /nothing moved to the lookalike/);
+    assert.equal(chain.balances.get(ACC.lookalike) ?? 0n, 0n);
+  });
+
+  test('a contract that is not an agent-spend-policy build stops the run before anything is sent', async () => {
+    const chain = new FakeChain({ holdUnknown: true });
+    (chain.config as { version: string }).version = 'some-other-contract 1.0.0';
+    const { deps, lines } = build(chain);
+    const r = await runDemo(options(), deps);
+    assert.deepEqual(result(r.phases), { preflight: 'FAIL' });
+    assert.equal(chain.sent.length, 0);
+    assert.ok(lines.some((l) => /STOP: the vault reports version "some-other-contract 1\.0\.0", not an agent-spend-policy build/.test(l)));
+  });
+
+  test('the dry run plans every agent call with the gas the SDK attaches: 73 Tgas to pay and request, 10 to record', async () => {
+    const { deps, log } = build(null);
+    await runDemo(options({ dryRun: true }), deps);
+    const gasByMethod = new Map<string, Set<string>>();
+    for (const p of log.record.prepared) {
+      for (const a of (p.call as { actions?: Array<{ params?: { methodName?: string; gas?: string } }> }).actions ?? []) {
+        const m = a.params?.methodName;
+        if (m && a.params?.gas) gasByMethod.set(m, new Set([...(gasByMethod.get(m) ?? []), a.params.gas]));
+      }
+    }
+    assert.deepEqual([...(gasByMethod.get('request_payment') ?? [])], ['73000000000000']);
+    assert.deepEqual([...(gasByMethod.get('record_refusal') ?? [])], ['10000000000000']);
+    // pay is planned at 73 Tgas; the one exception is phase e's 1-yocto pay, which the protocol
+    // rejects before execution and which carries the small forbidden-call figure on purpose.
+    assert.deepEqual([...(gasByMethod.get('pay') ?? [])].sort(), ['5000000000000', '73000000000000']);
   });
 });
 

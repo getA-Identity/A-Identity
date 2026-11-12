@@ -8,6 +8,7 @@ import {
   describePlan,
   eventItems,
   fnCall,
+  holdKindIn,
   keySender,
   nep141Transfers,
   noKeySender,
@@ -18,7 +19,8 @@ import {
   vaultEvents,
 } from '../lib/chain.ts';
 import type { NearApi, TxPlan } from '../lib/chain.ts';
-import { GAS, ONE_YOCTO } from '../lib/config.ts';
+import { GAS, ONE_YOCTO, TGAS } from '../lib/config.ts';
+import { REGISTRY_GAS_TGAS, VAULT_GAS_TGAS } from '../../sdk/src/chain/abi.ts';
 import type { LoadedKey } from '../lib/keys.ts';
 import { createRpc } from '../lib/rpc.ts';
 import type { FetchLike } from '../lib/rpc.ts';
@@ -70,6 +72,23 @@ describe('outcome parsing on constructed vault outcomes (contract event ABI)', (
     assert.equal(ev[0]?.data.source, 'registry');
   });
 
+  test("a hold's kind is read from its payment_held event, and an earlier build's event has none", () => {
+    const held = (data: Record<string, unknown>) =>
+      parseOutcome(
+        txResult({
+          hash: 'HH',
+          signer: ACC.vault,
+          receiver: ACC.vault,
+          returnValue: { status: 'held', payment_id: '9', reason: 'first payment to a known vendor', held_id: '4' },
+          logs: [{ executor: ACC.vault, lines: [eventLine('a_identity_vault', 'payment_held', { payment_id: '9', held_id: '4', payee: ACC.merchant, amount: '10000', reason: 'first payment to a known vendor', ...data })] }],
+        }),
+      );
+    assert.equal(holdKindIn(held({ kind: 'unknown_payee' }), ACC.vault, '9'), 'unknown_payee');
+    assert.equal(holdKindIn(held({}), ACC.vault, '9'), null, 'vault 0.1.0 wrote no kind');
+    assert.equal(holdKindIn(held({ kind: 'agent_request' }), ACC.vault, '8'), null, 'another payment');
+    assert.equal(holdKindIn(held({ kind: 'agent_request' }), 'impostor.testnet', '9'), null, 'another account logged it');
+  });
+
   test('a token receipt that FAILED does not count as settlement', () => {
     const raw = txResult({
       hash: 'H2',
@@ -102,6 +121,20 @@ describe('outcome parsing on constructed vault outcomes (contract event ABI)', (
     assert.equal(o.events.length, 0);
     // receipts[0] is the transaction's own outcome; the contract's receipt follows it.
     assert.deepEqual(o.receipts[1]?.logs, ['EVENT_JSON:{not json', 'plain log line']);
+  });
+});
+
+describe('gas', () => {
+  test("the demo attaches the SDK's figures, which the SDK's tests hold to the vault's AGENT_PREPAID_GAS", () => {
+    assert.equal(GAS.agentPay, 73n * TGAS);
+    assert.equal(GAS.agentPay, BigInt(VAULT_GAS_TGAS.pay) * TGAS);
+    assert.equal(GAS.agentRequest, BigInt(VAULT_GAS_TGAS.request_payment) * TGAS);
+    assert.equal(GAS.recordRefusal, BigInt(VAULT_GAS_TGAS.record_refusal) * TGAS);
+    assert.equal(GAS.ownerPay, BigInt(VAULT_GAS_TGAS.owner_pay) * TGAS);
+    assert.equal(GAS.ownerCall, BigInt(VAULT_GAS_TGAS.owner_default) * TGAS);
+    assert.equal(GAS.setVerdict, BigInt(REGISTRY_GAS_TGAS.set_verdict) * TGAS);
+    // The vault cannot even schedule a payment below 51 Tgas (lib.rs); the demo never attaches less.
+    assert.ok(GAS.agentPay >= 51n * TGAS && GAS.agentRequest >= 51n * TGAS);
   });
 });
 

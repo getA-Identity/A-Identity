@@ -12,6 +12,7 @@ import { AlertTriangle, CheckCircle2, Clock, Loader2, PenLine, XCircle } from 'l
 import { payOutcomeOf, tokenTransfersOf, vaultEventsOf } from '../../../lib/near/abi'
 import { totalDeposit, totalTgas, type PreparedTx } from '../../../lib/near/calls'
 import { nearAccountUrl, nearTxUrl } from '../../../lib/near/chain'
+import { vaultErrorText } from '../../../lib/near/errors'
 import { describeEvent } from '../../../lib/near/events'
 import { shortId } from '../../../lib/near/ids'
 import { formatGrouped, formatNear } from '../../../lib/near/units'
@@ -150,6 +151,8 @@ export function TxProgress({
   const moved = tokenTransfersOf(run.outcome, tokenId)
   const pay = payOutcomeOf(run.outcome)
   const declined = pay !== null && pay.status !== 'sent'
+  // A vault error name in words: the panic that failed the call, or the reason the vault declined.
+  const meaning = !run.verdict.ok ? vaultErrorText(run.verdict.reason) : declined ? vaultErrorText(pay.reason) : null
   return (
     <Callout
       tone={!run.verdict.ok ? 'danger' : declined ? 'warn' : 'ok'}
@@ -168,6 +171,7 @@ export function TxProgress({
           ? 'The contract refused the call, so nothing it would have changed was changed.'
           : 'A receipt after the call failed; the events below say what did happen.'
         : 'Read back from the chain, not from the wallet.'}
+      {meaning && <span className="mt-1 block">{meaning}</span>}
       {hashLine}
       {(events.length > 0 || moved.length > 0) && (
         <ul className="mt-2 space-y-1">

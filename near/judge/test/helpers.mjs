@@ -105,6 +105,9 @@ export const IDS = {
   agentKey: 'ed25519:2KPT8iffxLvWsnknUUWRqcaM4Vhz1Fa4pPMKVTLizKkf',
 };
 
+/** Prepaid gas the clients attach: the vault's AGENT_PREPAID_GAS (73 Tgas) to pay and request_payment, 10 Tgas to record_refusal, 100 to owner_pay. */
+const GAS = { pay: 73000000000000, request_payment: 73000000000000, record_refusal: 10000000000000, owner_pay: 100000000000000 };
+
 /**
  * SYNTHETIC: a vault `pay` as EXPERIMENTAL_tx_status would return it.
  * outcome: 'sent' | 'refused' | 'held'.
@@ -141,7 +144,8 @@ export function syntheticPay({ payee, amount = '1000000', outcome, reason, verdi
     receipts.push({
       id: id('cb'),
       executor_id: IDS.vault,
-      logs: [event('a_identity_vault', 'payment_held', { payment_id: '7', held_id: '3', payee, amount, reason })],
+      // vault 0.2.0: a hold records what the VAULT saw, apart from its reason (event.rs PaymentHeld).
+      logs: [event('a_identity_vault', 'payment_held', { payment_id: '7', held_id: '3', payee, amount, reason, kind: verdict === 'WARN' ? 'registry_warn' : 'unknown_payee' })],
       status: { SuccessValue: b64(ret) },
     });
   }
@@ -157,7 +161,7 @@ export function syntheticPay({ payee, amount = '1000000', outcome, reason, verdi
       priority_fee: 0,
       hash: tx,
       signature: 'ed25519-signature-sha256:00',
-      actions: [{ FunctionCall: { method_name: method, args: b64({ payee, amount }), gas: 80000000000000, deposit: signer === IDS.vault ? '0' : '1' } }],
+      actions: [{ FunctionCall: { method_name: method, args: b64({ payee, amount }), gas: GAS[method] ?? GAS.pay, deposit: signer === IDS.vault ? '0' : '1' } }],
     },
     transaction_outcome: { id: tx, block_hash: block, outcome: { executor_id: signer, logs: [], receipt_ids: [id('pay')], status: { SuccessReceiptId: id('pay') } } },
     receipts_outcome: receipts.map((r) => ({ id: r.id, block_hash: block, outcome: { executor_id: r.executor_id, logs: r.logs, receipt_ids: [], status: r.status } })),

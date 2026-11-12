@@ -267,6 +267,12 @@ fn forget_guard_refusals_takes_a_batch_of_50_and_two_calls_clear_a_full_map() {
     assert_panics_with("BatchTooLarge", || {
         v.forget_guard_refusals(vec![invented('g', 0); MAX_FORGET_BATCH + 1]);
     });
+    assert!(get_logs().is_empty());
+    assert_eq!(
+        v.guard_refusal_payees(),
+        MAX_GUARD_PAYEES,
+        "nothing was removed"
+    );
 
     // A full batch of the longest lines: every removal logged, within the receipt's budget.
     as_owner_yocto();
@@ -294,6 +300,7 @@ fn forget_guard_refusals_takes_a_batch_of_50_and_two_calls_clear_a_full_map() {
 #[test]
 fn forget_refusals_takes_a_batch_of_50_and_two_calls_clear_a_full_map() {
     let budget = log_budget();
+    assert_eq!(budget, 16_384);
     let full = usize::try_from(MAX_REFUSAL_PAYEES).unwrap();
     assert!(
         full * LONGEST_REFUSAL_LINE > budget,
@@ -309,18 +316,31 @@ fn forget_refusals_takes_a_batch_of_50_and_two_calls_clear_a_full_map() {
     for n in 0..MAX_REFUSAL_PAYEES {
         assert_refused(&denied(&mut v, invented('d', n)), "RegistryDeny");
     }
+    // Every count at its maximum, so every removal logs the longest line there is.
     for n in 0..MAX_REFUSAL_PAYEES {
         *v.refusals.get_mut(&invented('d', n)).unwrap() = u32::MAX;
     }
     v.refusals.flush();
     let all: Vec<AccountId> = (0..MAX_REFUSAL_PAYEES).map(|n| invented('d', n)).collect();
 
+    // One name over, duplicates count: refused by name before anything is removed or logged.
     as_owner_yocto();
     assert_panics_with("BatchTooLarge", || {
         v.forget_refusals(all[..=MAX_FORGET_BATCH].to_vec());
     });
     assert!(get_logs().is_empty());
+    as_owner_yocto();
+    assert_panics_with("BatchTooLarge", || {
+        v.forget_refusals(vec![invented('d', 0); MAX_FORGET_BATCH + 1]);
+    });
+    assert!(get_logs().is_empty());
+    assert_eq!(
+        v.refusal_payees(),
+        MAX_REFUSAL_PAYEES,
+        "nothing was removed"
+    );
 
+    // A full batch of the longest lines: every removal logged, within the receipt's budget.
     as_owner_yocto();
     v.forget_refusals(all[..MAX_FORGET_BATCH].to_vec());
     let lines = get_logs();
@@ -335,6 +355,7 @@ fn forget_refusals_takes_a_batch_of_50_and_two_calls_clear_a_full_map() {
     assert_eq!(v.refusal_payees(), MAX_REFUSAL_PAYEES / 2);
     assert_eq!(v.refusal_count(all[0].clone()), 0);
 
+    // The second call clears the rest.
     as_owner_yocto();
     v.forget_refusals(all[MAX_FORGET_BATCH..].to_vec());
     assert_eq!(get_logs().len(), MAX_FORGET_BATCH);

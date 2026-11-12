@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { RpcAnswerError } from "../src/collect/rpc.ts";
-import { eventsFrom, parseEventLine, parseOutcome, payOutcomeOf, proveSettlement, TxPendingError, vaultEventFor, waitFinal } from "../src/chain/outcome.ts";
+import { eventsFrom, holdKindOf, panicNameOf, parseEventLine, parseOutcome, payOutcomeOf, proveSettlement, TxPendingError, vaultErrorOf, vaultEventFor, waitFinal } from "../src/chain/outcome.ts";
 import { fixture, noSleep, PAYEE, stubReader, USDC, VAULT, vaultPayTx, type VaultTxOpts as Opts } from "./helpers.ts";
 
 const expect = { tokenId: USDC, vaultId: VAULT, payee: PAYEE, amount: "250000" };
@@ -83,6 +83,38 @@ describe("vault outcomes and the settlement proof", () => {
   it("an unknown payee held for the owner carries its held id", () => {
     const out = parseOutcome(vaultPayTx({ outcome: "held" }));
     assert.deepEqual(payOutcomeOf(out), { status: "held", payment_id: "7", reason: "UnknownPayee", held_id: "3" });
+  });
+
+  it("a hold says what the vault saw in its event's kind, and an earlier build's hold says nothing", () => {
+    const out = parseOutcome(vaultPayTx({ outcome: "held" }));
+    const held = vaultEventFor(out, VAULT, payOutcomeOf(out)!);
+    assert.equal(holdKindOf(held), "unknown_payee");
+    const warned = parseOutcome(vaultPayTx({ outcome: "held", holdKind: "registry_warn" }));
+    assert.equal(holdKindOf(vaultEventFor(warned, VAULT, payOutcomeOf(warned)!)), "registry_warn");
+    // 0.1.0 wrote no kind: no guess from the reason, which an agent's request could have written.
+    const legacy = parseOutcome(vaultPayTx({ outcome: "held", holdKind: null }));
+    assert.equal(holdKindOf(vaultEventFor(legacy, VAULT, payOutcomeOf(legacy)!)), null);
+    const unknown = parseOutcome(vaultPayTx({ outcome: "held", holdKind: "something_new" }));
+    assert.equal(holdKindOf(vaultEventFor(unknown, VAULT, payOutcomeOf(unknown)!)), null);
+    // Only a vault payment_held carries a kind.
+    const sent = parseOutcome(vaultPayTx({ outcome: "sent" }));
+    assert.equal(holdKindOf(vaultEventFor(sent, VAULT, payOutcomeOf(sent)!)), null);
+    assert.equal(holdKindOf(null), null);
+  });
+
+  it("a panic's stable name is read from the failure, and only the vault's names count as the vault's", () => {
+    const failure = (msg: string) => ({ ActionError: { index: 0, kind: { FunctionCallError: { ExecutionError: `Smart contract panicked: ${msg}` } } } });
+    assert.equal(panicNameOf(failure("InitNotAllowed")), "InitNotAllowed");
+    assert.equal(panicNameOf({ ActionError: { index: 0, kind: { FunctionCallError: { MethodResolveError: "MethodNotFound" } } } }), null);
+    assert.equal(panicNameOf(null), null);
+    const tx = vaultPayTx({ outcome: "sent" }) as { status: unknown };
+    for (const name of ["NotAgent", "StorageNotCovered", "BatchTooLarge"]) {
+      const failed = parseOutcome({ ...tx, status: { Failure: failure(name) } });
+      assert.equal(vaultErrorOf(failed, VAULT), name);
+    }
+    // The token's own panic text is not a vault answer.
+    assert.equal(vaultErrorOf(parseOutcome({ ...tx, status: { Failure: failure("FiatToken: paused") } }), VAULT), null);
+    assert.equal(vaultErrorOf(parseOutcome(vaultPayTx({ outcome: "sent" })), VAULT), null);
   });
 
   it("payOutcomeOf rejects shapes the vault never returns", () => {

@@ -2,6 +2,12 @@
  * Payments waiting for the owner, with why each one waits, what the registry says about its payee
  * now, and, for the owner, approve or reject.
  *
+ * Why a payment waits is the hold's `kind`, what the VAULT saw when it held it (vault 0.2.0 on):
+ * the registry warned, nobody had judged the payee, or the agent asked. Never its `reason`: for a
+ * request that is the agent's own free text, which a prompt-injected agent can make read like a
+ * vault code, so it is shown only as the agent's words, attributed and quoted. A hold from an
+ * earlier build has no kind and is labelled unclassified, with its reason shown unattributed.
+ *
  * Approving is not a bypass of the registry: owner_pay asks it again (when the vault has one), and
  * a payee flagged DENY since the payment was held is refused even for the owner, because a held
  * payment can wait for a day while its payee is flagged. owner_pay removes the hold first, so an
@@ -12,11 +18,11 @@
  */
 import { useState } from 'react'
 import { Check, Hourglass, Inbox, ShieldX, X } from 'lucide-react'
-import { heldReason, type HeldPayment } from '../../../lib/near/abi'
+import { readHold, type HeldPayment } from '../../../lib/near/abi'
 import { prepareOwnerPay, prepareOwnerReject } from '../../../lib/near/calls'
 import { nearAccountUrl } from '../../../lib/near/chain'
 import { shortKey } from '../../../lib/near/ids'
-import { ownerPayNote, relativeTime, utcText } from '../../../lib/near/model'
+import { approvalMakesKnown, ownerPayNote, relativeTime, utcText } from '../../../lib/near/model'
 import type { PayeeFacts, VaultSnapshot } from '../../../lib/near/read'
 import { formatGrouped } from '../../../lib/near/units'
 import { cn } from '../../../lib/utils'
@@ -27,11 +33,13 @@ import { Card, ExtLink, IdText, Pill } from './ui'
 
 function HeldRow({ h, s, facts, payeesLoading, ctx }: { h: HeldPayment; s: VaultSnapshot; facts: PayeeFacts | undefined; payeesLoading: boolean; ctx: ActionContext }) {
   const [open, setOpen] = useState<'approve' | 'reject' | null>(null)
-  const reason = heldReason(h.reason)
+  const hold = readHold(h)
   const expired = s.chainNowS > h.expiresAtS
   const amount = s.token.decimals === null ? `${h.amount.toString()} units` : `${formatGrouped(h.amount, s.token.decimals)} ${s.token.symbol ?? ''}`.trim()
   const denied = Boolean(facts?.verdict?.ok && facts.verdict.verdict?.verdict === 'DENY')
-  const note = ownerPayNote({ registryId: s.config.registryId, registryLive: s.registryLive, payeeDenied: denied })
+  // A registry DENY refuses the approval, so nothing would become known.
+  const firstPayment = !denied && approvalMakesKnown({ holdUnknown: s.config.holdUnknown, listed: s.allowlist.includes(h.payee), paidCount: facts ? facts.paidCount : null, kind: h.kind })
+  const note = ownerPayNote({ registryId: s.config.registryId, registryLive: s.registryLive, payeeDenied: denied, firstPayment })
   return (
     <li className="p-3 sm:p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -42,10 +50,10 @@ function HeldRow({ h, s, facts, payeesLoading, ctx }: { h: HeldPayment; s: Vault
               <IdText id={h.payee} />
             </ExtLink>
           </p>
-          <p className="mt-1 text-xs text-foreground/85">{reason.title}.</p>
+          <p className="mt-1 text-xs text-foreground/85">{hold.title}.</p>
         </div>
         <span className="flex flex-wrap items-center gap-1.5">
-          {expired ? <Pill tone="muted">Expired</Pill> : <Pill tone={reason.kind === 'warn' ? 'warn' : 'accent'}>{reason.kind === 'warn' ? 'Registry warned' : reason.kind === 'unknown' ? 'Unknown payee' : 'Agent asked'}</Pill>}
+          {expired ? <Pill tone="muted">Expired</Pill> : <Pill tone={hold.tone}>{hold.label}</Pill>}
           {/* Once the payee reads have settled, a missing answer says "Not read", never a spinner that never ends. */}
           <VerdictPill read={facts ? facts.verdict : undefined} loading={!facts && payeesLoading} noRegistry={!s.config.registryId} />
         </span>
@@ -55,6 +63,17 @@ function HeldRow({ h, s, facts, payeesLoading, ctx }: { h: HeldPayment; s: Vault
         {expired ? 'Its 24 hours are up: approving would only remove it.' : `Waits until ${utcText(h.expiresAtS) ?? h.expiresAtS.toString()} (${relativeTime(h.expiresAtS, s.chainNowS)}).`}
         {h.memo ? ` Memo: "${h.memo}".` : ''}
       </p>
+      {hold.agentWords !== null && (
+        <figure className="mt-2 rounded-lg border border-border bg-foreground/[0.03] px-2.5 py-1.5">
+          <figcaption className="text-[11px] font-semibold text-foreground/80">The agent's own words (request_payment), not checked by the vault:</figcaption>
+          <blockquote className="mt-0.5 text-xs text-foreground [overflow-wrap:anywhere]">"{hold.agentWords}"</blockquote>
+        </figure>
+      )}
+      {hold.unattributed !== null && (
+        <p className="mt-2 text-[11px] text-foreground/80 [overflow-wrap:anywhere]">
+          Reason stored with the hold: "{hold.unattributed}". This build does not record whether the vault or the agent wrote it, so the page does not read it as either.
+        </p>
+      )}
       <div className="mt-2.5 flex flex-wrap gap-2">
         {!expired && (
           <button type="button" className={cn(BUTTON_QUIET, open === 'approve' && 'bg-foreground/[0.06]')} aria-expanded={open === 'approve'} onClick={() => setOpen(open === 'approve' ? null : 'approve')}>
@@ -78,7 +97,7 @@ function HeldRow({ h, s, facts, payeesLoading, ctx }: { h: HeldPayment; s: Vault
           ) : (
             <>
               <p className="text-xs text-foreground/85">{note.text}</p>
-              <ActionFlow ctx={ctx} tx={prepareOwnerPay(s.vaultId, h.id, s.config.registryId)} label="Sign the approval" />
+              <ActionFlow ctx={ctx} tx={prepareOwnerPay(s.vaultId, h.id, s.config.registryId, { firstPayment })} label="Sign the approval" />
             </>
           )}
         </div>

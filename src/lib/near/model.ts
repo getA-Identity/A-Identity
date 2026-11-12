@@ -12,8 +12,9 @@
  *
  * Import-free apart from sibling files, so near.test.ts can load it through type stripping.
  */
-import type { AgentKeyRecord, VerdictRecord } from './abi.ts'
+import type { AgentKeyRecord, HoldKind, VerdictRecord } from './abi.ts'
 import { AGENT_METHODS, isAgentMethodList } from './abi.ts'
+import { firstPaymentNote } from './calls.ts'
 import type { PayeeFacts, VaultSnapshot } from './read.ts'
 import type { AccessKey } from './rpc.ts'
 import { formatGrouped } from './units.ts'
@@ -190,15 +191,30 @@ export function vaultHeadline(
 }
 
 /**
+ * Whether approving this hold would be the vault's first payment to its payee. That payment is
+ * what makes the payee known (amendment A1), so with hold_unknown on, later agent payments to it
+ * flow without a hold. Read from the payee's live paid_count and the allowlist when the page has
+ * them, else from the hold's kind (unknown_payee: never paid nor listed when it was held). With
+ * hold_unknown off, or a build that predates it, being known changes nothing, so it is false.
+ */
+export function approvalMakesKnown(p: { holdUnknown: boolean | null; listed: boolean; paidCount: number | null; kind: HoldKind | null }): boolean {
+  if (p.holdUnknown !== true || p.listed) return false
+  if (p.paidCount !== null) return p.paidCount === 0
+  return p.kind === 'unknown_payee'
+}
+
+/**
  * What approving a held payment (owner_pay) does with this vault's registry, for the approve
  * panel. owner_pay removes the hold before it asks the registry, so an approval the registry
  * refuses drops the hold and pays nothing (held_settle_failed); the agent can ask again.
  * `blocked` is set when the chain is certain to refuse it, so the page offers no signature.
+ * `firstPayment` (approvalMakesKnown) adds that the approval makes the payee known.
  */
-export function ownerPayNote(r: RegistryState & { payeeDenied: boolean }): { blocked: string | null; text: string } {
+export function ownerPayNote(r: RegistryState & { payeeDenied: boolean; firstPayment?: boolean }): { blocked: string | null; text: string } {
   const bypass = "It skips the freeze, the ceiling and the cap check, and still counts toward today's spend."
+  const known = r.firstPayment ? ` ${firstPaymentNote(r.registryId)}` : ''
   if (r.registryId === null) {
-    return { blocked: null, text: `This vault asks no registry, so the approval pays with no verdict check. ${bypass}` }
+    return { blocked: null, text: `This vault asks no registry, so the approval pays with no verdict check. ${bypass}${known}` }
   }
   if (registryDown(r)) {
     return {
@@ -211,7 +227,7 @@ export function ownerPayNote(r: RegistryState & { payeeDenied: boolean }): { blo
     text:
       `The vault asks ${r.registryId} again before paying: a payee flagged DENY since it was held is refused even for you, and the hold is dropped.` +
       (r.payeeDenied ? ' The registry says DENY for this payee right now, so this approval would be refused on chain.' : '') +
-      ` ${bypass}`,
+      ` ${bypass}${r.payeeDenied ? '' : known}`,
   }
 }
 

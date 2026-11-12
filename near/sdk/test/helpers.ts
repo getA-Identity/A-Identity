@@ -168,7 +168,17 @@ export const REGISTRY = "registry.a-identity.testnet";
 const b64 = (v: unknown) => Buffer.from(JSON.stringify(v)).toString("base64");
 const ev = (standard: string, event: string, data: unknown) => `EVENT_JSON:${JSON.stringify({ standard, version: "1.0.0", event, data })}`;
 
-export type VaultTxOpts = { outcome: "sent" | "refused" | "held"; payee?: string; amount?: string; eventAmount?: string; tokenFails?: boolean; fakeEventFromVault?: boolean; transferCaller?: string };
+export type VaultTxOpts = {
+  outcome: "sent" | "refused" | "held";
+  payee?: string;
+  amount?: string;
+  eventAmount?: string;
+  tokenFails?: boolean;
+  fakeEventFromVault?: boolean;
+  transferCaller?: string;
+  /** The held event's `kind` (vault 0.2.0 on); default unknown_payee, null for an earlier build's event without one. */
+  holdKind?: string | null;
+};
 
 /** A vault pay as EXPERIMENTAL_tx_status returns it (synthetic, see the header). */
 export function vaultPayTx(o: VaultTxOpts): unknown {
@@ -203,7 +213,12 @@ export function vaultPayTx(o: VaultTxOpts): unknown {
   } else if (o.outcome === "refused") {
     outcomes.push(receipt("R3", VAULT, { SuccessValue: b64(pay) }, [ev("a_identity_vault", "payment_refused", { payment_id: "7", payee: PAYEE, amount, reason: "RegistryDeny", source: "registry", registry_reasons: ["drainer"] })]));
   } else {
-    outcomes.push(receipt("R3", VAULT, { SuccessValue: b64(pay) }, [ev("a_identity_vault", "payment_held", { payment_id: "7", held_id: "3", payee: PAYEE, amount, reason: "UnknownPayee" })]));
+    const kind = o.holdKind === undefined ? "unknown_payee" : o.holdKind;
+    outcomes.push(
+      receipt("R3", VAULT, { SuccessValue: b64(pay) }, [
+        ev("a_identity_vault", "payment_held", { payment_id: "7", held_id: "3", payee: PAYEE, amount, reason: "UnknownPayee", ...(kind === null ? {} : { kind }) }),
+      ]),
+    );
   }
   const final = outcomes[outcomes.length - 1]!.outcome.status as { SuccessValue?: string };
   return {

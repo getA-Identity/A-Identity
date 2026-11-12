@@ -7,10 +7,10 @@
  * the registry's NEAR testnet RPC hosts (src/lib/chains.ts, generated), at the latest final block,
  * and stamped with the block that answered.
  *
- * The owner can freeze the vault, approve or reject held payments, change its limits, and move
- * money in or out, signing in their own NEAR wallet through NEAR Connect. Every call is shown
- * exactly, before the wallet opens, and its result is read back from the chain with its hash.
- * A-Identity holds no key and signs nothing on this page.
+ * The owner can freeze the vault, approve or reject held payments, change its limits, forget
+ * refusal counters, and move money in or out, signing in their own NEAR wallet through NEAR
+ * Connect. Every call is shown exactly, before the wallet opens, and its result is read back from
+ * the chain with its hash. A-Identity holds no key and signs nothing on this page.
  *
  * Which vault: ?vault=<account> names one; otherwise the one the chain registry records for NEAR
  * testnet. The registry records none until a deploy receipt fills it, and then the page shows a
@@ -201,7 +201,7 @@ export default function NearVault() {
               // makes React keep stale copies and add more on every read.
               <Fragment key={s.vaultId}>
                 <VaultOverview s={s} payingKeys={payingKeys} refreshing={read.loading} />
-                {isOwner && <OwnerControls s={s} ctx={ctx} />}
+                {isOwner && <OwnerControls s={s} ctx={ctx} byPayee={byPayee} />}
                 <HeldPayments s={s} byPayee={byPayee} payeesLoading={payeesLoading} ctx={ctx} />
                 <div className="grid gap-4 lg:grid-cols-2">
                   <PolicyCard s={s} connected={wallet.accountId} />
@@ -214,7 +214,7 @@ export default function NearVault() {
                   loading={payeesLoading}
                   onCheck={(p) => setExtraPayees((list) => [p, ...list.filter((x) => x !== p)].slice(0, 8))}
                 />
-                {!isOwner && <OwnerControls s={s} ctx={ctx} />}
+                {!isOwner && <OwnerControls s={s} ctx={ctx} byPayee={byPayee} />}
                 <Activity vaultId={s.vaultId} ownerId={s.config.ownerId} tokenId={s.config.tokenId} decimals={s.token.decimals} symbol={s.token.symbol ?? 'units'} refreshKey={landed} />
                 <ContractCard s={s} />
               </Fragment>

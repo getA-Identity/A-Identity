@@ -55,3 +55,19 @@ export function shortKey(pk: string): string {
   const body = i > 0 ? pk.slice(i + 1) : pk
   return body.length <= 14 ? pk : `${curve}${body.slice(0, 6)}...${body.slice(-6)}`
 }
+
+/**
+ * The account ids in a pasted list: separated by spaces, commas, semicolons or new lines, each
+ * once, in the order given. Anything that is not an account id is returned apart, so the page
+ * can name it rather than drop it.
+ */
+export function accountIdsIn(text: string): { ids: string[]; invalid: string[] } {
+  const ids: string[] = []
+  const invalid: string[] = []
+  for (const part of text.split(/[\s,;]+/)) {
+    if (part === '') continue
+    const list = isNearAccountId(part) ? ids : invalid
+    if (!list.includes(part)) list.push(part)
+  }
+  return { ids, invalid }
+}

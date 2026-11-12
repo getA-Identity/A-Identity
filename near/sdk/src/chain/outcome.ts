@@ -9,6 +9,7 @@
 
 import type { RpcReader } from "../collect/rpc.ts";
 import { RpcAnswerError, RpcUnavailableError } from "../collect/rpc.ts";
+import { isVaultError, parseHoldKind, VAULT_EVENT_STANDARD, type HoldKind, type VaultError } from "./abi.ts";
 
 export type NearEvent = {
   standard: string;
@@ -193,10 +194,49 @@ export function payOutcomeOf(outcome: TxOutcome): PayOutcome | null {
 export function vaultEventFor(outcome: TxOutcome, vaultId: string, pay: PayOutcome): NearEvent | null {
   const name = { sent: "payment_sent", refused: "payment_refused", held: "payment_held", failed: "payment_failed" }[pay.status];
   return (
-    eventsFrom(outcome, "a_identity_vault", vaultId).find(
+    eventsFrom(outcome, VAULT_EVENT_STANDARD, vaultId).find(
       (e) => e.event === name && isObj(e.data) && e.data.payment_id === pay.payment_id,
     ) ?? null
   );
+}
+
+/**
+ * What the vault itself saw when it held a payment, from its payment_held event (vault 0.2.0
+ * on): registry_warn, unknown_payee or agent_request. Null for any other event, and for a
+ * payment_held without a kind this SDK knows (an earlier build writes none). The event's
+ * `reason` is the vault's code for a held pay but the agent's own words for a request, so the
+ * kind, not the reason, says why a payment waits.
+ */
+export function holdKindOf(event: NearEvent | null | undefined): HoldKind | null {
+  if (!event || event.event !== "payment_held" || event.standard !== VAULT_EVENT_STANDARD || !isObj(event.data)) return null;
+  return parseHoldKind(event.data.kind);
+}
+
+/**
+ * The stable name a contract panicked with ("Smart contract panicked: NotAgent" gives
+ * "NotAgent"), from a failure as the RPC serializes it, or null when the failure is not a
+ * contract panic (an exceeded prepaid gas, a missing method, an action error of the protocol).
+ */
+export function panicNameOf(failure: unknown): string | null {
+  if (failure === null || failure === undefined) return null;
+  const text = typeof failure === "string" ? failure : JSON.stringify(failure);
+  const m = /Smart contract panicked: ([A-Za-z][A-Za-z0-9_]*)/.exec(text);
+  return m ? m[1]! : null;
+}
+
+/**
+ * The vault error a failed transaction carries, if one does: the transaction's own failure, or
+ * else the first failed receipt the vault executed. Every vault panic is exactly an error name
+ * (error.rs), so a name outside VAULT_ERRORS is not the vault speaking. A refusal of an
+ * authenticated agent is not a failure at all: it is PayOutcome.reason (payOutcomeOf).
+ */
+export function vaultErrorOf(outcome: TxOutcome, vaultId: string): VaultError | null {
+  const candidates = [outcome.failure, ...outcome.receipts.filter((r) => r.executor_id === vaultId && r.failure !== null).map((r) => r.failure)];
+  for (const f of candidates) {
+    const name = panicNameOf(f);
+    if (isVaultError(name)) return name;
+  }
+  return null;
 }
 
 export type SettlementCheck = { name: string; ok: boolean; detail: string };

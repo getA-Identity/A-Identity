@@ -11,10 +11,11 @@
  * a full-access key can attach, so a function-call key a wallet created for some site can never
  * make these calls. `freeze` alone attaches nothing: a panic button must work in one click.
  *
- * Gas per method is the NEAR SDK's (near/sdk/src/chain/vault.ts, VAULT_GAS_TGAS), so the console
+ * Gas per method is the NEAR SDK's (near/sdk/src/chain/abi.ts, VAULT_GAS_TGAS), so the console
  * and the SDK quote one number: owner_pay runs the registry check (when the vault has a registry)
  * and the token transfer and gets 100 Tgas, withdraw a token transfer and its callback 50, the
- * rest 30. Unused gas is refunded.
+ * two forget calls 100 for up to 50 removals and their events, the rest 30. Unused gas is
+ * refunded.
  *
  * Funding is ONE transaction to the token: registration of the vault on the token if it is not
  * registered yet (storage_deposit, the token's own minimum), then ft_transfer_call with 1
@@ -22,6 +23,7 @@
  *
  * Import-free apart from sibling files, so near.test.ts can load it through type stripping.
  */
+import { isNearAccountId } from './ids.ts'
 import { ONE_YOCTO, tgas, U128_MAX } from './units.ts'
 
 export type FunctionCallAction = {
@@ -37,7 +39,24 @@ export type PreparedTx = {
   actions: FunctionCallAction[]
 }
 
-export const OWNER_GAS_TGAS = { owner_pay: 100, withdraw: 50, default: 30, storage_deposit: 10, ft_transfer_call: 100 } as const
+export const OWNER_GAS_TGAS = { owner_pay: 100, withdraw: 50, forget: 100, default: 30, storage_deposit: 10, ft_transfer_call: 100 } as const
+
+/**
+ * MAX_FORGET_BATCH (lib.rs, 0.2.0): most payees one forget call may name, duplicates included.
+ * Every removal logs one event line, and a receipt may log at most 16384 bytes; the vault refuses
+ * a longer list (BatchTooLarge) before it removes anything, so the page splits it first.
+ */
+export const FORGET_BATCH_MAX = 50
+
+/**
+ * The sentence an approval of a payee's FIRST payment carries (amendment A1). A payee becomes
+ * known to the vault once it is paid, so this approval is the last time a payment to it waits
+ * for the owner just for being new. With a registry, a WARN still holds and a DENY still refuses.
+ */
+export function firstPaymentNote(registryId: string | null): string {
+  const unless = registryId === null ? '.' : ', unless the registry warns about it (held again) or flags it (refused).'
+  return `Approving makes this payee known to the vault: a payee becomes known once paid, so later agent payments to it go through within the limits without waiting for you${unless}`
+}
 
 const call = (methodName: string, args: Record<string, unknown>, gasTgas: number, deposit: string): FunctionCallAction => ({
   type: 'FunctionCall',
@@ -61,12 +80,15 @@ export const prepareUnfreeze = (vaultId: string): PreparedTx => ({
   actions: [call('unfreeze', {}, OWNER_GAS_TGAS.default, ONE_YOCTO)],
 })
 
-/** `registryId` is the vault's own (get_config): it decides what the words can promise, never the call. */
-export const prepareOwnerPay = (vaultId: string, heldId: string, registryId: string | null): PreparedTx => ({
+/**
+ * `registryId` is the vault's own (get_config) and `firstPayment` says the vault has never paid
+ * this payee: both decide what the words can promise, never the call.
+ */
+export const prepareOwnerPay = (vaultId: string, heldId: string, registryId: string | null, opts: { firstPayment?: boolean } = {}): PreparedTx => ({
   what:
-    registryId === null
+    (registryId === null
       ? `Approve held payment #${heldId}: the vault pays it. It asks no registry, so no verdict is checked first.`
-      : `Approve held payment #${heldId}: the vault asks the registry ${registryId} once more, then pays it.`,
+      : `Approve held payment #${heldId}: the vault asks the registry ${registryId} once more, then pays it.`) + (opts.firstPayment ? ` ${firstPaymentNote(registryId)}` : ''),
   receiverId: vaultId,
   actions: [call('owner_pay', { held_id: heldId }, OWNER_GAS_TGAS.owner_pay, ONE_YOCTO)],
 })
@@ -112,6 +134,35 @@ export const prepareSetAllowed = (vaultId: string, payee: string, ok: boolean): 
   receiverId: vaultId,
   actions: [call('set_allowed', { payee, ok }, OWNER_GAS_TGAS.default, ONE_YOCTO)],
 })
+
+/**
+ * Forget refusal counters (vault 0.2.0 on): `guard` is forget_guard_refusals, the counters of
+ * refusals the agent recorded with record_refusal; `registry` is forget_refusals, the registry
+ * DENY counts behind refusal_count. Each removal frees the payee's slot under the vault's bound
+ * of 100 and its storage stake, and logs the count it had, so the record of what the counter
+ * said stays on chain. A payee with no counter is skipped. One transaction per
+ * FORGET_BATCH_MAX payees; each needs the owner's signature.
+ */
+export function prepareForgetCounters(vaultId: string, which: 'guard' | 'registry', payees: readonly string[]): PreparedTx[] {
+  const unique = [...new Set(payees)]
+  if (unique.length === 0) throw new Error('name at least one payee')
+  const bad = unique.find((p) => !isNearAccountId(p))
+  if (bad !== undefined) throw new Error(`not a NEAR account id: ${bad}`)
+  const chunks: string[][] = []
+  for (let i = 0; i < unique.length; i += FORGET_BATCH_MAX) chunks.push(unique.slice(i, i + FORGET_BATCH_MAX))
+  return chunks.map((chunk, i) => {
+    const part = chunks.length > 1 ? ` (transaction ${i + 1} of ${chunks.length})` : ''
+    const n = `${chunk.length} payee${chunk.length === 1 ? '' : 's'}`
+    return {
+      what:
+        which === 'guard'
+          ? `Forget the agent's recorded refusals of ${n}${part}: each counter is removed, its slot under the 100-payee bound freed and its storage stake returned. The log keeps each count.`
+          : `Forget the registry refusal counts of ${n}${part}: each counter is removed and its slot under the 100-payee bound freed. The log keeps each count, and no registry verdict changes.`,
+      receiverId: vaultId,
+      actions: [call(which === 'guard' ? 'forget_guard_refusals' : 'forget_refusals', { payees: chunk }, OWNER_GAS_TGAS.forget, ONE_YOCTO)],
+    }
+  })
+}
 
 /**
  * Fund the vault: one transaction to the TOKEN. `registration` is the token's storage minimum in

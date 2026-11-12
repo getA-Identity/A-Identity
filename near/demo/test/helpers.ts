@@ -16,10 +16,11 @@
 
 import { Buffer } from 'node:buffer';
 import { readFileSync } from 'node:fs';
+import type { HoldKind } from '../../sdk/src/chain/abi.ts';
 import type { Decision, Reason, Snapshot } from '../../sdk/src/engine/types.ts';
 import { parseOutcome, preparedCall } from '../lib/chain.ts';
 import type { ParsedOutcome, SendResult, Sender, SignedTx, TxPlan } from '../lib/chain.ts';
-import { TESTNET_DEFAULTS } from '../lib/config.ts';
+import { GAS, TESTNET_DEFAULTS } from '../lib/config.ts';
 import type { EngineJudgement, EnginePort, GuardArgs, GuardPort, GuardResult } from '../lib/ports.ts';
 import type { JsonRpcErrorBody } from '../lib/rpc.ts';
 import type { HeldView, RegistryVerdictView, VaultConfigView, Views } from '../lib/views.ts';
@@ -172,10 +173,13 @@ export function fakeEngine(decisions: Record<string, Decision> = demoDecisions()
 // -- an in-memory vault, registry and token ------------------------------------------------------
 
 /**
- * A small simulator of the deployed contracts, following CONTRACTS-SPEC.md and amendment A1:
- * DENY refuses (RegistryDeny), WARN holds (RegistryWarn), no verdict holds unless the payee is
- * allowlisted or was paid before (UnknownPayee), request_payment always holds, owner_pay re-reads
- * the registry, and a function-call key is checked the way nearcore checks it.
+ * A small simulator of the deployed contracts, following CONTRACTS-SPEC.md, amendment A1 and
+ * vault 0.2.0 (near/contracts/agent-spend-policy/src/lib.rs, after_verdict): DENY refuses
+ * (RegistryDeny), WARN holds (RegistryWarn), no verdict holds unless the payee is allowlisted or
+ * was paid before (UnknownPayee), request_payment always holds, owner_pay re-reads the registry,
+ * and a function-call key is checked the way nearcore checks it. Every hold records the vault's
+ * own `kind` (registry_warn, unknown_payee, agent_request), as 0.2.0 does; `legacy: true`
+ * simulates a 0.1.0 vault, whose holds and payment_held events carry none.
  */
 export class FakeChain {
   readonly config: VaultConfigView;
@@ -192,6 +196,9 @@ export class FakeChain {
   /** Make the protocol answer with another InvalidTxError for a method (or "Transfer"/"AddKey"),
    * as nearcore does when a check that runs first fails (the allowance, a stale nonce). */
   readonly rejectWith = new Map<string, string>();
+  /** Vault 0.2.0's own refusal of a record_refusal it will not write (GuardRefusalLimitReached,
+   * StorageNotCovered): refused with that name and source policy, nothing counted. */
+  refuseRecordsWith: string | null = null;
   agentPermission: 'FullAccess' | { FunctionCall: { allowance: string | null; receiver_id: string; method_names: string[] } } = {
     FunctionCall: { allowance: '250000000000000000000000', receiver_id: ACC.vault, method_names: ['pay', 'request_payment', 'record_refusal'] },
   };
@@ -200,7 +207,11 @@ export class FakeChain {
   private nextTx = 1;
   private nextNonce = 1;
 
-  constructor(o: { holdUnknown?: boolean | undefined; ceiling?: string } = {}) {
+  /** A 0.1.0 vault: no `kind` on holds or on payment_held. */
+  readonly legacy: boolean;
+
+  constructor(o: { holdUnknown?: boolean | undefined; ceiling?: string; legacy?: boolean } = {}) {
+    this.legacy = o.legacy === true;
     this.config = {
       owner_id: ACC.owner,
       token_id: TOKEN,
@@ -210,7 +221,7 @@ export class FakeChain {
       auto_approve_max: o.ceiling ?? '2000000',
       allowlist_enabled: false,
       token_storage_deposit: '1250000000000000000000',
-      version: 'agent-spend-policy 0.1.0',
+      version: this.legacy ? 'agent-spend-policy 0.1.0' : 'agent-spend-policy 0.2.0',
       ...(o.holdUnknown === undefined ? {} : { hold_unknown: o.holdUnknown }),
     };
     this.balances.set(ACC.vault, 20_000_000n);
@@ -259,10 +270,18 @@ export class FakeChain {
     return eventLine('a_identity_vault', event, data);
   }
 
-  private hold(payee: string, amount: string, memo: string | null, reason: string, paymentId: string): PayOutcome {
+  /** Hold a payment, as the vault does: the hold and its payment_held line carry `kind` (0.2.0). */
+  private hold(payee: string, amount: string, memo: string | null, reason: string, paymentId: string, kind: HoldKind): { out: PayOutcome; line: string } {
     const id = String(this.nextHeld++);
-    this.held.set(id, { id, payment_id: paymentId, agent_pk: AGENT_PK, payee, amount, memo, reason, created_at_s: '1794500000', expires_at_s: '9999999999' });
-    return { status: 'held', payment_id: paymentId, reason, held_id: id };
+    const k = this.legacy ? {} : { kind };
+    this.held.set(id, { id, payment_id: paymentId, agent_pk: AGENT_PK, payee, amount, memo, reason, created_at_s: '1794500000', expires_at_s: '9999999999', ...k });
+    const out: PayOutcome = { status: 'held', payment_id: paymentId, reason, held_id: id };
+    return { out, line: this.vaultEvent('payment_held', { payment_id: paymentId, held_id: id, payee, amount, reason, ...k }) };
+  }
+
+  /** The vault already knows the payee: the owner listed it or the vault paid it before. */
+  private known(payee: string): boolean {
+    return this.allowlist.includes(payee) || (this.paid.get(payee) ?? 0) > 0;
   }
 
   /** The vault pipeline after the gates: what the registry answer means for this mode. */
@@ -277,14 +296,19 @@ export class FakeChain {
       lines.push(this.vaultEvent('payment_refused', { payment_id: paymentId, payee, amount, reason: 'RegistryDeny', source: 'registry', registry_reasons: v.reasons.slice(0, 3) }));
       if (mode === 'owner') lines.push(this.vaultEvent('held_settle_failed', { held_id: heldId, reason: 'RegistryDeny', payment_id: paymentId, payee, amount, memo }));
     } else if (mode === 'request') {
-      out = this.hold(payee, amount, memo, agentReason ?? '', paymentId);
-      lines.push(this.vaultEvent('payment_held', { payment_id: paymentId, held_id: out.held_id, payee, amount, reason: out.reason }));
+      // The agent's reason is its own text; the kind is what the vault saw, whatever it says.
+      const kind: HoldKind = v?.verdict === 'WARN' ? 'registry_warn' : !v && !this.known(payee) ? 'unknown_payee' : 'agent_request';
+      const h = this.hold(payee, amount, memo, agentReason ?? '', paymentId, kind);
+      out = h.out;
+      lines.push(h.line);
     } else if (mode === 'pay' && v?.verdict === 'WARN') {
-      out = this.hold(payee, amount, memo, 'RegistryWarn', paymentId);
-      lines.push(this.vaultEvent('payment_held', { payment_id: paymentId, held_id: out.held_id, payee, amount, reason: 'RegistryWarn' }));
-    } else if (mode === 'pay' && !v && this.config.hold_unknown === true && !this.allowlist.includes(payee) && (this.paid.get(payee) ?? 0) === 0) {
-      out = this.hold(payee, amount, memo, 'UnknownPayee', paymentId);
-      lines.push(this.vaultEvent('payment_held', { payment_id: paymentId, held_id: out.held_id, payee, amount, reason: 'UnknownPayee' }));
+      const h = this.hold(payee, amount, memo, 'RegistryWarn', paymentId, 'registry_warn');
+      out = h.out;
+      lines.push(h.line);
+    } else if (mode === 'pay' && !v && this.config.hold_unknown === true && !this.known(payee)) {
+      const h = this.hold(payee, amount, memo, 'UnknownPayee', paymentId, 'unknown_payee');
+      out = h.out;
+      lines.push(h.line);
     } else {
       transfer = true;
       this.paid.set(payee, (this.paid.get(payee) ?? 0) + 1);
@@ -338,8 +362,10 @@ export class FakeChain {
             return chain.record(signerId, plan.receiverId, out, logs);
           }
           case 'record_refusal': {
-            const out = { status: 'refused', payment_id: paymentId, reason: String(a.reason), held_id: null };
-            return chain.record(signerId, plan.receiverId, out, [{ executor: ACC.vault, lines: [chain.vaultEvent('payment_refused', { payment_id: paymentId, payee: a.payee, amount: a.amount, reason: a.reason, source: 'agent_guard', registry_reasons: [] })] }]);
+            const reason = chain.refuseRecordsWith ?? String(a.reason);
+            const source = chain.refuseRecordsWith ? 'policy' : 'agent_guard';
+            const out = { status: 'refused', payment_id: paymentId, reason, held_id: null };
+            return chain.record(signerId, plan.receiverId, out, [{ executor: ACC.vault, lines: [chain.vaultEvent('payment_refused', { payment_id: paymentId, payee: a.payee, amount: a.amount, reason, source, registry_reasons: [] })] }]);
           }
           case 'owner_pay': {
             const h = chain.held.get(String(a.held_id));
@@ -375,12 +401,13 @@ export class FakeChain {
         const d = decisions[args.payee];
         if (!d) throw new Error(`no decision for ${args.payee}`);
         const deciding = d.reasons.find((r) => (r.severity === 'deny' || r.severity === 'warn') && !r.cleared_by)?.code ?? 'guard';
+        // The gas the SDK attaches (sdk/src/chain/abi.ts, held to the vault's AGENT_PREPAID_GAS).
         const plan: TxPlan =
           d.verdict === 'ALLOW'
-            ? { signerId: ACC.vault, receiverId: ACC.vault, actions: [{ type: 'FunctionCall', methodName: 'pay', args: { payee: args.payee, amount: args.amount, memo: args.memo }, gas: 80n, deposit: 0n }] }
+            ? { signerId: ACC.vault, receiverId: ACC.vault, actions: [{ type: 'FunctionCall', methodName: 'pay', args: { payee: args.payee, amount: args.amount, memo: args.memo }, gas: GAS.agentPay, deposit: 0n }] }
             : d.verdict === 'WARN'
-              ? { signerId: ACC.vault, receiverId: ACC.vault, actions: [{ type: 'FunctionCall', methodName: 'request_payment', args: { payee: args.payee, amount: args.amount, memo: args.memo, reason: deciding }, gas: 80n, deposit: 0n }] }
-              : { signerId: ACC.vault, receiverId: ACC.vault, actions: [{ type: 'FunctionCall', methodName: 'record_refusal', args: { payee: args.payee, amount: args.amount, reason: deciding }, gas: 10n, deposit: 0n }] };
+              ? { signerId: ACC.vault, receiverId: ACC.vault, actions: [{ type: 'FunctionCall', methodName: 'request_payment', args: { payee: args.payee, amount: args.amount, memo: args.memo, reason: deciding }, gas: GAS.agentRequest, deposit: 0n }] }
+              : { signerId: ACC.vault, receiverId: ACC.vault, actions: [{ type: 'FunctionCall', methodName: 'record_refusal', args: { payee: args.payee, amount: args.amount, reason: deciding }, gas: GAS.recordRefusal, deposit: 0n }] };
         const action = d.verdict === 'ALLOW' ? 'pay' : d.verdict === 'WARN' ? 'request_payment' : 'record_refusal';
         const base = {
           verdict: d.verdict,

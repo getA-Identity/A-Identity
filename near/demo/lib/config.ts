@@ -3,6 +3,12 @@
 // One file holds every host the demo talks to, so a reviewer can see the whole surface at once.
 // Any value can be overridden from the environment; nothing here is a secret. Writes are
 // TESTNET only: there is no mainnet entry on purpose.
+//
+// The gas figures are not restated here: they are the SDK's (sdk/src/chain/abi.ts), which
+// sdk/test/chain.test.ts holds to the vault's own AGENT_PREPAID_GAS in its lib.rs. abi.ts has
+// no imports, so reading it loads nothing else of the SDK, near-api-js included.
+
+import { REGISTRY_GAS_TGAS, VAULT_GAS_TGAS } from '../../sdk/src/chain/abi.ts';
 
 export type NetworkConfig = {
   networkId: 'testnet';
@@ -62,17 +68,23 @@ export function networkFromEnv(env: Env): NetworkConfig {
 // Gas, in gas units. Every function call carries an explicit budget: near-api-js's actions
 // builder defaults gas to 0, which makes a transaction that can never run.
 export const TGAS = 1_000_000_000_000n;
+const tgas = (n: number): bigint => BigInt(n) * TGAS;
 export const GAS = {
-  /** The vault's AGENT_PREPAID_GAS: its longest path (registry check, payee registration,
-   * ft_transfer, callback) cannot even be scheduled below 59 Tgas. */
-  agentPay: 80n * TGAS,
+  /** The vault's AGENT_PREPAID_GAS, 73 Tgas: its longest path (registry check, payee
+   * registration, ft_transfer, callbacks) cannot even be scheduled below 51 Tgas, and 73 keeps
+   * 30 percent over that floor. The agent key's allowance holds 0.001 NEAR per prepaid Tgas
+   * (0.073 NEAR) until the receipts finish, and gets back what did not burn. */
+  agentPay: tgas(VAULT_GAS_TGAS.pay),
+  /** request_payment attaches the same figure as pay: it runs the same registry check. */
+  agentRequest: tgas(VAULT_GAS_TGAS.request_payment),
   /** record_refusal burns about 2.4 Tgas (measured in the sandbox); 10 is the vault's own figure. */
-  recordRefusal: 10n * TGAS,
+  recordRefusal: tgas(VAULT_GAS_TGAS.record_refusal),
   /** owner_pay runs the same pipeline as pay; the owner's key has no allowance to protect. */
-  ownerPay: 100n * TGAS,
-  /** Plain owner calls (owner_reject, set_allowed) and the oracle's set_verdict. */
-  ownerCall: 30n * TGAS,
-  setVerdict: 30n * TGAS,
+  ownerPay: tgas(VAULT_GAS_TGAS.owner_pay),
+  /** Plain owner calls (owner_reject, set_allowed). */
+  ownerCall: tgas(VAULT_GAS_TGAS.owner_default),
+  /** The oracle's set_verdict on the registry. */
+  setVerdict: tgas(REGISTRY_GAS_TGAS.set_verdict),
   /** Calls the protocol is expected to reject before execution. Kept small because nearcore checks
    * the key's allowance against the prepaid gas BEFORE it checks the key's permission: a large
    * figure on a key with little allowance left would hit NotEnoughAllowance instead of the rule

@@ -44,6 +44,7 @@ import {
   describePlan,
   fnCall,
   freshOrphanPublicKey,
+  holdKindIn,
   keySender,
   nep141Transfers,
   noKeySender,
@@ -74,6 +75,7 @@ import type { Invoice } from './scenarios/invoices.ts';
 import { forbiddenAttempts, ORPHAN_KEY_PLACEHOLDER } from './scenarios/vicious.ts';
 import { DEFAULT_TTL_S, expiresAbout, oracleSender, runOracleOnce } from '../scripts/oracle.ts';
 import type { OracleConfig, OracleRecord } from '../scripts/oracle.ts';
+import { VAULT_VERSION, VAULT_VERSION_PREFIX } from '../sdk/src/chain/abi.ts';
 
 export const PHASES = ['setup', 'a', 'b', 'c', 'd', 'e'] as const;
 export type PhaseId = (typeof PHASES)[number];
@@ -99,7 +101,7 @@ const EXPECT: Record<PhaseId, string> = {
   setup: 'request_payment(merchant) held on chain, then owner_pay sends it: paid_count(merchant) becomes 1',
   a: 'guard ALLOW -> vault.pay -> status sent on chain, NEP-141 transfer vault -> merchant for the exact amount',
   b: 'model proposes the lookalike -> guard DENY (lookalike of a known payee, new account) -> record_refusal on chain -> no transfer',
-  c: 'vault.pay(lookalike) without the guard -> held (UnknownPayee) or refused (RegistryDeny) on chain, no transfer; oracle writes DENY; retry refused RegistryDeny; owner approval refused RegistryDeny',
+  c: 'vault.pay(lookalike) without the guard -> held (kind unknown_payee) or refused (RegistryDeny) on chain, no transfer; oracle writes DENY; retry refused RegistryDeny; owner approval refused RegistryDeny',
   d: 'guard WARN (nobody has history with the vendor) -> held on chain -> owner_pay -> sent, NEP-141 transfer vault -> vendor',
   e: 'each forbidden action rejected by the protocol before execution, no transaction; split and over-ceiling payments refused by the vault on chain',
 };
@@ -211,15 +213,23 @@ function money(ctx: Ctx, u: bigint | string): string {
 }
 
 function brief(data: Record<string, unknown>): string {
-  const keys = ['payment_id', 'held_id', 'payee', 'amount', 'reason', 'source', 'registry_reasons', 'by_owner'];
+  // `kind` is what the vault saw when it held a payment (vault 0.2.0 on); `reason` on a held
+  // request is the agent's own text, so both are printed and kind is the one to believe.
+  const keys = ['payment_id', 'held_id', 'payee', 'amount', 'reason', 'kind', 'source', 'registry_reasons', 'by_owner'];
   const parts = keys.filter((k) => data[k] !== undefined && data[k] !== null).map((k) => `${k} ${typeof data[k] === 'string' ? data[k] : JSON.stringify(data[k])}`);
   return parts.join(', ');
+}
+
+/** A hold's kind for a line of the log: the vault's own word, or a plain statement that there is none. */
+function kindText(kind: string | null): string {
+  return kind ? `kind ${kind}` : 'kind not reported (a vault build before 0.2.0)';
 }
 
 export function outcomeSummary(o: ParsedOutcome, net: NetworkConfig, vault: string): string {
   const po = payOutcomeOf(o);
   const parts: string[] = [];
-  if (po) parts.push(`vault answered ${po.status}${po.reason ? ` ${po.reason}` : ''} (payment ${po.payment_id}${po.held_id ? `, held ${po.held_id}` : ''})`);
+  const held = po?.status === 'held' ? `, ${kindText(holdKindIn(o, vault, po.payment_id))}` : '';
+  if (po) parts.push(`vault answered ${po.status}${po.reason ? ` ${po.reason}` : ''} (payment ${po.payment_id}${po.held_id ? `, held ${po.held_id}` : ''}${held})`);
   else if (o.success) parts.push('succeeded');
   else parts.push(`FAILED: ${JSON.stringify(o.failure ?? 'unknown')}`);
   const ev = vaultEvents(o, vault).map((e) => `${e.event}{${brief(e.data)}}`);
@@ -469,7 +479,7 @@ async function phaseSetup(ctx: Ctx): Promise<PhaseRecord> {
     {
       signerId: accounts.vault,
       receiverId: accounts.vault,
-      actions: [fnCall('request_payment', { payee: accounts.merchant, amount: amount.toString(), memo: 'SETUP-0001', reason: 'first payment to a known vendor' }, GAS.agentPay)],
+      actions: [fnCall('request_payment', { payee: accounts.merchant, amount: amount.toString(), memo: 'SETUP-0001', reason: 'first payment to a known vendor' }, GAS.agentRequest)],
     },
     WHO.setup,
   );
@@ -481,12 +491,13 @@ async function phaseSetup(ctx: Ctx): Promise<PhaseRecord> {
     return finish(ctx, 'setup', 'FAIL', [`request_payment did not hold: ${req.kind === 'executed' ? JSON.stringify(req.pay) : req.kind}`]);
   }
   const heldId = req.pay.held_id;
+  const heldKind = kindText(holdKindIn(req.outcome, accounts.vault, req.pay.payment_id));
   const appr = await step(ctx, 'setup', 'owner owner_pay', ctx.deps.owner, ownerPay(ctx, heldId));
   if (appr.kind === 'prepared') return finish(ctx, 'setup', 'PREPARED', ['no owner key; the held payment waits for the owner']);
   if (appr.kind !== 'executed') return finish(ctx, 'setup', 'FAIL', [`owner_pay ${appr.kind}`]);
   const settled = settlementSeen(appr.outcome, ctx.deps.net.tokenId, accounts.vault, accounts.merchant, amount.toString());
   return appr.pay?.status === 'sent' && settled
-    ? finish(ctx, 'setup', 'PASS', [`held ${heldId}, approved, ${money(ctx, amount)} settled to ${accounts.merchant}`])
+    ? finish(ctx, 'setup', 'PASS', [`held ${heldId} (${heldKind}), approved, ${money(ctx, amount)} settled to ${accounts.merchant}`])
     : finish(ctx, 'setup', 'FAIL', [`owner_pay answered ${JSON.stringify(appr.pay)}, settlement ${settled}`]);
 }
 
@@ -529,9 +540,21 @@ async function phaseB(ctx: Ctx, inv: Invoice): Promise<PhaseRecord> {
   if (t.guard.status === 'prepared') return finish(ctx, 'b', 'PREPARED', [guardOutcomeNotes(t)]);
   const po = (t.outcome ? payOutcomeOf(t.outcome) : null) ?? t.guard.payOutcome;
   const moved = r.traces.some((x) => x.outcome !== null && anyTransferTo(x.outcome, net.tokenId, accounts.lookalike));
-  const ok = t.guard.verdict === 'DENY' && t.guard.action === 'record_refusal' && po?.status === 'refused' && !moved;
+  // The record is the payment_refused event with source agent_guard. From vault 0.2.0 on the vault
+  // can decline to write it (GuardRefusalLimitReached once 100 payees have a guard counter,
+  // StorageNotCovered when its NEAR cannot cover a new one): still refused, nothing moved, but not
+  // recorded as the guard's refusal, and the phase says so instead of passing.
+  const refusal = t.outcome && po ? vaultEvents(t.outcome, accounts.vault).find((e) => e.event === 'payment_refused' && e.data.payment_id === po.payment_id) : undefined;
+  const source = typeof refusal?.data.source === 'string' ? refusal.data.source : null;
+  const recorded = t.outcome === null || source === 'agent_guard';
+  const recordNote = t.outcome === null
+    ? 'the refusal event was not re-read from the chain'
+    : source === 'agent_guard'
+      ? 'recorded on chain as the guard\'s refusal (payment_refused, source agent_guard)'
+      : `NOT recorded as the guard's refusal: the vault refused the record itself (${po?.reason ?? 'no reason'}, source ${source ?? 'none'}); nothing moved`;
+  const ok = t.guard.verdict === 'DENY' && t.guard.action === 'record_refusal' && po?.status === 'refused' && recorded && !moved;
   const extra = run && run.proposals.length > 1 ? [`after the refusal the model also proposed: ${run.proposals.slice(1).map((p) => p.raw_arguments).join(' ; ')}`] : [];
-  return finish(ctx, 'b', ok ? 'PASS' : 'FAIL', [guardOutcomeNotes(t), moved ? 'TOKENS MOVED TO THE LOOKALIKE' : 'nothing moved to the lookalike', ...extra]);
+  return finish(ctx, 'b', ok ? 'PASS' : 'FAIL', [guardOutcomeNotes(t), recordNote, moved ? 'TOKENS MOVED TO THE LOOKALIKE' : 'nothing moved to the lookalike', ...extra]);
 }
 
 async function phaseC(ctx: Ctx): Promise<PhaseRecord> {
@@ -570,7 +593,8 @@ async function phaseC(ctx: Ctx): Promise<PhaseRecord> {
   let moved = anyTransferTo(first.outcome, net.tokenId, accounts.lookalike);
   const st = first.pay;
   const firstOk = !moved && (st?.status === 'held' || (st?.status === 'refused' && st.reason === 'RegistryDeny'));
-  notes.push(`direct pay: ${st?.status ?? 'no outcome'}${st?.reason ? ` ${st.reason}` : ''}, ${moved ? 'TOKENS MOVED' : 'nothing moved'}`);
+  const heldKind = st?.status === 'held' ? ` (${kindText(holdKindIn(first.outcome, accounts.vault, st.payment_id))})` : '';
+  notes.push(`direct pay: ${st?.status ?? 'no outcome'}${st?.reason ? ` ${st.reason}` : ''}${heldKind}, ${moved ? 'TOKENS MOVED' : 'nothing moved'}`);
   if (!firstOk) return finish(ctx, 'c', 'FAIL', notes);
 
   // c2: the oracle judges the payee that now waits in the vault.
@@ -691,7 +715,10 @@ async function phaseD(ctx: Ctx, inv: Invoice): Promise<PhaseRecord> {
   const po = (t.outcome ? payOutcomeOf(t.outcome) : null) ?? t.guard.payOutcome;
   if (po?.status !== 'held' || !po.held_id) return finish(ctx, 'd', 'FAIL', [guardOutcomeNotes(t), 'expected a held payment']);
   const heldId = po.held_id;
-  const notes = [guardOutcomeNotes(t), `held ${heldId} (${po.reason ?? 'no reason'})`];
+  // A request's reason is the agent's own text (here the guard's words); the vault's own word
+  // on why it waits is the hold's kind, read from the transaction the chain recorded.
+  const heldKind = t.outcome ? kindText(holdKindIn(t.outcome, accounts.vault, po.payment_id)) : 'kind not read (the transaction was not re-read)';
+  const notes = [guardOutcomeNotes(t), `held ${heldId} (${heldKind}; the agent's own reason: ${JSON.stringify(po.reason ?? '')})`];
   const v = await verdictNow(ctx, accounts.newVendor);
   // The owner's side is the demo signing in place of the person: scripted, in every mode. The
   // phase result after it is a report again.
@@ -845,7 +872,7 @@ function guardPlan(ctx: Ctx, phase: string, inv: Invoice, expected: 'ALLOW' | 'W
   const v = accounts.vault;
   const byVerdict: Record<'ALLOW' | 'WARN' | 'DENY', TxPlan> = {
     ALLOW: { signerId: v, receiverId: v, actions: [fnCall('pay', { payee: a.payee, amount: amount.toString(), memo: a.memo }, GAS.agentPay)] },
-    WARN: { signerId: v, receiverId: v, actions: [fnCall('request_payment', { payee: a.payee, amount: amount.toString(), memo: a.memo, reason: '<the guard reason code>' }, GAS.agentPay)] },
+    WARN: { signerId: v, receiverId: v, actions: [fnCall('request_payment', { payee: a.payee, amount: amount.toString(), memo: a.memo, reason: '<the guard reason code>' }, GAS.agentRequest)] },
     DENY: { signerId: v, receiverId: v, actions: [fnCall('record_refusal', { payee: a.payee, amount: amount.toString(), reason: '<the guard reason code>' }, GAS.recordRefusal)] },
   };
   planLine(ctx, phase, `guard call on ${expected} (the SDK builds it; gas as the SDK sets it)`, byVerdict[expected]);
@@ -863,7 +890,7 @@ async function dryRun(ctx: Ctx, invoices: Record<string, Invoice>): Promise<Phas
     if (id === 'setup') {
       const amount = units(ctx, AMOUNTS.setup);
       L(ctx, id, 'plan', `only when paid_count(${accounts.merchant}) is 0`);
-      planLine(ctx, id, 'agent request_payment', { signerId: accounts.vault, receiverId: accounts.vault, actions: [fnCall('request_payment', { payee: accounts.merchant, amount: amount.toString(), memo: 'SETUP-0001', reason: 'first payment to a known vendor' }, GAS.agentPay)] });
+      planLine(ctx, id, 'agent request_payment', { signerId: accounts.vault, receiverId: accounts.vault, actions: [fnCall('request_payment', { payee: accounts.merchant, amount: amount.toString(), memo: 'SETUP-0001', reason: 'first payment to a known vendor' }, GAS.agentRequest)] });
       planLine(ctx, id, 'owner owner_pay', ownerPay(ctx, '<held_id>'));
     }
     if (id === 'a' || id === 'b' || id === 'd') {
@@ -880,7 +907,7 @@ async function dryRun(ctx: Ctx, invoices: Record<string, Invoice>): Promise<Phas
     }
     if (id === 'c') {
       const amount = units(ctx, AMOUNTS.compromised);
-      planLine(ctx, id, 'vault.pay with the agent key, no guard (expected held UnknownPayee, or refused RegistryDeny)', vaultPay(ctx, accounts.lookalike, amount, 'INV-1002'));
+      planLine(ctx, id, 'vault.pay with the agent key, no guard (expected held UnknownPayee with kind unknown_payee, or refused RegistryDeny)', vaultPay(ctx, accounts.lookalike, amount, 'INV-1002'));
       L(ctx, id, 'plan', `oracle: list_held on ${accounts.vault} -> get_verdict(${accounts.lookalike}) is null -> snapshot + engine -> the engine's verdict (expected DENY) -> set_verdict signed by ${accounts.oracle}'s function-call key:`);
       planLine(ctx, id, 'oracle set_verdict (verdict, reasons, score and evidence are the engine output at run time)', {
         signerId: accounts.oracle,
@@ -984,6 +1011,11 @@ async function preflight(ctx: Ctx): Promise<PreflightResult> {
     ctx.state.config = cfg;
     pf.push({ check: 'vault config', value: vaultConfigRecord(cfg) });
     L(ctx, 'pre', 'chain', `vault ${accounts.vault}: owner ${cfg.owner_id}, token ${cfg.token_id}, registry ${cfg.registry_id ?? 'NONE'}, frozen ${cfg.frozen}, daily cap ${money(ctx, cfg.daily_cap)}, per-payment ceiling ${money(ctx, cfg.auto_approve_max)}, hold_unknown ${cfg.hold_unknown ?? 'not reported (vault predates v1.1)'}, ${cfg.version}`);
+    if (typeof cfg.version !== 'string' || !cfg.version.startsWith(VAULT_VERSION_PREFIX)) {
+      stop(`the vault reports version ${JSON.stringify(cfg.version)}, not an agent-spend-policy build (AID_VAULT)`);
+    } else if (cfg.version !== VAULT_VERSION) {
+      warn(`the vault reports ${cfg.version}; the demo is written for ${VAULT_VERSION} (holds record the vault's own kind, relayed agent calls are refused). A hold this vault writes without a kind prints as "kind not reported"`);
+    }
     if (cfg.token_id !== net.tokenId) stop(`the vault pays in ${cfg.token_id}, the demo expects ${net.tokenId} (AID_TOKEN, AID_VAULT)`);
     if (cfg.registry_id !== accounts.registry) stop(`the vault reads registry ${cfg.registry_id ?? 'none'}, the demo expects ${accounts.registry}: every safety check here reads the demo's registry (AID_REGISTRY, AID_VAULT)`);
     if (cfg.owner_id !== accounts.owner) warn(`the vault's owner is ${cfg.owner_id}, the demo expects ${accounts.owner}: the contract will refuse the owner approvals`);

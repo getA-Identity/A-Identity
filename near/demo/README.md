@@ -9,11 +9,11 @@ either on chain (tx hash, explorer link, archival curl) or labeled as not on cha
 
 | Phase | Story | Expected result | Where it happens |
 |---|---|---|---|
-| setup | The known merchant's first payment waits for one owner approval (only if the vault never paid it and the owner did not allowlist it). Scripted, no model | `request_payment` held, `owner_pay` sent | on chain |
+| setup | The known merchant's first payment waits for one owner approval (only if the vault never paid it and the owner did not allowlist it). Scripted, no model | `request_payment` held (kind `unknown_payee` while the registry has no verdict on the merchant), `owner_pay` sent | on chain |
 | a | Clean invoice from `aid-demo-merchant.testnet` | guard ALLOW, `pay` sent, NEP-141 transfer proven by the token's own receipt | on chain |
 | b | Poisoned invoice; the model proposes `aid-demo-merchamt.testnet` | guard DENY (`lookalike_new_account`, computed from chain data), `record_refusal`, nothing moved | on chain |
-| c | A compromised agent skips the guard and calls `vault.pay` itself. Scripted, no model | held `UnknownPayee` (or refused `RegistryDeny`), no transfer; the oracle computes and writes DENY (TTL 30 days, its expiry printed); the retry is refused `RegistryDeny`; an owner approval of the held payment is refused `RegistryDeny` | on chain |
-| d | Invoice from `aid-demo-printshop.testnet`, a vendor nobody judged | guard WARN, held; the owner approves (the demo signs in place of the person); sent | on chain |
+| c | A compromised agent skips the guard and calls `vault.pay` itself. Scripted, no model | held `UnknownPayee`, kind `unknown_payee` (or refused `RegistryDeny`), no transfer; the oracle computes and writes DENY (TTL 30 days, its expiry printed); the retry is refused `RegistryDeny`; an owner approval of the held payment is refused `RegistryDeny` | on chain |
+| d | Invoice from `aid-demo-printshop.testnet`, a vendor nobody judged | guard WARN, `request_payment` held with kind `unknown_payee` (its reason is the guard's text, printed as the agent's words); the owner approves (the demo signs in place of the person); sent | on chain |
 | e | The agent's own key tries `set_registry(null)`, a 1 yocto deposit, `ft_transfer` on USDC, adding a full-access key, sending NEAR. Scripted, no model | each rejected by the protocol before execution: `MethodNameMismatch`, `DepositWithFunctionCall`, `ReceiverMismatch`, `RequiresFullAccess` (x2). Another rule firing first (for example `NotEnoughAllowance`) is a FAIL: nothing executed, but the attempt did not show its rule | NOT on chain: no transaction exists |
 | e | Split payments to the flagged lookalike, a payment above the per-payment ceiling | refused `RegistryDeny` (x3), refused `AboveAutoApprove` | on chain |
 
@@ -106,14 +106,23 @@ engine, read-only), and when the vendor was already paid, judged or allowlisted.
    `~/.near-credentials/testnet/aid-demo-owner.testnet/ed25519_8M2P...json`) out of
    `~/.near-credentials`. Look at a keychain file only with `jq -r .public_key <file>`, never by
    printing it.
-1. Contracts: the v1.1 vault (`hold_unknown` true, amendment A1) at `vault.aid-demo-owner.testnet`,
-   owned by `aid-demo-owner.testnet`, paying Circle testnet USDC
-   (`3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af`), reading
+1. Contracts: the 0.2.0 vault (`get_config().version` is `agent-spend-policy 0.2.0`; `hold_unknown`
+   true, amendment A1) at `vault.aid-demo-owner.testnet`, owned by `aid-demo-owner.testnet`, paying
+   Circle testnet USDC (`3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af`), reading
    `registry.a-identity.testnet`, with a per-payment ceiling (`auto_approve_max`, for the
-   over-ceiling attempt) and a daily cap. The vault keeps no full-access key.
+   over-ceiling attempt) and a daily cap. The vault keeps no full-access key. Deploy and `new` go in
+   one batch sent by the parent account (`aid-demo-owner.testnet`) or the vault account itself:
+   0.2.0 refuses any other caller of `new` (`InitNotAllowed`), and so does the registry for
+   `registry.a-identity.testnet` (parent `a-identity.testnet`). The preflight warns on any other
+   vault version (its holds would print without a kind) and stops on a contract that is not an
+   `agent-spend-policy` build.
 2. The agent key: created by the vault's `add_agent_key` (methods `pay, request_payment,
-   record_refusal`, receiver the vault, a gas allowance of at least 0.25 NEAR). Save it in the legacy
-   keychain layout as `~/.near-credentials/testnet/vault.aid-demo-owner.testnet/ed25519_<pk>.json`
+   record_refusal`, receiver the vault, a gas allowance of at least 0.25 NEAR: `pay` and
+   `request_payment` attach 73 Tgas, the vault's `AGENT_PREPAID_GAS`, which holds 0.073 NEAR of the
+   allowance per payment in flight). The demo signs every agent call itself, as the vault account:
+   0.2.0 refuses an agent call someone else relays (a NEP-366 delegate action) with `NotAgent`.
+   Save the key in the legacy keychain layout as
+   `~/.near-credentials/testnet/vault.aid-demo-owner.testnet/ed25519_<pk>.json`
    (`{"account_id","public_key","private_key"}`, mode 0600) or name the file in
    `AID_AGENT_KEY_FILE`. The demo checks on chain that this key is exactly that function-call key
    and refuses to run otherwise.
@@ -168,6 +177,11 @@ What a line reports:
   that hash exists on chain. These are never presented as on-chain refusals. A try that hit a stale
   nonce or block hash is signed again once, and the first try is kept under `retries`.
 - `prepared, not executed`: no key was loaded; the line is the exact call that would be sent.
+- A held payment prints its `kind`: what the vault itself saw when it held it (`registry_warn`,
+  `unknown_payee`, `agent_request`), recorded by vault 0.2.0 on the hold and its `payment_held`
+  event. The `reason` next to it is the vault's code for a held `pay`, but for a `request_payment`
+  it is the agent's own text (phase d prints it as such), which can read like a vault code. The
+  kind is the one to believe. A vault before 0.2.0 records none, and the line says so.
 - Paths in the committed records are relative to `near/` (snapshots) or start with `~/` (key files).
 - The JSON record names Circle's USDC contract id `usdc_contract` (also for the vault's
   `get_config` `token_id`): the repository's secret scan (gitleaks, default rules, over git history

@@ -10,7 +10,9 @@
  *
  * A read the chain answered is never mixed with one it did not: the whole snapshot fails when a
  * view the page needs is unreadable. The token and registry reads that only decorate it (the
- * token's name, the balance) degrade on their own and say so.
+ * token's name, the balance) degrade on their own and say so, and so do the two counter totals
+ * vault 0.2.0 added (guard_refusal_payees, refusal_payees): an earlier build has neither, which
+ * the page states rather than treating that vault as unreadable.
  *
  * Import-free apart from sibling files, so near.test.ts can load it through type stripping.
  */
@@ -33,6 +35,29 @@ import { u128 } from './units.ts'
 /** The vault's own bounds (lib.rs): MAX_PENDING_HELD and MAX_ALLOWLIST, so one page of each is all of it. */
 export const MAX_HELD = 20
 export const MAX_ALLOWLIST = 100
+/** MAX_GUARD_PAYEES and MAX_REFUSAL_PAYEES (lib.rs, 0.2.0 on): most payees with each kind of refusal counter. */
+export const MAX_GUARD_PAYEES = 100
+export const MAX_REFUSAL_PAYEES = 100
+
+/**
+ * How many payees hold a refusal counter (vault 0.2.0 on): `guard` counts the payees the agent
+ * recorded a refusal of (guard_refusal_payees), `registry` the payees a registry DENY was counted
+ * against (refusal_payees), each at most 100. `not-reported` is a build without these views,
+ * which also has no bound and no forget method; `unread` is a read that did not answer.
+ */
+export type CounterSlots = { state: 'read'; guard: number; registry: number } | { state: 'not-reported' } | { state: 'unread'; why: string }
+
+/** The two counter views' answers, as one statement. */
+export function counterSlotsOf(guard: ViewResult | null, registry: ViewResult | null): CounterSlots {
+  if (guard === null || registry === null) return { state: 'unread', why: 'no host answered' }
+  // A build before 0.2.0 has neither view: the chain answers MethodNotFound, which is a fact about the build.
+  if (!guard.ok) return guard.why === 'no-method' ? { state: 'not-reported' } : { state: 'unread', why: guard.detail }
+  if (!registry.ok) return registry.why === 'no-method' ? { state: 'not-reported' } : { state: 'unread', why: registry.detail }
+  const g = parseCount(guard.value)
+  const r = parseCount(registry.value)
+  if (g === null || r === null) return { state: 'unread', why: 'an answer that is not a count' }
+  return { state: 'read', guard: g, registry: r }
+}
 
 export type TokenFacts = {
   id: string
@@ -70,6 +95,8 @@ export type VaultSnapshot = {
   registeredOnToken: boolean | null
   /** Whether the registry the vault reads exists as a contract, null when it has none or it was not read. */
   registryLive: boolean | null
+  /** How many payees hold each kind of refusal counter, out of 100 (0.2.0 on). */
+  counters: CounterSlots
 }
 
 export type VaultRead =
@@ -127,13 +154,15 @@ export async function readNearVault(
   const allowList = allow.ok ? parseAccountList(allow.value) : null
   if (!allowList) return notVault(viewProblem('list_allowlist', allow))
 
-  // The decoration: the token and the registry. Each degrades on its own.
+  // The decoration: the token, the registry and the counter totals. Each degrades on its own.
   const tokenId = config.tokenId
-  const [meta, balance, storage, registry] = await Promise.all([
+  const [meta, balance, storage, registry, guardSlots, refusalSlots] = await Promise.all([
     viewCall(urls, tokenId, 'ft_metadata', {}, deps).catch(() => null),
     viewCall(urls, tokenId, 'ft_balance_of', { account_id: vaultId }, deps).catch(() => null),
     viewCall(urls, tokenId, 'storage_balance_of', { account_id: vaultId }, deps).catch(() => null),
     config.registryId ? viewAccount(urls, config.registryId, deps).catch(() => null) : Promise.resolve(null),
+    viewCall(urls, vaultId, 'guard_refusal_payees', {}, deps).catch(() => null),
+    viewCall(urls, vaultId, 'refusal_payees', {}, deps).catch(() => null),
   ])
   const m = meta?.ok && typeof meta.value === 'object' && meta.value !== null ? (meta.value as Record<string, unknown>) : null
   const documented = documentedUsdc !== null && tokenId === documentedUsdc.address
@@ -172,6 +201,7 @@ export async function readNearVault(
       balance: balance?.ok ? u128(balance.value) : null,
       registeredOnToken: storage?.ok ? storage.value !== null : null,
       registryLive: registry === null ? null : registry.exists ? registry.hasContract : false,
+      counters: counterSlotsOf(guardSlots, refusalSlots),
     },
   }
 }

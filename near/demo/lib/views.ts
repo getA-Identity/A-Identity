@@ -2,8 +2,13 @@
 // can replace them. JSON shapes follow the contracts (agent-spend-policy types.rs, registry
 // types.rs): every u64/u128 is a decimal string; per-payee counters are numbers.
 
+import { AGENT_METHODS, ORACLE_METHODS, type HoldKind } from '../../sdk/src/chain/abi.ts';
 import { ftBalance, RpcAnswerError, viewAccessKey, viewAccessKeyList, viewAccount, viewFunction } from './rpc.ts';
 import type { AccessKeyInfo, AccessKeyPermission, AccountView, RpcClient } from './rpc.ts';
+
+// The agent's and the oracle's method lists are the SDK's (sdk/src/chain/abi.ts, held to the
+// contract source by sdk/test/abi.test.ts); re-exported for the demo's checks below.
+export { AGENT_METHODS, ORACLE_METHODS };
 
 export type VaultConfigView = {
   owner_id: string;
@@ -14,6 +19,7 @@ export type VaultConfigView = {
   auto_approve_max: string;
   allowlist_enabled: boolean;
   token_storage_deposit: string;
+  /** "agent-spend-policy 0.2.0" for the build the demo is written against (sdk/src/chain/abi.ts VAULT_VERSION). */
   version: string;
   /** v1.1 (amendment A1). Absent on a vault that predates it, which pays unknown payees. */
   hold_unknown?: boolean;
@@ -26,9 +32,14 @@ export type HeldView = {
   payee: string;
   amount: string;
   memo: string | null;
+  /** The vault's code for a held pay (RegistryWarn, UnknownPayee), or the agent's own words for
+   * a request, which can read like either. What a hold means is `kind`, never this. */
   reason: string;
   created_at_s: string;
   expires_at_s: string;
+  /** What the vault itself saw when it held the payment (0.2.0 on): registry_warn, unknown_payee
+   * or agent_request. Absent on an earlier build. */
+  kind?: HoldKind;
 };
 
 export type RegistryVerdictView = {
@@ -126,9 +137,6 @@ export function chainViews(rpc: RpcClient): Views {
     },
   };
 }
-
-export const AGENT_METHODS = ['pay', 'request_payment', 'record_refusal'] as const;
-export const ORACLE_METHODS = ['set_verdict', 'set_verdicts', 'clear_verdict', 'clear_reports'] as const;
 
 /** The agent key must be exactly the vault-created function-call key: receiver = the vault and
  * the three agent methods, nothing else. */

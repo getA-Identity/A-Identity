@@ -8,11 +8,11 @@
  * deposit, so it cannot move USDC directly, transfer NEAR, add keys or deploy code.
  */
 import { KeyRound, FileCode2, ShieldAlert, ShieldCheck, SlidersHorizontal } from 'lucide-react'
-import { AGENT_METHODS } from '../../../lib/near/abi'
+import { AGENT_METHODS, vaultBuild } from '../../../lib/near/abi'
 import { nearAccountUrl } from '../../../lib/near/chain'
 import { shortKey } from '../../../lib/near/ids'
 import { keyExpired, relativeTime, utcText, type KeyRow } from '../../../lib/near/model'
-import type { VaultSnapshot } from '../../../lib/near/read'
+import { MAX_GUARD_PAYEES, MAX_REFUSAL_PAYEES, type VaultSnapshot } from '../../../lib/near/read'
 import { formatGrouped, formatNear } from '../../../lib/near/units'
 import { cn } from '../../../lib/utils'
 import { TONE_FRAME } from './styles'
@@ -129,6 +129,7 @@ function keyPermission(row: KeyRow, vaultId: string) {
 }
 
 export function KeysCard({ s, rows }: { s: VaultSnapshot; rows: KeyRow[] }) {
+  const build = vaultBuild(s.config.version)
   const full = rows.filter((r) => r.onChain?.permission.kind === 'full').length
   const paying = rows.filter((r) => r.canPay).length
   return (
@@ -154,7 +155,12 @@ export function KeysCard({ s, rows }: { s: VaultSnapshot; rows: KeyRow[] }) {
       <p className="mt-2 text-xs text-foreground/80">
         {paying === 0 ? 'No agent key can pay right now.' : `${paying} agent key${paying === 1 ? '' : 's'} can pay right now.`} An agent key may call only{' '}
         {AGENT_METHODS.join(', ')} on this vault, and a function-call key can never attach a deposit, so it cannot call the token's ft_transfer, move
-        NEAR, add keys or deploy code. The protocol enforces that, not this page.
+        NEAR, add keys or deploy code. The protocol enforces that, not this page.{' '}
+        {build === 'earlier'
+          ? 'Builds before 0.2.0, this one included, do not also check that the key signed the transaction itself; 0.2.0 refuses a call the key signed and someone else relayed.'
+          : build === 'unknown'
+            ? ''
+            : 'The vault also refuses a call the key signed and someone else relayed (a NEP-366 delegate action), so every agent call is paid from the key\'s own gas allowance.'}
       </p>
       {rows.length === 0 ? (
         <p className="mt-3 text-sm text-foreground/80">The account carries no access keys and the contract lists no agent keys.</p>
@@ -197,10 +203,42 @@ export function KeysCard({ s, rows }: { s: VaultSnapshot; rows: KeyRow[] }) {
 export function ContractCard({ s }: { s: VaultSnapshot }) {
   const storageYocto = BigInt(s.account.storageUsage) * YOCTO_PER_BYTE
   const free = s.account.amountYocto > storageYocto ? s.account.amountYocto - storageYocto : 0n
+  const build = vaultBuild(s.config.version)
+  const c = s.counters
   return (
     <Card title="The account behind it" icon={<FileCode2 size={14} />} aside={<Pill tone="muted">view_account, read live</Pill>}>
       <dl className="grid gap-3 sm:grid-cols-2">
-        <Fact label="Build">{s.config.version}</Fact>
+        <Fact label="Build">
+          <span className="flex flex-wrap items-center gap-2">
+            {s.config.version}
+            {build === 'current' ? (
+              <Pill tone="ok">The build this page reads in full</Pill>
+            ) : build === 'earlier' ? (
+              <Pill tone="warn">Earlier than 0.2.0</Pill>
+            ) : (
+              <Pill tone="muted">{build === 'newer' ? 'Newer than this page' : 'A version this page cannot read'}</Pill>
+            )}
+          </span>
+          {build === 'earlier' && (
+            <span className="mt-1 block text-xs text-foreground/80">
+              0.2.0 added what this build lacks: the vault's own kind on every hold (so its holds show as unclassified), a bound on refusal counters and a way to forget
+              them, the refusal of relayed agent calls, and a check on who may initialize it.
+            </span>
+          )}
+          {build === 'newer' && <span className="mt-1 block text-xs text-foreground/80">This page is written for agent-spend-policy 0.2.0 and shows the fields that build has.</span>}
+        </Fact>
+        <Fact label="Refusal counters in storage">
+          {c.state === 'read' ? (
+            <>
+              {c.guard} of {MAX_GUARD_PAYEES} payees with the agent's recorded refusals, {c.registry} of {MAX_REFUSAL_PAYEES} with registry refusals
+              <span className="block text-xs text-foreground/80">guard_refusal_payees and refusal_payees, read live. The owner controls free a slot.</span>
+            </>
+          ) : c.state === 'not-reported' ? (
+            <Pill tone="muted">Not reported by this build</Pill>
+          ) : (
+            <Pill tone="muted">Not read</Pill>
+          )}
+        </Fact>
         <Fact label="NEAR on the account">
           {formatNear(s.account.amountYocto)} NEAR
           <span className="block text-xs text-foreground/80">

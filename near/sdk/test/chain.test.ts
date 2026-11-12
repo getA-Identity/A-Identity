@@ -11,7 +11,7 @@ import { inspect } from "node:util";
 import { KeyPair } from "near-api-js";
 import { keyFromSecret, KeyError, loadKey } from "../src/chain/keys.ts";
 import { checkVerdictInput, REPORT_DEPOSIT, RegistryArgumentError, registryClient, verdictInputFromDecision } from "../src/chain/registry.ts";
-import { checkAmount, toUnits, truncateBytes, VAULT_GAS_TGAS, VaultArgumentError, vaultClient } from "../src/chain/vault.ts";
+import { checkAmount, checkForgetList, chunkPayees, toUnits, truncateBytes, VAULT_GAS_TGAS, VaultArgumentError, vaultClient } from "../src/chain/vault.ts";
 import { decide } from "../src/engine/rules.ts";
 import type { Decision } from "../src/engine/types.ts";
 import { baseSignals, noNetwork, stubReader } from "./helpers.ts";
@@ -105,6 +105,39 @@ describe("vault client, prepared", () => {
     }
     const f = await v.freeze();
     assert.ok(f.status === "prepared" && f.actions[0]!.params.deposit === "0");
+  });
+
+  it("the owner's forget calls: 1 yoctoNEAR, explicit gas, the payee list as given, duplicates dropped", async () => {
+    const g = await v.forgetGuardRefusals(["made-up-1.testnet", "made-up-2.testnet", "made-up-1.testnet"]);
+    assert.equal(g.status, "prepared");
+    if (g.status !== "prepared") return;
+    assert.equal(g.signer_id, "aid-demo-owner.testnet");
+    assert.deepEqual(g.actions, [
+      { type: "FunctionCall", params: { methodName: "forget_guard_refusals", args: { payees: ["made-up-1.testnet", "made-up-2.testnet"] }, gas: TGAS(VAULT_GAS_TGAS.forget_counters), deposit: "1" } },
+    ]);
+    const r = await v.forgetRefusals(["aid-demo-merchamt.testnet"]);
+    assert.ok(r.status === "prepared" && r.actions[0]!.params.methodName === "forget_refusals" && r.actions[0]!.params.deposit === "1");
+  });
+
+  it("a forget call names 1 to 50 valid payees; a longer list is split, never sent whole", () => {
+    const names = Array.from({ length: 101 }, (_, i) => `payee-${i}.testnet`);
+    assert.throws(() => checkForgetList([]), VaultArgumentError);
+    assert.throws(() => checkForgetList(["Not An Account"]), /not a NEAR account id/);
+    assert.throws(() => checkForgetList(names.slice(0, 51)), /BatchTooLarge/);
+    assert.throws(() => v.forgetRefusals(names), VaultArgumentError, "the client refuses before the vault would");
+    assert.equal(checkForgetList(names.slice(0, 50)).length, 50);
+    assert.deepEqual(chunkPayees(names).map((c) => c.length), [50, 50, 1]);
+    assert.deepEqual(chunkPayees(["a.testnet", "b.testnet", "a.testnet"], 1), [["a.testnet"], ["b.testnet"]]);
+    assert.throws(() => chunkPayees(names, 0), VaultArgumentError);
+  });
+
+  it("the counter totals are plain views", async () => {
+    const asked: string[] = [];
+    const reader = stubReader((_m, p) => (asked.push(String(p.method_name)), { result: [...new TextEncoder().encode("7")] }));
+    const vv = vaultClient({ vaultId: "vault.aid-demo-owner.testnet", reader });
+    assert.equal(await vv.guardRefusalPayees(), 7);
+    assert.equal(await vv.refusalPayees(), 7);
+    assert.deepEqual(asked, ["guard_refusal_payees", "refusal_payees"]);
   });
 
   it("validates amounts and text before anything is built", () => {

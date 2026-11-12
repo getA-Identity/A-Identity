@@ -257,6 +257,8 @@ test('tx_outcome (synthetic): ALLOW pays, DENY refuses with nothing moved, WARN 
       syntheticTxCalls(held),
     );
     assert.equal(result.status, 'PASS', result.detail);
+    // The evidence line shows what the vault saw, next to the reason it stored.
+    assert.match(result.detail, new RegExp(`payment_held\\{payee=aid-demo-rnerchant\\.testnet amount=1000000 reason=${reason} kind=${verdict === 'WARN' ? 'registry_warn' : 'unknown_payee'} held_id=3\\}`));
   }
 });
 
