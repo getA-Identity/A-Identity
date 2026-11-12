@@ -163,6 +163,17 @@ export function renderFrontendChains(): string {
       return d && d.ecosystem === 'evm' && d.contracts.usdc ? [[c.id, { address: d.contracts.usdc, decimals: d.usdcDecimals }]] : []
     }),
   )
+  // NEAR, for the browser's NEAR vault console. A NEAR token is documented rather than in
+  // contracts.usdc (nothing of ours settles in it), so CHAIN_USDC above cannot carry it, and
+  // the vault slot is copied as it stands: null until a deploy receipt fills it.
+  const near = Object.fromEntries(
+    chains.flatMap((c) => {
+      const d = descriptor.get(c.id)
+      if (!d || d.ecosystem !== 'near') return []
+      const tokens = (d.documentedTokens ?? []).map((t) => ({ symbol: t.symbol, name: t.name, address: t.address, decimals: t.decimals, issuer: t.issuer }))
+      return [[c.id, { vault: d.contracts.spendVaultExample ?? null, tokens }]]
+    }),
+  )
 
   return `${GENERATED_HEADER}
 /** Short slug of a chain in the registry. */
@@ -238,5 +249,17 @@ export const CHAIN_RPC_URLS: Record<ChainId, readonly string[]> = ${JSON.stringi
  * absent canonical USDC, never one to infer.
  */
 export const CHAIN_USDC: Partial<Record<ChainId, { address: string; decimals: number }>> = ${JSON.stringify(usdc, null, 2)}
+
+/**
+ * What the registry records on each NEAR chain, for the NEAR vault console (/app/vault/near).
+ * \`vault\` is the one spend vault the registry lists as deployed there (contracts.spendVaultExample),
+ * null until a deploy receipt fills it: a null is an absent deployment, never one to infer.
+ * \`tokens\` are the tokens an issuer documents there (documentedTokens). Documented is not
+ * settled: nothing of ours settles in them, and the console only uses them to name a token.
+ */
+export const CHAIN_NEAR: Partial<Record<ChainId, { vault: string | null; tokens: readonly NearDocumentedToken[] }>> = ${JSON.stringify(near, null, 2)}
+
+/** One token an issuer documents on a NEAR chain, as the registry lists it. */
+export type NearDocumentedToken = { symbol: string; name: string; address: string; decimals: number; issuer: string }
 `
 }

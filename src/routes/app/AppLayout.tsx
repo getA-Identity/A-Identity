@@ -70,6 +70,9 @@ const NAV_MORE = [
   // Public: reads any Arc vault with no session; deploy and owner actions are signed in the
   // owner's own wallet, never by us.
   { to: '/app/vault/arc', label: 'Arc vault', icon: Vault },
+  // Public, testnet only: reads any NEAR vault with no session; its owner signs in their own
+  // NEAR wallet, never with us.
+  { to: '/app/vault/near', label: 'NEAR vault', icon: Vault },
 ] as const
 
 /** Whether More was left open, per browser. */

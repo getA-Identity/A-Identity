@@ -82,6 +82,7 @@ test('the frontend RPC lists and USDC contracts are the registry descriptors, un
   const onDisk = readFileSync(frontendChainsPath, 'utf8')
   const rpc = jsonExport(onDisk, 'CHAIN_RPC_URLS')
   const usdc = jsonExport(onDisk, 'CHAIN_USDC')
+  const near = jsonExport(onDisk, 'CHAIN_NEAR')
   assert.deepEqual(Object.keys(rpc).sort(), CHAINS.map((c) => c.id).sort(), 'CHAIN_RPC_URLS must name every registry chain')
   for (const c of CHAINS) {
     assert.deepEqual(rpc[c.id], c.rpcUrls, `${c.id}: every registry RPC, primary first, and never the env override`)
@@ -89,6 +90,14 @@ test('the frontend RPC lists and USDC contracts are the registry descriptors, un
       assert.deepEqual(usdc[c.id], { address: c.contracts.usdc, decimals: c.usdcDecimals }, `${c.id}: USDC is the registry's`)
     } else {
       assert.equal(usdc[c.id], undefined, `${c.id} has no canonical EVM USDC, so the frontend must not carry one`)
+    }
+    // The NEAR console names a vault and a token from this alone, so a vault the registry does
+    // not record, or a token it does not document, must never appear in it.
+    if (c.ecosystem === 'near') {
+      const tokens = (c.documentedTokens ?? []).map((t) => ({ symbol: t.symbol, name: t.name, address: t.address, decimals: t.decimals, issuer: t.issuer }))
+      assert.deepEqual(near[c.id], { vault: c.contracts.spendVaultExample ?? null, tokens }, `${c.id}: the NEAR vault and tokens are the registry's`)
+    } else {
+      assert.equal(near[c.id], undefined, `${c.id} is not a NEAR chain, so the NEAR console must not carry it`)
     }
   }
 })

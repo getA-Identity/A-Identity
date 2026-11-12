@@ -67,6 +67,9 @@ const StellarVault = lazy(() => import('./routes/app/StellarVault'))
 // Public console screen: the Arc vault panel, also its own chunk, carrying the vault's ABI and
 // creation code (src/lib/contracts, generated) so no other route downloads them.
 const ArcVault = lazy(() => import('./routes/app/ArcVault'))
+// Public console screen: the NEAR testnet vault console. Its own chunk, and NEAR Connect is a
+// further dynamic import inside it, so no NEAR code reaches the landing page or the prerender.
+const NearVault = lazy(() => import('./routes/app/NearVault'))
 
 export default function App() {
   // Restore the session from the HttpOnly cookie once on load (the token isn't in
@@ -173,6 +176,11 @@ export default function App() {
             A-Identity signs nothing. It needs no session at any point. */}
         <Route path="/app/vault/arc" element={<AppLayout />}>
           <Route index element={<ArcVault />} />
+        </Route>
+        {/* The NEAR vault console, testnet only: public like the other two. Reads go straight to
+            the registry's NEAR RPCs; every owner call is signed in the owner's own NEAR wallet. */}
+        <Route path="/app/vault/near" element={<AppLayout />}>
+          <Route index element={<NearVault />} />
         </Route>
 
         <Route element={<ProtectedRoute />}>

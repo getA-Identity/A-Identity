@@ -1,0 +1,174 @@
+/**
+ * The NEAR Connect wallet list this console uses, pinned instead of fetched.
+ *
+ * By default NEAR Connect downloads its manifest from the main branch of hot-dao/near-selector
+ * on GitHub at page load and does not validate it, so a change or an outage there would change
+ * which wallets a judge sees mid-demo. This is a copy of that manifest (version 1.1.0, fetched
+ * 2026-11-12 and compared with the copy the research took that morning: identical), limited to
+ * the wallets that declare testnet support: Meteor, Intear, Nightly, Ledger and NEAR CLI.
+ * MyNearWallet and HOT do not support testnet there, so they are not offered.
+ *
+ * What pinning does NOT do: each wallet's executor is still a script loaded from the URL below
+ * when that wallet is chosen, and runs in NEAR Connect's sandboxed iframe. Pinning fixes the
+ * list and the URLs, not the scripts behind them.
+ */
+
+/** NEAR Connect's manifest entry, loosely typed: its own type disagrees with its own JSON (platform is an object). */
+export type PinnedWallet = {
+  id: string
+  name: string
+  description: string
+  website: string
+  version: string
+  executor: string
+  type: 'sandbox'
+  icon: string
+  platform: Record<string, string>
+  features: Record<string, boolean>
+  permissions: Record<string, unknown>
+}
+
+export const TESTNET_WALLETS: { version: string; wallets: PinnedWallet[] } = {
+  version: '1.1.0',
+  wallets: [
+    {
+      id: 'meteor-wallet',
+      name: 'Meteor Wallet',
+      description: 'The most simple and secure wallet to manage your crypto, access DeFi, and explore Web3',
+      website: 'https://meteorwallet.app/',
+      version: '1.1.1',
+      executor: 'https://raw.githubusercontent.com/Meteor-Wallet/meteor_wallet_sdk/data-storage/storage/meteor-near-connect-latest.js',
+      type: 'sandbox',
+      icon: 'https://raw.githubusercontent.com/Meteor-Wallet/meteor_wallet_sdk/main/assets/meteor-logo-svg.svg',
+      platform: {
+        web: 'https://wallet.meteorwallet.app',
+        chrome: 'https://chromewebstore.google.com/detail/meteor-wallet/pcndjhkinnkaohffealmlmhaepkpmgkb',
+        android: 'https://play.google.com/store/apps/details?id=app.meteorwallet.v2',
+        ios: 'https://apps.apple.com/us/app/meteor-wallet/id6739558223',
+      },
+      features: {
+        signMessage: true,
+        signInWithoutAddKey: true,
+        signInAndSignMessage: true,
+        signAndSendTransaction: true,
+        signAndSendTransactions: true,
+        signInWithFunctionCallKey: true,
+        signDelegateActions: true,
+        mainnet: true,
+        testnet: true,
+      },
+      permissions: {
+        storage: true,
+        allowsOpen: ['https://chromewebstore.google.com', 'https://wallet.meteorwallet.app', 'https://meteorwallet.app', 'meteorwallet://', 'meteorwalletdev://'],
+        external: ['meteorCom', 'meteorComV2'],
+      },
+    },
+    {
+      id: 'intear-wallet',
+      name: 'Intear Wallet',
+      description: 'A fast and secure wallet for everyday interactions with dapps',
+      website: 'https://intea.rs/',
+      version: '1.0.0',
+      executor: 'https://wallet.intear.tech/near-selector.js',
+      type: 'sandbox',
+      icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='49.152' height='49.152' viewBox='0 0 36.864 36.864' fill='%230079fb'><path d='M18.487 32.306c-4.599.067-8.487-3.315-9.181-7.846-.278-1.81.068-3.077.628-4.791 1.403-4.291 3.971-8.695 6.427-12.51l.949-1.478c.309-.484.487-1.03 1.115-1.125.512.052.64.423.897.807 2.484 3.706 8.36 13.272 8.334 17.704-.029 5.044-4.068 9.27-9.169 9.238zm-.063-25.712c-2.557 3.771-4.933 7.827-6.631 12.055-.838 2.086-1.485 3.738-1.052 5.983.693 3.599 3.997 6.409 7.684 6.303 4.346.06 7.767-3.49 7.827-7.766.042-2.97-3.226-9.081-4.764-11.757-.373-.65-2.709-4.575-3.064-4.818zM13.18 24.15c-.768.067-.771-.701-.769-1.27.004-1.585.41-2.564.69-3.114.179-.512.807-1.39 1.38-1.807.334-.208.836-.51 1.137-.21.362.547.163.6-.06.906a6.14 6.14 0 0 0-1.754 4.195c-.003.577.098 1.181-.625 1.299zm7.543 5.012c-.598-.034-.626-.334-.735-.811.143-.444.303-.695.753-.698 1.166-.664 2.362-1.655 2.564-3.328.194-.569.104-1.219.864-1.332.852 0 .743 1.326.622 1.885-.923 2.883-2.483 3.648-4.068 4.284z'/></svg>",
+      platform: { web: 'https://wallet.intear.tech' },
+      features: {
+        signMessage: true,
+        signTransaction: false,
+        signAndSendTransaction: true,
+        signAndSendTransactions: true,
+        signInWithoutAddKey: true,
+        verifyOwner: false,
+        testnet: true,
+        signDelegateActions: true,
+        signInAndSignMessage: true,
+        signInWithFunctionCallKey: true,
+      },
+      permissions: {
+        storage: true,
+        location: true,
+        allowsOpen: [
+          'https://wallet.intear.tech',
+          'https://staging.wallet.intear.tech',
+          'http://intearwallet.local',
+          'https://intearwallet.local',
+          'http://intearwallet.localhost:3000',
+          'intear://',
+          'https://logout-bridge-service.intear.tech',
+        ],
+      },
+    },
+    {
+      id: 'nightly-wallet',
+      name: 'Nightly Wallet',
+      description: 'Surf through the multichain Metaverse with Nightly',
+      website: 'https://nightly.app',
+      version: '1.0.0',
+      executor: 'https://raw.githubusercontent.com/hot-dao/near-selector/refs/heads/main/repository/nightly.js',
+      type: 'sandbox',
+      icon: 'https://storage.herewallet.app/upload/6947eb5c14c65a715fb49a08e5937dcecc994bf224b3869b9878bd7a7db068f9.webp',
+      platform: { chrome: 'https://chromewebstore.google.com/detail/nightly/fiikommddbeccaoicoejoniammnalkfa' },
+      permissions: {
+        storage: true,
+        external: ['nightly.near'],
+        allowsOpen: ['https://nightly.app', 'https://chromewebstore.google.com/detail/nightly/fiikommddbeccaoicoejoniammnalkfa'],
+      },
+      features: {
+        signMessage: true,
+        signInWithoutAddKey: true,
+        signInAndSignMessage: true,
+        signInWithFunctionCallKey: true,
+        signAndSendTransaction: true,
+        signAndSendTransactions: true,
+        testnet: true,
+      },
+    },
+    {
+      id: 'ledger',
+      name: 'Ledger',
+      description: 'Sign transactions using hardware Ledger devices',
+      website: 'https://ledger.com',
+      version: '1.0.0',
+      executor: 'https://raw.githubusercontent.com/near/near-connect-ledger/refs/heads/main/ledger-executor.js',
+      type: 'sandbox',
+      icon: 'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20768.91%20669.35%22%3E%3Cpath%20style%3D%22stroke%3A%23000%22%20d%3D%22M-2.876-2.76h774.662v674.871H-2.876z%22%2F%3E%3Cpath%20d%3D%22M150.057%20422.845v115.877h176.334v-25.698H175.749v-90.179zm443.103%200v90.179H442.519v25.692h176.334V422.845zM326.647%20246.504v176.334h115.872v-23.174H352.34v-153.16zm-176.59-115.877v115.877h25.692v-90.185h150.642v-25.692zm292.462%200v25.692H593.16v90.185h25.693V130.627z%22%20style%3D%22fill%3A%23fff%22%2F%3E%3C%2Fsvg%3E',
+      platform: {},
+      features: {
+        signMessage: true,
+        signInWithoutAddKey: true,
+        signInAndSignMessage: true,
+        signInWithFunctionCallKey: true,
+        signAndSendTransaction: true,
+        signAndSendTransactions: true,
+        signDelegateActions: true,
+        mainnet: true,
+        testnet: true,
+      },
+      permissions: { storage: true, usb: true, hid: true, bluetooth: true, keepAlive: true },
+    },
+    {
+      id: 'near-cli',
+      name: 'NEAR CLI',
+      description: 'Sign transactions using near-cli-rs in your terminal',
+      website: 'https://near.cli.rs',
+      version: '1.0.0',
+      executor: 'https://raw.githubusercontent.com/near/near-cli-connect/refs/heads/main/dist/near-cli.js',
+      type: 'sandbox',
+      icon: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%231a1a2e'/%3E%3Cpolyline points='18 40 28 30 18 20' fill='none' stroke='%2300d4aa' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cline x1='32' y1='42' x2='46' y2='42' stroke='%2300d4aa' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E",
+      platform: {},
+      features: {
+        signMessage: true,
+        signInWithoutAddKey: true,
+        signInAndSignMessage: true,
+        signAndSendTransaction: true,
+        signAndSendTransactions: true,
+        signDelegateActions: true,
+        signInWithFunctionCallKey: true,
+        mainnet: true,
+        testnet: true,
+      },
+      permissions: { storage: true, clipboardWrite: true },
+    },
+  ],
+}

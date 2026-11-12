@@ -11,6 +11,7 @@
     "mcp:build": "npm run build --prefix mcp",
     "mcp:http": "npm run build --prefix mcp && node mcp/dist/http.js",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
+    "test": "node --test \"src/**/*.test.ts\"",
     "build": "npm run check && tsc --noEmit && vite build && node scripts/apply-prerender.mjs",
     "preview": "vite preview",
     "smoke": "vite build && node scripts/smoke.mjs --serve",
@@ -30,6 +31,7 @@
   "dependencies": {
     "@blockshake/defly-connect": "^1.2.1",
     "@creit.tech/stellar-wallets-kit": "2.6.0",
+    "@hot-labs/near-connect": "0.12.0",
     "@perawallet/connect": "^1.6.1",
     "@radix-ui/react-accordion": "^1.2.16",
     "@radix-ui/react-dropdown-menu": "^2.1.24",
@@ -68,6 +70,7 @@
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.63.0",
+    "util": "0.12.5",
     "vite": "^6.0.0"
   },
   "overrides": {

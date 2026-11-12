@@ -181,6 +181,9 @@ export type TrackedEvent =
   | 'arc_vault_read'
   | 'arc_vault_deploy'
   | 'arc_vault_owner_action'
+  // The NEAR vault page (testnet): outcome and contract method only, never an account id.
+  | 'near_vault_read'
+  | 'near_vault_owner_action'
 
 /**
  * Record something a visitor did.

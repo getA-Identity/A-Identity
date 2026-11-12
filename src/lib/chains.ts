@@ -807,3 +807,28 @@ export const CHAIN_USDC: Partial<Record<ChainId, { address: string; decimals: nu
     "decimals": 6
   }
 }
+
+/**
+ * What the registry records on each NEAR chain, for the NEAR vault console (/app/vault/near).
+ * `vault` is the one spend vault the registry lists as deployed there (contracts.spendVaultExample),
+ * null until a deploy receipt fills it: a null is an absent deployment, never one to infer.
+ * `tokens` are the tokens an issuer documents there (documentedTokens). Documented is not
+ * settled: nothing of ours settles in them, and the console only uses them to name a token.
+ */
+export const CHAIN_NEAR: Partial<Record<ChainId, { vault: string | null; tokens: readonly NearDocumentedToken[] }>> = {
+  "near-testnet": {
+    "vault": null,
+    "tokens": [
+      {
+        "symbol": "USDC",
+        "name": "USDC",
+        "address": "3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af",
+        "decimals": 6,
+        "issuer": "Circle"
+      }
+    ]
+  }
+}
+
+/** One token an issuer documents on a NEAR chain, as the registry lists it. */
+export type NearDocumentedToken = { symbol: string; name: string; address: string; decimals: number; issuer: string }

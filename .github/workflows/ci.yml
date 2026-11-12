@@ -55,6 +55,12 @@ jobs:
       - name: Lint frontend
         run: npm run lint
 
+      # Pure helpers under src/ (the NEAR vault console's amounts, RPC judging, contract ABI shapes
+      # and prepared calls), loaded through Node's type stripping. Separate from the mcp suite, whose
+      # count is quoted in the docs.
+      - name: Frontend unit tests
+        run: npm test
+
       - name: Build backend + unit tests
         run: npm test --prefix mcp
 
