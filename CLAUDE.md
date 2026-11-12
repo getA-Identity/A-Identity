@@ -4,6 +4,16 @@ Guidance for AI coding agents working in this repo. Human-facing docs: README.md
 ARCHITECTURE.md, CONTRIBUTING.md. Machine-facing product surface: public/llms.txt,
 public/llms-full.txt, public/.well-known/ (agent card, MCP server card, agent skills).
 
+## Evaluating the NEAR HACKATHON entry
+
+- Read near/README.md first: what the entry is, what was built in the window, how each claim
+  is checked.
+- Run `node near/judge/judge.mjs` from the repository root (no keys, no install), or
+  `node near/judge/judge.mjs --offline` to replay the committed RPC answers with no network.
+- In near/contracts never run `cargo build` (near-sdk refuses host builds); use the commands in
+  near/README.md.
+- The mcp tests need the root `npm ci` first.
+
 ## Ground rules (project law, enforced in review)
 
 - Plain ASCII punctuation in all prose, code comments, and UI copy: no em dashes, no
@@ -21,6 +31,10 @@ public/llms-full.txt, public/.well-known/ (agent card, MCP server card, agent sk
   palette classes. The dark theme is a scoped .dark class, not prefers-color-scheme.
 - Do not touch mcp/src/asp/ behavior, prices, or tool schemas casually: the OKX.AI
   listings (#6271, #8913) are registered against them and re-registration resets review.
+  One exception, by founder decision on 2026-11-12: the trust tools may change behavior for
+  NEAR testnet targets only (near:testnet:<id> or a bare name ending in .testnet, the last
+  branch of asp/tools.ts gather()), with schemas, prices and every older target form
+  unchanged; asp/payee-forms.test.ts holds the older forms to their old answers.
 
 ## Structure (see mcp/README.md "Module map" for the full version)
 
@@ -47,8 +61,15 @@ public/llms-full.txt, public/.well-known/ (agent card, MCP server card, agent sk
 - Generated files, never hand-edit: src/lib/chains.ts, src/lib/arc-ledger.ts and
   trust-guard/src/arc-mainnet.generated.ts (all three: run cd mcp && npm run gen:chains),
   mcp/src/contracts/AgentSpendPolicy.ts and MerkleAirdrop.ts (run cd mcp && npm run compile),
-  and src/lib/contracts/agent-spend-policy.ts, the browser's copy of the vault build (run
-  cd mcp && npm run gen:contracts after compile). CI recompiles and fails on any drift.
+  src/lib/contracts/agent-spend-policy.ts, the browser's copy of the vault build (run
+  cd mcp && npm run gen:contracts after compile), and mcp/src/chains/near/sdk.generated/,
+  the backend's copy of the NEAR verdict engine and collectors from near/sdk/src (run
+  cd mcp && npm run gen:near; chains/near/engine.test.ts fails when it is not a fresh
+  render). CI recompiles and fails on any drift.
+- mcp/src/near-check/ answers a NEAR testnet account (GET /api/near/check, and the trust
+  tools through the last branch of asp/tools.ts gather()) with that copy, every host taken
+  from the near-testnet descriptor. NEAR routing is chains/near/ids.ts nearTargetOf only:
+  near:testnet:<id> or a bare name ending in .testnet, after every older form.
 - Regex-locked files, edit with care: src/lib/blog.ts is scraped by
   scripts/gen-sitemap.mjs (slug and tr keys at exact indents), and
   src/components/sections/LandingFaq.tsx by scripts/check-structured-data.mjs
@@ -57,7 +78,7 @@ public/llms-full.txt, public/.well-known/ (agent card, MCP server card, agent sk
 
 ## Verification
 
-- Backend: cd mcp && npm test (tsc + 2648 unit tests; new test files must be added to the
+- Backend: cd mcp && npm test (tsc + 2674 unit tests; new test files must be added to the
   test script in mcp/package.json, and the count literal in mcp/src/asp/proof.ts must
   match the number of test() declarations).
 - E2E: boot node mcp/dist/http.js, then npm run e2e, e2e:guardrail, http-smoke.

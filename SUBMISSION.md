@@ -1,3 +1,5 @@
+> NEAR HACKATHON 2026 readers: this file is not that entry. A-Identity Guard for NEAR is described in [near/README.md](near/README.md).
+
 # A-Identity: Stellar Pro Hackathon 2026, Scale Track
 
 > This file is the Stellar Pro Hackathon deliverable. The Arbitrum Open House Singapore entry is

@@ -1,7 +1,7 @@
 # A-Identity
 
 [![CI](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-2648%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
+[![Tests](https://img.shields.io/badge/tests-2674%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
 [![npm: marketplace-sdk](https://img.shields.io/npm/v/%40a-identity%2Fmarketplace-sdk?label=marketplace-sdk)](https://www.npmjs.com/package/@a-identity/marketplace-sdk)
 [![npm: trust-guard](https://img.shields.io/npm/v/%40a-identity%2Ftrust-guard?label=trust-guard)](https://www.npmjs.com/package/@a-identity/trust-guard)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/getA-Identity/A-Identity)
@@ -9,11 +9,14 @@
 
 **[Live demo](https://a-identity.xyz)** | **[Docs](https://a-identity.mintlify.site)** | **[Architecture](ARCHITECTURE.md)** | **[Roadmap](ROADMAP.md)**
 
-> **Arbitrum Open House Singapore entry.** Before an agent pays on Robinhood Chain or
-> Arbitrum One: is that USDG real, and who gets paid? Try
-> [a-identity.xyz/check/robinhood](https://a-identity.xyz/check/robinhood). What was built
-> during the Buildathon, what existed before, and how to verify both:
-> [docs/arbitrum-open-house.md](docs/arbitrum-open-house.md).
+> **NEAR HACKATHON 2026 entry: A-Identity Guard for NEAR** (tracks: security, agents, open). An AI
+> agent's spend vault on NEAR testnet whose only key is a function-call key; before any USDC moves
+> it reads A-Identity's risk registry on chain, refuses a flagged payee and holds a payee nobody has
+> judged until the owner approves it or A-Identity's oracle judges it. Only the NEAR integration
+> built in the window is submitted; A-Identity predates 2026-10-19 and is baseline (rule Q-002).
+> Start at [near/README.md](near/README.md#evaluate-in-2-minutes); check its claims with no keys:
+> `node near/judge/judge.mjs` (or `--offline`); the diff:
+> [pre-hackathon...hackathon-submission](https://github.com/getA-Identity/A-Identity/compare/pre-hackathon...hackathon-submission).
 
 ![A seven screen tour captured from the live site: the landing, why the problem is now, the three enforcement layers, our own registered agents with their network badges, the Trust Explorer resolving agent #849980 on Arc with its KYA attestation and deterministic score, the network stats page, and the Stellar provenance ledger.](docs/images/product-tour.gif)
 
@@ -23,7 +26,8 @@
 | --- | --- |
 | **An agent operator** | [a-identity.xyz/intro](https://a-identity.xyz/intro) - claim an Agent ID, verify with KYA, set spend limits. MCP: `claude mcp add a-identity --transport http https://a-identity.xyz/mcp` |
 | **A service builder** | [Docs quickstart](https://a-identity.mintlify.site) + `npm i @a-identity/marketplace-sdk` - register, get hired, settle in USDC |
-| **A judge (60 seconds)** | [Sign in as guest](https://a-identity.xyz/login) (read-only, no keys) then [jump to judge mode](#try-it-in-60-seconds-judge-mode) - live contracts, real transactions |
+| **A NEAR HACKATHON 2026 judge** | [near/README.md](near/README.md#evaluate-in-2-minutes) - `node near/judge/judge.mjs --offline` checks the entry's claims with no keys and no install |
+| **Trying the live product (60 seconds)** | [Sign in as guest](https://a-identity.xyz/login) (read-only, no keys) then [jump to judge mode](#try-it-in-60-seconds-judge-mode) - live contracts, real transactions |
 
 **The passport and wallet for the agentic economy.** Give every AI agent a
 verified on-chain identity and a wallet it can pay from. Verify first, then pay,
@@ -62,11 +66,13 @@ per-request payments.
 One product, one live engine. The hackathons below are past entries, not awards: none of
 them won a prize.
 
-- **Arbitrum Open House Singapore Online Buildathon** (latest entry; the buildathon ran Sep 14 - Oct 4, 2026) -
+- **Arbitrum Open House Singapore Online Buildathon** (past entry; the buildathon ran Sep 14 - Oct 4, 2026) -
   the Robinhood Chain and Arbitrum One pay check, fixes to our own x402 rail found by
   reviewing it ourselves, and the mainnet vaults' keys renewed and split from the owner key.
+  Before an agent pays on Robinhood Chain or Arbitrum One: is that USDG real, and who gets
+  paid? Try [a-identity.xyz/check/robinhood](https://a-identity.xyz/check/robinhood).
   [docs/arbitrum-open-house.md](docs/arbitrum-open-house.md) separates that work from what
-  existed before.
+  existed before, and says how to verify both.
 - **Encode x Arc "Programmable Money" hackathon** (past entry) - submitted Aug 9, 2026,
   Demo Day Aug 20. The trusted agent marketplace, the on-chain policy vault, and the
   ERC-8183 escrow work in this repo were the submission.
@@ -252,7 +258,7 @@ paid by our own buyer wallet during the demo and seeding runs, and all listed at
 `#849980`, KYA-verified, with a reputation earned from **3 real settlements**. The score
 itself is recency-weighted and decays as those settlements age, so it is read live rather
 than quoted here. Scoring is **deterministic and
-unit-tested** (2648 unit tests as of Nov 2026), reads on-chain live via viem, and is fully documented at
+unit-tested** (2674 unit tests as of Nov 2026), reads on-chain live via viem, and is fully documented at
 `GET /methodology`. This is our answer to "surface your rigor": every number is
 reproducible and every settlement is on-chain.
 
