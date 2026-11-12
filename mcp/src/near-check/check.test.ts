@@ -28,7 +28,7 @@ type Recorded = {
 const chain = getChainById('near-testnet')!
 const USDC = chain.documentedTokens!.find((t) => t.symbol === 'USDC')!.address
 const REGISTRY = SDK_NETWORKS.testnet.registry!
-const VAULT = 'vault.aid-demo-owner.testnet'
+const VAULT = 'vault.example-owner.testnet'
 const HEAD = 277_300_000
 const clock = () => new Date('2026-11-12T00:00:00.000Z')
 const noSleep = async () => {}

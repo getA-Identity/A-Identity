@@ -79,7 +79,7 @@ test('GET /api/near/check answers the demo merchant with the SDK\'s own verdict 
 
 test('a .testnet name nobody registered is 200 DENY account_not_found, and a vault is read when one is named', async () => {
   __resetNearCheckForTests()
-  const vault = 'vault.aid-demo-owner.testnet'
+  const vault = 'vault.example-owner.testnet'
   const fake = fakeNearTestnet({
     head: 277_300_000,
     accounts: {},

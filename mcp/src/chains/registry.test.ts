@@ -471,8 +471,8 @@ test('NEAR Testnet carries the values read live on 2026-11-12, and claims nothin
   assert.equal(near.signerEnvVar, undefined)
   // The only NEAR descriptor, deliberately: there is no mainnet twin, planned or otherwise.
   assert.deepEqual(CHAINS.filter((c) => c.ecosystem === 'near').map((c) => c.id), ['near-testnet'])
-  // Nothing of ours is deployed there yet, so nothing is claimed, and no rail sells.
-  assert.deepEqual(near.contracts, {})
+  // Only the vault the deploy receipt names is claimed, and no rail sells.
+  assert.deepEqual(near.contracts, { spendVaultExample: 'vault.aid-demo-owner.testnet' })
   assert.equal(near.settlementTokens, undefined)
   assert.equal(near.payment.x402, false)
   assert.equal(near.identity.erc8004Native, false)

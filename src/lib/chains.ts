@@ -817,7 +817,7 @@ export const CHAIN_USDC: Partial<Record<ChainId, { address: string; decimals: nu
  */
 export const CHAIN_NEAR: Partial<Record<ChainId, { vault: string | null; tokens: readonly NearDocumentedToken[] }>> = {
   "near-testnet": {
-    "vault": null,
+    "vault": "vault.aid-demo-owner.testnet",
     "tokens": [
       {
         "symbol": "USDC",

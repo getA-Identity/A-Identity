@@ -1202,10 +1202,11 @@ export const CHAINS: ChainDescriptor[] = [
     explorer: 'https://testnet.nearblocks.io',
     // The testnet faucet docs.near.org names (getting-started/faucet, read 2026-11-12).
     faucet: 'https://near-faucet.io',
-    // Empty on purpose. The vault and risk-registry accounts are not deployed: view_account on
-    // registry.a-identity.testnet answered UNKNOWN_ACCOUNT on 2026-11-12. Filled from deploy
-    // receipts, never before.
-    contracts: {},
+    // Filled from the deploy receipt, never before. vault.aid-demo-owner.testnet was created,
+    // deployed and initialized in one batch on 2026-11-12 (tx 9b7Zna2t2jaVso4WqSpxM6HYcVGMjAMX7FPzcpb8dMJ,
+    // block 277402011, code_hash 4FKHJrJm1iyphfbCcAaxGGdhS5vUEjH5BpnZScNjFgny), with no access key
+    // added; near/deployments/testnet.json and near/evidence/ hold the record the judge checks.
+    contracts: { spendVaultExample: 'vault.aid-demo-owner.testnet' },
     // A read at `final` finality cannot be reverted on NEAR, so one is enough.
     confirmations: 1,
     stablecoins: ['USDC'],
