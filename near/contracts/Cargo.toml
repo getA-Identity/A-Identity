@@ -1,0 +1,37 @@
+[workspace]
+resolver = "3"
+members = ["agent-spend-policy", "a-identity-registry", "mock-ft", "sandbox-tests"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+publish = false
+# NEP-330: cargo-near embeds this link, so `contract_source_metadata` on the deployed
+# account points a reader at the source it was built from.
+repository = "https://github.com/getA-Identity/A-Identity"
+
+[workspace.dependencies]
+# Pinned EXACTLY, as in soroban/Cargo.toml. These are the versions `cargo near new`
+# (cargo-near 0.23.0) generated on 2026-11-12, checked against crates.io the same day.
+near-sdk = "=5.30.1"
+near-contract-standards = "=5.30.1"
+near-sandbox = "=0.4.0"
+near-api = "=0.8.7"
+cargo-near-build = "=0.11.5"
+tokio = { version = "1.12.0", features = ["full"] }
+testresult = "0.4.1"
+
+[workspace.lints.rust.unexpected_cfgs]
+level = "warn"
+check-cfg = ['cfg(near)']
+
+[profile.release]
+codegen-units = 1
+opt-level = "z"
+lto = true
+debug = false
+panic = "abort"
+# A wrapped integer in a spend accumulator is a cap bypass. The policy code still uses
+# checked arithmetic explicitly, because a profile flag is something a later edit can lose.
+overflow-checks = true

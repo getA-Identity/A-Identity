@@ -1,0 +1,7 @@
+node_modules/
+# Keys never live in this tree. Scripts read them from ~/.near-credentials (0600) or env.
+.env
+.env.*
+*.key
+*.secret.json
+judge-report.json

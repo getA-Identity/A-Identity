@@ -1,0 +1,6 @@
+[toolchain]
+# The channel `cargo near new` pins in cargo-near 0.23.0 (2026-11-05). A wasm built with it
+# deployed to the near-sandbox shipped with near-sandbox 0.4.0 on 2026-11-12.
+channel = "1.95.0"
+targets = ["wasm32-unknown-unknown"]
+components = ["rustfmt", "clippy"]
