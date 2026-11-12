@@ -1,0 +1,295 @@
+{
+ "_note": "Recorded live (read-only) on 2026-11-12 for aid-demo-merchant.testnet on testnet; the clock was fixed so fetched_at is stable. Replayed by sdk/test/collect.test.ts.",
+ "options": {
+  "account": "aid-demo-merchant.testnet",
+  "network": "testnet",
+  "known": [],
+  "vault": null
+ },
+ "expected": {
+  "verdict": "WARN",
+  "score": 440,
+  "codes": [
+   "new_account",
+   "low_activity",
+   "usdc_unregistered",
+   "registry_not_deployed"
+  ],
+  "snapshot_sha256": "703363dbb095555eadaf30923cff91bdb47a495c8085ed936056658cf409f7ee",
+  "chain_sha256": "9c11e5a1655bb5b17e9abf598339e0e670cec9f8afe42a9348ab3156def92bd7",
+  "block": {
+   "height": 277301533,
+   "hash": "3njYgfKFhgdwfsaH3TXLaUsbko8zaZF1T5c5bwj9MtnH",
+   "timestamp_ns": "1794450800626333564"
+  }
+ },
+ "exchanges": [
+  {
+   "url": "https://rpc.testnet.fastnear.com",
+   "method": "POST",
+   "body": {
+    "jsonrpc": "2.0",
+    "method": "block",
+    "params": {
+     "finality": "final"
+    }
+   },
+   "status": 200,
+   "text": "{\"jsonrpc\":\"2.0\",\"result\":{\"header\":{\"height\":277301533,\"hash\":\"3njYgfKFhgdwfsaH3TXLaUsbko8zaZF1T5c5bwj9MtnH\",\"prev_hash\":\"6RHVRvtpvSwHGNKndFh9QxmZyP21xvPF5mvtRjuaHKZz\",\"timestamp_nanosec\":\"1794450800626333564\"}},\"id\":\"1\"}"
+  },
+  {
+   "url": "https://rpc.testnet.fastnear.com",
+   "method": "POST",
+   "body": {
+    "jsonrpc": "2.0",
+    "method": "block",
+    "params": {
+     "block_id": 277301533
+    }
+   },
+   "status": 200,
+   "text": "{\"jsonrpc\":\"2.0\",\"result\":{\"header\":{\"height\":277301533,\"hash\":\"3njYgfKFhgdwfsaH3TXLaUsbko8zaZF1T5c5bwj9MtnH\",\"prev_hash\":\"6RHVRvtpvSwHGNKndFh9QxmZyP21xvPF5mvtRjuaHKZz\",\"timestamp_nanosec\":\"1794450800626333564\"}},\"id\":\"2\"}"
+  },
+  {
+   "url": "https://rpc.testnet.fastnear.com",
+   "method": "POST",
+   "body": {
+    "jsonrpc": "2.0",
+    "method": "query",
+    "params": {
+     "request_type": "view_account",
+     "account_id": "aid-demo-merchant.testnet",
+     "block_id": 277301533
+    }
+   },
+   "status": 200,
+   "text": "{\"jsonrpc\":\"2.0\",\"result\":{\"amount\":\"10000000000000000000000000\",\"block_hash\":\"3njYgfKFhgdwfsaH3TXLaUsbko8zaZF1T5c5bwj9MtnH\",\"block_height\":277301533,\"code_hash\":\"11111111111111111111111111111111\",\"locked\":\"0\",\"storage_paid_at\":0,\"storage_usage\":182},\"id\":\"3\"}"
+  },
+  {
+   "url": "https://rpc.testnet.fastnear.com",
+   "method": "POST",
+   "body": {
+    "jsonrpc": "2.0",
+    "method": "query",
+    "params": {
+     "request_type": "view_access_key_list",
+     "account_id": "aid-demo-merchant.testnet",
+     "block_id": 277301533,
+     "limit": 100
+    }
+   },
+   "status": 200,
+   "text": "{\"jsonrpc\":\"2.0\",\"result\":{\"block_hash\":\"3njYgfKFhgdwfsaH3TXLaUsbko8zaZF1T5c5bwj9MtnH\",\"block_height\":277301533,\"keys\":[{\"access_key\":{\"nonce\":277284583000000,\"permission\":\"FullAccess\"},\"public_key\":\"ed25519:GUKr6fE8euCKTg6oHM6wcRyMEyUZjP48BWRVCt8mLKKX\"}]},\"id\":\"5\"}"
+  },
+  {
+   "url": "https://archival-rpc.testnet.fastnear.com",
+   "method": "POST",
+   "body": {
+    "jsonrpc": "2.0",
+    "method": "block",
+    "params": {
+     "block_id": 276869033
+    }
+   },
+   "status": 200,
+   "text": "{\"jsonrpc\":\"2.0\",\"result\":{\"header\":{\"height\":276869033,\"hash\":\"Cxmdmz9HpCbd5Gh71L9XzN9zNb3LyxLff4ChB9yHBVS\",\"prev_hash\":\"JBiuda9tuXzfdvnESZfWcTYHcsCqeAX5g1BwTDMFziyV\",\"timestamp_nanosec\":\"1794196727665764946\"}},\"id\":\"4\"}"
+  },
+  {
+   "url": "https://rpc.testnet.fastnear.com",
+   "method": "POST",
+   "body": {
+    "jsonrpc": "2.0",
+    "method": "query",
+    "params": {
+     "request_type": "call_function",
+     "account_id": "registry.mimicwatch-e7iig5g5.testnet",
+     "method_name": "is_flagged",
+     "args_base64": "eyJpZCI6ImFpZC1kZW1vLW1lcmNoYW50LnRlc3RuZXQifQ==",
+     "block_id": 277301533
+    }
+   },
+   "status": 200,
+   "text": "{\"jsonrpc\":\"2.0\",\"result\":{\"block_hash\":\"3njYgfKFhgdwfsaH3TXLaUsbko8zaZF1T5c5bwj9MtnH\",\"block_height\":277301533,\"logs\":[],\"result\":[123,34,113,117,101,114,121,34,58,34,97,105,100,45,100,101,109,111,45,109,101,114,99,104,97,110,116,46,116,101,115,116,110,101,116,34,44,34,102,108,97,103,103,101,100,34,58,102,97,108,115,101,44,34,118,105,97,34,58,110,117,108,108,44,34,101,110,116,114,121,34,58,110,117,108,108,44,34,99,108,101,97,114,101,100,34,58,110,117,108,108,125]},\"id\":\"6\"}"
+  },
+  {
+   "url": "https://rpc.testnet.fastnear.com",
+   "method": "POST",
+   "body": {
+    "jsonrpc": "2.0",
+    "method": "query",
+    "params": {
+     "request_type": "call_function",
+     "account_id": "3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af",
+     "method_name": "is_blocklisted",
+     "args_base64": "eyJhY2NvdW50X2lkIjoiYWlkLWRlbW8tbWVyY2hhbnQudGVzdG5ldCJ9",
+     "block_id": 277301533
+    }
+   },
+   "status": 200,
+   "text": "{\"jsonrpc\":\"2.0\",\"result\":{\"block_hash\":\"3njYgfKFhgdwfsaH3TXLaUsbko8zaZF1T5c5bwj9MtnH\",\"block_height\":277301533,\"logs\":[],\"result\":[102,97,108,115,101]},\"id\":\"7\"}"
+  },
+  {
+   "url": "https://archival-rpc.testnet.fastnear.com",
+   "method": "POST",
+   "body": {
+    "jsonrpc": "2.0",
+    "method": "block",
+    "params": {
+     "block_id": 276859795
+    }
+   },
+   "status": 200,
+   "text": "{\"jsonrpc\":\"2.0\",\"result\":{\"header\":{\"height\":276859795,\"hash\":\"2qLfbBA3gySJXmLupTrdYCY68Av551Bo6yzR6m8XHxvU\",\"prev_hash\":\"3Q8AUNN68n8QU4pnGr1wNmpJUgAiewoDFB4eU66JpB2U\",\"timestamp_nanosec\":\"1794191036550776394\"}},\"id\":\"8\"}"
+  },
+  {
+   "url": "https://tx.test.fastnear.com/v0/account",
+   "method": "POST",
+   "body": {
+    "account_id": "aid-demo-merchant.testnet",
+    "limit": 5,
+    "desc": false
+   },
+   "status": 200,
+   "text": "{\"account_txs\":[{\"account_id\":\"aid-demo-merchant.testnet\",\"transaction_hash\":\"6hLmScagYWWitdoYbbn8sHsoH9KyoJU3yW9v3vDuEHaC\",\"tx_block_height\":277284583,\"tx_block_timestamp\":\"1794440817913926032\",\"tx_index\":0,\"is_signer\":false,\"is_delegated_signer\":false,\"is_real_signer\":false,\"is_any_signer\":false,\"is_predecessor\":false,\"is_explicit_refund_to\":false,\"is_receiver\":true,\"is_real_receiver\":true,\"is_function_call\":false,\"is_action_arg\":false,\"is_event_log\":false,\"is_success\":true}],\"txs_count\":1}"
+  },
+  {
+   "url": "https://rpc.testnet.fastnear.com",
+   "method": "POST",
+   "body": {
+    "jsonrpc": "2.0",
+    "method": "query",
+    "params": {
+     "request_type": "call_function",
+     "account_id": "tripwire-registry-44ea74.testnet",
+     "method_name": "get_risk",
+     "args_base64": "eyJhY2NvdW50X2lkIjoiYWlkLWRlbW8tbWVyY2hhbnQudGVzdG5ldCJ9",
+     "block_id": 277301533
+    }
+   },
+   "status": 200,
+   "text": "{\"jsonrpc\":\"2.0\",\"result\":{\"block_hash\":\"3njYgfKFhgdwfsaH3TXLaUsbko8zaZF1T5c5bwj9MtnH\",\"block_height\":277301533,\"logs\":[],\"result\":[123,34,97,99,99,111,117,110,116,95,105,100,34,58,34,97,105,100,45,100,101,109,111,45,109,101,114,99,104,97,110,116,46,116,101,115,116,110,101,116,34,44,34,115,99,111,114,101,34,58,48,44,34,108,101,118,101,108,34,58,34,110,111,110,101,34,44,34,102,108,97,103,115,34,58,91,93,125]},\"id\":\"9\"}"
+  },
+  {
+   "url": "https://tx.test.fastnear.com/v0/account",
+   "method": "POST",
+   "body": {
+    "account_id": "aid-demo-merchant.testnet",
+    "limit": 1,
+    "desc": true
+   },
+   "status": 429,
+   "text": "{\"error\": {\"code\": -429, \"message\": \"Rate limits exceeded. For higher rate limits get a subscription at https://fastnear.com\"}}"
+  },
+  {
+   "url": "https://rpc.testnet.fastnear.com",
+   "method": "POST",
+   "body": {
+    "jsonrpc": "2.0",
+    "method": "query",
+    "params": {
+     "request_type": "call_function",
+     "account_id": "3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af",
+     "method_name": "storage_balance_of",
+     "args_base64": "eyJhY2NvdW50X2lkIjoiYWlkLWRlbW8tbWVyY2hhbnQudGVzdG5ldCJ9",
+     "block_id": 277301533
+    }
+   },
+   "status": 200,
+   "text": "{\"jsonrpc\":\"2.0\",\"result\":{\"block_hash\":\"3njYgfKFhgdwfsaH3TXLaUsbko8zaZF1T5c5bwj9MtnH\",\"block_height\":277301533,\"logs\":[],\"result\":[110,117,108,108]},\"id\":\"10\"}"
+  },
+  {
+   "url": "https://archival-rpc.testnet.fastnear.com",
+   "method": "POST",
+   "body": {
+    "jsonrpc": "2.0",
+    "method": "query",
+    "params": {
+     "request_type": "view_account",
+     "account_id": "aid-demo-merchant.testnet",
+     "block_id": 276859795
+    }
+   },
+   "status": 200,
+   "text": "{\"jsonrpc\":\"2.0\",\"error\":{\"name\":\"HANDLER_ERROR\",\"cause\":{\"info\":{\"block_hash\":\"2qLfbBA3gySJXmLupTrdYCY68Av551Bo6yzR6m8XHxvU\",\"block_height\":276859795,\"requested_account_id\":\"aid-demo-merchant.testnet\"},\"name\":\"UNKNOWN_ACCOUNT\"},\"code\":-32000,\"message\":\"Server error\",\"data\":\"account aid-demo-merchant.testnet does not exist while viewing\"},\"id\":\"11\"}"
+  },
+  {
+   "url": "https://rpc.testnet.fastnear.com",
+   "method": "POST",
+   "body": {
+    "jsonrpc": "2.0",
+    "method": "query",
+    "params": {
+     "request_type": "call_function",
+     "account_id": "leash-registry.testnet",
+     "method_name": "verdict",
+     "args_base64": "eyJhY2NvdW50X2lkIjoiYWlkLWRlbW8tbWVyY2hhbnQudGVzdG5ldCJ9",
+     "block_id": 277301533
+    }
+   },
+   "status": 200,
+   "text": "{\"jsonrpc\":\"2.0\",\"result\":{\"block_hash\":\"3njYgfKFhgdwfsaH3TXLaUsbko8zaZF1T5c5bwj9MtnH\",\"block_height\":277301533,\"logs\":[],\"result\":[123,34,118,101,114,100,105,99,116,34,58,34,99,108,101,97,114,34,44,34,100,105,115,116,105,110,99,116,95,114,101,112,111,114,116,101,114,115,34,58,48,44,34,116,114,117,115,116,101,100,95,114,101,112,111,114,116,115,34,58,48,44,34,114,101,97,115,111,110,115,34,58,91,93,125]},\"id\":\"12\"}"
+  },
+  {
+   "url": "https://rpc.testnet.fastnear.com",
+   "method": "POST",
+   "body": {
+    "jsonrpc": "2.0",
+    "method": "query",
+    "params": {
+     "request_type": "call_function",
+     "account_id": "registry.a-identity.testnet",
+     "method_name": "get_verdict",
+     "args_base64": "eyJhY2NvdW50X2lkIjoiYWlkLWRlbW8tbWVyY2hhbnQudGVzdG5ldCJ9",
+     "block_id": 277301533
+    }
+   },
+   "status": 200,
+   "text": "{\"jsonrpc\":\"2.0\",\"error\":{\"name\":\"HANDLER_ERROR\",\"cause\":{\"info\":{\"block_hash\":\"3njYgfKFhgdwfsaH3TXLaUsbko8zaZF1T5c5bwj9MtnH\",\"block_height\":277301533,\"requested_account_id\":\"registry.a-identity.testnet\"},\"name\":\"UNKNOWN_ACCOUNT\"},\"code\":-32000,\"message\":\"Server error\",\"data\":\"account registry.a-identity.testnet does not exist while viewing\"},\"id\":\"13\"}"
+  },
+  {
+   "url": "https://rpc.testnet.fastnear.com",
+   "method": "POST",
+   "body": {
+    "jsonrpc": "2.0",
+    "method": "query",
+    "params": {
+     "request_type": "call_function",
+     "account_id": "registry.leash-busel-commons.testnet",
+     "method_name": "get_status",
+     "args_base64": "eyJhY2NvdW50X2lkIjoiYWlkLWRlbW8tbWVyY2hhbnQudGVzdG5ldCJ9",
+     "block_id": 277301533
+    }
+   },
+   "status": 200,
+   "text": "{\"jsonrpc\":\"2.0\",\"result\":{\"block_hash\":\"3njYgfKFhgdwfsaH3TXLaUsbko8zaZF1T5c5bwj9MtnH\",\"block_height\":277301533,\"logs\":[],\"result\":[123,34,97,99,99,111,117,110,116,95,105,100,34,58,34,97,105,100,45,100,101,109,111,45,109,101,114,99,104,97,110,116,46,116,101,115,116,110,101,116,34,44,34,98,108,111,99,107,101,100,34,58,102,97,108,115,101,44,34,98,108,111,99,107,101,100,95,98,121,34,58,110,117,108,108,44,34,114,101,112,111,114,116,115,34,58,48,44,34,116,104,114,101,115,104,111,108,100,34,58,50,44,34,111,119,110,101,114,95,114,101,97,115,111,110,34,58,110,117,108,108,44,34,99,111,110,116,114,97,99,116,95,99,111,100,101,95,104,97,115,104,34,58,110,117,108,108,125]},\"id\":\"14\"}"
+  },
+  {
+   "url": "https://rpc.testnet.fastnear.com",
+   "method": "POST",
+   "body": {
+    "jsonrpc": "2.0",
+    "method": "query",
+    "params": {
+     "request_type": "call_function",
+     "account_id": "identity-registry.erc-8004.testnet",
+     "method_name": "nft_tokens_for_owner",
+     "args_base64": "eyJhY2NvdW50X2lkIjoiYWlkLWRlbW8tbWVyY2hhbnQudGVzdG5ldCIsImZyb21faW5kZXgiOm51bGwsImxpbWl0Ijo1fQ==",
+     "block_id": 277301533
+    }
+   },
+   "status": 200,
+   "text": "{\"jsonrpc\":\"2.0\",\"result\":{\"block_hash\":\"3njYgfKFhgdwfsaH3TXLaUsbko8zaZF1T5c5bwj9MtnH\",\"block_height\":277301533,\"logs\":[],\"result\":[91,93]},\"id\":\"15\"}"
+  },
+  {
+   "url": "https://tx.test.fastnear.com/v0/account",
+   "method": "POST",
+   "body": {
+    "account_id": "aid-demo-merchant.testnet",
+    "limit": 1,
+    "desc": true
+   },
+   "status": 429,
+   "text": "{\"error\": {\"code\": -429, \"message\": \"Rate limits exceeded. For higher rate limits get a subscription at https://fastnear.com\"}}"
+  }
+ ]
+}

@@ -1,0 +1,813 @@
+{
+  "schema": "a-identity.near.snapshot/1",
+  "network": "mainnet",
+  "subject": "burrowfinancedao.near",
+  "block": {
+    "height": 224150994,
+    "hash": "Gx4HDGEwakKxYQj2UsEwggLSXRSwBeQ21KVVh3yC5hiN",
+    "timestamp_ns": "1794450331196124979"
+  },
+  "context": {
+    "known": [],
+    "vault_id": null,
+    "registry_id": null,
+    "usdc_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+    "third_party": [
+      {
+        "id": "mimicwatch",
+        "name": "MimicWatch",
+        "contract": "registry.mimicwatch-e7iig5g5.testnet",
+        "network": "testnet",
+        "method": "is_flagged",
+        "arg": "id"
+      }
+    ],
+    "erc8004": {
+      "identity": "identity-registry.erc-8004.near",
+      "reputation": "reputation-registry.erc-8004.near"
+    },
+    "probes": {
+      "recent_s": 259200,
+      "long_s": 2592000
+    },
+    "activity_window": 5
+  },
+  "rpc": [
+    {
+      "label": "account",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "view_account",
+        "account_id": "burrowfinancedao.near",
+        "block_id": 224150994
+      },
+      "result": {
+        "amount": "23104637863931422841503433",
+        "block_hash": "Gx4HDGEwakKxYQj2UsEwggLSXRSwBeQ21KVVh3yC5hiN",
+        "block_height": 224150994,
+        "code_hash": "12p7js1vHix1YrMhL7XKunpcxGNuFij2pmfuRSz7kocn",
+        "locked": "0",
+        "storage_paid_at": 0,
+        "storage_usage": 2304993
+      }
+    },
+    {
+      "label": "block",
+      "network": "mainnet",
+      "archival": false,
+      "method": "block",
+      "params": {
+        "block_id": 224150994
+      },
+      "result": {
+        "header": {
+          "height": 224150994,
+          "hash": "Gx4HDGEwakKxYQj2UsEwggLSXRSwBeQ21KVVh3yC5hiN",
+          "prev_hash": "8W4KUWJPuWt5FCqrgFft9KoDR4wmWrHf76AxQaFonh6d",
+          "timestamp_nanosec": "1794450331196124979"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "block.testnet",
+      "network": "testnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 277300746
+      },
+      "result": {
+        "header": {
+          "height": 277300746,
+          "hash": "CCd47X8WLbiUmFSnU1zHDKbzW1RFjESSSz4SmkN78hGo",
+          "prev_hash": "bGgQJwqBhyFQWc2yPPi8kBmcdWMULY5mwJqGdXFvDNQ",
+          "timestamp_nanosec": "1794450331022132224"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "block.testnet.next",
+      "network": "testnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 277300747
+      },
+      "result": {
+        "header": {
+          "height": 277300747,
+          "hash": "AQBoSRzRz2mEeEP4HVLMVgqGK6cWpscdNjsezxtzfxhk",
+          "prev_hash": "CCd47X8WLbiUmFSnU1zHDKbzW1RFjESSSz4SmkN78hGo",
+          "timestamp_nanosec": "1794450331728101646"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "erc8004.nft_tokens_for_owner",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "identity-registry.erc-8004.near",
+        "method_name": "nft_tokens_for_owner",
+        "args_base64": "eyJhY2NvdW50X2lkIjoiYnVycm93ZmluYW5jZWRhby5uZWFyIiwiZnJvbV9pbmRleCI6bnVsbCwibGltaXQiOjV9",
+        "block_id": 224150994
+      },
+      "result": {
+        "block_hash": "Gx4HDGEwakKxYQj2UsEwggLSXRSwBeQ21KVVh3yC5hiN",
+        "block_height": 224150994,
+        "logs": [],
+        "result": [91,93]
+      }
+    },
+    {
+      "label": "keys#0",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "view_access_key_list",
+        "account_id": "burrowfinancedao.near",
+        "block_id": 224150994,
+        "limit": 100
+      },
+      "result": {
+        "block_hash": "Gx4HDGEwakKxYQj2UsEwggLSXRSwBeQ21KVVh3yC5hiN",
+        "block_height": 224150994,
+        "keys": [
+          {
+            "access_key": {
+              "nonce": 119040292000868,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:P2jnTsUs9R95CqbqZzRaeXFuFJu5uj8NaW9TqB4HoJ3"
+          },
+          {
+            "access_key": {
+              "nonce": 119040300000008,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:39LAJTX5iv1efQhbbDDL267royyR97R81fPMVg6eiTdY"
+          },
+          {
+            "access_key": {
+              "nonce": 120792267000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "burrowfinancedao.near"
+                }
+              }
+            },
+            "public_key": "ed25519:7GVLEUW1aLMPfcCMBwAGsxGz25FTbjVc2At23oaLzj7g"
+          },
+          {
+            "access_key": {
+              "nonce": 119041538000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "burrowfinancedao.near"
+                }
+              }
+            },
+            "public_key": "ed25519:8VMTsPnakCNz5BDGVbCq6GmP1fWxqfdJ3mnAJGBh8oN9"
+          },
+          {
+            "access_key": {
+              "nonce": 120841339000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "nearrewards.near"
+                }
+              }
+            },
+            "public_key": "ed25519:AwZtEEPAt6i6ueZjmzBEd6sbcMrRHRJ8z4ezNyxmJXDU"
+          },
+          {
+            "access_key": {
+              "nonce": 123034467000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "contract.main.burrow.near"
+                }
+              }
+            },
+            "public_key": "ed25519:ChCzHTe4dv3gwEAnbpXb1W9GgSbThmAza7biQTNRQYpb"
+          },
+          {
+            "access_key": {
+              "nonce": 123645610000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "nearrewards.near"
+                }
+              }
+            },
+            "public_key": "ed25519:D2aegsdYwkfeHFJmerLaz6RBEXaNnLcMETFnWDiEB4TT"
+          },
+          {
+            "access_key": {
+              "nonce": 121675870000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "asset-manager.orderly-network.near"
+                }
+              }
+            },
+            "public_key": "ed25519:DeE5n7Ei9ihXq3iaaEwFmaAftEvsWx5EDz9XXortJv8B"
+          },
+          {
+            "access_key": {
+              "nonce": 120701384000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "nearrewards.near"
+                }
+              }
+            },
+            "public_key": "ed25519:EoAL2HBCguUtYGHr5V8xyzHzsd1FdEhHh6HHWn6Hv4X9"
+          },
+          {
+            "access_key": {
+              "nonce": 123070610000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "burrowfinancedao.near"
+                }
+              }
+            },
+            "public_key": "ed25519:GMVnZWqW8fZFpCvqpckpwDvYW4uFpnrAbmstZWqXBVkD"
+          },
+          {
+            "access_key": {
+              "nonce": 120712709000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "asset-manager.orderly-network.near"
+                }
+              }
+            },
+            "public_key": "ed25519:GkN1xuSYBSPHcotPPCGCDWLjGHGdRKeubxSa4SBzWMP9"
+          },
+          {
+            "access_key": {
+              "nonce": 120700531000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "contract.main.burrow.near"
+                }
+              }
+            },
+            "public_key": "ed25519:J3y1ub7VvjQkR8AUjjz8bGumCo1Y3zmkLLEY6CS2m7vZ"
+          }
+        ]
+      }
+    },
+    {
+      "label": "probe.long.account",
+      "network": "mainnet",
+      "archival": true,
+      "method": "query",
+      "params": {
+        "request_type": "view_account",
+        "account_id": "burrowfinancedao.near",
+        "block_id": 219754633
+      },
+      "result": {
+        "amount": "23104637863931422841503433",
+        "block_hash": "BtV7inFVzDA5ZheSwA5aRZ7kspx5sMcdxnehkAPy2hS7",
+        "block_height": 219754633,
+        "code_hash": "12p7js1vHix1YrMhL7XKunpcxGNuFij2pmfuRSz7kocn",
+        "locked": "0",
+        "storage_paid_at": 0,
+        "storage_usage": 2304993
+      }
+    },
+    {
+      "label": "probe.long.block",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 219754633
+      },
+      "result": {
+        "header": {
+          "height": 219754633,
+          "hash": "BtV7inFVzDA5ZheSwA5aRZ7kspx5sMcdxnehkAPy2hS7",
+          "prev_hash": "7sqnPed9GXBsGdjfJVSEGEtZNGtRNxzPMffveUSkdmiw",
+          "timestamp_nanosec": "1791857922661915680"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "probe.long.search#0",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 219830494
+      },
+      "result": {
+        "header": {
+          "height": 219830494,
+          "hash": "AujG6yVgRGgS6rNeLpizeBMMACgTCxKexc7qr3mqkaaN",
+          "prev_hash": "9jeSfey7XAWQYaF87etF8ugVtB8Ka2VCHS2PSaDCj1Na",
+          "timestamp_nanosec": "1791902762581738209"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "probe.recent.account",
+      "network": "mainnet",
+      "archival": true,
+      "method": "query",
+      "params": {
+        "request_type": "view_account",
+        "account_id": "burrowfinancedao.near",
+        "block_id": 223703539
+      },
+      "result": {
+        "amount": "23104637863931422841503433",
+        "block_hash": "FsJgYBY5MaZeBa9GNBg2sTUzTUpaMxVKoSdypfq5TZ2G",
+        "block_height": 223703539,
+        "code_hash": "12p7js1vHix1YrMhL7XKunpcxGNuFij2pmfuRSz7kocn",
+        "locked": "0",
+        "storage_paid_at": 0,
+        "storage_usage": 2304993
+      }
+    },
+    {
+      "label": "probe.recent.block",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 223703539
+      },
+      "result": {
+        "header": {
+          "height": 223703539,
+          "hash": "FsJgYBY5MaZeBa9GNBg2sTUzTUpaMxVKoSdypfq5TZ2G",
+          "prev_hash": "2L5ynNzzucsDW5Q71xBKTC9bHV8X4iqn9RFrKBe9537T",
+          "timestamp_nanosec": "1794191021917637954"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "probe.recent.keys#0",
+      "network": "mainnet",
+      "archival": true,
+      "method": "query",
+      "params": {
+        "request_type": "view_access_key_list",
+        "account_id": "burrowfinancedao.near",
+        "block_id": 223703539,
+        "limit": 100
+      },
+      "result": {
+        "block_hash": "FsJgYBY5MaZeBa9GNBg2sTUzTUpaMxVKoSdypfq5TZ2G",
+        "block_height": 223703539,
+        "keys": [
+          {
+            "access_key": {
+              "nonce": 119040292000868,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:P2jnTsUs9R95CqbqZzRaeXFuFJu5uj8NaW9TqB4HoJ3"
+          },
+          {
+            "access_key": {
+              "nonce": 119040300000008,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:39LAJTX5iv1efQhbbDDL267royyR97R81fPMVg6eiTdY"
+          },
+          {
+            "access_key": {
+              "nonce": 120792267000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "burrowfinancedao.near"
+                }
+              }
+            },
+            "public_key": "ed25519:7GVLEUW1aLMPfcCMBwAGsxGz25FTbjVc2At23oaLzj7g"
+          },
+          {
+            "access_key": {
+              "nonce": 119041538000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "burrowfinancedao.near"
+                }
+              }
+            },
+            "public_key": "ed25519:8VMTsPnakCNz5BDGVbCq6GmP1fWxqfdJ3mnAJGBh8oN9"
+          },
+          {
+            "access_key": {
+              "nonce": 120841339000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "nearrewards.near"
+                }
+              }
+            },
+            "public_key": "ed25519:AwZtEEPAt6i6ueZjmzBEd6sbcMrRHRJ8z4ezNyxmJXDU"
+          },
+          {
+            "access_key": {
+              "nonce": 123034467000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "contract.main.burrow.near"
+                }
+              }
+            },
+            "public_key": "ed25519:ChCzHTe4dv3gwEAnbpXb1W9GgSbThmAza7biQTNRQYpb"
+          },
+          {
+            "access_key": {
+              "nonce": 123645610000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "nearrewards.near"
+                }
+              }
+            },
+            "public_key": "ed25519:D2aegsdYwkfeHFJmerLaz6RBEXaNnLcMETFnWDiEB4TT"
+          },
+          {
+            "access_key": {
+              "nonce": 121675870000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "asset-manager.orderly-network.near"
+                }
+              }
+            },
+            "public_key": "ed25519:DeE5n7Ei9ihXq3iaaEwFmaAftEvsWx5EDz9XXortJv8B"
+          },
+          {
+            "access_key": {
+              "nonce": 120701384000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "nearrewards.near"
+                }
+              }
+            },
+            "public_key": "ed25519:EoAL2HBCguUtYGHr5V8xyzHzsd1FdEhHh6HHWn6Hv4X9"
+          },
+          {
+            "access_key": {
+              "nonce": 123070610000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "burrowfinancedao.near"
+                }
+              }
+            },
+            "public_key": "ed25519:GMVnZWqW8fZFpCvqpckpwDvYW4uFpnrAbmstZWqXBVkD"
+          },
+          {
+            "access_key": {
+              "nonce": 120712709000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "asset-manager.orderly-network.near"
+                }
+              }
+            },
+            "public_key": "ed25519:GkN1xuSYBSPHcotPPCGCDWLjGHGdRKeubxSa4SBzWMP9"
+          },
+          {
+            "access_key": {
+              "nonce": 120700531000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "contract.main.burrow.near"
+                }
+              }
+            },
+            "public_key": "ed25519:J3y1ub7VvjQkR8AUjjz8bGumCo1Y3zmkLLEY6CS2m7vZ"
+          }
+        ]
+      }
+    },
+    {
+      "label": "probe.recent.search#0",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 223718494
+      },
+      "result": {
+        "header": {
+          "height": 223718494,
+          "hash": "6tESNUydA6vMX5CFi76jsoYvZTo2acaC4biZJ9SRMJEK",
+          "prev_hash": "FjELTpPGkKLL1ZfuZNTpeWV7rrTVcGTuQHmbnUMvXmwJ",
+          "timestamp_nanosec": "1794199504710242340"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "third_party.mimicwatch",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "registry.mimicwatch-e7iig5g5.testnet",
+        "method_name": "is_flagged",
+        "args_base64": "eyJpZCI6ImJ1cnJvd2ZpbmFuY2VkYW8ubmVhciJ9",
+        "block_id": 277300746
+      },
+      "result": {
+        "block_hash": "CCd47X8WLbiUmFSnU1zHDKbzW1RFjESSSz4SmkN78hGo",
+        "block_height": 277300746,
+        "logs": [],
+        "result": [123,34,113,117,101,114,121,34,58,34,98,117,114,114,111,119,102,105,110,97,110,99,101,100,97,111,46,110,101,97,114,34,44,34,102,108,97,103,103,101,100,34,58,116,114,117,101,44,34,118,105,97,34,58,34,101,120,97,99,116,34,44,34,101,110,116,114,121,34,58,123,34,115,117,98,106,101,99,116,34,58,34,98,117,114,114,111,119,102,105,110,97,110,99,101,100,97,111,46,110,101,97,114,34,44,34,107,105,110,100,34,58,34,97,99,99,111,117,110,116,34,44,34,99,97,116,101,103,111,114,121,34,58,34,102,97,107,101,45,116,111,107,101,110,34,44,34,115,101,118,101,114,105,116,121,34,58,34,99,114,105,116,105,99,97,108,34,44,34,115,116,97,116,117,115,34,58,34,97,99,116,105,118,101,34,44,34,98,114,97,110,100,34,58,34,98,117,114,114,111,119,34,44,34,101,118,105,100,101,110,99,101,95,117,114,108,34,58,34,104,116,116,112,115,58,47,47,103,105,116,104,117,98,46,99,111,109,47,107,97,99,112,101,114,103,117,109,105,101,110,105,117,107,47,109,105,109,105,99,119,97,116,99,104,45,110,101,97,114,47,98,108,111,98,47,109,97,105,110,47,101,118,105,100,101,110,99,101,47,97,99,99,111,117,110,116,47,98,117,114,114,111,119,102,105,110,97,110,99,101,100,97,111,46,110,101,97,114,46,106,115,111,110,34,44,34,101,118,105,100,101,110,99,101,95,104,97,115,104,34,58,34,102,97,57,98,49,101,97,101,56,50,51,100,99,54,54,102,99,98,49,97,99,100,101,50,99,53,100,51,57,53,50,50,55,54,55,55,52,56,99,98,49,98,51,98,98,99,57,54,56,100,98,55,99,51,56,102,101,50,48,57,53,56,51,100,34,44,34,110,111,116,101,34,58,34,102,97,107,101,45,116,111,107,101,110,58,32,105,109,105,116,97,116,101,115,32,66,117,114,114,111,119,34,44,34,114,101,112,111,114,116,101,114,34,58,34,114,101,112,111,114,116,101,114,46,109,105,109,105,99,119,97,116,99,104,45,101,55,105,105,103,53,103,53,46,116,101,115,116,110,101,116,34,44,34,114,101,112,111,114,116,101,100,95,97,116,95,109,115,34,58,49,55,57,51,53,53,52,48,53,52,57,49,55,44,34,117,112,100,97,116,101,100,95,97,116,95,109,115,34,58,49,55,57,51,53,53,52,48,53,52,57,49,55,44,34,100,105,115,112,117,116,101,34,58,110,117,108,108,44,34,100,105,115,112,117,116,101,115,95,114,101,106,101,99,116,101,100,34,58,48,125,44,34,99,108,101,97,114,101,100,34,58,110,117,108,108,125]
+      }
+    },
+    {
+      "label": "usdc.is_blocklisted",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+        "method_name": "is_blocklisted",
+        "args_base64": "eyJhY2NvdW50X2lkIjoiYnVycm93ZmluYW5jZWRhby5uZWFyIn0=",
+        "block_id": 224150994
+      },
+      "result": {
+        "block_hash": "Gx4HDGEwakKxYQj2UsEwggLSXRSwBeQ21KVVh3yC5hiN",
+        "block_height": 224150994,
+        "logs": [],
+        "result": [102,97,108,115,101]
+      }
+    },
+    {
+      "label": "usdc.storage_balance_of",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+        "method_name": "storage_balance_of",
+        "args_base64": "eyJhY2NvdW50X2lkIjoiYnVycm93ZmluYW5jZWRhby5uZWFyIn0=",
+        "block_id": 224150994
+      },
+      "result": {
+        "block_hash": "Gx4HDGEwakKxYQj2UsEwggLSXRSwBeQ21KVVh3yC5hiN",
+        "block_height": 224150994,
+        "logs": [],
+        "result": [123,34,116,111,116,97,108,34,58,34,49,50,53,48,48,48,48,48,48,48,48,48,48,48,48,48,48,48,48,48,48,48,34,44,34,97,118,97,105,108,97,98,108,101,34,58,34,48,34,125]
+      }
+    }
+  ],
+  "http": [
+    {
+      "label": "fastnear.newest",
+      "source": "fastnear",
+      "method": "POST",
+      "url": "https://tx.main.fastnear.com/v0/account",
+      "status": 200,
+      "json": {
+        "account_txs": [
+          {
+            "account_id": "burrowfinancedao.near",
+            "transaction_hash": "5ve2hQ4GKVYE6tmhUY2nJVf7oC67nXnbenJkKyjKHL1R",
+            "tx_block_height": 163292494,
+            "tx_block_timestamp": "1757420017592937237",
+            "tx_index": 4,
+            "is_signer": true,
+            "is_delegated_signer": false,
+            "is_real_signer": true,
+            "is_any_signer": true,
+            "is_predecessor": true,
+            "is_explicit_refund_to": false,
+            "is_receiver": false,
+            "is_real_receiver": false,
+            "is_function_call": false,
+            "is_action_arg": false,
+            "is_event_log": false,
+            "is_success": true
+          }
+        ],
+        "resume_token": "701335921412276228",
+        "txs_count": 995
+      },
+      "fetched_at": "2026-11-12T03:30:45.342Z",
+      "body": {
+        "account_id": "burrowfinancedao.near",
+        "limit": 1,
+        "desc": true
+      }
+    },
+    {
+      "label": "fastnear.oldest",
+      "source": "fastnear",
+      "method": "POST",
+      "url": "https://tx.main.fastnear.com/v0/account",
+      "status": 200,
+      "json": {
+        "account_txs": [
+          {
+            "account_id": "burrowfinancedao.near",
+            "transaction_hash": "8wR3X8jAsTXg6jPAwmkmYBadFJkV1zP79jy1qCw8S4p8",
+            "tx_block_height": 119040291,
+            "tx_block_timestamp": "1715856807243275095",
+            "tx_index": 60,
+            "is_signer": false,
+            "is_delegated_signer": false,
+            "is_real_signer": false,
+            "is_any_signer": false,
+            "is_predecessor": false,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": false,
+            "is_action_arg": true,
+            "is_event_log": false,
+            "is_success": true
+          },
+          {
+            "account_id": "burrowfinancedao.near",
+            "transaction_hash": "2p7ETQSXs8iWT9YH4kqz2sLTbq6DPi9FhV6S4T4wdBD7",
+            "tx_block_height": 119040301,
+            "tx_block_timestamp": "1715856818970886499",
+            "tx_index": 36,
+            "is_signer": true,
+            "is_delegated_signer": false,
+            "is_real_signer": true,
+            "is_any_signer": true,
+            "is_predecessor": true,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": false,
+            "is_action_arg": false,
+            "is_event_log": false,
+            "is_success": true
+          },
+          {
+            "account_id": "burrowfinancedao.near",
+            "transaction_hash": "GPxsSxKyiJBvozeHqtLCUKbf6oKe2ePBbdqkDgAAYzfV",
+            "tx_block_height": 119040365,
+            "tx_block_timestamp": "1715856896589704018",
+            "tx_index": 95,
+            "is_signer": false,
+            "is_delegated_signer": false,
+            "is_real_signer": false,
+            "is_any_signer": false,
+            "is_predecessor": false,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": false,
+            "is_action_arg": false,
+            "is_event_log": false,
+            "is_success": true
+          },
+          {
+            "account_id": "burrowfinancedao.near",
+            "transaction_hash": "4ACXuPi3TDSkZTm2TCCvmpiZwiB2Z9YAjNnEX8L41XL5",
+            "tx_block_height": 119040899,
+            "tx_block_timestamp": "1715857550986581809",
+            "tx_index": 44,
+            "is_signer": true,
+            "is_delegated_signer": false,
+            "is_real_signer": true,
+            "is_any_signer": true,
+            "is_predecessor": true,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": false,
+            "is_action_arg": false,
+            "is_event_log": false,
+            "is_success": true
+          },
+          {
+            "account_id": "burrowfinancedao.near",
+            "transaction_hash": "CpDPSE7tYT2C98LAvekMMS6UNWfxY9PwpYCBPTwtLDR4",
+            "tx_block_height": 119041076,
+            "tx_block_timestamp": "1715857784770251901",
+            "tx_index": 47,
+            "is_signer": true,
+            "is_delegated_signer": false,
+            "is_real_signer": true,
+            "is_any_signer": true,
+            "is_predecessor": true,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": true,
+            "is_action_arg": true,
+            "is_event_log": true,
+            "is_success": true
+          }
+        ],
+        "resume_token": "511277528300650543",
+        "txs_count": 995
+      },
+      "fetched_at": "2026-11-12T03:30:44.941Z",
+      "body": {
+        "account_id": "burrowfinancedao.near",
+        "limit": 5,
+        "desc": false
+      }
+    },
+    {
+      "label": "nearblocks.deployments",
+      "source": "nearblocks",
+      "method": "GET",
+      "url": "https://api.nearblocks.io/v3/accounts/burrowfinancedao.near/contract/deployments",
+      "status": 200,
+      "json": {
+        "data": [
+          {
+            "block": {
+              "block_hash": "CVBJw4F1FZqNZtyiSnGzMgEPKS2XmHgRhw2weSR6RivW",
+              "block_height": "119040899",
+              "block_timestamp": "1715857550986581809"
+            },
+            "predecessor_account_id": "burrowfinancedao.near",
+            "transaction_hash": "4ACXuPi3TDSkZTm2TCCvmpiZwiB2Z9YAjNnEX8L41XL5"
+          },
+          {
+            "block": {
+              "block_hash": "DTSLjqFKDNdHRn1yf77CBdRZ89RkVGwm3RHJREDJbwNk",
+              "block_height": "119237326",
+              "block_timestamp": "1716084189644153454"
+            },
+            "predecessor_account_id": "burrowfinancedao.near",
+            "transaction_hash": "3WEt3Z3Ug7acWUmkA6fivfKomYSyQpUKwAWvJTQS5owb"
+          }
+        ]
+      },
+      "fetched_at": "2026-11-12T03:30:46.180Z"
+    }
+  ],
+  "meta": {
+    "collected_at": "2026-11-12T03:30:48.732Z",
+    "collector": "a-identity-near-sdk/0.2.0",
+    "endpoints": ["api.nearblocks.io","archival-rpc.mainnet.fastnear.com","archival-rpc.testnet.fastnear.com","rpc.mainnet.fastnear.com","rpc.testnet.fastnear.com","tx.main.fastnear.com"],
+    "notes": ["Some data: Powered by Nearblocks.io APIs (https://nearblocks.io).","Registries on testnet were read at its latest block at or before this block's time (labels block.testnet and block.testnet.next), so the same block always reads them at the same height."]
+  }
+}

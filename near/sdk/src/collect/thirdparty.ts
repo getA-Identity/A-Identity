@@ -1,0 +1,48 @@
+// Other NEAR HACKATHON teams' public registries, read as attributed signals.
+//
+// Each source names its team and contract in every reason it produces, a hit is at most a
+// WARN (never a DENY on its own), and an entry that calls itself demo or test data is labeled
+// so. Their contracts may change or vanish after the hackathon; a failed read is recorded and
+// shown as info, never as a reason to hold a payment.
+//
+// A registry on another network (MimicWatch keeps its testnet registry for mainnet names too)
+// is read at that network's latest block at or before the pinned block's timestamp
+// (pinCrossBlock), so a collection at the same block always reads it at the same height.
+
+import { LABEL } from "../engine/labels.ts";
+import type { BlockRef, Network, ThirdPartySource } from "../engine/types.ts";
+import { pinCrossBlock } from "./account.ts";
+import type { Recorder } from "./recorder.ts";
+import { view } from "./views.ts";
+
+export async function recordThirdParty(
+  rec: Recorder,
+  network: Network,
+  sources: readonly ThirdPartySource[],
+  subject: string,
+  block: BlockRef,
+  archival: boolean,
+  sleep: (ms: number) => Promise<void>,
+): Promise<void> {
+  const crossBlocks = new Map<Network, number | null>();
+  for (const src of sources) {
+    let at: number | null = block.height;
+    let useArchival = archival;
+    if (src.network !== network) {
+      if (!crossBlocks.has(src.network)) crossBlocks.set(src.network, await pinCrossBlock(rec, src.network, block, sleep));
+      at = crossBlocks.get(src.network) ?? null;
+      useArchival = false;
+    }
+    if (at === null) {
+      rec.push(LABEL.thirdParty(src.id), {
+        network: src.network,
+        archival: false,
+        method: "query",
+        params: { request_type: "call_function", account_id: src.contract, method_name: src.method },
+        error: { name: "UNAVAILABLE", cause: "UNAVAILABLE", message: `no ${src.network} block at or before the pinned block's time could be established` },
+      });
+      continue;
+    }
+    await view(rec, LABEL.thirdParty(src.id), src.network, src.contract, src.method, { [src.arg]: subject }, at, useArchival);
+  }
+}

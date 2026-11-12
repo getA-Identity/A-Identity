@@ -1,0 +1,39 @@
+{
+  "name": "@a-identity/near",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A-Identity Guard for NEAR (testnet): counterparty verdicts on payees, enforced on chain by an agent spend vault.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.22.2"
+  },
+  "scripts": {
+    "judge": "node judge/judge.mjs",
+    "judge:offline": "node judge/judge.mjs --offline",
+    "judge:full": "node judge/judge.mjs --full",
+    "verdict": "node --experimental-strip-types --no-warnings=ExperimentalWarning sdk/src/cli/verdict.ts",
+    "guard": "node --experimental-strip-types --no-warnings=ExperimentalWarning sdk/src/cli/guard.ts",
+    "demo": "node --experimental-strip-types --no-warnings=ExperimentalWarning demo/attack.ts --llm",
+    "demo:no-llm": "node --experimental-strip-types --no-warnings=ExperimentalWarning demo/attack.ts --no-llm",
+    "demo:dry": "node --experimental-strip-types --no-warnings=ExperimentalWarning demo/attack.ts --dry-run --no-llm",
+    "oracle": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/oracle.ts --watch",
+    "oracle:once": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/oracle.ts --once",
+    "scan:build": "node scan/build-dataset.mjs",
+    "scan:check": "node scan/check-citations.mjs",
+    "scan:score": "node scan/score.mjs",
+    "test": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test 'sdk/test/*.test.ts' 'demo/test/*.test.ts' 'scripts/*.test.ts' 'judge/test/*.test.mjs' 'scan/*.test.mjs'",
+    "test:sdk": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test 'sdk/test/*.test.ts'",
+    "test:demo": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test 'demo/test/*.test.ts' 'scripts/*.test.ts'",
+    "test:judge": "node --test 'judge/test/*.test.mjs'",
+    "test:scan": "node --test 'scan/*.test.mjs'",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "near-api-js": "7.5.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.21",
+    "typescript": "5.9.3"
+  }
+}

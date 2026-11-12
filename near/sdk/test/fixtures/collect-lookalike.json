@@ -1,0 +1,240 @@
+{
+ "_note": "Recorded live (read-only) on 2026-11-12 for aid-demo-rnerchant.testnet on testnet; the clock was fixed so fetched_at is stable. Replayed by sdk/test/collect.test.ts.",
+ "options": {
+  "account": "aid-demo-rnerchant.testnet",
+  "network": "testnet",
+  "known": [
+   "aid-demo-merchant.testnet"
+  ],
+  "vault": null
+ },
+ "expected": {
+  "verdict": "DENY",
+  "score": 0,
+  "codes": [
+   "account_not_found",
+   "lookalike_new_account",
+   "usdc_unregistered",
+   "registry_not_deployed"
+  ],
+  "snapshot_sha256": "848fc390f9a8ff336b911652acf5de60e8b5f662542eb7a6280771b4d28cea46",
+  "chain_sha256": "a85c8b05d387b1a7476ee88d2f475fe2b4bcd44b0fad93b3f0c9675be723022e",
+  "block": {
+   "height": 277301540,
+   "hash": "9hUBUzRaZcAyyv75QurtopR3dH3gT441KvTsydzXDMDK",
+   "timestamp_ns": "1794450804872275700"
+  }
+ },
+ "exchanges": [
+  {
+   "url": "https://rpc.testnet.fastnear.com",
+   "method": "POST",
+   "body": {
+    "jsonrpc": "2.0",
+    "method": "block",
+    "params": {
+     "finality": "final"
+    }
+   },
+   "status": 200,
+   "text": "{\"jsonrpc\":\"2.0\",\"result\":{\"header\":{\"height\":277301540,\"hash\":\"9hUBUzRaZcAyyv75QurtopR3dH3gT441KvTsydzXDMDK\",\"prev_hash\":\"B786rhEPVWAxcwf66guCeFDzu3nBHMFc5nYE9PbDTezg\",\"timestamp_nanosec\":\"1794450804872275700\"}},\"id\":\"1\"}"
+  },
+  {
+   "url": "https://rpc.testnet.fastnear.com",
+   "method": "POST",
+   "body": {
+    "jsonrpc": "2.0",
+    "method": "block",
+    "params": {
+     "block_id": 277301540
+    }
+   },
+   "status": 200,
+   "text": "{\"jsonrpc\":\"2.0\",\"result\":{\"header\":{\"height\":277301540,\"hash\":\"9hUBUzRaZcAyyv75QurtopR3dH3gT441KvTsydzXDMDK\",\"prev_hash\":\"B786rhEPVWAxcwf66guCeFDzu3nBHMFc5nYE9PbDTezg\",\"timestamp_nanosec\":\"1794450804872275700\"}},\"id\":\"2\"}"
+  },
+  {
+   "url": "https://rpc.testnet.fastnear.com",
+   "method": "POST",
+   "body": {
+    "jsonrpc": "2.0",
+    "method": "query",
+    "params": {
+     "request_type": "view_account",
+     "account_id": "aid-demo-rnerchant.testnet",
+     "block_id": 277301540
+    }
+   },
+   "status": 200,
+   "text": "{\"jsonrpc\":\"2.0\",\"error\":{\"name\":\"HANDLER_ERROR\",\"cause\":{\"info\":{\"block_hash\":\"9hUBUzRaZcAyyv75QurtopR3dH3gT441KvTsydzXDMDK\",\"block_height\":277301540,\"requested_account_id\":\"aid-demo-rnerchant.testnet\"},\"name\":\"UNKNOWN_ACCOUNT\"},\"code\":-32000,\"message\":\"Server error\",\"data\":\"account aid-demo-rnerchant.testnet does not exist while viewing\"},\"id\":\"3\"}"
+  },
+  {
+   "url": "https://rpc.testnet.fastnear.com",
+   "method": "POST",
+   "body": {
+    "jsonrpc": "2.0",
+    "method": "query",
+    "params": {
+     "request_type": "call_function",
+     "account_id": "3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af",
+     "method_name": "is_blocklisted",
+     "args_base64": "eyJhY2NvdW50X2lkIjoiYWlkLWRlbW8tcm5lcmNoYW50LnRlc3RuZXQifQ==",
+     "block_id": 277301540
+    }
+   },
+   "status": 200,
+   "text": "{\"jsonrpc\":\"2.0\",\"result\":{\"block_hash\":\"9hUBUzRaZcAyyv75QurtopR3dH3gT441KvTsydzXDMDK\",\"block_height\":277301540,\"logs\":[],\"result\":[102,97,108,115,101]},\"id\":\"4\"}"
+  },
+  {
+   "url": "https://tx.test.fastnear.com/v0/account",
+   "method": "POST",
+   "body": {
+    "account_id": "aid-demo-rnerchant.testnet",
+    "limit": 5,
+    "desc": false
+   },
+   "status": 200,
+   "text": "{\"account_txs\":[],\"txs_count\":0}"
+  },
+  {
+   "url": "https://rpc.testnet.fastnear.com",
+   "method": "POST",
+   "body": {
+    "jsonrpc": "2.0",
+    "method": "query",
+    "params": {
+     "request_type": "call_function",
+     "account_id": "registry.mimicwatch-e7iig5g5.testnet",
+     "method_name": "is_flagged",
+     "args_base64": "eyJpZCI6ImFpZC1kZW1vLXJuZXJjaGFudC50ZXN0bmV0In0=",
+     "block_id": 277301540
+    }
+   },
+   "status": 200,
+   "text": "{\"jsonrpc\":\"2.0\",\"result\":{\"block_hash\":\"9hUBUzRaZcAyyv75QurtopR3dH3gT441KvTsydzXDMDK\",\"block_height\":277301540,\"logs\":[],\"result\":[123,34,113,117,101,114,121,34,58,34,97,105,100,45,100,101,109,111,45,114,110,101,114,99,104,97,110,116,46,116,101,115,116,110,101,116,34,44,34,102,108,97,103,103,101,100,34,58,102,97,108,115,101,44,34,118,105,97,34,58,110,117,108,108,44,34,101,110,116,114,121,34,58,110,117,108,108,44,34,99,108,101,97,114,101,100,34,58,110,117,108,108,125]},\"id\":\"5\"}"
+  },
+  {
+   "url": "https://rpc.testnet.fastnear.com",
+   "method": "POST",
+   "body": {
+    "jsonrpc": "2.0",
+    "method": "query",
+    "params": {
+     "request_type": "call_function",
+     "account_id": "3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af",
+     "method_name": "storage_balance_of",
+     "args_base64": "eyJhY2NvdW50X2lkIjoiYWlkLWRlbW8tcm5lcmNoYW50LnRlc3RuZXQifQ==",
+     "block_id": 277301540
+    }
+   },
+   "status": 200,
+   "text": "{\"jsonrpc\":\"2.0\",\"result\":{\"block_hash\":\"9hUBUzRaZcAyyv75QurtopR3dH3gT441KvTsydzXDMDK\",\"block_height\":277301540,\"logs\":[],\"result\":[110,117,108,108]},\"id\":\"6\"}"
+  },
+  {
+   "url": "https://rpc.testnet.fastnear.com",
+   "method": "POST",
+   "body": {
+    "jsonrpc": "2.0",
+    "method": "query",
+    "params": {
+     "request_type": "call_function",
+     "account_id": "tripwire-registry-44ea74.testnet",
+     "method_name": "get_risk",
+     "args_base64": "eyJhY2NvdW50X2lkIjoiYWlkLWRlbW8tcm5lcmNoYW50LnRlc3RuZXQifQ==",
+     "block_id": 277301540
+    }
+   },
+   "status": 200,
+   "text": "{\"jsonrpc\":\"2.0\",\"result\":{\"block_hash\":\"9hUBUzRaZcAyyv75QurtopR3dH3gT441KvTsydzXDMDK\",\"block_height\":277301540,\"logs\":[],\"result\":[123,34,97,99,99,111,117,110,116,95,105,100,34,58,34,97,105,100,45,100,101,109,111,45,114,110,101,114,99,104,97,110,116,46,116,101,115,116,110,101,116,34,44,34,115,99,111,114,101,34,58,48,44,34,108,101,118,101,108,34,58,34,110,111,110,101,34,44,34,102,108,97,103,115,34,58,91,93,125]},\"id\":\"7\"}"
+  },
+  {
+   "url": "https://tx.test.fastnear.com/v0/account",
+   "method": "POST",
+   "body": {
+    "account_id": "aid-demo-rnerchant.testnet",
+    "limit": 1,
+    "desc": true
+   },
+   "status": 429,
+   "text": "{\"error\": {\"code\": -429, \"message\": \"Rate limits exceeded. For higher rate limits get a subscription at https://fastnear.com\"}}"
+  },
+  {
+   "url": "https://rpc.testnet.fastnear.com",
+   "method": "POST",
+   "body": {
+    "jsonrpc": "2.0",
+    "method": "query",
+    "params": {
+     "request_type": "call_function",
+     "account_id": "registry.a-identity.testnet",
+     "method_name": "get_verdict",
+     "args_base64": "eyJhY2NvdW50X2lkIjoiYWlkLWRlbW8tcm5lcmNoYW50LnRlc3RuZXQifQ==",
+     "block_id": 277301540
+    }
+   },
+   "status": 200,
+   "text": "{\"jsonrpc\":\"2.0\",\"error\":{\"name\":\"HANDLER_ERROR\",\"cause\":{\"info\":{\"block_hash\":\"9hUBUzRaZcAyyv75QurtopR3dH3gT441KvTsydzXDMDK\",\"block_height\":277301540,\"requested_account_id\":\"registry.a-identity.testnet\"},\"name\":\"UNKNOWN_ACCOUNT\"},\"code\":-32000,\"message\":\"Server error\",\"data\":\"account registry.a-identity.testnet does not exist while viewing\"},\"id\":\"8\"}"
+  },
+  {
+   "url": "https://rpc.testnet.fastnear.com",
+   "method": "POST",
+   "body": {
+    "jsonrpc": "2.0",
+    "method": "query",
+    "params": {
+     "request_type": "call_function",
+     "account_id": "leash-registry.testnet",
+     "method_name": "verdict",
+     "args_base64": "eyJhY2NvdW50X2lkIjoiYWlkLWRlbW8tcm5lcmNoYW50LnRlc3RuZXQifQ==",
+     "block_id": 277301540
+    }
+   },
+   "status": 200,
+   "text": "{\"jsonrpc\":\"2.0\",\"result\":{\"block_hash\":\"9hUBUzRaZcAyyv75QurtopR3dH3gT441KvTsydzXDMDK\",\"block_height\":277301540,\"logs\":[],\"result\":[123,34,118,101,114,100,105,99,116,34,58,34,99,108,101,97,114,34,44,34,100,105,115,116,105,110,99,116,95,114,101,112,111,114,116,101,114,115,34,58,48,44,34,116,114,117,115,116,101,100,95,114,101,112,111,114,116,115,34,58,48,44,34,114,101,97,115,111,110,115,34,58,91,93,125]},\"id\":\"9\"}"
+  },
+  {
+   "url": "https://rpc.testnet.fastnear.com",
+   "method": "POST",
+   "body": {
+    "jsonrpc": "2.0",
+    "method": "query",
+    "params": {
+     "request_type": "call_function",
+     "account_id": "identity-registry.erc-8004.testnet",
+     "method_name": "nft_tokens_for_owner",
+     "args_base64": "eyJhY2NvdW50X2lkIjoiYWlkLWRlbW8tcm5lcmNoYW50LnRlc3RuZXQiLCJmcm9tX2luZGV4IjpudWxsLCJsaW1pdCI6NX0=",
+     "block_id": 277301540
+    }
+   },
+   "status": 200,
+   "text": "{\"jsonrpc\":\"2.0\",\"result\":{\"block_hash\":\"9hUBUzRaZcAyyv75QurtopR3dH3gT441KvTsydzXDMDK\",\"block_height\":277301540,\"logs\":[],\"result\":[91,93]},\"id\":\"10\"}"
+  },
+  {
+   "url": "https://rpc.testnet.fastnear.com",
+   "method": "POST",
+   "body": {
+    "jsonrpc": "2.0",
+    "method": "query",
+    "params": {
+     "request_type": "call_function",
+     "account_id": "registry.leash-busel-commons.testnet",
+     "method_name": "get_status",
+     "args_base64": "eyJhY2NvdW50X2lkIjoiYWlkLWRlbW8tcm5lcmNoYW50LnRlc3RuZXQifQ==",
+     "block_id": 277301540
+    }
+   },
+   "status": 200,
+   "text": "{\"jsonrpc\":\"2.0\",\"result\":{\"block_hash\":\"9hUBUzRaZcAyyv75QurtopR3dH3gT441KvTsydzXDMDK\",\"block_height\":277301540,\"logs\":[],\"result\":[123,34,97,99,99,111,117,110,116,95,105,100,34,58,34,97,105,100,45,100,101,109,111,45,114,110,101,114,99,104,97,110,116,46,116,101,115,116,110,101,116,34,44,34,98,108,111,99,107,101,100,34,58,102,97,108,115,101,44,34,98,108,111,99,107,101,100,95,98,121,34,58,110,117,108,108,44,34,114,101,112,111,114,116,115,34,58,48,44,34,116,104,114,101,115,104,111,108,100,34,58,50,44,34,111,119,110,101,114,95,114,101,97,115,111,110,34,58,110,117,108,108,44,34,99,111,110,116,114,97,99,116,95,99,111,100,101,95,104,97,115,104,34,58,110,117,108,108,125]},\"id\":\"11\"}"
+  },
+  {
+   "url": "https://tx.test.fastnear.com/v0/account",
+   "method": "POST",
+   "body": {
+    "account_id": "aid-demo-rnerchant.testnet",
+    "limit": 1,
+    "desc": true
+   },
+   "status": 429,
+   "text": "{\"error\": {\"code\": -429, \"message\": \"Rate limits exceeded. For higher rate limits get a subscription at https://fastnear.com\"}}"
+  }
+ ]
+}

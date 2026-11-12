@@ -1,0 +1,217 @@
+// Client for the agent spend vault (near/contracts/agent-spend-policy).
+//
+// Two kinds of signer, and they are different accounts:
+//   the AGENT signs as the VAULT account itself, with the function-call key the vault created
+//     for it (receiver = the vault, methods = pay, request_payment, record_refusal). That key
+//     cannot attach a deposit, call the token, move NEAR or touch keys: the protocol refuses.
+//   the OWNER signs as the owner account with a full-access key. Methods that change policy or
+//     move money require exactly 1 yoctoNEAR, which only a full-access key can attach; freeze
+//     deliberately does not, so it works in one click.
+//
+// Every write is prepared-or-executed (send.ts): with no key it returns the exact call.
+
+import { NETWORKS } from "../collect/networks.ts";
+import { createReader, type RpcReader } from "../collect/rpc.ts";
+import type { Network } from "../engine/types.ts";
+import type { LoadedKey } from "./keys.ts";
+import { payOutcomeOf, vaultEventFor, type NearEvent, type PayOutcome } from "./outcome.ts";
+import { prepare, send, viewFunction, type Call, type Executed, type Pending, type Prepared, type Rejected } from "./send.ts";
+
+/** The only methods an agent key may call (the contract's AGENT_METHODS). */
+export const AGENT_METHODS = ["pay", "request_payment", "record_refusal"] as const;
+
+/**
+ * Prepaid gas per method, in Tgas. The agent figures are the contract's own: AGENT_PREPAID_GAS
+ * in near/contracts/agent-spend-policy/src/lib.rs (73: measured, the registry check plus
+ * storage_deposit, ft_transfer and the callbacks cannot be scheduled below 51, and 73 keeps 30
+ * percent over that floor) and its 10 Tgas for record_refusal. A test reads the contract source
+ * so the two numbers cannot drift apart. The protocol holds 0.001 NEAR per prepaid Tgas from the
+ * key's allowance until the receipts finish, so a payment in flight holds 0.073 NEAR of it.
+ */
+export const VAULT_GAS_TGAS = {
+  pay: 73,
+  request_payment: 73,
+  record_refusal: 10,
+  owner_pay: 100,
+  withdraw: 50,
+  add_agent_key: 40,
+  register_with_token: 30,
+  owner_default: 30,
+} as const;
+
+export const ONE_YOCTO = "1";
+const U128_MAX = (1n << 128n) - 1n;
+/** The contract's MAX_MEMO_BYTES and MAX_REASON_BYTES. */
+export const MAX_TEXT_BYTES = 128;
+
+export type VaultConfig = {
+  owner_id: string;
+  token_id: string;
+  registry_id: string | null;
+  frozen: boolean;
+  daily_cap: string;
+  auto_approve_max: string;
+  allowlist_enabled: boolean;
+  token_storage_deposit: string;
+  version: string;
+  /** Present from vault v1.1 on. */
+  hold_unknown?: boolean;
+};
+
+export type HeldPayment = {
+  id: string;
+  payment_id: string;
+  agent_pk: string;
+  payee: string;
+  amount: string;
+  memo: string | null;
+  reason: string;
+  created_at_s: string;
+  expires_at_s: string;
+};
+
+export type AgentKeyView = { public_key: string; label: string; expires_at_s: string; revoked: boolean; added_at_s: string };
+
+/** An executed vault payment call, with the vault's own answer and its matching event. */
+export type PayCallResult = Prepared | Rejected | Pending | (Executed & { pay: PayOutcome | null; event: NearEvent | null });
+export type CallResult = Prepared | Rejected | Pending | Executed;
+
+export class VaultArgumentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "VaultArgumentError";
+  }
+}
+
+/** Token amounts are base units as a decimal string ("250000" is 0.25 USDC at 6 decimals). */
+export function checkAmount(amount: string): string {
+  if (!/^[1-9][0-9]*$/.test(amount) || BigInt(amount) > U128_MAX) {
+    throw new VaultArgumentError(`amount must be a positive integer string in token base units, got ${JSON.stringify(amount)}`);
+  }
+  return amount;
+}
+
+/** "0.25" USDC -> "250000". Refuses more decimals than the token has instead of truncating them. */
+export function toUnits(decimal: string, decimals = 6): string {
+  const m = /^(\d+)(?:\.(\d+))?$/.exec(decimal.trim());
+  if (!m) throw new VaultArgumentError(`not a decimal amount: ${JSON.stringify(decimal)}`);
+  const frac = m[2] ?? "";
+  if (frac.length > decimals) throw new VaultArgumentError(`${decimal} has more than ${decimals} decimals`);
+  return checkAmount((BigInt(m[1]!) * 10n ** BigInt(decimals) + BigInt(frac.padEnd(decimals, "0") || "0")).toString());
+}
+
+function checkText(text: string | undefined, what: string): void {
+  if (text !== undefined && new TextEncoder().encode(text).length > MAX_TEXT_BYTES) {
+    throw new VaultArgumentError(`${what} is longer than ${MAX_TEXT_BYTES} bytes (the vault refuses it with MemoTooLong)`);
+  }
+}
+
+/** Cut a text to at most `max` UTF-8 bytes on a character boundary. */
+export function truncateBytes(text: string, max = MAX_TEXT_BYTES): string {
+  const enc = new TextEncoder();
+  if (enc.encode(text).length <= max) return text;
+  let out = "";
+  for (const ch of text) {
+    if (enc.encode(out + ch).length > max) break;
+    out += ch;
+  }
+  return out;
+}
+
+export type VaultClientOptions = {
+  vaultId: string;
+  network?: Network;
+  reader?: RpcReader;
+  /** The agent's function-call key on the vault account. Absent: agent calls come back prepared. */
+  agentKey?: LoadedKey | null;
+  /** The owner account and its full-access key. Absent key: owner calls come back prepared. */
+  owner?: { accountId: string; key?: LoadedKey | null } | null;
+  rpcUrl?: string;
+  timeoutMs?: number;
+};
+
+export type VaultClient = ReturnType<typeof vaultClient>;
+
+export function vaultClient(opts: VaultClientOptions) {
+  const network = opts.network ?? "testnet";
+  const reader = opts.reader ?? createReader({ rpc: NETWORKS[network].rpc, archival: NETWORKS[network].archival });
+  const vaultId = opts.vaultId;
+
+  async function asAgent(methodName: (typeof AGENT_METHODS)[number], args: Record<string, unknown>): Promise<PayCallResult> {
+    const call: Call = { receiverId: vaultId, methodName, args, gasTgas: VAULT_GAS_TGAS[methodName], deposit: "0" };
+    if (!opts.agentKey) return prepare(vaultId, call, "no agent key loaded");
+    const result = await send({ network, signerId: vaultId, key: opts.agentKey, reader, ...(opts.rpcUrl ? { rpcUrl: opts.rpcUrl } : {}), ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}) }, call);
+    if (result.status !== "executed") return result;
+    const pay = payOutcomeOf(result.outcome);
+    return { ...result, pay, event: pay ? vaultEventFor(result.outcome, vaultId, pay) : null };
+  }
+
+  async function asOwner(methodName: string, args: Record<string, unknown>, deposit: string, gasTgas: number = VAULT_GAS_TGAS.owner_default): Promise<CallResult> {
+    const signerId = opts.owner?.accountId ?? "<vault owner>";
+    const call: Call = { receiverId: vaultId, methodName, args, gasTgas, deposit };
+    if (!opts.owner?.key) return prepare(signerId, call, "no owner key loaded");
+    return send({ network, signerId, key: opts.owner.key, reader, ...(opts.rpcUrl ? { rpcUrl: opts.rpcUrl } : {}), ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}) }, call);
+  }
+
+  return {
+    vaultId,
+    network,
+
+    // -- agent (function-call key, signed as the vault) --
+    pay(a: { payee: string; amount: string; memo?: string }) {
+      checkAmount(a.amount);
+      checkText(a.memo, "memo");
+      return asAgent("pay", { payee: a.payee, amount: a.amount, memo: a.memo ?? null });
+    },
+    requestPayment(a: { payee: string; amount: string; memo?: string; reason: string }) {
+      checkAmount(a.amount);
+      checkText(a.memo, "memo");
+      checkText(a.reason, "reason");
+      return asAgent("request_payment", { payee: a.payee, amount: a.amount, memo: a.memo ?? null, reason: a.reason });
+    },
+    recordRefusal(a: { payee: string; amount: string; reason: string }) {
+      checkAmount(a.amount);
+      checkText(a.reason, "reason");
+      return asAgent("record_refusal", { payee: a.payee, amount: a.amount, reason: a.reason });
+    },
+
+    // -- owner (full-access key; 1 yoctoNEAR where the contract requires it) --
+    async ownerPay(heldId: string): Promise<PayCallResult> {
+      const r = await asOwner("owner_pay", { held_id: heldId }, ONE_YOCTO, VAULT_GAS_TGAS.owner_pay);
+      if (r.status !== "executed") return r;
+      const pay = payOutcomeOf(r.outcome);
+      return { ...r, pay, event: pay ? vaultEventFor(r.outcome, vaultId, pay) : null };
+    },
+    ownerReject: (heldId: string) => asOwner("owner_reject", { held_id: heldId }, ONE_YOCTO),
+    freeze: () => asOwner("freeze", {}, "0"),
+    unfreeze: () => asOwner("unfreeze", {}, ONE_YOCTO),
+    setPolicy: (p: { dailyCap: string; autoApproveMax: string; allowlistEnabled: boolean }) =>
+      asOwner("set_policy", { daily_cap: p.dailyCap, auto_approve_max: p.autoApproveMax, allowlist_enabled: p.allowlistEnabled }, ONE_YOCTO),
+    setAllowed: (payee: string, ok: boolean) => asOwner("set_allowed", { payee, ok }, ONE_YOCTO),
+    setRegistry: (registryId: string | null) => asOwner("set_registry", { registry_id: registryId }, ONE_YOCTO),
+    setHoldUnknown: (holdUnknown: boolean) => asOwner("set_hold_unknown", { hold_unknown: holdUnknown }, ONE_YOCTO),
+    /** `allowance` is yoctoNEAR of gas allowance; the vault refuses 0 rather than make it unlimited. */
+    addAgentKey: (k: { publicKey: string; label: string; expiresAtS: string; allowance: string }) =>
+      asOwner("add_agent_key", { public_key: k.publicKey, label: k.label, expires_at_s: k.expiresAtS, allowance: k.allowance }, ONE_YOCTO, VAULT_GAS_TGAS.add_agent_key),
+    revokeAgentKey: (publicKey: string) => asOwner("revoke_agent_key", { public_key: publicKey }, ONE_YOCTO),
+    forgetAgentKey: (publicKey: string) => asOwner("forget_agent_key", { public_key: publicKey }, ONE_YOCTO),
+    setAgentExpiry: (publicKey: string, expiresAtS: string) => asOwner("set_agent_expiry", { public_key: publicKey, expires_at_s: expiresAtS }, ONE_YOCTO),
+    withdraw: (amount: string) => asOwner("withdraw", { amount: checkAmount(amount) }, ONE_YOCTO, VAULT_GAS_TGAS.withdraw),
+    registerWithToken: () => asOwner("register_with_token", {}, "0", VAULT_GAS_TGAS.register_with_token),
+
+    // -- views (final block) --
+    getConfig: () => viewFunction<VaultConfig>(reader, vaultId, "get_config"),
+    today: () => viewFunction<string>(reader, vaultId, "today"),
+    spentToday: () => viewFunction<string>(reader, vaultId, "spent_today"),
+    remainingToday: () => viewFunction<string | null>(reader, vaultId, "remaining_today"),
+    getAgent: (publicKey: string) => viewFunction<AgentKeyView | null>(reader, vaultId, "get_agent", { public_key: publicKey }),
+    listAgents: () => viewFunction<AgentKeyView[]>(reader, vaultId, "list_agents"),
+    listHeld: (fromIndex?: string, limit?: string) => viewFunction<HeldPayment[]>(reader, vaultId, "list_held", { from_index: fromIndex ?? null, limit: limit ?? null }),
+    getHeld: (heldId: string) => viewFunction<HeldPayment | null>(reader, vaultId, "get_held", { held_id: heldId }),
+    isAllowed: (payee: string) => viewFunction<boolean>(reader, vaultId, "is_allowed", { payee }),
+    listAllowlist: (fromIndex?: string, limit?: string) => viewFunction<string[]>(reader, vaultId, "list_allowlist", { from_index: fromIndex ?? null, limit: limit ?? null }),
+    refusalCount: (payee: string) => viewFunction<number>(reader, vaultId, "refusal_count", { payee }),
+    guardRefusalCount: (payee: string) => viewFunction<number>(reader, vaultId, "guard_refusal_count", { payee }),
+    paidCount: (payee: string) => viewFunction<number>(reader, vaultId, "paid_count", { payee }),
+  };
+}

@@ -1,0 +1,288 @@
+{
+  "schema": "a-identity.near.snapshot/1",
+  "network": "testnet",
+  "subject": "no-such-account-zz91.testnet",
+  "block": {
+    "height": 277300558,
+    "hash": "2cnLReWm8gmNR4hyPFngjUcu7uwpsU5CMZJrAqEk7ko4",
+    "timestamp_ns": "1794450217264724833"
+  },
+  "context": {
+    "known": [],
+    "vault_id": null,
+    "registry_id": "registry.a-identity.testnet",
+    "usdc_id": "3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af",
+    "third_party": [
+      {
+        "id": "mimicwatch",
+        "name": "MimicWatch",
+        "contract": "registry.mimicwatch-e7iig5g5.testnet",
+        "network": "testnet",
+        "method": "is_flagged",
+        "arg": "id"
+      },
+      {
+        "id": "tripwire",
+        "name": "Tripwire",
+        "contract": "tripwire-registry-44ea74.testnet",
+        "network": "testnet",
+        "method": "get_risk",
+        "arg": "account_id"
+      },
+      {
+        "id": "near_leash",
+        "name": "near-leash",
+        "contract": "leash-registry.testnet",
+        "network": "testnet",
+        "method": "verdict",
+        "arg": "account_id"
+      },
+      {
+        "id": "leash_commons",
+        "name": "Leash commons",
+        "contract": "registry.leash-busel-commons.testnet",
+        "network": "testnet",
+        "method": "get_status",
+        "arg": "account_id"
+      }
+    ],
+    "erc8004": {
+      "identity": "identity-registry.erc-8004.testnet",
+      "reputation": "reputation-registry.erc-8004.testnet"
+    },
+    "probes": {
+      "recent_s": 259200,
+      "long_s": 2592000
+    },
+    "activity_window": 5
+  },
+  "rpc": [
+    {
+      "label": "account",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "view_account",
+        "account_id": "no-such-account-zz91.testnet",
+        "block_id": 277300558
+      },
+      "error": {
+        "name": "HANDLER_ERROR",
+        "cause": "UNKNOWN_ACCOUNT",
+        "message": "UNKNOWN_ACCOUNT: account no-such-account-zz91.testnet does not exist while viewing"
+      }
+    },
+    {
+      "label": "block",
+      "network": "testnet",
+      "archival": false,
+      "method": "block",
+      "params": {
+        "block_id": 277300558
+      },
+      "result": {
+        "header": {
+          "height": 277300558,
+          "hash": "2cnLReWm8gmNR4hyPFngjUcu7uwpsU5CMZJrAqEk7ko4",
+          "prev_hash": "Gj6UwbfXpn5PxMNYxRQcMxXTzFh44qu2uA7UkxXZJkSR",
+          "timestamp_nanosec": "1794450217264724833"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "erc8004.nft_tokens_for_owner",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "identity-registry.erc-8004.testnet",
+        "method_name": "nft_tokens_for_owner",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibm8tc3VjaC1hY2NvdW50LXp6OTEudGVzdG5ldCIsImZyb21faW5kZXgiOm51bGwsImxpbWl0Ijo1fQ==",
+        "block_id": 277300558
+      },
+      "result": {
+        "block_hash": "2cnLReWm8gmNR4hyPFngjUcu7uwpsU5CMZJrAqEk7ko4",
+        "block_height": 277300558,
+        "logs": [],
+        "result": [91,93]
+      }
+    },
+    {
+      "label": "registry.get_verdict",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "registry.a-identity.testnet",
+        "method_name": "get_verdict",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibm8tc3VjaC1hY2NvdW50LXp6OTEudGVzdG5ldCJ9",
+        "block_id": 277300558
+      },
+      "error": {
+        "name": "HANDLER_ERROR",
+        "cause": "UNKNOWN_ACCOUNT",
+        "message": "UNKNOWN_ACCOUNT: account registry.a-identity.testnet does not exist while viewing"
+      }
+    },
+    {
+      "label": "third_party.leash_commons",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "registry.leash-busel-commons.testnet",
+        "method_name": "get_status",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibm8tc3VjaC1hY2NvdW50LXp6OTEudGVzdG5ldCJ9",
+        "block_id": 277300558
+      },
+      "result": {
+        "block_hash": "2cnLReWm8gmNR4hyPFngjUcu7uwpsU5CMZJrAqEk7ko4",
+        "block_height": 277300558,
+        "logs": [],
+        "result": [123,34,97,99,99,111,117,110,116,95,105,100,34,58,34,110,111,45,115,117,99,104,45,97,99,99,111,117,110,116,45,122,122,57,49,46,116,101,115,116,110,101,116,34,44,34,98,108,111,99,107,101,100,34,58,102,97,108,115,101,44,34,98,108,111,99,107,101,100,95,98,121,34,58,110,117,108,108,44,34,114,101,112,111,114,116,115,34,58,48,44,34,116,104,114,101,115,104,111,108,100,34,58,50,44,34,111,119,110,101,114,95,114,101,97,115,111,110,34,58,110,117,108,108,44,34,99,111,110,116,114,97,99,116,95,99,111,100,101,95,104,97,115,104,34,58,110,117,108,108,125]
+      }
+    },
+    {
+      "label": "third_party.mimicwatch",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "registry.mimicwatch-e7iig5g5.testnet",
+        "method_name": "is_flagged",
+        "args_base64": "eyJpZCI6Im5vLXN1Y2gtYWNjb3VudC16ejkxLnRlc3RuZXQifQ==",
+        "block_id": 277300558
+      },
+      "result": {
+        "block_hash": "2cnLReWm8gmNR4hyPFngjUcu7uwpsU5CMZJrAqEk7ko4",
+        "block_height": 277300558,
+        "logs": [],
+        "result": [123,34,113,117,101,114,121,34,58,34,110,111,45,115,117,99,104,45,97,99,99,111,117,110,116,45,122,122,57,49,46,116,101,115,116,110,101,116,34,44,34,102,108,97,103,103,101,100,34,58,102,97,108,115,101,44,34,118,105,97,34,58,110,117,108,108,44,34,101,110,116,114,121,34,58,110,117,108,108,44,34,99,108,101,97,114,101,100,34,58,110,117,108,108,125]
+      }
+    },
+    {
+      "label": "third_party.near_leash",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "leash-registry.testnet",
+        "method_name": "verdict",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibm8tc3VjaC1hY2NvdW50LXp6OTEudGVzdG5ldCJ9",
+        "block_id": 277300558
+      },
+      "result": {
+        "block_hash": "2cnLReWm8gmNR4hyPFngjUcu7uwpsU5CMZJrAqEk7ko4",
+        "block_height": 277300558,
+        "logs": [],
+        "result": [123,34,118,101,114,100,105,99,116,34,58,34,99,108,101,97,114,34,44,34,100,105,115,116,105,110,99,116,95,114,101,112,111,114,116,101,114,115,34,58,48,44,34,116,114,117,115,116,101,100,95,114,101,112,111,114,116,115,34,58,48,44,34,114,101,97,115,111,110,115,34,58,91,93,125]
+      }
+    },
+    {
+      "label": "third_party.tripwire",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "tripwire-registry-44ea74.testnet",
+        "method_name": "get_risk",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibm8tc3VjaC1hY2NvdW50LXp6OTEudGVzdG5ldCJ9",
+        "block_id": 277300558
+      },
+      "result": {
+        "block_hash": "2cnLReWm8gmNR4hyPFngjUcu7uwpsU5CMZJrAqEk7ko4",
+        "block_height": 277300558,
+        "logs": [],
+        "result": [123,34,97,99,99,111,117,110,116,95,105,100,34,58,34,110,111,45,115,117,99,104,45,97,99,99,111,117,110,116,45,122,122,57,49,46,116,101,115,116,110,101,116,34,44,34,115,99,111,114,101,34,58,48,44,34,108,101,118,101,108,34,58,34,110,111,110,101,34,44,34,102,108,97,103,115,34,58,91,93,125]
+      }
+    },
+    {
+      "label": "usdc.is_blocklisted",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af",
+        "method_name": "is_blocklisted",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibm8tc3VjaC1hY2NvdW50LXp6OTEudGVzdG5ldCJ9",
+        "block_id": 277300558
+      },
+      "result": {
+        "block_hash": "2cnLReWm8gmNR4hyPFngjUcu7uwpsU5CMZJrAqEk7ko4",
+        "block_height": 277300558,
+        "logs": [],
+        "result": [102,97,108,115,101]
+      }
+    },
+    {
+      "label": "usdc.storage_balance_of",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af",
+        "method_name": "storage_balance_of",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibm8tc3VjaC1hY2NvdW50LXp6OTEudGVzdG5ldCJ9",
+        "block_id": 277300558
+      },
+      "result": {
+        "block_hash": "2cnLReWm8gmNR4hyPFngjUcu7uwpsU5CMZJrAqEk7ko4",
+        "block_height": 277300558,
+        "logs": [],
+        "result": [110,117,108,108]
+      }
+    }
+  ],
+  "http": [
+    {
+      "label": "fastnear.newest",
+      "source": "fastnear",
+      "method": "POST",
+      "url": "https://tx.test.fastnear.com/v0/account",
+      "status": 200,
+      "json": {
+        "account_txs": [],
+        "txs_count": 0
+      },
+      "fetched_at": "2026-11-12T02:23:39.867Z",
+      "body": {
+        "account_id": "no-such-account-zz91.testnet",
+        "limit": 1,
+        "desc": true
+      }
+    },
+    {
+      "label": "fastnear.oldest",
+      "source": "fastnear",
+      "method": "POST",
+      "url": "https://tx.test.fastnear.com/v0/account",
+      "status": 200,
+      "json": {
+        "account_txs": [],
+        "txs_count": 0
+      },
+      "fetched_at": "2026-11-12T02:23:39.466Z",
+      "body": {
+        "account_id": "no-such-account-zz91.testnet",
+        "limit": 5,
+        "desc": false
+      }
+    }
+  ],
+  "meta": {
+    "collected_at": "2026-11-12T02:23:40.401Z",
+    "collector": "a-identity-near-sdk/0.1.0",
+    "endpoints": ["rpc.testnet.fastnear.com","tx.test.fastnear.com"],
+    "notes": []
+  }
+}
