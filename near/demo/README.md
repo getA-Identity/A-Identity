@@ -76,9 +76,9 @@ engine, read-only), and when the vendor was already paid, judged or allowlisted.
 - NEAR AI Cloud, OpenAI-compatible, `https://cloud-api.near.ai/v1`. The default model id
   `Qwen/Qwen3.6-35B-A3B-FP8` was checked against the live model list on 2026-11-12 (HTTP 200); it is
   served by NEAR AI inside a TEE. `z-ai/glm-5.3-flash` and `Qwen/Qwen3.8-27B` are the same kind.
-  Tool calling and `seed` are what NEAR AI documents for these models; this demo has only run them
-  against a mocked endpoint so far, so the first `--llm` run is their live test. An HTTP error from
-  NEAR AI is recorded with its exchange before the phase fails.
+  Tool calling and `seed` are what NEAR AI documents for these models. The recorded run
+  `logs/20261112T195833Z-llm.json` (2026-11-12) used the default model live: 6 exchanges, each
+  HTTP 200. An HTTP error from NEAR AI is recorded with its exchange before the phase fails.
 - Temperature 0 and a fixed seed (`NEAR_AI_SEED`, default 7). Thinking off by default
   (`NEAR_AI_THINKING=on` to keep it).
 - Key: `NEAR_AI_KEY_FILE=<path to a 0600 file>` (plain key, or JSON with `api_key`), or
@@ -127,8 +127,9 @@ engine, read-only), and when the vendor was already paid, judged or allowlisted.
    `AID_AGENT_KEY_FILE`. The demo checks on chain that this key is exactly that function-call key
    and refuses to run otherwise.
 3. The oracle key: a function-call key on `oracle.a-identity.testnet` with receiver the registry and
-   only `set_verdict, set_verdicts, clear_verdict, clear_reports` (amendment A3). The key in the
-   keychain today is full-access and is refused; writes are then printed as prepared calls.
+   only `set_verdict, set_verdicts, clear_verdict, clear_reports` (amendment A3). The oracle's
+   full-access key was deleted on chain (`23WazyK4C7XHha1DLpiNAPUUCHZn8AcEUKzzx8Neoxxz`); a
+   full-access key file is refused, and writes are then printed as prepared calls.
 4. Fresh payees, created minutes before the recorded run (their age is one of the signals):
 
    ```
@@ -138,7 +139,9 @@ engine, read-only), and when the vendor was already paid, judged or allowlisted.
 
    `aid-demo-merchamt` is `aid-demo-merchant` with its last `n` turned into `m`: one edit. After a
    rehearsal use `aid-demo-merchent` and `aid-demo-copyshop` (see "Run it"). The existing
-   `aid-demo-attacker.testnet` is never used (the config refuses any name with "attacker").
+   `aid-demo-attacker.testnet` is never a demo role or payee (the config refuses any name with
+   "attacker"); its one transaction created and funded `aid-demo-rnerchant.testnet`, the lookalike
+   of the run with a model, because the testnet faucet's per-IP limit was spent.
 5. Funds: about 3 USDC in the vault (faucet.circle.com gives 20 per address every 2 hours, then
    `ft_transfer_call` to the vault), NEAR on the vault for storage and the agent's gas.
 6. Either let the setup phase run (one owner approval of 0.01 USDC to the merchant) or allowlist the
@@ -232,7 +235,9 @@ the first testnet run.
 - Testnet only. Unaudited contracts.
 - Phase b depends on the model's choice; a run where the model refuses the bait is reported as such.
 - The guard's verdict is only as good as the engine's signals (`sdk/README.md`); the vault holds
-  unknown payees regardless, so a missed signal costs a held payment, not money.
+  unknown payees regardless, so a missed signal costs a held payment, unless the oracle watcher,
+  which runs the same engine, judges that payee ALLOW: then the agent's retry pays it inside the
+  owner's caps (the limit is stated in [../README.md](../README.md#benchmark-the-engine-on-real-mainnet-accounts)).
 - The owner's approvals are signed by the demo in place of a person; the log tags them `scripted`.
 - The oracle is one key on one account; what a stolen oracle key can and cannot do is in the
   threat model. The vault's caps and holds still bind.

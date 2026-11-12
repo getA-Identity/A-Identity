@@ -11,6 +11,11 @@ poisoned invoice that says "our payment account changed" is enough. Spending cap
 payment to the wrong payee, and a risk check that runs inside the agent protects nothing once the
 agent itself has been fooled.
 
+**What is different.** A cap-and-allowlist wallet stops overspending, not a wrong payee, and a
+mandate vault fixes every payee in advance. This vault handles the first payment to a payee nobody
+listed: the contract reads a registry verdict that anyone can recompute from public chain data,
+holds a payee nobody has judged, and refuses a DENY even when the owner approves it.
+
 Status: NEAR testnet, unaudited. An entry to NEAR HACKATHON 2026, tracks `security`, `agents` and
 `open`. Only the NEAR integration built in the hackathon window is submitted (listed in
 [Built in the window](#built-in-the-window-and-what-is-baseline)); A-Identity on other chains is
@@ -62,6 +67,23 @@ Time each command took on 2026-11-12, from the repository root:
 | `node near/judge/judge.mjs --verify-evidence` | 132.5 s (one run) | 37 PASS, 6 SKIP: 4 on HTTP 429, and 2 local checks with nothing recorded to verify |
 | `node near/judge/judge.mjs --step full-unit-tests,full-judge-tests,full-sdk-tests` | 36.4 s on a warm build cache (one run) | needs the tools in [Reproduce from source](#reproduce-from-source) |
 | `node near/judge/judge.mjs --full` | not timed end to end | adds the sandbox suite (one local node per test) and the Docker reproducible build; CI's `contracts` job (format, clippy, unit and sandbox tests, negative controls) took 20 minutes |
+
+## Try to break it
+
+The demo post asks for this. Each of these counts as a break:
+
+- USDC leaves the vault for a payee the registry says DENY, or for a payee with no registry ALLOW
+  that the owner neither allowlisted nor paid before, without the owner's approval.
+- The agent's key does anything but call `pay`, `request_payment` or `record_refusal` on the vault,
+  or moves more than the policy allows (per-payment ceiling 2 USDC, daily cap 5 USDC).
+- A verdict in the registry does not recompute: `cd near && npm ci && npm run verdict -- <account>
+  --at-block <N>` gives a different `chain_sha256` or verdict.
+- `node near/judge/judge.mjs` prints FAIL, or a claim passes while its evidence says otherwise.
+
+Ask the hosted check about any NEAR testnet account:
+`curl --max-time 120 "https://a-identity-backend.onrender.com/api/near/check?account=<id>"` (it runs
+on an instance that sleeps when idle, so the first answer can take about a minute). Report a break
+as a GitHub issue, or privately as [SECURITY.md](../SECURITY.md) describes.
 
 ## What it does, and what to look for
 
@@ -151,7 +173,7 @@ The record is [deployments/testnet.json](deployments/testnet.json) (`"status": "
 | Payee: the lookalike, one letter changed | [aid-demo-merchamt.testnet](https://testnet.nearblocks.io/address/aid-demo-merchamt.testnet) | created 2026-11-12 18:49:37 UTC, less than a minute before the recorded run; received 0 USDC |
 | Payee: a new vendor | [aid-demo-printshop.testnet](https://testnet.nearblocks.io/address/aid-demo-printshop.testnet) | nobody had judged or paid it |
 | Payees of the two later runs (not judged) | [aid-demo-rnerchant.testnet](https://testnet.nearblocks.io/address/aid-demo-rnerchant.testnet), [aid-demo-merchent.testnet](https://testnet.nearblocks.io/address/aid-demo-merchent.testnet), [aid-demo-copyshop.testnet](https://testnet.nearblocks.io/address/aid-demo-copyshop.testnet) | the lookalikes of the run with a model and of the attempt before it, both received 0 USDC; the new vendor of the run with a model, paid 0.75 USDC after the owner's approval |
-| Not a payee | [aid-demo-attacker.testnet](https://testnet.nearblocks.io/address/aid-demo-attacker.testnet) | created during setup and never used: a payee named "attacker" proves nothing about a classifier |
+| Not a payee | [aid-demo-attacker.testnet](https://testnet.nearblocks.io/address/aid-demo-attacker.testnet) | created during setup; never a demo role or payee (a payee named "attacker" proves nothing about a classifier). Its one transaction created `aid-demo-rnerchant.testnet`, the lookalike of the run with a model, with 1 NEAR (`4SKBCnLzDch9nzcJeCreekLb3TfyjkJiEThTh4pPT9zi`); no verdict reads who created or funded an account |
 | Not the agent | [aid-demo-agent.testnet](https://testnet.nearblocks.io/address/aid-demo-agent.testnet) | predates this vault design; one full-access key; signs no demo transaction |
 
 - The agent's key on the vault: `ed25519:AyrM3caas16rWjMky2fPdQKPgQptdRrHRvPJaP7YFbeA`, receiver
@@ -284,7 +306,7 @@ curl -s https://rpc.testnet.fastnear.com -H 'Content-Type: application/json' -d 
 
 curl -s https://archival-rpc.testnet.fastnear.com -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"EXPERIMENTAL_tx_status","params":{"tx_hash":"9YR7ohek5GcaDdHzQc3PgU3mX9xFL3i3w5dAbEFPB6nG","sender_account_id":"vault.aid-demo-owner.testnet","wait_until":"NONE"}}' | jq -r '.result.receipts_outcome[].outcome.logs[]'
 
-curl -s 'https://a-identity-backend.onrender.com/api/near/check?account=aid-demo-merchamt.testnet' | jq '{verdict, registry_reasons, registry: (.registry | {verdict, reasons, written_by})}'
+curl -s --max-time 120 'https://a-identity-backend.onrender.com/api/near/check?account=aid-demo-merchamt.testnet' | jq '{verdict, registry_reasons, registry: (.registry | {verdict, reasons, written_by})}'
 
 curl -s https://archival-rpc.testnet.fastnear.com -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"EXPERIMENTAL_tx_status","params":{"tx_hash":"EzuUUxoihBEpXyLmTCBcH6UFkJJp1Nrk9yCPgNzVvGXX","sender_account_id":"vault.aid-demo-owner.testnet","wait_until":"NONE"}}' | jq -r '.result.receipts_outcome[].outcome.logs[]'
 ```

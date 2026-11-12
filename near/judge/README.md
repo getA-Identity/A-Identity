@@ -1,7 +1,7 @@
 # Zero-key judge
 
-One command turns every claim the NEAR README makes into a `PASS`, `FAIL` or `SKIP` line, from
-public chain data only. No keys, no accounts, no `npm install`: Node built-ins only, tested on
+One command turns every claim in the NEAR README's claims table into a `PASS`, `FAIL` or `SKIP`
+line, from public chain data only. No keys, no accounts, no `npm install`: Node built-ins only, tested on
 Node 22, 23 and 24. It never signs or sends a transaction. The verdict recompute and the judge's
 own tests run TypeScript with type stripping, so those two need Node 22.6 or later; on an older
 Node the recompute is a `SKIP` that says so.
