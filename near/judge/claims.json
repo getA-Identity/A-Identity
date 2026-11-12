@@ -1,0 +1,1274 @@
+{
+  "schema": "a-identity-near-claims/1",
+  "deployments": "deployments/testnet.json",
+  "notes": [
+    "One entry per README claim. claim is the sentence the README states, word for word; check is how the judge proves it; params may read deployments/testnet.json through ${path} templates, and a claim whose template is still null prints SKIP (pending), never PASS.",
+    "mode full marks a build or test step: it runs with --full or --step <id>, not in the default two-minute pass.",
+    "evidence is the file node judge/capture.mjs writes and node judge/judge.mjs --offline replays.",
+    "Reads that must give the same answer whenever a judge runs (a verdict with a TTL, counters a later run could move) are pinned to a block recorded in deployments/testnet.json and go to archival RPC. Current-state claims (keys, config, oracles) are read at finality final and assume the owners do not re-key, freeze or re-policy after capture; see judge/README.md."
+  ],
+  "claims": [
+    {
+      "id": "usdc-testnet-token",
+      "claim": "Circle's USDC on NEAR testnet (3e2210e1...cb8af) reports NEP-141 metadata: spec ft-1.0.0, symbol USDC, 6 decimals.",
+      "check": "view_equals",
+      "network": "testnet",
+      "params": {
+        "account_id": "${token.account_id}",
+        "method": "ft_metadata",
+        "args": {},
+        "expect": {
+          "spec": "ft-1.0.0",
+          "symbol": "USDC",
+          "decimals": 6
+        }
+      },
+      "evidence": "evidence/usdc-testnet-token.json"
+    },
+    {
+      "id": "usdc-testnet-blocklist",
+      "claim": "Circle's testnet USDC answers is_blocklisted, one of the signals the verdict engine reads (aid-demo-merchant.testnet: false).",
+      "check": "view_equals",
+      "network": "testnet",
+      "params": {
+        "account_id": "${token.account_id}",
+        "method": "is_blocklisted",
+        "args": {
+          "account_id": "${accounts.merchant.account_id}"
+        },
+        "expect": false
+      },
+      "evidence": "evidence/usdc-testnet-blocklist.json"
+    },
+    {
+      "id": "usdc-mainnet-blocklist",
+      "claim": "Circle's USDC on NEAR mainnet (17208628...36133a1) answers is_blocklisted, so the same signal works on real mainnet accounts (read-only).",
+      "check": "view_equals",
+      "network": "mainnet",
+      "params": {
+        "account_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+        "method": "is_blocklisted",
+        "args": {
+          "account_id": "wrap.near"
+        },
+        "expect": {
+          "$type": "boolean"
+        }
+      },
+      "evidence": "evidence/usdc-mainnet-blocklist.json"
+    },
+    {
+      "id": "erc8004-identity-mainnet",
+      "claim": "Arras's ERC-8004 identity registry, identity-registry.erc-8004.near, is a deployed contract on NEAR mainnet (read-only signal source).",
+      "check": "account_exists",
+      "network": "mainnet",
+      "params": {
+        "account_id": "identity-registry.erc-8004.near",
+        "has_contract": true
+      },
+      "evidence": "evidence/erc8004-identity-mainnet.json"
+    },
+    {
+      "id": "erc8004-reputation-mainnet",
+      "claim": "Arras's ERC-8004 reputation registry, reputation-registry.erc-8004.near, is a deployed contract on NEAR mainnet (read-only signal source).",
+      "check": "account_exists",
+      "network": "mainnet",
+      "params": {
+        "account_id": "reputation-registry.erc-8004.near",
+        "has_contract": true
+      },
+      "evidence": "evidence/erc8004-reputation-mainnet.json"
+    },
+    {
+      "id": "account-registry-owner",
+      "claim": "a-identity.testnet, the registry owner, exists on NEAR testnet.",
+      "check": "account_exists",
+      "network": "testnet",
+      "params": {
+        "account_id": "${accounts.registry_owner.account_id}"
+      },
+      "evidence": "evidence/account-registry-owner.json"
+    },
+    {
+      "id": "account-oracle",
+      "claim": "oracle.a-identity.testnet, the oracle that writes verdicts, exists on NEAR testnet.",
+      "check": "account_exists",
+      "network": "testnet",
+      "params": {
+        "account_id": "${accounts.oracle.account_id}"
+      },
+      "evidence": "evidence/account-oracle.json"
+    },
+    {
+      "id": "account-vault-owner",
+      "claim": "aid-demo-owner.testnet, the vault owner, exists on NEAR testnet.",
+      "check": "account_exists",
+      "network": "testnet",
+      "params": {
+        "account_id": "${accounts.vault_owner.account_id}"
+      },
+      "evidence": "evidence/account-vault-owner.json"
+    },
+    {
+      "id": "account-merchant",
+      "claim": "aid-demo-merchant.testnet, the legitimate demo payee, exists on NEAR testnet.",
+      "check": "account_exists",
+      "network": "testnet",
+      "params": {
+        "account_id": "${accounts.merchant.account_id}"
+      },
+      "evidence": "evidence/account-merchant.json"
+    },
+    {
+      "id": "account-attacker",
+      "claim": "aid-demo-attacker.testnet exists on NEAR testnet; it was created during setup and is not a demo payee (a payee named attacker proves nothing about a classifier).",
+      "check": "account_exists",
+      "network": "testnet",
+      "params": {
+        "account_id": "${accounts.attacker.account_id}"
+      },
+      "evidence": "evidence/account-attacker.json"
+    },
+    {
+      "id": "account-agent-legacy",
+      "claim": "aid-demo-agent.testnet is not the agent: it predates the keyless vault and holds one full-access key and no function-call key; every agent transaction in this table is signed by the vault account with its function-call key instead.",
+      "check": "access_keys",
+      "network": "testnet",
+      "params": {
+        "account_id": "${accounts.agent_legacy.account_id}",
+        "full_access_count": 1,
+        "max_function_call_keys": 0
+      },
+      "evidence": "evidence/account-agent-legacy.json"
+    },
+    {
+      "id": "registry-code",
+      "claim": "registry.a-identity.testnet runs the committed build: its on-chain code_hash is base58(sha256) of deployments/wasm/a_identity_registry.wasm.",
+      "check": "code_hash_matches_committed_wasm",
+      "network": "testnet",
+      "params": {
+        "account_id": "${contracts.registry.account_id}",
+        "wasm_path": "${contracts.registry.wasm_path}",
+        "sha256_hex": "${?contracts.registry.wasm_sha256_hex}",
+        "sha256_base58": "${?contracts.registry.wasm_sha256_base58}",
+        "recorded_code_hash": "${contracts.registry.code_hash}"
+      },
+      "evidence": "evidence/registry-code.json"
+    },
+    {
+      "id": "vault-code",
+      "claim": "vault.aid-demo-owner.testnet runs the committed build: its on-chain code_hash is base58(sha256) of deployments/wasm/agent_spend_policy.wasm.",
+      "check": "code_hash_matches_committed_wasm",
+      "network": "testnet",
+      "params": {
+        "account_id": "${contracts.vault.account_id}",
+        "wasm_path": "${contracts.vault.wasm_path}",
+        "sha256_hex": "${?contracts.vault.wasm_sha256_hex}",
+        "sha256_base58": "${?contracts.vault.wasm_sha256_base58}",
+        "recorded_code_hash": "${contracts.vault.code_hash}"
+      },
+      "evidence": "evidence/vault-code.json"
+    },
+    {
+      "id": "vault-keys",
+      "claim": "The vault account holds no full-access key: every key on it is a function-call key for exactly pay, request_payment and record_refusal on the vault, with a finite NEAR allowance.",
+      "check": "access_keys",
+      "network": "testnet",
+      "params": {
+        "account_id": "${contracts.vault.account_id}",
+        "full_access_count": 0,
+        "function_call": {
+          "receiver_id": "${contracts.vault.account_id}",
+          "method_names": [
+            "pay",
+            "request_payment",
+            "record_refusal"
+          ],
+          "allowance": "finite"
+        },
+        "min_function_call_keys": 1,
+        "max_function_call_keys": 5,
+        "must_include": [
+          "${keys.vault.agent.public_key}"
+        ]
+      },
+      "requires": [
+        "contracts.vault.code_hash"
+      ],
+      "evidence": "evidence/vault-keys.json"
+    },
+    {
+      "id": "oracle-keys",
+      "claim": "The oracle account holds no full-access key: it writes verdicts only with a function-call key on the registry limited to set_verdict, set_verdicts, clear_verdict and clear_reports.",
+      "check": "access_keys",
+      "network": "testnet",
+      "params": {
+        "account_id": "${accounts.oracle.account_id}",
+        "full_access_count": 0,
+        "function_call": {
+          "receiver_id": "${contracts.registry.account_id}",
+          "method_names": [
+            "set_verdict",
+            "set_verdicts",
+            "clear_verdict",
+            "clear_reports"
+          ]
+        },
+        "min_function_call_keys": 1,
+        "must_include": [
+          "${keys.oracle.function_call.public_key}"
+        ]
+      },
+      "requires": [
+        "contracts.registry.code_hash"
+      ],
+      "evidence": "evidence/oracle-keys.json"
+    },
+    {
+      "id": "registry-keys",
+      "claim": "The registry account holds no full-access key, so nobody can redeploy or delete the registry.",
+      "check": "access_keys",
+      "network": "testnet",
+      "params": {
+        "account_id": "${contracts.registry.account_id}",
+        "full_access_count": 0
+      },
+      "requires": [
+        "contracts.registry.code_hash"
+      ],
+      "evidence": "evidence/registry-keys.json"
+    },
+    {
+      "id": "registry-owner-keys",
+      "claim": "The registry owner's key list is public and small: a-identity.testnet holds exactly one full-access key and no function-call key.",
+      "check": "access_keys",
+      "network": "testnet",
+      "params": {
+        "account_id": "${accounts.registry_owner.account_id}",
+        "full_access_count": 1,
+        "max_function_call_keys": 0
+      },
+      "evidence": "evidence/registry-owner-keys.json"
+    },
+    {
+      "id": "vault-config",
+      "claim": "The vault's on-chain policy is the one stated: owner aid-demo-owner.testnet, Circle testnet USDC, registry registry.a-identity.testnet, not frozen, unknown payees held, and the daily cap and per-payment ceiling recorded in deployments/testnet.json.",
+      "check": "view_equals",
+      "network": "testnet",
+      "params": {
+        "account_id": "${contracts.vault.account_id}",
+        "method": "get_config",
+        "args": {},
+        "expect": {
+          "owner_id": "${accounts.vault_owner.account_id}",
+          "token_id": "${token.account_id}",
+          "registry_id": "${contracts.registry.account_id}",
+          "frozen": false,
+          "hold_unknown": true,
+          "allowlist_enabled": "${policy.allowlist_enabled}",
+          "daily_cap": "${policy.daily_cap}",
+          "auto_approve_max": "${policy.auto_approve_max}"
+        }
+      },
+      "requires": [
+        "contracts.vault.code_hash"
+      ],
+      "evidence": "evidence/vault-config.json"
+    },
+    {
+      "id": "registry-oracles",
+      "claim": "Only oracle.a-identity.testnet may write verdicts: the registry's oracles() is exactly [oracle.a-identity.testnet].",
+      "check": "view_equals",
+      "network": "testnet",
+      "params": {
+        "account_id": "${contracts.registry.account_id}",
+        "method": "oracles",
+        "args": {},
+        "expect": [
+          "${accounts.oracle.account_id}"
+        ]
+      },
+      "requires": [
+        "contracts.registry.code_hash"
+      ],
+      "evidence": "evidence/registry-oracles.json"
+    },
+    {
+      "id": "registry-owner",
+      "claim": "The registry's owner is a-identity.testnet, whose key stays offline.",
+      "check": "view_equals",
+      "network": "testnet",
+      "params": {
+        "account_id": "${contracts.registry.account_id}",
+        "method": "owner",
+        "args": {},
+        "expect": "${accounts.registry_owner.account_id}"
+      },
+      "requires": [
+        "contracts.registry.code_hash"
+      ],
+      "evidence": "evidence/registry-owner.json"
+    },
+    {
+      "id": "verdict-lookalike",
+      "claim": "The registry's verdict for the lookalike aid-demo-merchamt.testnet, read at the block recorded in deployments/testnet.json, is DENY with reason codes, written by the oracle, and its evidence names the snapshot, block and engine it was computed from.",
+      "check": "view_equals",
+      "network": "testnet",
+      "params": {
+        "account_id": "${contracts.registry.account_id}",
+        "method": "get_verdict",
+        "args": {
+          "account_id": "${payees.lookalike.account_id}"
+        },
+        "block_id": "${verdicts.lookalike.read_block}",
+        "expect": {
+          "verdict": "DENY",
+          "reasons": {
+            "$nonEmpty": true
+          },
+          "updated_by": "${accounts.oracle.account_id}",
+          "evidence": {
+            "$regex": "^near-snapshot sha256:[0-9a-f]{64} block:[0-9]+ engine:"
+          }
+        }
+      },
+      "requires": [
+        "verdicts.lookalike.set_tx_hash"
+      ],
+      "evidence": "evidence/verdict-lookalike.json"
+    },
+    {
+      "id": "tx-setup-request",
+      "claim": "The merchant's first payment waited for the owner: the agent's request_payment to aid-demo-merchant.testnet emitted payment_held, and no receipt reached the USDC contract.",
+      "check": "tx_outcome",
+      "network": "testnet",
+      "params": {
+        "tx_hash": "${demo.transactions.setup_request.tx_hash}",
+        "sender_account_id": "${contracts.vault.account_id}",
+        "expect": {
+          "signer_id": "${contracts.vault.account_id}",
+          "public_key": "${keys.vault.agent.public_key}",
+          "receiver_id": "${contracts.vault.account_id}",
+          "method_name": "request_payment",
+          "status": "success",
+          "return": {
+            "status": "held"
+          },
+          "no_failed_receipts": true,
+          "events": [
+            {
+              "standard": "a_identity_vault",
+              "event": "payment_held",
+              "executor_id": "${contracts.vault.account_id}",
+              "data": {
+                "payee": "${accounts.merchant.account_id}",
+                "amount": "${demo.transactions.setup_request.amount}"
+              },
+              "count": 1
+            }
+          ],
+          "absent_events": [
+            {
+              "standard": "a_identity_vault",
+              "event": "payment_sent"
+            }
+          ],
+          "no_receipts_executed_by": [
+            "${token.account_id}"
+          ]
+        }
+      },
+      "evidence": "evidence/tx-setup-request.json"
+    },
+    {
+      "id": "tx-setup-owner-pay",
+      "claim": "The owner approved that first payment once, with one owner_pay (1 yoctoNEAR): payment_sent with by_owner true, and a nep141 ft_transfer moved the USDC from the vault to aid-demo-merchant.testnet.",
+      "check": "tx_outcome",
+      "network": "testnet",
+      "params": {
+        "tx_hash": "${demo.transactions.setup_owner_pay.tx_hash}",
+        "sender_account_id": "${accounts.vault_owner.account_id}",
+        "expect": {
+          "signer_id": "${accounts.vault_owner.account_id}",
+          "receiver_id": "${contracts.vault.account_id}",
+          "method_name": "owner_pay",
+          "deposit": "1",
+          "status": "success",
+          "return": {
+            "status": "sent"
+          },
+          "no_failed_receipts": true,
+          "events": [
+            {
+              "standard": "a_identity_vault",
+              "event": "payment_sent",
+              "executor_id": "${contracts.vault.account_id}",
+              "data": {
+                "payee": "${accounts.merchant.account_id}",
+                "amount": "${demo.transactions.setup_owner_pay.amount}",
+                "by_owner": true
+              },
+              "count": 1
+            }
+          ],
+          "ft_transfers": [
+            {
+              "token_id": "${token.account_id}",
+              "from": "${contracts.vault.account_id}",
+              "to": "${accounts.merchant.account_id}",
+              "amount": "${demo.transactions.setup_owner_pay.amount}",
+              "present": true,
+              "symbol": "USDC",
+              "decimals": 6
+            }
+          ]
+        }
+      },
+      "evidence": "evidence/tx-setup-owner-pay.json"
+    },
+    {
+      "id": "tx-pay-known",
+      "claim": "The agent paid aid-demo-merchant.testnet with its function-call key and USDC moved: payment_sent, and the USDC contract executed a nep141 ft_transfer from the vault to the merchant for the exact amount.",
+      "check": "tx_outcome",
+      "network": "testnet",
+      "params": {
+        "tx_hash": "${demo.transactions.pay_known.tx_hash}",
+        "sender_account_id": "${contracts.vault.account_id}",
+        "expect": {
+          "signer_id": "${contracts.vault.account_id}",
+          "public_key": "${keys.vault.agent.public_key}",
+          "receiver_id": "${contracts.vault.account_id}",
+          "method_name": "pay",
+          "status": "success",
+          "return": {
+            "status": "sent"
+          },
+          "no_failed_receipts": true,
+          "events": [
+            {
+              "standard": "a_identity_vault",
+              "event": "payment_sent",
+              "executor_id": "${contracts.vault.account_id}",
+              "data": {
+                "payee": "${accounts.merchant.account_id}",
+                "amount": "${demo.transactions.pay_known.amount}",
+                "by_owner": false
+              },
+              "count": 1
+            }
+          ],
+          "ft_transfers": [
+            {
+              "token_id": "${token.account_id}",
+              "from": "${contracts.vault.account_id}",
+              "to": "${accounts.merchant.account_id}",
+              "amount": "${demo.transactions.pay_known.amount}",
+              "present": true,
+              "symbol": "USDC",
+              "decimals": 6
+            }
+          ]
+        }
+      },
+      "evidence": "evidence/tx-pay-known.json"
+    },
+    {
+      "id": "tx-guard-refusal",
+      "claim": "The agent's guard refused the lookalike aid-demo-merchamt.testnet and recorded it on chain: record_refusal emitted payment_refused with source agent_guard, and nothing moved.",
+      "check": "tx_outcome",
+      "network": "testnet",
+      "params": {
+        "tx_hash": "${demo.transactions.guard_refusal.tx_hash}",
+        "sender_account_id": "${contracts.vault.account_id}",
+        "expect": {
+          "signer_id": "${contracts.vault.account_id}",
+          "public_key": "${keys.vault.agent.public_key}",
+          "receiver_id": "${contracts.vault.account_id}",
+          "method_name": "record_refusal",
+          "status": "success",
+          "return": {
+            "status": "refused"
+          },
+          "no_failed_receipts": true,
+          "events": [
+            {
+              "standard": "a_identity_vault",
+              "event": "payment_refused",
+              "executor_id": "${contracts.vault.account_id}",
+              "data": {
+                "payee": "${payees.lookalike.account_id}",
+                "source": "agent_guard"
+              },
+              "count": 1
+            }
+          ],
+          "no_receipts_executed_by": [
+            "${token.account_id}"
+          ]
+        }
+      },
+      "evidence": "evidence/tx-guard-refusal.json"
+    },
+    {
+      "id": "tx-pay-unknown",
+      "claim": "A compromised agent that skipped the guard and paid the lookalike, which nobody had judged yet, was held by the vault contract for the owner: payment_held with reason UnknownPayee, and no receipt reached the USDC contract.",
+      "check": "tx_outcome",
+      "network": "testnet",
+      "params": {
+        "tx_hash": "${demo.transactions.pay_unknown.tx_hash}",
+        "sender_account_id": "${contracts.vault.account_id}",
+        "expect": {
+          "signer_id": "${contracts.vault.account_id}",
+          "public_key": "${keys.vault.agent.public_key}",
+          "receiver_id": "${contracts.vault.account_id}",
+          "method_name": "pay",
+          "status": "success",
+          "return": {
+            "status": "held"
+          },
+          "no_failed_receipts": true,
+          "events": [
+            {
+              "standard": "a_identity_vault",
+              "event": "payment_held",
+              "executor_id": "${contracts.vault.account_id}",
+              "data": {
+                "payee": "${payees.lookalike.account_id}",
+                "reason": "UnknownPayee"
+              },
+              "count": 1
+            }
+          ],
+          "absent_events": [
+            {
+              "standard": "a_identity_vault",
+              "event": "payment_sent"
+            }
+          ],
+          "no_receipts_executed_by": [
+            "${token.account_id}"
+          ]
+        }
+      },
+      "evidence": "evidence/tx-pay-unknown.json"
+    },
+    {
+      "id": "tx-oracle-deny",
+      "claim": "The oracle judged the lookalike DENY from public chain data and wrote it with its function-call key: set_verdict signed by oracle.a-identity.testnet with that key, verdict_set with verdict DENY.",
+      "check": "tx_outcome",
+      "network": "testnet",
+      "params": {
+        "tx_hash": "${demo.transactions.oracle_deny.tx_hash}",
+        "sender_account_id": "${accounts.oracle.account_id}",
+        "expect": {
+          "signer_id": "${accounts.oracle.account_id}",
+          "public_key": "${keys.oracle.function_call.public_key}",
+          "receiver_id": "${contracts.registry.account_id}",
+          "method_name": {
+            "$oneOf": [
+              "set_verdict",
+              "set_verdicts"
+            ]
+          },
+          "status": "success",
+          "no_failed_receipts": true,
+          "events": [
+            {
+              "standard": "a_identity_registry",
+              "event": "verdict_set",
+              "executor_id": "${contracts.registry.account_id}",
+              "data": {
+                "account_id": "${payees.lookalike.account_id}",
+                "verdict": "DENY",
+                "by": "${accounts.oracle.account_id}"
+              },
+              "count": 1
+            }
+          ]
+        }
+      },
+      "evidence": "evidence/tx-oracle-deny.json"
+    },
+    {
+      "id": "tx-pay-deny",
+      "claim": "Paying the lookalike again was refused by the vault contract on chain: payment_refused with reason RegistryDeny and source registry, and no receipt reached the USDC contract.",
+      "check": "tx_outcome",
+      "network": "testnet",
+      "params": {
+        "tx_hash": "${demo.transactions.pay_deny.tx_hash}",
+        "sender_account_id": "${contracts.vault.account_id}",
+        "expect": {
+          "signer_id": "${contracts.vault.account_id}",
+          "public_key": "${keys.vault.agent.public_key}",
+          "receiver_id": "${contracts.vault.account_id}",
+          "method_name": "pay",
+          "status": "success",
+          "return": {
+            "status": "refused",
+            "reason": "RegistryDeny"
+          },
+          "no_failed_receipts": true,
+          "events": [
+            {
+              "standard": "a_identity_vault",
+              "event": "payment_refused",
+              "executor_id": "${contracts.vault.account_id}",
+              "data": {
+                "payee": "${payees.lookalike.account_id}",
+                "reason": "RegistryDeny",
+                "source": "registry"
+              },
+              "count": 1
+            }
+          ],
+          "absent_events": [
+            {
+              "standard": "a_identity_vault",
+              "event": "payment_sent"
+            }
+          ],
+          "ft_transfers": [
+            {
+              "token_id": "${token.account_id}",
+              "to": "${payees.lookalike.account_id}",
+              "present": false,
+              "symbol": "USDC",
+              "decimals": 6
+            }
+          ],
+          "no_receipts_executed_by": [
+            "${token.account_id}"
+          ]
+        }
+      },
+      "evidence": "evidence/tx-pay-deny.json"
+    },
+    {
+      "id": "tx-owner-pay-denied",
+      "claim": "The owner's approval does not override a later DENY: owner_pay of the held lookalike payment was refused on chain with RegistryDeny (held_settle_failed), and nothing moved.",
+      "check": "tx_outcome",
+      "network": "testnet",
+      "params": {
+        "tx_hash": "${demo.transactions.owner_pay_denied.tx_hash}",
+        "sender_account_id": "${accounts.vault_owner.account_id}",
+        "expect": {
+          "signer_id": "${accounts.vault_owner.account_id}",
+          "receiver_id": "${contracts.vault.account_id}",
+          "method_name": "owner_pay",
+          "deposit": "1",
+          "status": "success",
+          "return": {
+            "status": "refused",
+            "reason": "RegistryDeny"
+          },
+          "no_failed_receipts": true,
+          "events": [
+            {
+              "standard": "a_identity_vault",
+              "event": "payment_refused",
+              "executor_id": "${contracts.vault.account_id}",
+              "data": {
+                "payee": "${payees.lookalike.account_id}",
+                "reason": "RegistryDeny",
+                "source": "registry"
+              },
+              "count": 1
+            },
+            {
+              "standard": "a_identity_vault",
+              "event": "held_settle_failed",
+              "executor_id": "${contracts.vault.account_id}",
+              "data": {
+                "payee": "${payees.lookalike.account_id}",
+                "reason": "RegistryDeny"
+              },
+              "count": 1
+            }
+          ],
+          "absent_events": [
+            {
+              "standard": "a_identity_vault",
+              "event": "payment_sent"
+            }
+          ],
+          "no_receipts_executed_by": [
+            "${token.account_id}"
+          ]
+        }
+      },
+      "evidence": "evidence/tx-owner-pay-denied.json"
+    },
+    {
+      "id": "tx-vendor-request",
+      "claim": "For aid-demo-printshop.testnet, a vendor nobody has history with, the agent asked the owner instead of paying: request_payment emitted payment_held, and nothing moved.",
+      "check": "tx_outcome",
+      "network": "testnet",
+      "params": {
+        "tx_hash": "${demo.transactions.vendor_request.tx_hash}",
+        "sender_account_id": "${contracts.vault.account_id}",
+        "expect": {
+          "signer_id": "${contracts.vault.account_id}",
+          "public_key": "${keys.vault.agent.public_key}",
+          "receiver_id": "${contracts.vault.account_id}",
+          "method_name": "request_payment",
+          "status": "success",
+          "return": {
+            "status": "held"
+          },
+          "no_failed_receipts": true,
+          "events": [
+            {
+              "standard": "a_identity_vault",
+              "event": "payment_held",
+              "executor_id": "${contracts.vault.account_id}",
+              "data": {
+                "payee": "${payees.new_vendor.account_id}"
+              },
+              "count": 1
+            }
+          ],
+          "absent_events": [
+            {
+              "standard": "a_identity_vault",
+              "event": "payment_sent"
+            }
+          ],
+          "no_receipts_executed_by": [
+            "${token.account_id}"
+          ]
+        }
+      },
+      "evidence": "evidence/tx-vendor-request.json"
+    },
+    {
+      "id": "tx-vendor-owner-pay",
+      "claim": "The owner approved the vendor's held payment with one owner_pay (1 yoctoNEAR): payment_sent with by_owner true, and a nep141 ft_transfer moved the USDC from the vault to the vendor.",
+      "check": "tx_outcome",
+      "network": "testnet",
+      "params": {
+        "tx_hash": "${demo.transactions.vendor_owner_pay.tx_hash}",
+        "sender_account_id": "${accounts.vault_owner.account_id}",
+        "expect": {
+          "signer_id": "${accounts.vault_owner.account_id}",
+          "receiver_id": "${contracts.vault.account_id}",
+          "method_name": "owner_pay",
+          "deposit": "1",
+          "status": "success",
+          "return": {
+            "status": "sent"
+          },
+          "no_failed_receipts": true,
+          "events": [
+            {
+              "standard": "a_identity_vault",
+              "event": "payment_sent",
+              "executor_id": "${contracts.vault.account_id}",
+              "data": {
+                "payee": "${payees.new_vendor.account_id}",
+                "by_owner": true
+              },
+              "count": 1
+            }
+          ],
+          "ft_transfers": [
+            {
+              "token_id": "${token.account_id}",
+              "from": "${contracts.vault.account_id}",
+              "to": "${payees.new_vendor.account_id}",
+              "amount": "${demo.transactions.vendor_owner_pay.amount}",
+              "present": true,
+              "symbol": "USDC",
+              "decimals": 6
+            }
+          ]
+        }
+      },
+      "evidence": "evidence/tx-vendor-owner-pay.json"
+    },
+    {
+      "id": "tx-over-ceiling",
+      "claim": "A payment above the per-payment ceiling was refused by the vault contract on chain: payment_refused with reason AboveAutoApprove and source policy, and nothing moved.",
+      "check": "tx_outcome",
+      "network": "testnet",
+      "params": {
+        "tx_hash": "${demo.transactions.over_ceiling.tx_hash}",
+        "sender_account_id": "${contracts.vault.account_id}",
+        "expect": {
+          "signer_id": "${contracts.vault.account_id}",
+          "public_key": "${keys.vault.agent.public_key}",
+          "receiver_id": "${contracts.vault.account_id}",
+          "method_name": "pay",
+          "status": "success",
+          "return": {
+            "status": "refused",
+            "reason": "AboveAutoApprove"
+          },
+          "no_failed_receipts": true,
+          "events": [
+            {
+              "standard": "a_identity_vault",
+              "event": "payment_refused",
+              "executor_id": "${contracts.vault.account_id}",
+              "data": {
+                "reason": "AboveAutoApprove",
+                "source": "policy"
+              },
+              "count": 1
+            }
+          ],
+          "absent_events": [
+            {
+              "standard": "a_identity_vault",
+              "event": "payment_sent"
+            }
+          ],
+          "no_receipts_executed_by": [
+            "${token.account_id}"
+          ]
+        }
+      },
+      "evidence": "evidence/tx-over-ceiling.json"
+    },
+    {
+      "id": "known-payee-merchant",
+      "claim": "aid-demo-merchant.testnet is a payee the vault knows from its own payments: at the block recorded after the demo, paid_count equals the payment_sent events to it in the demo's transactions, one of them the owner's approval (by_owner true).",
+      "check": "counter_matches_events",
+      "network": "testnet",
+      "params": {
+        "account_id": "${contracts.vault.account_id}",
+        "method": "paid_count",
+        "args": {
+          "payee": "${accounts.merchant.account_id}"
+        },
+        "block_id": "${demo.state_block}",
+        "transactions": "${demo.transactions}",
+        "logs": [
+          "${demo.log}"
+        ],
+        "event": {
+          "standard": "a_identity_vault",
+          "event": "payment_sent",
+          "executor_id": "${contracts.vault.account_id}",
+          "data": {
+            "payee": "${accounts.merchant.account_id}"
+          }
+        },
+        "min": 2,
+        "include": {
+          "data": {
+            "by_owner": true
+          }
+        }
+      },
+      "requires": [
+        "demo.transactions.setup_owner_pay.tx_hash",
+        "demo.transactions.pay_known.tx_hash"
+      ],
+      "evidence": "evidence/known-payee-merchant.json"
+    },
+    {
+      "id": "refusal-count",
+      "claim": "The vault counts registry refusals only: at the block recorded after the demo, refusal_count(aid-demo-merchamt.testnet) equals the payment_refused events with reason RegistryDeny and source registry in the demo's transactions (at least the agent's pay and the owner's owner_pay).",
+      "check": "counter_matches_events",
+      "network": "testnet",
+      "params": {
+        "account_id": "${contracts.vault.account_id}",
+        "method": "refusal_count",
+        "args": {
+          "payee": "${payees.lookalike.account_id}"
+        },
+        "block_id": "${demo.state_block}",
+        "transactions": "${demo.transactions}",
+        "logs": [
+          "${demo.log}"
+        ],
+        "event": {
+          "standard": "a_identity_vault",
+          "event": "payment_refused",
+          "executor_id": "${contracts.vault.account_id}",
+          "data": {
+            "payee": "${payees.lookalike.account_id}",
+            "reason": "RegistryDeny",
+            "source": "registry"
+          }
+        },
+        "min": 2
+      },
+      "requires": [
+        "demo.transactions.pay_deny.tx_hash",
+        "demo.transactions.owner_pay_denied.tx_hash"
+      ],
+      "evidence": "evidence/refusal-count.json"
+    },
+    {
+      "id": "guard-refusal-count",
+      "claim": "Refusals an agent records are counted apart from registry refusals: at the same block, guard_refusal_count(aid-demo-merchamt.testnet) equals the payment_refused events with source agent_guard in the demo's transactions, and none of the registry's refusals.",
+      "check": "counter_matches_events",
+      "network": "testnet",
+      "params": {
+        "account_id": "${contracts.vault.account_id}",
+        "method": "guard_refusal_count",
+        "args": {
+          "payee": "${payees.lookalike.account_id}"
+        },
+        "block_id": "${demo.state_block}",
+        "transactions": "${demo.transactions}",
+        "logs": [
+          "${demo.log}"
+        ],
+        "event": {
+          "standard": "a_identity_vault",
+          "event": "payment_refused",
+          "executor_id": "${contracts.vault.account_id}",
+          "data": {
+            "payee": "${payees.lookalike.account_id}",
+            "source": "agent_guard"
+          }
+        },
+        "min": 1
+      },
+      "requires": [
+        "demo.transactions.guard_refusal.tx_hash"
+      ],
+      "evidence": "evidence/guard-refusal-count.json"
+    },
+    {
+      "id": "reject-call-token",
+      "claim": "The agent key cannot call the USDC contract: the protocol rejected its ft_transfer on USDC with ReceiverMismatch, before execution.",
+      "check": "protocol_rejection",
+      "network": "testnet",
+      "params": {
+        "log": "${demo.log}",
+        "entry": "${demo.rejections.call_token.entry}",
+        "expect_rule": "ReceiverMismatch",
+        "signer_id": "${contracts.vault.account_id}",
+        "public_key": "${keys.vault.agent.public_key}",
+        "receiver_id": "${token.account_id}",
+        "method_name": "ft_transfer",
+        "require_signed_tx": true
+      },
+      "evidence": "evidence/reject-call-token.json"
+    },
+    {
+      "id": "reject-attach-deposit",
+      "claim": "The agent key cannot attach a deposit, so no 1-yoctoNEAR method is reachable: the protocol rejected pay with 1 yoctoNEAR attached (DepositWithFunctionCall), before execution.",
+      "check": "protocol_rejection",
+      "network": "testnet",
+      "params": {
+        "log": "${demo.log}",
+        "entry": "${demo.rejections.attach_deposit.entry}",
+        "expect_rule": "DepositWithFunctionCall",
+        "signer_id": "${contracts.vault.account_id}",
+        "public_key": "${keys.vault.agent.public_key}",
+        "receiver_id": "${contracts.vault.account_id}",
+        "method_name": "pay",
+        "require_signed_tx": true
+      },
+      "evidence": "evidence/reject-attach-deposit.json"
+    },
+    {
+      "id": "reject-owner-method",
+      "claim": "The agent key cannot call an owner method: the protocol rejected set_registry on the vault with MethodNameMismatch, before execution.",
+      "check": "protocol_rejection",
+      "network": "testnet",
+      "params": {
+        "log": "${demo.log}",
+        "entry": "${demo.rejections.owner_method.entry}",
+        "expect_rule": "MethodNameMismatch",
+        "signer_id": "${contracts.vault.account_id}",
+        "public_key": "${keys.vault.agent.public_key}",
+        "receiver_id": "${contracts.vault.account_id}",
+        "method_name": "set_registry",
+        "require_signed_tx": true
+      },
+      "evidence": "evidence/reject-owner-method.json"
+    },
+    {
+      "id": "reject-add-key",
+      "claim": "The agent key cannot give itself more power: the protocol rejected adding a full-access key to the vault account (RequiresFullAccess), before execution.",
+      "check": "protocol_rejection",
+      "network": "testnet",
+      "params": {
+        "log": "${demo.log}",
+        "entry": "${demo.rejections.add_key.entry}",
+        "expect_rule": "RequiresFullAccess",
+        "signer_id": "${contracts.vault.account_id}",
+        "public_key": "${keys.vault.agent.public_key}",
+        "receiver_id": "${contracts.vault.account_id}",
+        "require_signed_tx": true
+      },
+      "evidence": "evidence/reject-add-key.json"
+    },
+    {
+      "id": "reject-send-near",
+      "claim": "The agent key cannot move the vault's NEAR: the protocol rejected a 1 yoctoNEAR transfer out of the vault (RequiresFullAccess), before execution.",
+      "check": "protocol_rejection",
+      "network": "testnet",
+      "params": {
+        "log": "${demo.log}",
+        "entry": "${demo.rejections.send_near.entry}",
+        "expect_rule": "RequiresFullAccess",
+        "signer_id": "${contracts.vault.account_id}",
+        "public_key": "${keys.vault.agent.public_key}",
+        "require_signed_tx": true
+      },
+      "evidence": "evidence/reject-send-near.json"
+    },
+    {
+      "id": "recompute-lookalike",
+      "claim": "Anyone can recompute the lookalike's verdict: the SDK's offline verdict on the snapshot the oracle saved gives the registry's DENY at the recorded block, with the same reasons and evidence string, and every block-pinned chain read in that snapshot is what archival RPC returns.",
+      "check": "verdict_recompute",
+      "network": "testnet",
+      "params": {
+        "account_id": "${payees.lookalike.account_id}",
+        "registry_id": "${contracts.registry.account_id}",
+        "block_id": "${verdicts.lookalike.read_block}",
+        "snapshot": "${verdicts.lookalike.snapshot}",
+        "snapshot_sha256": "${?verdicts.lookalike.snapshot_sha256}",
+        "require_snapshot_binding": true,
+        "expect_verdict": "DENY",
+        "compare_reasons": true,
+        "verify_chain_reads": true
+      },
+      "requires": [
+        "verdicts.lookalike.set_tx_hash"
+      ],
+      "evidence": "evidence/recompute-lookalike.json"
+    },
+    {
+      "id": "no-secrets",
+      "claim": "No NEAR secret key, private_key field or PEM private key is committed under near/.",
+      "check": "repo_secret_scan",
+      "params": {},
+      "evidence": null
+    },
+    {
+      "id": "built-in-window",
+      "claim": "Everything under near/ was committed inside the hackathon window (2026-10-19 to 2026-11-14 UTC), and nothing under near/ exists at the pre-hackathon tag.",
+      "check": "git_window",
+      "params": {
+        "since": "2026-10-19T00:00:00Z",
+        "until": "2026-11-14T23:59:59Z",
+        "baseline_tag": "pre-hackathon",
+        "compare_url": "https://github.com/getA-Identity/A-Identity/compare/pre-hackathon...hackathon-submission"
+      },
+      "evidence": null
+    },
+    {
+      "id": "full-unit-tests",
+      "claim": "The registry and vault unit tests pass: cargo test -p a-identity-registry -p agent-spend-policy --locked.",
+      "check": "command",
+      "mode": "full",
+      "params": {
+        "cwd": "contracts",
+        "cmd": [
+          "cargo",
+          "test",
+          "-p",
+          "a-identity-registry",
+          "-p",
+          "agent-spend-policy",
+          "--locked"
+        ],
+        "parse": "cargo-test",
+        "timeout_s": 900,
+        "requires_bin": [
+          "cargo"
+        ],
+        "install_hint": "install Rust with rustup; contracts/rust-toolchain.toml pins the toolchain"
+      },
+      "evidence": null
+    },
+    {
+      "id": "full-sandbox-tests",
+      "claim": "The sandbox suite passes: every vault guard and flow runs against a local NEAR node (cargo test -p sandbox-tests --locked).",
+      "check": "command",
+      "mode": "full",
+      "params": {
+        "cwd": "contracts",
+        "cmd": [
+          "cargo",
+          "test",
+          "-p",
+          "sandbox-tests",
+          "--locked"
+        ],
+        "env": {
+          "SANDBOX_TESTS_PARALLEL": "2"
+        },
+        "parse": "cargo-test",
+        "timeout_s": 1800,
+        "platforms": [
+          "linux-x64",
+          "linux-arm64",
+          "darwin-arm64"
+        ],
+        "requires_bin": [
+          "cargo"
+        ],
+        "probes": [
+          [
+            "cargo",
+            "near",
+            "--version"
+          ]
+        ],
+        "install_hint": "install cargo-near 0.23.0 (see the README); near-sandbox downloads its node binary on first run",
+        "skip_patterns": [
+          "error sending request",
+          "failed to download",
+          "Could not resolve host",
+          "dns error"
+        ]
+      },
+      "evidence": null
+    },
+    {
+      "id": "full-wasm-vault",
+      "claim": "The committed vault wasm is reproducible from this source: cargo near build reproducible-wasm gives the same sha256.",
+      "check": "command",
+      "mode": "full",
+      "params": {
+        "cwd": "contracts",
+        "cmd": [
+          "cargo",
+          "near",
+          "build",
+          "reproducible-wasm",
+          "--manifest-path",
+          "agent-spend-policy/Cargo.toml"
+        ],
+        "parse": "exit-code",
+        "timeout_s": 1200,
+        "requires_bin": [
+          "cargo",
+          "docker"
+        ],
+        "probes": [
+          [
+            "cargo",
+            "near",
+            "--version"
+          ],
+          [
+            "docker",
+            "info"
+          ]
+        ],
+        "install_hint": "reproducible builds need cargo-near 0.23.0 and a running Docker",
+        "compare_files": [
+          {
+            "built": "contracts/target/near/agent_spend_policy/agent_spend_policy.wasm",
+            "committed": "${contracts.vault.wasm_path}"
+          }
+        ]
+      },
+      "requires": [
+        "contracts.vault.build.reproducible_command"
+      ],
+      "evidence": null
+    },
+    {
+      "id": "full-wasm-registry",
+      "claim": "The committed registry wasm is reproducible from this source: cargo near build reproducible-wasm gives the same sha256.",
+      "check": "command",
+      "mode": "full",
+      "params": {
+        "cwd": "contracts",
+        "cmd": [
+          "cargo",
+          "near",
+          "build",
+          "reproducible-wasm",
+          "--manifest-path",
+          "a-identity-registry/Cargo.toml"
+        ],
+        "parse": "exit-code",
+        "timeout_s": 1200,
+        "requires_bin": [
+          "cargo",
+          "docker"
+        ],
+        "probes": [
+          [
+            "cargo",
+            "near",
+            "--version"
+          ],
+          [
+            "docker",
+            "info"
+          ]
+        ],
+        "install_hint": "reproducible builds need cargo-near 0.23.0 and a running Docker",
+        "compare_files": [
+          {
+            "built": "contracts/target/near/a_identity_registry/a_identity_registry.wasm",
+            "committed": "${contracts.registry.wasm_path}"
+          }
+        ]
+      },
+      "requires": [
+        "contracts.registry.build.reproducible_command"
+      ],
+      "evidence": null
+    },
+    {
+      "id": "full-sdk-tests",
+      "claim": "The TypeScript tests in near/ pass (npm test).",
+      "check": "command",
+      "mode": "full",
+      "params": {
+        "cwd": ".",
+        "cmd": [
+          "npm",
+          "test"
+        ],
+        "parse": "node-test",
+        "timeout_s": 600,
+        "requires_bin": [
+          "npm"
+        ],
+        "requires_path": [
+          "node_modules"
+        ],
+        "install_hint": "run npm ci in near/ first"
+      },
+      "evidence": null
+    },
+    {
+      "id": "full-judge-tests",
+      "claim": "The judge's own tests pass: node --test judge/test/.",
+      "check": "command",
+      "mode": "full",
+      "params": {
+        "cwd": ".",
+        "cmd": [
+          "{node}",
+          "--test",
+          "judge/test/"
+        ],
+        "parse": "node-test",
+        "timeout_s": 180
+      },
+      "evidence": null
+    },
+    {
+      "id": "full-negative-controls",
+      "claim": "Every vault guard is load-bearing: contracts/audit/run-negative-controls.mjs deletes each guard in a temporary copy and the tests turn red.",
+      "check": "command",
+      "mode": "full",
+      "params": {
+        "cwd": ".",
+        "cmd": [
+          "{node}",
+          "contracts/audit/run-negative-controls.mjs"
+        ],
+        "script": "contracts/audit/run-negative-controls.mjs",
+        "parse": "exit-code",
+        "timeout_s": 3600
+      },
+      "evidence": null
+    }
+  ]
+}

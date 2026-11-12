@@ -1,0 +1,106 @@
+{
+ "_fixture": "Signed transactions built by near-api-js 7.5.3 (createTransaction + KeyPairSigner.signTransaction) with a throwaway ed25519 key that was never stored. Never sent to any network. reference_hash_hex is the hash near-api-js computed; the judge decoder must reproduce it.",
+ "public_key": "ed25519:2KPT8iffxLvWsnknUUWRqcaM4Vhz1Fa4pPMKVTLizKkf",
+ "cases": [
+  {
+   "name": "agent-ft-transfer",
+   "signed_tx_base64": "HAAAAHZhdWx0LmFpZC1kZW1vLW93bmVyLnRlc3RuZXQAE5GGxCUnqG4VJ4PjenxaG66WyN01DMwOiyGu54GufkQBUJoW7vsAAEAAAAAzZTIyMTBlMTE4NGI0NWI2NGM4YTQzNGMwYTdlN2IyM2NjMDRlYTdlYjdhNmMzYzMyNTIwZDAzZDRhZmNiOGFmnyUyW+Q/cZqvqrtpScheCz9UnNyEfIirbYfACeseLrUBAAAAAgsAAABmdF90cmFuc2Zlcj4AAAB7InJlY2VpdmVyX2lkIjoiYWlkLWRlbW8tYXR0YWNrZXIudGVzdG5ldCIsImFtb3VudCI6IjEwMDAwMDAifQDgV+tIGwAAAQAAAAAAAAAAAAAAAAAAAADu9q9yXQ/ULjSiDhpFELmfxZL9sKv5Cpek9hVFBGowQ9ZtWxBG3ntRyhhvRXr/aUJ0LrAcgVuYnGp940gKAL8F",
+   "reference_hash_hex": "90799874675c7d737453a927c5816830e841a824edeb04a621ace16a3a313427",
+   "public_key": "ed25519:2KPT8iffxLvWsnknUUWRqcaM4Vhz1Fa4pPMKVTLizKkf",
+   "signer_id": "vault.aid-demo-owner.testnet",
+   "receiver_id": "3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af",
+   "block_hash_hex": "9f25325be43f719aafaabb6949c85e0b3f549cdc847c88ab6d87c009eb1e2eb5",
+   "v1": false
+  },
+  {
+   "name": "agent-ft-transfer-no-deposit",
+   "signed_tx_base64": "HAAAAHZhdWx0LmFpZC1kZW1vLW93bmVyLnRlc3RuZXQAE5GGxCUnqG4VJ4PjenxaG66WyN01DMwOiyGu54GufkQCUJoW7vsAAEAAAAAzZTIyMTBlMTE4NGI0NWI2NGM4YTQzNGMwYTdlN2IyM2NjMDRlYTdlYjdhNmMzYzMyNTIwZDAzZDRhZmNiOGFmnyUyW+Q/cZqvqrtpScheCz9UnNyEfIirbYfACeseLrUBAAAAAgsAAABmdF90cmFuc2Zlcj4AAAB7InJlY2VpdmVyX2lkIjoiYWlkLWRlbW8tYXR0YWNrZXIudGVzdG5ldCIsImFtb3VudCI6IjEwMDAwMDAifQDgV+tIGwAAAAAAAAAAAAAAAAAAAAAAAAA5x2vzvbNLhZAyMINvrfH21D1L/eO1WoUY2L04Fzz/t8oNbnRflmE/dLVbnkAn7I5154/43b5DrUGmzGOxGvAF",
+   "reference_hash_hex": "57f1b52515b9f476bcb053582677a9687704646b7966433b3a96f59a583db54c",
+   "public_key": "ed25519:2KPT8iffxLvWsnknUUWRqcaM4Vhz1Fa4pPMKVTLizKkf",
+   "signer_id": "vault.aid-demo-owner.testnet",
+   "receiver_id": "3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af",
+   "block_hash_hex": "9f25325be43f719aafaabb6949c85e0b3f549cdc847c88ab6d87c009eb1e2eb5",
+   "v1": false
+  },
+  {
+   "name": "agent-withdraw",
+   "signed_tx_base64": "HAAAAHZhdWx0LmFpZC1kZW1vLW93bmVyLnRlc3RuZXQAE5GGxCUnqG4VJ4PjenxaG66WyN01DMwOiyGu54GufkQDUJoW7vsAABwAAAB2YXVsdC5haWQtZGVtby1vd25lci50ZXN0bmV0nyUyW+Q/cZqvqrtpScheCz9UnNyEfIirbYfACeseLrUBAAAAAggAAAB3aXRoZHJhdxQAAAB7ImFtb3VudCI6IjEwMDAwMDAifQDgV+tIGwAAAAAAAAAAAAAAAAAAAAAAAAAkC9zfOuPfG+yFKh0fzSjw10aZ7Bhu7OOFLRkHhdv24uXKz4ZH9CbVhGBUbocp+djfTLSx5EzicTETeT+Lz0UJ",
+   "reference_hash_hex": "25ba1a0a374baa257f5483c035dabd6bb1e7b1993f0a3b1497e8716def348382",
+   "public_key": "ed25519:2KPT8iffxLvWsnknUUWRqcaM4Vhz1Fa4pPMKVTLizKkf",
+   "signer_id": "vault.aid-demo-owner.testnet",
+   "receiver_id": "vault.aid-demo-owner.testnet",
+   "block_hash_hex": "9f25325be43f719aafaabb6949c85e0b3f549cdc847c88ab6d87c009eb1e2eb5",
+   "v1": false
+  },
+  {
+   "name": "agent-pay-with-deposit",
+   "signed_tx_base64": "HAAAAHZhdWx0LmFpZC1kZW1vLW93bmVyLnRlc3RuZXQAE5GGxCUnqG4VJ4PjenxaG66WyN01DMwOiyGu54GufkQEUJoW7vsAABwAAAB2YXVsdC5haWQtZGVtby1vd25lci50ZXN0bmV0nyUyW+Q/cZqvqrtpScheCz9UnNyEfIirbYfACeseLrUBAAAAAgMAAABwYXlEAAAAeyJwYXllZSI6ImFpZC1kZW1vLW1lcmNoYW50LnRlc3RuZXQiLCJhbW91bnQiOiIxMDAwMDAwIiwibWVtbyI6bnVsbH0AAJVzwkgAAAEAAAAAAAAAAAAAAAAAAAAA/nsEgRIRdWFt+1tk9n0+o7oblqVEAzujsjpy3G/KCo5iyGZHKiwOB9whqTGFHkgatWCxLL1bvhPCLNu1OhDyBg==",
+   "reference_hash_hex": "77eaa7387fad83d0bedf01f68b9ad638017892c1b1aa32cd8af1f84f277a5463",
+   "public_key": "ed25519:2KPT8iffxLvWsnknUUWRqcaM4Vhz1Fa4pPMKVTLizKkf",
+   "signer_id": "vault.aid-demo-owner.testnet",
+   "receiver_id": "vault.aid-demo-owner.testnet",
+   "block_hash_hex": "9f25325be43f719aafaabb6949c85e0b3f549cdc847c88ab6d87c009eb1e2eb5",
+   "v1": false
+  },
+  {
+   "name": "agent-pay-twice",
+   "signed_tx_base64": "HAAAAHZhdWx0LmFpZC1kZW1vLW93bmVyLnRlc3RuZXQAE5GGxCUnqG4VJ4PjenxaG66WyN01DMwOiyGu54GufkQFUJoW7vsAABwAAAB2YXVsdC5haWQtZGVtby1vd25lci50ZXN0bmV0nyUyW+Q/cZqvqrtpScheCz9UnNyEfIirbYfACeseLrUCAAAAAgMAAABwYXkyAAAAeyJwYXllZSI6ImFpZC1kZW1vLW1lcmNoYW50LnRlc3RuZXQiLCJhbW91bnQiOiIxIn0AAJVzwkgAAAAAAAAAAAAAAAAAAAAAAAACAwAAAHBheTIAAAB7InBheWVlIjoiYWlkLWRlbW8tbWVyY2hhbnQudGVzdG5ldCIsImFtb3VudCI6IjEifQAAlXPCSAAAAAAAAAAAAAAAAAAAAAAAAACBlHAcsjWa3J3C/yO7vSRJxguNMUzHoyRMl/8Na0s39x6Wd2zGR/NXm3qb5tsTP/m7xuTNOm8qSR6OLNp3yycF",
+   "reference_hash_hex": "d76bb1b93fb367fbc83e4cd5fca2504ed413943690d9bd046bcc9d18864f0176",
+   "public_key": "ed25519:2KPT8iffxLvWsnknUUWRqcaM4Vhz1Fa4pPMKVTLizKkf",
+   "signer_id": "vault.aid-demo-owner.testnet",
+   "receiver_id": "vault.aid-demo-owner.testnet",
+   "block_hash_hex": "9f25325be43f719aafaabb6949c85e0b3f549cdc847c88ab6d87c009eb1e2eb5",
+   "v1": false
+  },
+  {
+   "name": "agent-add-key",
+   "signed_tx_base64": "HAAAAHZhdWx0LmFpZC1kZW1vLW93bmVyLnRlc3RuZXQAE5GGxCUnqG4VJ4PjenxaG66WyN01DMwOiyGu54GufkQGUJoW7vsAABwAAAB2YXVsdC5haWQtZGVtby1vd25lci50ZXN0bmV0nyUyW+Q/cZqvqrtpScheCz9UnNyEfIirbYfACeseLrUBAAAABQBl0YiR/cz5huZcgHxrp2lT1tenml6KRcWSoJgiW7D6UQAAAAAAAAAAAQDnuxE1e91O8YOxudd+VUpk6S9l40ZUA+kVYLXeshKA7YGxJ28j2aX498/En86aF4XYNr3AutzRxw1PkHXbUDML",
+   "reference_hash_hex": "22ee98151d0196a2e68671278157ab9af186835b11bf40ab1bf880a56bce0c22",
+   "public_key": "ed25519:2KPT8iffxLvWsnknUUWRqcaM4Vhz1Fa4pPMKVTLizKkf",
+   "signer_id": "vault.aid-demo-owner.testnet",
+   "receiver_id": "vault.aid-demo-owner.testnet",
+   "block_hash_hex": "9f25325be43f719aafaabb6949c85e0b3f549cdc847c88ab6d87c009eb1e2eb5",
+   "v1": false
+  },
+  {
+   "name": "agent-add-fc-key",
+   "signed_tx_base64": "HAAAAHZhdWx0LmFpZC1kZW1vLW93bmVyLnRlc3RuZXQAE5GGxCUnqG4VJ4PjenxaG66WyN01DMwOiyGu54GufkQHUJoW7vsAABwAAAB2YXVsdC5haWQtZGVtby1vd25lci50ZXN0bmV0nyUyW+Q/cZqvqrtpScheCz9UnNyEfIirbYfACeseLrUBAAAABQBl0YiR/cz5huZcgHxrp2lT1tenml6KRcWSoJgiW7D6UQAAAAAAAAAAAAEAAEBoO7PzhvA0AAAAAAAAHAAAAHZhdWx0LmFpZC1kZW1vLW93bmVyLnRlc3RuZXQCAAAAAwAAAHBheQ8AAAByZXF1ZXN0X3BheW1lbnQAWZ1Q4MzwfjxyqFI7nespd6M20ia+smoHb3xnbNiLVvsy5imBed2g+qGWrovNpDDNMD+5r0epDwGsavkr+Y6aAw==",
+   "reference_hash_hex": "b5c756c67555093e602c98bf04957bc1a81ac5eaba4c5b590cd9038e70e3fd0a",
+   "public_key": "ed25519:2KPT8iffxLvWsnknUUWRqcaM4Vhz1Fa4pPMKVTLizKkf",
+   "signer_id": "vault.aid-demo-owner.testnet",
+   "receiver_id": "vault.aid-demo-owner.testnet",
+   "block_hash_hex": "9f25325be43f719aafaabb6949c85e0b3f549cdc847c88ab6d87c009eb1e2eb5",
+   "v1": false
+  },
+  {
+   "name": "agent-transfer-near",
+   "signed_tx_base64": "HAAAAHZhdWx0LmFpZC1kZW1vLW93bmVyLnRlc3RuZXQAE5GGxCUnqG4VJ4PjenxaG66WyN01DMwOiyGu54GufkQIUJoW7vsAABkAAABhaWQtZGVtby1hdHRhY2tlci50ZXN0bmV0nyUyW+Q/cZqvqrtpScheCz9UnNyEfIirbYfACeseLrUBAAAAAwEAAAAAAAAAAAAAAAAAAAAA+vwYNgVHUF2ZePKbC1D7H4/kw0tAiouxjMJNUau6tWn7Sf9B2/Va9iXes6VSYDhsc/7fgargu6hF4mHgELZtAg==",
+   "reference_hash_hex": "ba6926a59ba94a6250374914a734f6e5ae78a14dc21949118ce21b5e96b3a855",
+   "public_key": "ed25519:2KPT8iffxLvWsnknUUWRqcaM4Vhz1Fa4pPMKVTLizKkf",
+   "signer_id": "vault.aid-demo-owner.testnet",
+   "receiver_id": "aid-demo-attacker.testnet",
+   "block_hash_hex": "9f25325be43f719aafaabb6949c85e0b3f549cdc847c88ab6d87c009eb1e2eb5",
+   "v1": false
+  },
+  {
+   "name": "agent-delete-key",
+   "signed_tx_base64": "HAAAAHZhdWx0LmFpZC1kZW1vLW93bmVyLnRlc3RuZXQAE5GGxCUnqG4VJ4PjenxaG66WyN01DMwOiyGu54GufkQJUJoW7vsAABwAAAB2YXVsdC5haWQtZGVtby1vd25lci50ZXN0bmV0nyUyW+Q/cZqvqrtpScheCz9UnNyEfIirbYfACeseLrUBAAAABgBl0YiR/cz5huZcgHxrp2lT1tenml6KRcWSoJgiW7D6UQBx8d+fla/egUPOSdYRJMPvcqTUsE+BahJ19PhlXEWmS4LbLOvS8SknwdYj3bBQrhrmI7mHzOatt06IRhgXCqoN",
+   "reference_hash_hex": "a1d4e70d84e75ea97c41a78f7f111156266f4602bb5af134c73652fa52d40337",
+   "public_key": "ed25519:2KPT8iffxLvWsnknUUWRqcaM4Vhz1Fa4pPMKVTLizKkf",
+   "signer_id": "vault.aid-demo-owner.testnet",
+   "receiver_id": "vault.aid-demo-owner.testnet",
+   "block_hash_hex": "9f25325be43f719aafaabb6949c85e0b3f549cdc847c88ab6d87c009eb1e2eb5",
+   "v1": false
+  },
+  {
+   "name": "agent-pay-v1",
+   "signed_tx_base64": "ARwAAAB2YXVsdC5haWQtZGVtby1vd25lci50ZXN0bmV0ABORhsQlJ6huFSeD43p8WhuulsjdNQzMDoshrueBrn5EAQpQmhbu+wAAAwAcAAAAdmF1bHQuYWlkLWRlbW8tb3duZXIudGVzdG5ldJ8lMlvkP3Gar6q7aUnIXgs/VJzchHyIq22HwAnrHi61AQAAAAIDAAAAcGF5MgAAAHsicGF5ZWUiOiJhaWQtZGVtby1tZXJjaGFudC50ZXN0bmV0IiwiYW1vdW50IjoiMSJ9AACVc8JIAAAAAAAAAAAAAAAAAAAAAAAAAQAw6BgIs0H7qKfBYi3rLXKtrgaD370CDp753qJzWusG1ZgeoBrtk+i2laUannyko6Qy4ismuxi9RUF3ROYpV+oF",
+   "reference_hash_hex": "a0d78c7327a55b4dfa7bc6b32aa271bf067107c16752692c916c62f6df36c53a",
+   "public_key": "ed25519:2KPT8iffxLvWsnknUUWRqcaM4Vhz1Fa4pPMKVTLizKkf",
+   "signer_id": "vault.aid-demo-owner.testnet",
+   "receiver_id": "vault.aid-demo-owner.testnet",
+   "block_hash_hex": "9f25325be43f719aafaabb6949c85e0b3f549cdc847c88ab6d87c009eb1e2eb5",
+   "v1": true
+  }
+ ]
+}

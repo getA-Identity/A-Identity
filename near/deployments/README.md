@@ -1,0 +1,54 @@
+# Deployments
+
+`testnet.json` is the record of what is deployed on NEAR testnet, written by the deploy and demo
+steps and read by the judge (`node judge/judge.mjs`). Every `null` is something that has not
+happened yet; a claim that needs a `null` field prints `SKIP pending`, never `PASS`.
+
+## Rules
+
+- `status`: `pending` (nothing deployed), `partial`, or `deployed`. Set `deployed` only when every
+  claim you keep is filled in and its evidence is captured: from then on the offline judge FAILS a
+  claim that has no recorded evidence.
+- Hashes are base58 (NEAR's encoding) unless the field says `hex`. Transaction hashes are base58.
+- Amounts are decimal strings in the token's smallest unit (USDC: 6 decimals, so `"1000000"` is 1
+  USDC). `*_yocto` fields are yoctoNEAR. Block heights are plain integers.
+- No keys of any kind in this file except public keys.
+- Write the vault's `token_id` init argument as `{ "$ref": "token.account_id" }`, not the 64-hex
+  id: the repository's secret scanner (`.gitleaks.toml`, generic-api-key) reads a field named
+  `token...` next to a 64-hex value as a credential and fails CI. The `vault-config` claim checks
+  the token the vault actually uses, on chain, against `token.account_id`.
+
+## Fields the deploy step fills
+
+| field | what |
+| --- | --- |
+| `contracts.<name>.wasm_path` | the committed wasm, `deployments/wasm/<crate>.wasm` (commit the exact file you deployed) |
+| `contracts.<name>.wasm_bytes`, `wasm_sha256_hex`, `wasm_sha256_base58` | from `node judge/wasm-hash.mjs <wasm>` |
+| `contracts.<name>.code_hash` | `view_account` `code_hash` after deploy; must equal `wasm_sha256_base58` |
+| `contracts.<name>.version`, `build.*` | crate version, the exact build command, `rustc -V`, `cargo near --version`, the git commit built; `build.reproducible_command` only if built with `cargo near build reproducible-wasm` |
+| `contracts.<name>.deploy_tx` | the deploy transaction hash, signer and block height |
+| `contracts.vault.init.args.daily_cap`, `auto_approve_max`, `policy.*` | the policy as initialized (strings, token units) |
+| `keys.vault.agent.public_key`, `allowance_yocto`, `add_tx_hash` | the function-call key `add_agent_key` created on the vault |
+| `keys.oracle.function_call.*` | the oracle's function-call key on the registry. Then delete the oracle's full-access key: `oracle-keys` claims the oracle holds none |
+| `keys.<account>.lock` | how the account lost its full-access key: `how` is `never-added` or `delete-key`, with the DeleteKey `tx_hash` |
+| `payees.lookalike.account_id`, `payees.new_vendor.account_id` | the lookalike the demo judges DENY, and the fresh vendor nobody has judged or paid |
+| `verdicts.<payee>.reasons`, `snapshot`, `snapshot_sha256`, `set_tx_hash` | the oracle's verdict, the snapshot file it was computed from (the oracle saves `demo/logs/oracle/snapshots/<sha256>.json`; commit the file), its sha256 as the SDK reports it, and the transaction that wrote it |
+| `verdicts.<payee>.read_block` | the block height the verdict is read at: any block after `set_tx_hash` and before the verdict's TTL ends. Take the `block_height` a `get_verdict` view at finality `final` returns right after the run |
+| `demo.log` | the attack demo run log, `demo/logs/<run-id>.json` (commit the run you cite) |
+| `demo.state_block` | the block height the vault's counters are read at: after the cited run's last transaction. The same height as `read_block` is fine |
+| `demo.transactions.<name>.tx_hash`, `payee`, `amount` | each demo transaction; `expected_outcome` is a label for humans, the judge's expectations live in `judge/claims.json` |
+| `demo.rejections.<name>.entry` | the `id` or `attempt` of that rejection inside the attack demo log |
+
+If the demo does not produce one of these transactions, delete the matching claim from
+`judge/claims.json` instead of leaving it pending.
+
+## The counters count every transaction
+
+`known-payee-merchant`, `refusal-count` and `guard-refusal-count` read a vault counter at
+`demo.state_block` and require it to equal, exactly, the matching events in the demo's
+transactions: every `demo.transactions.*` entry with a hash, plus every transaction in the
+`txs` list of `demo.log`. So the record must hold every vault transaction up to that block. If the
+setup ran in an earlier run, record its transactions here (`setup_request`, `setup_owner_pay`); if
+rehearsal runs used the same vault, either record their transactions too or deploy a fresh vault
+for the cited run. A missing transaction makes the counter larger than its events, and the claim
+FAILS.

@@ -1,0 +1,366 @@
+{
+  "schema": "a-identity-near-deployments/1",
+  "network": "testnet",
+  "status": "pending",
+  "updated_at": null,
+  "notes": [
+    "Written by the deploy and demo steps, read by judge/judge.mjs. Every null is something that has not happened yet.",
+    "A claim in judge/claims.json that needs a null field is printed as SKIP (pending), never PASS.",
+    "Set status to deployed only when every claim you keep is filled in: from then on the offline judge FAILS any claim without recorded evidence.",
+    "Hashes are base58 (NEAR's encoding) unless the field name says hex. Amounts are decimal strings in the token's smallest unit (USDC has 6 decimals). yocto fields are yoctoNEAR.",
+    "Two block heights pin the reads a judge must see the same way on any later day: verdicts.<payee>.read_block (get_verdict, whose DENY has a TTL) and demo.state_block (the vault's counters, which a later run would move). Record the block_height a view at finality final returned after the cited run; the same height may serve both."
+  ],
+  "accounts": {
+    "registry_owner": {
+      "account_id": "a-identity.testnet",
+      "role": "Owns the registry (adds and removes oracles). Its key stays offline.",
+      "status": "created"
+    },
+    "oracle": {
+      "account_id": "oracle.a-identity.testnet",
+      "role": "Writes verdicts. After setup it signs only with a function-call key on the registry limited to the oracle methods.",
+      "status": "created"
+    },
+    "vault_owner": {
+      "account_id": "aid-demo-owner.testnet",
+      "role": "The human who owns the demo vault: policy, approvals, withdrawals.",
+      "status": "created"
+    },
+    "merchant": {
+      "account_id": "aid-demo-merchant.testnet",
+      "role": "Legitimate demo payee the vault already knows: the owner approved one payment to it (paid_count), so the agent's later payments flow.",
+      "status": "created"
+    },
+    "attacker": {
+      "account_id": "aid-demo-attacker.testnet",
+      "role": "Created during setup. Not a demo payee: an account named attacker proves nothing about a classifier (demo/scenarios/accounts.ts).",
+      "status": "created"
+    },
+    "agent_legacy": {
+      "account_id": "aid-demo-agent.testnet",
+      "role": "Created before the keyless-vault design; not the agent. It keeps one full-access key and signs no demo transaction (claim account-agent-legacy states this). If it is deleted, change that claim to account_exists with exists false.",
+      "status": "created"
+    },
+    "registry": {
+      "account_id": "registry.a-identity.testnet",
+      "role": "The A-Identity risk registry contract.",
+      "status": "planned"
+    },
+    "vault": {
+      "account_id": "vault.aid-demo-owner.testnet",
+      "role": "The agent's spend vault contract. Holds no full-access key after setup.",
+      "status": "planned"
+    }
+  },
+  "payees": {
+    "lookalike": {
+      "account_id": "aid-demo-merchamt.testnet",
+      "role": "Fresh lookalike of the merchant (one letter changed), created by the deploy step minutes before the run. No hand-written label: its verdict comes from the engine's computed signals.",
+      "status": "planned"
+    },
+    "new_vendor": {
+      "account_id": "aid-demo-printshop.testnet",
+      "role": "Fresh legitimate vendor nobody has judged or paid; its first payment waits for the owner.",
+      "status": "planned"
+    }
+  },
+  "token": {
+    "account_id": "3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af",
+    "symbol": "USDC",
+    "decimals": 6,
+    "issuer": "Circle (testnet USDC, listed on developers.circle.com)",
+    "storage_deposit_yocto": "1250000000000000000000"
+  },
+  "contracts": {
+    "registry": {
+      "status": "pending",
+      "account_id": "registry.a-identity.testnet",
+      "crate": "contracts/a-identity-registry",
+      "version": null,
+      "wasm_path": "deployments/wasm/a_identity_registry.wasm",
+      "wasm_bytes": null,
+      "wasm_sha256_hex": null,
+      "wasm_sha256_base58": null,
+      "code_hash": null,
+      "build": {
+        "command": "cargo near build non-reproducible-wasm --manifest-path contracts/a-identity-registry/Cargo.toml --locked",
+        "reproducible": false,
+        "reproducible_command": null,
+        "rustc": null,
+        "cargo_near": null,
+        "git_commit": null
+      },
+      "deploy_tx": {
+        "hash": null,
+        "signer_id": null,
+        "block_height": null
+      },
+      "init": {
+        "method": "new",
+        "args": {
+          "owner_id": "a-identity.testnet",
+          "oracles": [
+            "oracle.a-identity.testnet"
+          ]
+        }
+      }
+    },
+    "vault": {
+      "status": "pending",
+      "account_id": "vault.aid-demo-owner.testnet",
+      "crate": "contracts/agent-spend-policy",
+      "version": null,
+      "wasm_path": "deployments/wasm/agent_spend_policy.wasm",
+      "wasm_bytes": null,
+      "wasm_sha256_hex": null,
+      "wasm_sha256_base58": null,
+      "code_hash": null,
+      "build": {
+        "command": "cargo near build non-reproducible-wasm --manifest-path contracts/agent-spend-policy/Cargo.toml --locked",
+        "reproducible": false,
+        "reproducible_command": null,
+        "rustc": null,
+        "cargo_near": null,
+        "git_commit": null
+      },
+      "deploy_tx": {
+        "hash": null,
+        "signer_id": null,
+        "block_height": null
+      },
+      "init": {
+        "method": "new",
+        "args": {
+          "owner_id": "aid-demo-owner.testnet",
+          "token_id": {
+            "$ref": "token.account_id"
+          },
+          "registry_id": "registry.a-identity.testnet",
+          "token_storage_deposit": "1250000000000000000000",
+          "daily_cap": null,
+          "auto_approve_max": null
+        }
+      }
+    }
+  },
+  "policy": {
+    "daily_cap": null,
+    "auto_approve_max": null,
+    "allowlist_enabled": false,
+    "hold_unknown": true
+  },
+  "keys": {
+    "vault": {
+      "full_access_keys": 0,
+      "lock": {
+        "how": null,
+        "tx_hash": null
+      },
+      "agent": {
+        "public_key": null,
+        "receiver_id": "vault.aid-demo-owner.testnet",
+        "method_names": [
+          "pay",
+          "request_payment",
+          "record_refusal"
+        ],
+        "allowance_yocto": null,
+        "add_tx_hash": null
+      }
+    },
+    "oracle": {
+      "full_access_keys": 0,
+      "lock": {
+        "how": null,
+        "tx_hash": null
+      },
+      "function_call": {
+        "public_key": null,
+        "receiver_id": "registry.a-identity.testnet",
+        "method_names": [
+          "set_verdict",
+          "set_verdicts",
+          "clear_verdict",
+          "clear_reports"
+        ],
+        "allowance_yocto": null,
+        "add_tx_hash": null
+      }
+    },
+    "registry": {
+      "full_access_keys": 0,
+      "lock": {
+        "how": null,
+        "tx_hash": null
+      }
+    }
+  },
+  "verdicts": {
+    "lookalike": {
+      "account_id": "aid-demo-merchamt.testnet",
+      "verdict": "DENY",
+      "reasons": null,
+      "evidence": null,
+      "snapshot": null,
+      "snapshot_sha256": null,
+      "set_tx_hash": null,
+      "read_block": null
+    }
+  },
+  "demo": {
+    "status": "pending",
+    "log": null,
+    "state_block": null,
+    "transactions": {
+      "setup_request": {
+        "phase": "setup",
+        "description": "The agent asks the owner to pay the merchant the first time (request_payment).",
+        "signer_id": "vault.aid-demo-owner.testnet",
+        "receiver_id": "vault.aid-demo-owner.testnet",
+        "method": "request_payment",
+        "payee": "aid-demo-merchant.testnet",
+        "amount": null,
+        "tx_hash": null,
+        "expected_outcome": "held"
+      },
+      "setup_owner_pay": {
+        "phase": "setup",
+        "description": "The owner approves it: paid_count(merchant) becomes 1, so later payments flow.",
+        "signer_id": "aid-demo-owner.testnet",
+        "receiver_id": "vault.aid-demo-owner.testnet",
+        "method": "owner_pay",
+        "payee": "aid-demo-merchant.testnet",
+        "amount": null,
+        "tx_hash": null,
+        "expected_outcome": "sent by_owner"
+      },
+      "pay_known": {
+        "phase": "a",
+        "description": "Guard ALLOW, then the agent pays the known merchant: USDC moves.",
+        "signer_id": "vault.aid-demo-owner.testnet",
+        "receiver_id": "vault.aid-demo-owner.testnet",
+        "method": "pay",
+        "payee": "aid-demo-merchant.testnet",
+        "amount": null,
+        "tx_hash": null,
+        "expected_outcome": "sent"
+      },
+      "guard_refusal": {
+        "phase": "b",
+        "description": "The model proposes the lookalike; the guard says DENY and records the refusal on chain.",
+        "signer_id": "vault.aid-demo-owner.testnet",
+        "receiver_id": "vault.aid-demo-owner.testnet",
+        "method": "record_refusal",
+        "payee": "aid-demo-merchamt.testnet",
+        "amount": null,
+        "tx_hash": null,
+        "expected_outcome": "refused agent_guard"
+      },
+      "pay_unknown": {
+        "phase": "c",
+        "description": "A compromised agent skips the guard and pays the lookalike nobody has judged: held.",
+        "signer_id": "vault.aid-demo-owner.testnet",
+        "receiver_id": "vault.aid-demo-owner.testnet",
+        "method": "pay",
+        "payee": "aid-demo-merchamt.testnet",
+        "amount": null,
+        "tx_hash": null,
+        "expected_outcome": "held UnknownPayee"
+      },
+      "oracle_deny": {
+        "phase": "c",
+        "description": "The oracle computes the lookalike's verdict from chain data and writes DENY with its function-call key.",
+        "signer_id": "oracle.a-identity.testnet",
+        "receiver_id": "registry.a-identity.testnet",
+        "method": "set_verdict",
+        "payee": "aid-demo-merchamt.testnet",
+        "amount": null,
+        "tx_hash": null,
+        "expected_outcome": "verdict_set DENY"
+      },
+      "pay_deny": {
+        "phase": "c",
+        "description": "The agent pays the lookalike again: refused on chain, RegistryDeny.",
+        "signer_id": "vault.aid-demo-owner.testnet",
+        "receiver_id": "vault.aid-demo-owner.testnet",
+        "method": "pay",
+        "payee": "aid-demo-merchamt.testnet",
+        "amount": null,
+        "tx_hash": null,
+        "expected_outcome": "refused RegistryDeny"
+      },
+      "owner_pay_denied": {
+        "phase": "c",
+        "description": "An owner fooled by the same invoice approves the held lookalike payment: still refused, RegistryDeny.",
+        "signer_id": "aid-demo-owner.testnet",
+        "receiver_id": "vault.aid-demo-owner.testnet",
+        "method": "owner_pay",
+        "payee": "aid-demo-merchamt.testnet",
+        "amount": null,
+        "tx_hash": null,
+        "expected_outcome": "refused RegistryDeny"
+      },
+      "vendor_request": {
+        "phase": "d",
+        "description": "Guard WARN for a vendor nobody has history with: the agent asks the owner.",
+        "signer_id": "vault.aid-demo-owner.testnet",
+        "receiver_id": "vault.aid-demo-owner.testnet",
+        "method": "request_payment",
+        "payee": "aid-demo-printshop.testnet",
+        "amount": null,
+        "tx_hash": null,
+        "expected_outcome": "held"
+      },
+      "vendor_owner_pay": {
+        "phase": "d",
+        "description": "The owner approves the vendor's payment: USDC moves.",
+        "signer_id": "aid-demo-owner.testnet",
+        "receiver_id": "vault.aid-demo-owner.testnet",
+        "method": "owner_pay",
+        "payee": "aid-demo-printshop.testnet",
+        "amount": null,
+        "tx_hash": null,
+        "expected_outcome": "sent by_owner"
+      },
+      "over_ceiling": {
+        "phase": "e",
+        "description": "A payment above the per-payment ceiling: refused by the vault, AboveAutoApprove.",
+        "signer_id": "vault.aid-demo-owner.testnet",
+        "receiver_id": "vault.aid-demo-owner.testnet",
+        "method": "pay",
+        "payee": "aid-demo-merchant.testnet",
+        "amount": null,
+        "tx_hash": null,
+        "expected_outcome": "refused AboveAutoApprove"
+      }
+    },
+    "rejections": {
+      "call_token": {
+        "entry": "call_token",
+        "description": "The agent key calls ft_transfer on the USDC contract (no deposit, so the receiver rule is the one tested).",
+        "expected_rule": "ReceiverMismatch"
+      },
+      "attach_deposit": {
+        "entry": "attach_deposit",
+        "description": "The agent key calls pay with 1 yoctoNEAR attached.",
+        "expected_rule": "DepositWithFunctionCall"
+      },
+      "owner_method": {
+        "entry": "owner_method",
+        "description": "The agent key calls the owner's set_registry on the vault.",
+        "expected_rule": "MethodNameMismatch"
+      },
+      "add_key": {
+        "entry": "add_key",
+        "description": "The agent key tries to add a full-access key to the vault account.",
+        "expected_rule": "RequiresFullAccess"
+      },
+      "send_near": {
+        "entry": "send_near",
+        "description": "The agent key tries to send 1 yoctoNEAR out of the vault account.",
+        "expected_rule": "RequiresFullAccess"
+      }
+    },
+    "log_note": "demo.log is the attack demo run log demo/logs/<run-id>.json that holds these transactions and the rejections below; commit the run you cite."
+  }
+}
