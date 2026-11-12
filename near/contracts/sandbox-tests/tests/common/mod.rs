@@ -1577,15 +1577,33 @@ impl World {
 
     /// Deploy WITHOUT an init call, signed by the account itself: the mistake a deploy script
     /// could make, which leaves the contract uninitialized for whoever calls `new` first.
+    ///
+    /// The sandbox can answer the nonce query before the new account's key is visible at the
+    /// block it reads (seen once in CI as FetchNonceError right after create_account). That is
+    /// the harness racing the node, not the contract, so only that error is retried, a few
+    /// times; any other error fails the test at once.
     pub async fn deploy_without_init(&self, account: &AccountId, code: Vec<u8>) -> Tx {
-        let sent = Contract::deploy(account.clone())
-            .use_code(code)
-            .without_init_call()
-            .with_signer(self.root.clone())
-            .send_to(&self.network)
-            .await;
-        Tx::from_send(sent)
-            .unwrap_or_else(|err| panic!("deploy to {account} was not accepted: {err}"))
+        let mut last = String::new();
+        for _ in 0..10 {
+            let sent = Contract::deploy(account.clone())
+                .use_code(code.clone())
+                .without_init_call()
+                .with_signer(self.root.clone())
+                .send_to(&self.network)
+                .await;
+            match sent {
+                Err(err) if format!("{err:?}").contains("FetchNonceError") => {
+                    last = format!("{err}");
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                }
+                other => {
+                    return Tx::from_send(other).unwrap_or_else(|err| {
+                        panic!("deploy to {account} was not accepted: {err}")
+                    });
+                }
+            }
+        }
+        panic!("deploy to {account} was not accepted after 10 tries: {last}")
     }
 
     /// A NEP-366 delegate action: `secret` (the key `public_key` on the vault account) signs
