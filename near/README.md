@@ -631,4 +631,4 @@ Hackathon rule Q-005. Exact versions, from the lockfiles:
 
 - License: MIT, [LICENSE](../LICENSE).
 - Team lead: Aybars Dorman. Team of five. Contact: ceo@a-identity.xyz.
-- Demo video: attached to the team's demo post on X, which the submission links.
+- Demo video and post on X: https://x.com/ai_dentity/status/2120968438168617470
