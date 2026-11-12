@@ -1,0 +1,6 @@
+# The repository root ignores every folder named "logs". The attack demo's recorded runs
+# (logs/<run-id>.json and .txt) and the oracle's records and snapshots (logs/oracle/) are the
+# evidence judge/claims.json and deployments/testnet.json point at, so they are committed.
+!logs/
+# Dry runs are plans with no network: never evidence.
+logs/*-dry-run.*
