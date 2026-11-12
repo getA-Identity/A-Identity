@@ -12,9 +12,24 @@
  * An `agentId` may be a platform agent id, an ERC-8004 token id ("#849980" / "849980"),
  * an owner address, or a CAIP-10 id. We resolve platform state first (richest signals),
  * then fall back to a live on-chain read, and cross-link the two when both exist.
+ *
+ * A NEAR testnet account is the last form, read only when none of the above claims the query:
+ * "near:testnet:<account>", or a bare name ending in ".testnet" (chains/near/ids.ts
+ * nearTargetOf). It is answered by A-Identity's NEAR verdict engine (../near-check/check.ts),
+ * the same engine the NEAR SDK runs, and mapped into these same outputs with no field added
+ * (../near-check/trust.ts says where each part goes).
  */
 import { createIdentityProvider, isSafePublicHttpUrl } from '../erc8004.js'
-import { ARC_CHAIN } from '../chains/index.js'
+import { ARC_CHAIN, nearTargetOf, type NearTarget } from '../chains/index.js'
+import { nearCheck, isNearAnswer, NEAR_CHECK_CHAIN, type NearCheckResult } from '../near-check/check.js'
+import {
+  NEAR_RISK_LEVEL,
+  nearFailureReason,
+  nearLivenessNote,
+  nearPreviewNote,
+  nearReasons,
+  nearReputationBasis,
+} from '../near-check/trust.js'
 import { readValidationOn } from '../validation-registry.js'
 import { readHumanProofFor, sameHumanOn, type HumanProofRead } from '../self-agent-id.js'
 import { computeAgentReputation, type ReputationResult } from '../reputation.js'
@@ -68,6 +83,11 @@ type Bundle = {
   onPlatform: boolean | undefined
   /** Does that record count against it? Undefined when it could not be read. See adverseRecordFrom. */
   adverseRecord: boolean | undefined
+  /**
+   * Set only for a NEAR testnet account: the account and what the NEAR verdict engine answered
+   * (a verdict, or why none could be computed). Every other form leaves it null.
+   */
+  near: { account: string; result: NearCheckResult } | null
 }
 
 /** A transparent echo of the behavioral inputs behind the reputation `behavior` band. */
@@ -162,6 +182,61 @@ export type GatherDeps = {
   refreshState?: () => Promise<boolean>
   readValidation?: typeof readValidationOn
   readHumanProof?: typeof readHumanProofFor
+  /**
+   * The NEAR verdict for a NEAR testnet account, asked in its CAIP-10 form (near:testnet:<account>),
+   * which routes every account kind. Reached only by the NEAR forms; see gather().
+   */
+  nearCheck?: (caip10: string) => Promise<NearCheckResult>
+}
+
+/** How long a paid call waits for a NEAR collection (about two seconds when the chain answers). */
+const NEAR_TRUST_TIMEOUT_MS = 15_000
+
+/** Production's NEAR read. nearCheck never throws; the catch keeps a bug there from failing a paid call. */
+const liveNearCheck = (caip10: string): Promise<NearCheckResult> =>
+  nearCheck(caip10, {}, { timeoutMs: NEAR_TRUST_TIMEOUT_MS }).catch((e: unknown) => ({
+    code: 'no_verdict' as const,
+    httpStatus: 503 as const,
+    error: `the NEAR check failed: ${e instanceof Error ? e.message : String(e)}.`,
+  }))
+
+/**
+ * The bundle of a NEAR testnet account. Everything a platform record or an ERC-8004 read would
+ * fill stays at its "nothing here" value, because a NEAR account has neither, and the verdict,
+ * the score and the evidence come from the NEAR verdict engine (assess and the tools read
+ * `near`). onPlatform is false only when the chain was read: we looked, and we hold no record of
+ * a NEAR account. When nothing could be read it stays undefined, the strict reading.
+ */
+async function gatherNear(agentId: string, target: NearTarget, deps: GatherDeps): Promise<Bundle> {
+  const account = target.account
+  // The CAIP-10 form, never the bare id: a bare implicit or top-level account is refused by the
+  // check as ambiguous, while near:testnet:<account> names it whatever its kind.
+  const result = await (deps.nearCheck ?? liveNearCheck)(`${target.network}:${account}`)
+  const answer = isNearAnswer(result) ? result : null
+  // Asked of the NEAR chain with no EVM address, so the reader says what is true there (Self Agent
+  // ID keys agents by EVM address) without a network call.
+  const humanProof: Bundle['humanProof'] = await withTimeout((deps.readHumanProof ?? readHumanProofFor)(NEAR_CHECK_CHAIN, []), RPC_TIMEOUT_MS, null)
+  const none = computeAgentReputation({ settledCount: 0, rejected: 0, onchainRegistered: false, createdAt: new Date() })
+  return {
+    agentId,
+    platform: null,
+    walletClaim: null,
+    addressNote: null,
+    lookupFailure: null,
+    identity: null,
+    tokenId: null,
+    validation: null,
+    humanProof,
+    reputation: { ...none, score: answer ? answer.score : none.score, basis: nearReputationBasis(result), behavioral: null, sybil: null },
+    onchainVerified: false,
+    kyaVerified: false,
+    kyaStatus: 'unknown',
+    revoked: false,
+    tenureDays: 0,
+    onPlatform: answer ? false : undefined,
+    adverseRecord: undefined,
+    near: { account, result },
+  }
 }
 
 /** Resolve every real signal we have for an agent, from platform state + the chain. */
@@ -197,6 +272,14 @@ async function gather(agentId: string, deps: GatherDeps = {}): Promise<Bundle> {
       platform = atOwner.record
     }
   }
+
+  // A NEAR testnet account, last and only when nothing above claimed the query: no record named
+  // it, it is no address, and no identity resolved. nearTargetOf takes only the two forms nothing
+  // else here can mean (near:testnet:<account>, or a bare name ending in .testnet), so bare
+  // digits, agent_<id>, a 0x address, a Stellar or Algorand address, a web domain and a made-up
+  // string all reach exactly the code they reached before this branch existed.
+  const nearTarget = !platform && !address && !identity ? nearTargetOf(q) : null
+  if (nearTarget) return gatherNear(q, nearTarget, deps)
 
   // A record that proved this address and has no current proof for it can count against it. It cannot
   // vouch for it: KYA attests the wallet the record has proved now.
@@ -300,7 +383,7 @@ async function gather(agentId: string, deps: GatherDeps = {}): Promise<Bundle> {
   const stateUnreadable = !rosterReadable || agents.length === 0
   const lookupFailure: Bundle['lookupFailure'] = stateUnreadable ? 'state-unreadable' : onPlatform === undefined ? 'id-not-reached' : null
 
-  return { agentId: q, platform, walletClaim: atAddress?.claim ?? null, addressNote, lookupFailure, identity, tokenId, validation, humanProof, reputation, onchainVerified, kyaVerified, kyaStatus, revoked: kyaStatus === 'revoked', tenureDays, onPlatform, adverseRecord }
+  return { agentId: q, platform, walletClaim: atAddress?.claim ?? null, addressNote, lookupFailure, identity, tokenId, validation, humanProof, reputation, onchainVerified, kyaVerified, kyaStatus, revoked: kyaStatus === 'revoked', tenureDays, onPlatform, adverseRecord, near: null }
 }
 
 const STALE_RECORD_NOTE = 'Our platform records could not be refreshed for this read, so what this record holds could not be confirmed, and a low score is treated strictly. That part is us being unable to look, not evidence against it.'
@@ -323,8 +406,21 @@ const riskSignals = (b: Bundle): RiskSignals => ({
   ...(b.reputation.behavioral?.contestedJobs ? { contestedJobs: b.reputation.behavioral.contestedJobs } : {}),
 })
 
+/**
+ * The verdict of a NEAR testnet account: the engine's, unchanged, at the block its answer names.
+ * No verdict means DENY with a reason that says we could not look, the rule every form here
+ * already follows when a read fails.
+ */
+function assessNear(near: NonNullable<Bundle['near']>, b: Bundle, txContext: TxContext | null): ReturnType<typeof assessRisk> {
+  const signals = { ...riskSignals(b), txContext }
+  const r = near.result
+  if (!isNearAnswer(r)) return { decision: 'DENY', risk: 'high', reasons: [nearFailureReason(near.account, r)], signals }
+  return { decision: r.verdict, risk: NEAR_RISK_LEVEL[r.verdict], reasons: nearReasons(r, txContext?.amountUsd), signals }
+}
+
 /** The verdict of a bundle, with what the address itself adds to its reasons. */
 function assess(b: Bundle, txContext: TxContext | null) {
+  if (b.near) return assessNear(b.near, b, txContext)
   const r = assessRisk(riskSignals(b), txContext)
   // Failing closed is right. Presenting it as a finding is not: with no record reached, the score is a
   // chain-only number and 'New agent' and 'below the safe threshold' are not about this payee.
@@ -385,6 +481,8 @@ const LIVENESS_TIMEOUT_MS = 3500
  * us into an internal target).
  */
 async function checkLiveness(b: Bundle): Promise<Liveness> {
+  // A NEAR account registers no endpoint, so nothing is probed; the note carries the NEAR verdict.
+  if (b.near) return { checked: false, target: null, reachable: null, httpStatus: null, note: nearLivenessNote(b.near.account, b.near.result) }
   const target = livenessTarget(b.identity?.domain, b.identity?.registrationUri)
   if (!target) {
     return {
@@ -420,8 +518,8 @@ const TOOL_META = {
 // ── the four tools ────────────────────────────────────────────────────────────────
 
 /** verify_agent - ERC-8004 identity + KYA status for an agent. */
-export async function verifyAgent(agentId: string) {
-  const b = await gather(agentId)
+export async function verifyAgent(agentId: string, deps: GatherDeps = {}) {
+  const b = await gather(agentId, deps)
   const liveness = await checkLiveness(b)
   return {
     tool: 'verify_agent',
@@ -452,8 +550,8 @@ export async function verifyAgent(agentId: string) {
 }
 
 /** reputation_score - deterministic 0-1000 reputation from real signals. */
-export async function reputationScore(agentId: string) {
-  const b = await gather(agentId)
+export async function reputationScore(agentId: string, deps: GatherDeps = {}) {
+  const b = await gather(agentId, deps)
   return {
     tool: 'reputation_score',
     _meta: TOOL_META,
@@ -491,8 +589,8 @@ export async function riskCheck(agentId: string, txContext: TxContext | null = n
 }
 
 /** agent_passport - the full identity + reputation + validation + risk passport. */
-export async function agentPassport(agentId: string) {
-  const b = await gather(agentId)
+export async function agentPassport(agentId: string, deps: GatherDeps = {}) {
+  const b = await gather(agentId, deps)
   const liveness = await checkLiveness(b)
   const risk = assess(b, null)
   return {
@@ -547,8 +645,8 @@ export function scoreBand(score: number): 'very-low' | 'low' | 'medium' | 'high'
  * check a counterparty for free, then pay per call when a decision actually needs the
  * exact score, the reasons, or the full passport.
  */
-export async function trustPreview(agentId: string) {
-  const b = await gather(agentId)
+export async function trustPreview(agentId: string, deps: GatherDeps = {}) {
+  const b = await gather(agentId, deps)
   const sybilLevel = b.reputation.sybil?.level ?? 'none'
   return {
     tool: 'trust_preview',
@@ -560,7 +658,9 @@ export async function trustPreview(agentId: string) {
     scoreBand: scoreBand(b.reputation.score),
     flags: { revoked: b.revoked, sybilSuspected: sybilLevel === 'medium' || sybilLevel === 'high' },
     upgrade: {
-      note: 'The free preview is coarse by design. Paid tools return the exact 0-1000 score with a full breakdown, an ALLOW/WARN/DENY verdict with reasons, and the complete passport.',
+      note:
+        'The free preview is coarse by design. Paid tools return the exact 0-1000 score with a full breakdown, an ALLOW/WARN/DENY verdict with reasons, and the complete passport.' +
+        (b.near ? ` ${nearPreviewNote(b.near.account, b.near.result)}` : ''),
       tools: [
         { name: 'reputation_score', method: 'POST /tools/reputation_score', price: PRICES['POST /tools/reputation_score'] },
         { name: 'risk_check', method: 'POST /tools/risk_check', price: PRICES['POST /tools/risk_check'] },
@@ -690,8 +790,8 @@ export function sameOperator(a: PlatformAgent | null, b: PlatformAgent | null): 
  * same owner as `from` (a self-deal, which inflates no real reputation). A clean counterparty
  * still surfaces as ALLOW; a same-operator self-deal is downgraded to at least WARN.
  */
-export async function counterpartyCheck(from: string, to: string, txContext: TxContext | null = null) {
-  const [payer, cp] = await Promise.all([gather(from), gather(to)])
+export async function counterpartyCheck(from: string, to: string, txContext: TxContext | null = null, deps: GatherDeps = {}) {
+  const [payer, cp] = await Promise.all([gather(from, deps), gather(to, deps)])
   const base = assess(cp, txContext)
   // A relationship signal, so an unproven wallet claim still counts here: it only ever moves ALLOW to WARN.
   const isSelfDeal = sameOperator(payer.platform ?? payer.walletClaim, cp.platform ?? cp.walletClaim)

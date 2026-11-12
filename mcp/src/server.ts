@@ -132,8 +132,23 @@ export function identityOnlyReputation(agentId: string, partial: boolean) {
   }
 }
 
+/**
+ * What an MCP client shows the model about this server before any tool runs. Short on purpose:
+ * each tool describes itself, so this says only what no single tool here says, which is where
+ * the trust tools live and which targets they take (a NEAR testnet account among them, since
+ * 2026-11-12). server-card.test.ts reads it from a connected client.
+ */
+export const MCP_INSTRUCTIONS =
+  'A-Identity: identity, reputation and bounded spending authority for AI agents. Read tools need no session; the tools that write ' +
+  'or act for an owner need a verified session (https://a-identity.xyz/auth.md). The trust tools risk_check, verify_agent, ' +
+  'trust_preview and counterparty_check are not on this server: they are sold over x402 at ' +
+  'https://a-identity.xyz/api/x402/gateway/tools/<tool> (trust_preview free). They take an ERC-8004 id, a 0x address, or a NEAR ' +
+  'testnet account written near:testnet:<id> or as a name ending in .testnet. For a NEAR testnet account the full verdict, from the ' +
+  'same engine the NEAR SDK runs, is free at GET https://a-identity.xyz/api/near/check?account=<id>: testnet only, read live, and ' +
+  'nothing settles on NEAR yet.'
+
 export function buildServer(data: ServerData = {}): McpServer {
-  const server = new McpServer({ name: 'a-identity-mcp', version: '0.2.0' })
+  const server = new McpServer({ name: 'a-identity-mcp', version: '0.2.0' }, { instructions: MCP_INSTRUCTIONS })
   const identity = createIdentityProvider()
 
   server.registerTool(

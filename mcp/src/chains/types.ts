@@ -276,6 +276,21 @@ export interface ChainDescriptor {
    * use in this codebase, and every write still goes through Soroban RPC.
    */
   horizonUrls?: string[]
+  /**
+   * Archival JSON-RPC endpoints (NEAR only), primary first. A regular NEAR node keeps a few
+   * epochs of state, so a read pinned to an older block (the NEAR verdict engine's 72 hour and
+   * 30 day probes, a re-collection with --at-block) needs a node that keeps history. The
+   * engine's collectors read these for archival reads only, and try them after `rpcUrls` for
+   * every other read.
+   */
+  archivalRpcUrls?: string[]
+  /**
+   * Indexer APIs (NEAR only): an account's oldest transactions, which no JSON-RPC call answers.
+   * `fastnearTx` is FastNEAR's transactions API base (POST /v0/account), `nearblocks` the
+   * NearBlocks API base (v3 only; v1 was retired on 2026-11-05). Read-only, and recorded
+   * verbatim in a verdict snapshot as evidence that is not consensus data.
+   */
+  indexerUrls?: { fastnearTx: string; nearblocks: string }
   wsUrl?: string
   explorer: string | null
   faucet?: string

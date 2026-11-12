@@ -1152,11 +1152,12 @@ export const CHAINS: ChainDescriptor[] = [
   // NEAR hackathon work. There is deliberately no NEAR mainnet entry beside it: nothing of
   // ours runs on NEAR mainnet, and a `planned` twin would be a name with nothing behind it.
   // `beta` rather than `planned` on the registry's own definition: the network is wired and
-  // readable here (chains/near/client.ts can read it over JSON-RPC, failing over across the
-  // hosts below) and nothing has settled on it. No public route calls that reader yet: its only
-  // production caller is the liveCheck behind /proof/:rail, which runs only for a chain with a
-  // provenance entry, and NEAR has none. The role says so. Every value was read live on
-  // 2026-11-12.
+  // readable here and nothing has settled on it. Two readers use the hosts below:
+  // chains/near/client.ts (JSON-RPC views, behind the liveCheck of /proof/:rail, which runs only
+  // for a chain with a provenance entry, and NEAR has none), and, since 2026-11-12, the NEAR
+  // verdict engine copied from near/sdk (chains/near/engine.ts builds its hosts from this entry),
+  // which answers GET /api/near/check and the trust tools for a NEAR testnet account. Both only
+  // read. The role says so. Every value was read live on 2026-11-12.
   {
     // The id NEAR's own wallet-selector builds (`near:${networkId}`). The ChainAgnostic
     // namespaces registry has no NEAR profile yet, so this is the de-facto form, not a CASA one.
@@ -1168,7 +1169,7 @@ export const CHAINS: ChainDescriptor[] = [
     // docs.json colors.primary, read 2026-11-12). NEAR's mark itself is monochrome, which would
     // fail the chip rule in one theme, the same reason Algorand and X Layer carry a non-mark color.
     color: '#1FB858',
-    role: 'NEAR testnet, read side only: a JSON-RPC reader for accounts, contract views and Circle\'s testnet USDC exists, but no public route calls it yet, and no contract or payment rail of ours runs on it.',
+    role: 'NEAR testnet, read side only: A-Identity\'s NEAR verdict engine reads accounts, contract views and Circle\'s testnet USDC here, pinned to one block, for GET /api/near/check and the trust tools. No contract or payment rail of ours runs on it, and nothing settles here.',
     ecosystem: 'near',
     testnet: true,
     status: 'beta',
@@ -1183,6 +1184,17 @@ export const CHAINS: ChainDescriptor[] = [
     // a read older than a pruned node's window (an unknown or garbage-collected block, which
     // the reader treats as "could not answer") falls through to the host that keeps history.
     rpcUrls: ['https://rpc.testnet.fastnear.com', 'https://near-testnet.drpc.org', 'https://archival-rpc.testnet.fastnear.com'],
+    // The NEAR verdict engine's archival reads (its 72 hour and 30 day probes): FastNEAR's
+    // archival host, then near.org's, which docs.near.org lists as severely rate limited and is
+    // therefore the last resort. Both answered `status` with chain_id testnet and
+    // protocol_version 88 on 2026-11-12. The same two, in the same order, as the SDK's own list
+    // (near/sdk/src/collect/networks.ts).
+    archivalRpcUrls: ['https://archival-rpc.testnet.fastnear.com', 'https://archival-rpc.testnet.near.org'],
+    // The two indexers the NEAR verdict engine reads an account's oldest transactions from,
+    // FastNEAR first and NearBlocks (v3) as the fallback. Both answered for
+    // aid-demo-merchant.testnet on 2026-11-12. A host here enters every verdict snapshot's
+    // indexer records, so chains/near/engine.test.ts holds it equal to the SDK's own.
+    indexerUrls: { fastnearTx: 'https://tx.test.fastnear.com', nearblocks: 'https://api-testnet.nearblocks.io' },
     // NearBlocks routes a transaction at /txns/<hash> (not /tx/) and an account at
     // /address/<account>; explorer.ts encodes both. Its pages refuse scripted requests
     // (HTTP 403 challenge), so no link checker can confirm them: docs.near.org's own links

@@ -88,6 +88,7 @@ can still DENY on its limits.
 - [Agent manifest](https://a-identity.xyz/.well-known/ai-agent-manifest.json): identity, payment and tool endpoints in one document.
 - [Free trust pre-check](https://a-identity-asp.onrender.com/tools/trust_preview): POST an agentId, no payment and no key, rate limited.
 - [Resolve an agent](https://a-identity.xyz/api/agent): pass ?q= a wallet address or token id.
+- [NEAR testnet verdict](https://a-identity.xyz/api/near/check?account=aid-demo-merchant.testnet): GET with ?account=near:testnet:<id> or a name ending in .testnet, plus an optional &vault=<vault account>. A-Identity's ALLOW, WARN or DENY on a NEAR testnet account, from the same engine the NEAR SDK runs, read live at one block, with its reasons, both digests and the command that recomputes it. Free and rate limited. Testnet only: nothing settles on NEAR yet. The trust tools (risk_check, verify_agent, trust_preview, counterparty_check) accept the same two forms and return the same verdict.
 - [Reputation](https://a-identity.xyz/api/reputation): pass ?id= an agent id.
 - [Guardrail status](https://a-identity-backend.onrender.com/api/guardrail-status): answers 503 when the engine is not enforcing.
 - [X Layer settlement proof](https://a-identity-asp.onrender.com/proof.json): every settlement the Trust Oracle took on X Layer, with transaction hashes.

@@ -78,7 +78,7 @@ test('every live or beta chain carries an identity registry, or is a listed exce
     'algorand-testnet':
       'beta for the same reason as its mainnet twin and with the same identity caveat: the payment rehearsal path only. No agent registry exists here to point at, so nothing identity-shaped is claimed.',
     'near-testnet':
-      'beta on the strength of the READ side only (2026-11-12): the descriptor carries the network\'s hosts, its explorer and Circle\'s testnet USDC, and chains/near/client.ts can read them over JSON-RPC, but no public route calls that reader yet and no contract or payment rail of ours runs on it. ERC-8004 is EVM-only and NEAR carries no agent registry we anchor on, so the passport stays bridged from an EVM chain and nothing identity-shaped is claimed. Delete this entry the day a registry we anchor on lands here, or demote the chain.',
+      'beta on the strength of the READ side only (2026-11-12): the descriptor carries the network\'s hosts, its explorer and Circle\'s testnet USDC, and the NEAR verdict engine (chains/near/engine.ts) reads them behind GET /api/near/check and the trust tools, but no contract or payment rail of ours runs on it. ERC-8004 is EVM-only and NEAR carries no agent registry we anchor on, so the passport stays bridged from an EVM chain and nothing identity-shaped is claimed. Delete this entry the day a registry we anchor on lands here, or demote the chain.',
   }
   for (const c of CHAINS) {
     if (c.status !== 'live' && c.status !== 'beta') continue

@@ -6,11 +6,17 @@
  * nothing could look at it cheaply. The limiter lives here too, so the MCP hooks charge the
  * very buckets the routes do: a tool that is also a route costs what the POST would.
  */
+import { nearTargetOf } from './chains/near/ids.js'
 
 /** The verify-then-pay buckets, named once: its REST routes and its MCP tools are charged to
  *  the same ones (mcpToolBudget), so MCP is not a way around them. */
 export const VTP_BUDGET = { bucket: 'vtp', max: 30, windowMs: 60_000 } as const
 export const VTP_RECEIPT_BUDGET = { bucket: 'vtp-receipt', max: 30, windowMs: 60_000 } as const
+
+/** The NEAR testnet verdict's bucket, named once: GET /api/near/check is charged to it, and so is
+ *  every free trust tool call on a NEAR testnet account (freeToolTargetBudget), because both can
+ *  start the same block-pinned collection. One per-IP NEAR budget, whichever door a call uses. */
+export const NEAR_CHECK_BUDGET = { bucket: 'near-check', max: 20, windowMs: 60_000 } as const
 
 /** Per-path rate budget, or null when the path isn't limited. */
 export function rateBudget(method: string, pathname: string): { bucket: string; max: number; windowMs: number } | null {
@@ -22,6 +28,12 @@ export function rateBudget(method: string, pathname: string): { bucket: string; 
   // because visitors on a-identity.xyz can arrive through one shared proxy hop, and a demo
   // should not trip on it; the 60 s answer cache absorbs the repeats.
   if (method === 'GET' && (pathname === '/api/robinhood/check' || pathname === '/api/arbitrum/check')) return { bucket: 'evm-pay-check', max: 30, windowMs: 60_000 }
+  // The NEAR testnet verdict: one uncached call is a whole block-pinned collection, about thirty
+  // JSON-RPC reads (archival ones among them) and two indexer queries against public hosts we do
+  // not own. The 60 s answer per account and vault absorbs repeats, and at most four collections
+  // run at once server-wide (near-check/check.ts); this bounds one client walking through names.
+  // The free trust_preview on a NEAR target is charged to the same bucket (freeToolTargetBudget).
+  if (method === 'GET' && pathname === '/api/near/check') return { ...NEAR_CHECK_BUDGET }
   // The console's live vault panel. Open on purpose (a vault's limits are public ledger state)
   // and it accepts ANY contract id, so each uncached read is a ledger-entry read plus a dozen
   // simulations against a public RPC we do not own. Sized for a panel that refreshes every
@@ -213,6 +225,18 @@ export function mcpToolBudget(tool: string): { bucket: string; max: number; wind
   if (tool === 'verify_then_pay') return { ...VTP_BUDGET }
   if (tool === 'verify_then_pay_receipt') return { ...VTP_RECEIPT_BUDGET }
   return null
+}
+
+/**
+ * The bucket one FREE trust tool call is charged to by its target: the near-check bucket when
+ * the target is a NEAR testnet account, by the one routing rule gather() uses (chains/near/ids.ts
+ * nearTargetOf). Such a call can start the whole block-pinned collection GET /api/near/check
+ * runs, so a free preview must not be a way around that route's budget. null for every other
+ * target, which costs exactly what it cost before NEAR was read. The paid tools are not charged
+ * here: what bounds them is their price.
+ */
+export function freeToolTargetBudget(target: string | undefined): { bucket: string; max: number; windowMs: number } | null {
+  return typeof target === 'string' && nearTargetOf(target) ? { ...NEAR_CHECK_BUDGET } : null
 }
 
 /**

@@ -26,6 +26,11 @@ test("the server card's tool names are exactly the registered MCP tool names", a
   const client = new Client({ name: 'server-card-test', version: '0.0.0' })
   await client.connect(clientSide)
   const registered = (await client.listTools()).tools.map((t) => t.name)
+  // The instructions a client shows the model name where the trust tools live and the NEAR forms they take.
+  const instructions = client.getInstructions() ?? ''
+  assert.match(instructions, /near:testnet:<id> or as a name ending in \.testnet/)
+  assert.match(instructions, /GET https:\/\/a-identity\.xyz\/api\/near\/check\?account=<id>/)
+  assert.match(instructions, /testnet only, read live, and nothing settles on NEAR yet/)
   await client.close()
 
   assert.deepEqual([...named].sort(), [...registered].sort())

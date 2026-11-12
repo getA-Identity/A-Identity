@@ -107,6 +107,16 @@ function fromRegistry(): { pattern: RegExp; what: string }[] {
       const h = host(u)
       if (h) out.push({ pattern: new RegExp(esc(h), 'g'), what: `${c.id}'s RPC host` })
     }
+    // NEAR's archival hosts and indexers (2026-11-12): the NEAR verdict engine reads them, and
+    // a copy outside the registry would be a second place for one of them to go stale.
+    for (const u of c.archivalRpcUrls ?? []) {
+      const h = host(u)
+      if (h) out.push({ pattern: new RegExp(esc(h), 'g'), what: `${c.id}'s archival RPC host` })
+    }
+    for (const u of Object.values(c.indexerUrls ?? {})) {
+      const h = host(u)
+      if (h) out.push({ pattern: new RegExp(esc(h), 'g'), what: `${c.id}'s indexer host` })
+    }
     const eh = c.explorer ? host(c.explorer) : ''
     if (eh) out.push({ pattern: new RegExp(esc(eh), 'g'), what: `${c.id}'s explorer host` })
     for (const t of c.settlementTokens ?? []) {

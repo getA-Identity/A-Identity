@@ -19,7 +19,7 @@ import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import { rateBudget, agentCreateVolume, chargeAgentCreate, AGENT_CREATE_VOLUME, jsonRpcMessageCount, mcpToolBudget, rateLimited } from './rate-budget.js'
+import { rateBudget, agentCreateVolume, chargeAgentCreate, AGENT_CREATE_VOLUME, jsonRpcMessageCount, mcpToolBudget, rateLimited, freeToolTargetBudget, NEAR_CHECK_BUDGET } from './rate-budget.js'
 
 const SRC = fileURLToPath(new URL('../src/', import.meta.url))
 const ROUTES = join(SRC, 'http')
@@ -165,6 +165,27 @@ test('over MCP the verify-then-pay tools are charged to the buckets of their rou
   assert.equal(rateLimited('batch-test-b:mcp', mcp.max, mcp.windowMs, mcp.max - 1, now), false)
   assert.equal(rateLimited('batch-test-b:mcp', mcp.max, mcp.windowMs, 1, now), true)
   assert.equal(rateLimited('batch-test-b:mcp', mcp.max, mcp.windowMs, 1, now + mcp.windowMs), false)
+})
+
+test('a free trust tool call on a NEAR testnet account is charged to the near-check bucket, and a call on any other target to none', () => {
+  // A NEAR target can start the same block-pinned collection GET /api/near/check runs, so the
+  // free preview pays into that route's bucket rather than being a way around it.
+  const route = rateBudget('GET', '/api/near/check')
+  assert.deepEqual(route, { ...NEAR_CHECK_BUDGET })
+  assert.deepEqual(route, { bucket: 'near-check', max: 20, windowMs: 60_000 })
+  for (const near of ['aid-demo-merchant.testnet', ' near:testnet:aid-demo-merchant.testnet ', `near:testnet:${'cd'.repeat(32)}`, `near:testnet:0x${'ab'.repeat(20)}`]) {
+    assert.deepEqual(freeToolTargetBudget(near), route, near)
+  }
+  // Every form that is not NEAR testnet costs what it cost before NEAR was read: nothing here.
+  for (const other of [
+    undefined, '', 'not-a-real-id', 'agent_doesnotexist0', '849980', '#849980',
+    `0x${'ab'.repeat(20)}`, `0x${'AB'.repeat(20)}`, 'cd'.repeat(32), 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7',
+    'example.com', 'alice.tg', 'alice', 'wrap.near', 'near:mainnet:wrap.near', 'near:betanet:alice.testnet', 'Alice.testnet', 'near:testnet:Bad..id',
+  ]) {
+    assert.equal(freeToolTargetBudget(other), null, String(other))
+  }
+  // It names the route's own bucket, so the two doors drain one budget.
+  assert.notEqual(freeToolTargetBudget('alice.testnet')?.bucket, rateBudget('GET', '/api/algorand/check')?.bucket)
 })
 
 // ── free writes: the blind spot this file had ────────────────────────────────────

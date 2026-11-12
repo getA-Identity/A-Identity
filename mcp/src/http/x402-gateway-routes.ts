@@ -33,7 +33,16 @@ import {
 } from '../x402-gateway/index.js'
 import { getChainById } from '../chains/index.js'
 import type { TxContext } from '../asp/tools.js'
+import { clientIpFromXff } from '../client-ip.js'
+import { freeToolTargetBudget, rateLimited } from '../rate-budget.js'
 import { readBody, sendJson, sendChallenge, type RouteCtx } from './shared.js'
+
+/** The seams a test uses for the free tool. Production passes nothing: railFreeTool and the
+ *  server's own per-IP limiter. */
+export type GatewayRouteDeps = {
+  freeTool?: (input: GatewayToolInput) => Promise<unknown>
+  limited?: typeof rateLimited
+}
 
 /** Scheme + host this request arrived on, as Render and local both present it. */
 export function requestOrigin(ctx: RouteCtx): string {
@@ -68,7 +77,7 @@ async function toolInput(ctx: RouteCtx): Promise<GatewayToolInput> {
   return { agentId: q.get('agentId') ?? undefined, from: q.get('from') ?? undefined, to: q.get('to') ?? undefined, txContext }
 }
 
-export async function handleX402GatewayRoutes(ctx: RouteCtx): Promise<boolean> {
+export async function handleX402GatewayRoutes(ctx: RouteCtx, deps: GatewayRouteDeps = {}): Promise<boolean> {
   const { req, res, url } = ctx
   if (!url.pathname.startsWith('/api/x402/gateway/')) return false
   const origin = requestOrigin(ctx)
@@ -146,7 +155,17 @@ export async function handleX402GatewayRoutes(ctx: RouteCtx): Promise<boolean> {
       sendJson(res, 400, { error: 'agentId is required', input: GATEWAY_TOOL_CARDS[GATEWAY_FREE_TOOL].input, example: GATEWAY_TOOL_CARDS[GATEWAY_FREE_TOOL].example })
       return true
     }
-    sendJson(res, 200, await railFreeTool(input))
+    // A NEAR testnet target can start the whole block-pinned collection GET /api/near/check runs,
+    // so it is charged to that route's per-IP bucket, keyed as http.ts keys it, before anything is
+    // read. Every other target is served exactly as before, uncharged.
+    const nearBudget = freeToolTargetBudget(input.agentId)
+    const limited = deps.limited ?? rateLimited
+    if (nearBudget && limited(`${clientIpFromXff(req.headers['x-forwarded-for'], req.socket.remoteAddress)}:${nearBudget.bucket}`, nearBudget.max, nearBudget.windowMs)) {
+      res.setHeader('Retry-After', String(Math.ceil(nearBudget.windowMs / 1000)))
+      sendJson(res, 429, { error: 'Too many requests. A NEAR testnet account shares the per-address budget of GET /api/near/check; slow down and try again in a minute.' })
+      return true
+    }
+    sendJson(res, 200, await (deps.freeTool ?? railFreeTool)(input))
     return true
   }
 

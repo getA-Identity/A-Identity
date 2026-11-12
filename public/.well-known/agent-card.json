@@ -100,7 +100,7 @@
     {
       "id": "risk_check",
       "name": "Decide whether a payment should go through",
-      "description": "A pre-transaction verdict on a counterparty: ALLOW, WARN or DENY, with the reasons that produced it. Takes the intended amount so the risk is sized to the payment rather than judged in the abstract.",
+      "description": "A pre-transaction verdict on a counterparty: ALLOW, WARN or DENY, with the reasons that produced it. Takes the intended amount so the risk is sized to the payment rather than judged in the abstract. It also takes a NEAR testnet account, written near:testnet:<id> or as a name ending in .testnet: the verdict is the one the NEAR SDK computes from NEAR testnet, read live at one block, and is free at https://a-identity.xyz/api/near/check (testnet only; nothing settles on NEAR yet).",
       "tags": [
         "risk",
         "payments",

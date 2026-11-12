@@ -100,8 +100,10 @@ export type NearTarget = { network: typeof ROUTED_NETWORK; account: string; kind
  *  - a bare named account ending in `.testnet`, NEAR's own testnet registrar suffix, which is
  *    not a top-level domain on the internet.
  *
- * A pure classifier. Nothing calls it on a request path yet: routing a trust check to NEAR is
- * a later change, and it must use this function rather than a looser test of its own.
+ * A pure classifier, and the ONE routing rule for NEAR on a request path (since 2026-11-12): the
+ * trust tools call it last in asp/tools.ts gather(), after every other form has had its turn,
+ * and GET /api/near/check refuses whatever it does not route (near-check/check.ts). A surface
+ * that reads NEAR must use this function rather than a looser test of its own.
  */
 export function nearTargetOf(query: string): NearTarget | null {
   const s = query.trim()

@@ -453,6 +453,18 @@ test('NEAR Testnet carries the values read live on 2026-11-12, and claims nothin
     'https://archival-rpc.testnet.fastnear.com',
   ])
   assert.equal(near.explorer, 'https://testnet.nearblocks.io')
+  // What the NEAR verdict engine reads besides rpcUrls (chains/near/engine.ts), answered live the
+  // same day: two archival hosts, near.org's last because it is severely rate limited, and the
+  // two indexers. Only a NEAR descriptor carries either field: no other reader takes them.
+  assert.deepEqual(near.archivalRpcUrls, ['https://archival-rpc.testnet.fastnear.com', 'https://archival-rpc.testnet.near.org'])
+  assert.deepEqual(near.indexerUrls, { fastnearTx: 'https://tx.test.fastnear.com', nearblocks: 'https://api-testnet.nearblocks.io' })
+  for (const c of CHAINS.filter((x) => x.ecosystem !== 'near')) {
+    assert.equal(c.archivalRpcUrls, undefined, `${c.id} is not a NEAR chain`)
+    assert.equal(c.indexerUrls, undefined, `${c.id} is not a NEAR chain`)
+  }
+  for (const u of [...(near.archivalRpcUrls ?? []), near.indexerUrls?.fastnearTx ?? '', near.indexerUrls?.nearblocks ?? '']) {
+    assert.match(u, /^https:\/\/[a-z0-9.-]+$/, `${u}: an https origin with no path, so the engine appends its own`)
+  }
   assert.equal(near.rpcEnvVar, 'NEAR_TESTNET_RPC_URL')
   // No write path exists for NEAR in this backend, so no signer is declared: a variable nothing
   // reads would still be listed in SECURITY.md as a hot wallet.

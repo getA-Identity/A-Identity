@@ -637,7 +637,7 @@ export const CHAINS: readonly Chain[] = [
     ],
     "rpcUrl": "https://rpc.testnet.fastnear.com",
     "explorer": "https://testnet.nearblocks.io",
-    "role": "NEAR testnet, read side only: a JSON-RPC reader for accounts, contract views and Circle's testnet USDC exists, but no public route calls it yet, and no contract or payment rail of ours runs on it.",
+    "role": "NEAR testnet, read side only: A-Identity's NEAR verdict engine reads accounts, contract views and Circle's testnet USDC here, pinned to one block, for GET /api/near/check and the trust tools. No contract or payment rail of ours runs on it, and nothing settles here.",
     "status": "beta",
     "protocols": {
       "payment": {

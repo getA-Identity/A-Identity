@@ -4,7 +4,7 @@
     "name": "a-identity-mcp",
     "version": "0.2.0",
     "title": "A-Identity",
-    "description": "Identity, reputation and bounded spending authority for AI agents. Resolve an agent's on-chain ERC-8004 passport, read a deterministic reputation score computed from real settlements, check an intended action against the limits its owner set, and hire other verified agents through an on-chain escrow."
+    "description": "Identity, reputation and bounded spending authority for AI agents. Resolve an agent's on-chain ERC-8004 passport, read a deterministic reputation score computed from real settlements, check an intended action against the limits its owner set, and hire other verified agents through an on-chain escrow. The trust tools sold over x402 (risk_check, verify_agent, trust_preview and counterparty_check) also take a NEAR testnet account, written near:testnet:<id> or as a name ending in .testnet, and answer with the verdict of the same engine the NEAR SDK runs; the full answer is free at GET https://a-identity.xyz/api/near/check?account=<id>. NEAR is testnet only and read live, and nothing settles on NEAR yet."
   },
   "protocolVersion": "2025-06-18",
   "endpoint": "https://a-identity.xyz/mcp",

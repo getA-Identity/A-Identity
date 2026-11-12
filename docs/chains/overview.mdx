@@ -29,7 +29,7 @@ descriptor exists so onboarding is a data edit, and nothing is deployed yet.
 | [Robinhood Chain Testnet](/chains/robinhood) | `eip155:46630` | beta | The full canonical ERC-8004 trio plus a deployed AgentSpendPolicy vault |
 | [Celo Sepolia](/chains/celo) | `eip155:11142220` | beta | Same ERC-8004 pair as Arc, x402 over testnet USDC |
 | [Arbitrum One](/chains/arbitrum) | `eip155:42161` | live | Canonical ERC-8004 identity and reputation, agent #1259, and x402 settled in native Circle USDC through our own facilitator (paused since 2026-11-11, until its new broadcaster key has gas here) |
-| NEAR (testnet) | `near:testnet` | beta | Nothing of ours is deployed here; the read side is wired, but no public route calls it yet. A NEAR JSON-RPC reader in the backend fails over across the registry's public hosts, NearBlocks is the explorer, and Circle's testnet USDC is documented at its NEP-141 account (6 decimals, read live 2026-11-12). No x402 rail settles here, and NEAR has no ERC-8004, so identity stays bridged from an EVM chain |
+| NEAR (testnet) | `near:testnet` | beta | Nothing of ours is deployed here; the read side is wired and public. A-Identity's NEAR verdict engine, the same code the NEAR SDK runs, reads an account live at one block across the registry's public hosts and answers ALLOW, WARN or DENY at `GET /api/near/check?account=<id>` (free) and in the trust tools, which accept `near:testnet:<id>` or a name ending in `.testnet`. NearBlocks is the explorer, and Circle's testnet USDC is documented at its NEP-141 account (6 decimals, read live 2026-11-12). No x402 rail settles here, and NEAR has no ERC-8004, so identity stays bridged from an EVM chain |
 | Avalanche C-Chain | `eip155:43114` | planned | Descriptor only |
 
 <Note>
