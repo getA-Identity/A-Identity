@@ -1,0 +1,601 @@
+{
+  "schema": "a-identity.near.snapshot/1",
+  "network": "testnet",
+  "subject": "aid-demo-merchamt.testnet",
+  "block": {
+    "height": 277402268,
+    "hash": "neRLbhdsdXHxkaqefpPTFEduko3H9Lu5jUvuBMknnsc",
+    "timestamp_ns": "1794509435147424368"
+  },
+  "context": {
+    "known": ["aid-demo-merchant.testnet"],
+    "vault_id": "vault.aid-demo-owner.testnet",
+    "registry_id": "registry.a-identity.testnet",
+    "usdc_id": "3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af",
+    "third_party": [
+      {
+        "id": "mimicwatch",
+        "name": "MimicWatch",
+        "contract": "registry.mimicwatch-e7iig5g5.testnet",
+        "network": "testnet",
+        "method": "is_flagged",
+        "arg": "id"
+      },
+      {
+        "id": "tripwire",
+        "name": "Tripwire",
+        "contract": "tripwire-registry-44ea74.testnet",
+        "network": "testnet",
+        "method": "get_risk",
+        "arg": "account_id"
+      },
+      {
+        "id": "near_leash",
+        "name": "near-leash",
+        "contract": "leash-registry.testnet",
+        "network": "testnet",
+        "method": "verdict",
+        "arg": "account_id"
+      },
+      {
+        "id": "leash_commons",
+        "name": "Leash commons",
+        "contract": "registry.leash-busel-commons.testnet",
+        "network": "testnet",
+        "method": "get_status",
+        "arg": "account_id"
+      }
+    ],
+    "erc8004": {
+      "identity": "identity-registry.erc-8004.testnet",
+      "reputation": "reputation-registry.erc-8004.testnet"
+    },
+    "probes": {
+      "recent_s": 259200,
+      "long_s": 2592000
+    },
+    "activity_window": 5
+  },
+  "rpc": [
+    {
+      "label": "account",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "view_account",
+        "account_id": "aid-demo-merchamt.testnet",
+        "block_id": 277402268
+      },
+      "result": {
+        "amount": "10000000000000000000000000",
+        "block_hash": "neRLbhdsdXHxkaqefpPTFEduko3H9Lu5jUvuBMknnsc",
+        "block_height": 277402268,
+        "code_hash": "11111111111111111111111111111111",
+        "locked": "0",
+        "storage_paid_at": 0,
+        "storage_usage": 182
+      }
+    },
+    {
+      "label": "block",
+      "network": "testnet",
+      "archival": false,
+      "method": "block",
+      "params": {
+        "block_id": 277402268
+      },
+      "result": {
+        "header": {
+          "height": 277402268,
+          "hash": "neRLbhdsdXHxkaqefpPTFEduko3H9Lu5jUvuBMknnsc",
+          "prev_hash": "3xyQADcewXd1fWx6kN2JDJYLHKCtgU7GyeCEsjBxPDUH",
+          "timestamp_nanosec": "1794509435147424368"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "erc8004.nft_tokens_for_owner",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "identity-registry.erc-8004.testnet",
+        "method_name": "nft_tokens_for_owner",
+        "args_base64": "eyJhY2NvdW50X2lkIjoiYWlkLWRlbW8tbWVyY2hhbXQudGVzdG5ldCIsImZyb21faW5kZXgiOm51bGwsImxpbWl0Ijo1fQ==",
+        "block_id": 277402268
+      },
+      "result": {
+        "block_hash": "neRLbhdsdXHxkaqefpPTFEduko3H9Lu5jUvuBMknnsc",
+        "block_height": 277402268,
+        "logs": [],
+        "result": [91,93]
+      }
+    },
+    {
+      "label": "keys#0",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "view_access_key_list",
+        "account_id": "aid-demo-merchamt.testnet",
+        "block_id": 277402268,
+        "limit": 100
+      },
+      "result": {
+        "block_hash": "neRLbhdsdXHxkaqefpPTFEduko3H9Lu5jUvuBMknnsc",
+        "block_height": 277402268,
+        "keys": [
+          {
+            "access_key": {
+              "nonce": 277402179000000,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:CZAfsWJaHccGuDYGNs4LCwXUFM45jwtvwe6WcPtc9uwy"
+          }
+        ]
+      }
+    },
+    {
+      "label": "probe.recent.account",
+      "network": "testnet",
+      "archival": true,
+      "method": "query",
+      "params": {
+        "request_type": "view_account",
+        "account_id": "aid-demo-merchamt.testnet",
+        "block_id": 276958657
+      },
+      "error": {
+        "name": "HANDLER_ERROR",
+        "cause": "UNKNOWN_ACCOUNT",
+        "message": "account aid-demo-merchamt.testnet does not exist while viewing"
+      }
+    },
+    {
+      "label": "probe.recent.block",
+      "network": "testnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 276958657
+      },
+      "result": {
+        "header": {
+          "height": 276958657,
+          "hash": "BryY1YLioa5jRrqBrugSe5c5yqQE1EvQ3fGdQrz1iN96",
+          "prev_hash": "L3h1B2ZFmoM4EspPQoXgKnraR5TLnNDAXqifwf5HsUq",
+          "timestamp_nanosec": "1794249928351673373"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "probe.recent.search#0",
+      "network": "testnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 276969768
+      },
+      "result": {
+        "header": {
+          "height": 276969768,
+          "hash": "DCoachWBEqTH3kTXZQSJ5owhMf2nHej76JECGBgRiqwy",
+          "prev_hash": "GxVA5Y2MxmnA8cNxtyMPzF9QnAHvkLnJCFnk1Jh3fG9y",
+          "timestamp_nanosec": "1794256434884656635"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "registry.get_reports",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "registry.a-identity.testnet",
+        "method_name": "get_reports",
+        "args_base64": "eyJhY2NvdW50X2lkIjoiYWlkLWRlbW8tbWVyY2hhbXQudGVzdG5ldCJ9",
+        "block_id": 277402268
+      },
+      "result": {
+        "block_hash": "neRLbhdsdXHxkaqefpPTFEduko3H9Lu5jUvuBMknnsc",
+        "block_height": 277402268,
+        "logs": [],
+        "result": [91,93]
+      }
+    },
+    {
+      "label": "registry.get_verdict",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "registry.a-identity.testnet",
+        "method_name": "get_verdict",
+        "args_base64": "eyJhY2NvdW50X2lkIjoiYWlkLWRlbW8tbWVyY2hhbXQudGVzdG5ldCJ9",
+        "block_id": 277402268
+      },
+      "result": {
+        "block_hash": "neRLbhdsdXHxkaqefpPTFEduko3H9Lu5jUvuBMknnsc",
+        "block_height": 277402268,
+        "logs": [],
+        "result": [110,117,108,108]
+      }
+    },
+    {
+      "label": "registry.list_verdicts",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "registry.a-identity.testnet",
+        "method_name": "list_verdicts",
+        "args_base64": "eyJmcm9tX2luZGV4IjoiMCIsImxpbWl0IjoiMTAwIn0=",
+        "block_id": 277402268
+      },
+      "result": {
+        "block_hash": "neRLbhdsdXHxkaqefpPTFEduko3H9Lu5jUvuBMknnsc",
+        "block_height": 277402268,
+        "logs": [],
+        "result": [91,93]
+      }
+    },
+    {
+      "label": "registry.report_count",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "registry.a-identity.testnet",
+        "method_name": "report_count",
+        "args_base64": "eyJhY2NvdW50X2lkIjoiYWlkLWRlbW8tbWVyY2hhbXQudGVzdG5ldCJ9",
+        "block_id": 277402268
+      },
+      "result": {
+        "block_hash": "neRLbhdsdXHxkaqefpPTFEduko3H9Lu5jUvuBMknnsc",
+        "block_height": 277402268,
+        "logs": [],
+        "result": [48]
+      }
+    },
+    {
+      "label": "third_party.leash_commons",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "registry.leash-busel-commons.testnet",
+        "method_name": "get_status",
+        "args_base64": "eyJhY2NvdW50X2lkIjoiYWlkLWRlbW8tbWVyY2hhbXQudGVzdG5ldCJ9",
+        "block_id": 277402268
+      },
+      "result": {
+        "block_hash": "neRLbhdsdXHxkaqefpPTFEduko3H9Lu5jUvuBMknnsc",
+        "block_height": 277402268,
+        "logs": [],
+        "result": [123,34,97,99,99,111,117,110,116,95,105,100,34,58,34,97,105,100,45,100,101,109,111,45,109,101,114,99,104,97,109,116,46,116,101,115,116,110,101,116,34,44,34,98,108,111,99,107,101,100,34,58,102,97,108,115,101,44,34,98,108,111,99,107,101,100,95,98,121,34,58,110,117,108,108,44,34,114,101,112,111,114,116,115,34,58,48,44,34,116,104,114,101,115,104,111,108,100,34,58,50,44,34,111,119,110,101,114,95,114,101,97,115,111,110,34,58,110,117,108,108,44,34,99,111,110,116,114,97,99,116,95,99,111,100,101,95,104,97,115,104,34,58,110,117,108,108,125]
+      }
+    },
+    {
+      "label": "third_party.mimicwatch",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "registry.mimicwatch-e7iig5g5.testnet",
+        "method_name": "is_flagged",
+        "args_base64": "eyJpZCI6ImFpZC1kZW1vLW1lcmNoYW10LnRlc3RuZXQifQ==",
+        "block_id": 277402268
+      },
+      "result": {
+        "block_hash": "neRLbhdsdXHxkaqefpPTFEduko3H9Lu5jUvuBMknnsc",
+        "block_height": 277402268,
+        "logs": [],
+        "result": [123,34,113,117,101,114,121,34,58,34,97,105,100,45,100,101,109,111,45,109,101,114,99,104,97,109,116,46,116,101,115,116,110,101,116,34,44,34,102,108,97,103,103,101,100,34,58,102,97,108,115,101,44,34,118,105,97,34,58,110,117,108,108,44,34,101,110,116,114,121,34,58,110,117,108,108,44,34,99,108,101,97,114,101,100,34,58,110,117,108,108,125]
+      }
+    },
+    {
+      "label": "third_party.near_leash",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "leash-registry.testnet",
+        "method_name": "verdict",
+        "args_base64": "eyJhY2NvdW50X2lkIjoiYWlkLWRlbW8tbWVyY2hhbXQudGVzdG5ldCJ9",
+        "block_id": 277402268
+      },
+      "result": {
+        "block_hash": "neRLbhdsdXHxkaqefpPTFEduko3H9Lu5jUvuBMknnsc",
+        "block_height": 277402268,
+        "logs": [],
+        "result": [123,34,118,101,114,100,105,99,116,34,58,34,99,108,101,97,114,34,44,34,100,105,115,116,105,110,99,116,95,114,101,112,111,114,116,101,114,115,34,58,48,44,34,116,114,117,115,116,101,100,95,114,101,112,111,114,116,115,34,58,48,44,34,114,101,97,115,111,110,115,34,58,91,93,125]
+      }
+    },
+    {
+      "label": "third_party.tripwire",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "tripwire-registry-44ea74.testnet",
+        "method_name": "get_risk",
+        "args_base64": "eyJhY2NvdW50X2lkIjoiYWlkLWRlbW8tbWVyY2hhbXQudGVzdG5ldCJ9",
+        "block_id": 277402268
+      },
+      "result": {
+        "block_hash": "neRLbhdsdXHxkaqefpPTFEduko3H9Lu5jUvuBMknnsc",
+        "block_height": 277402268,
+        "logs": [],
+        "result": [123,34,97,99,99,111,117,110,116,95,105,100,34,58,34,97,105,100,45,100,101,109,111,45,109,101,114,99,104,97,109,116,46,116,101,115,116,110,101,116,34,44,34,115,99,111,114,101,34,58,48,44,34,108,101,118,101,108,34,58,34,110,111,110,101,34,44,34,102,108,97,103,115,34,58,91,93,125]
+      }
+    },
+    {
+      "label": "usdc.is_blocklisted",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af",
+        "method_name": "is_blocklisted",
+        "args_base64": "eyJhY2NvdW50X2lkIjoiYWlkLWRlbW8tbWVyY2hhbXQudGVzdG5ldCJ9",
+        "block_id": 277402268
+      },
+      "result": {
+        "block_hash": "neRLbhdsdXHxkaqefpPTFEduko3H9Lu5jUvuBMknnsc",
+        "block_height": 277402268,
+        "logs": [],
+        "result": [102,97,108,115,101]
+      }
+    },
+    {
+      "label": "usdc.storage_balance_of",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af",
+        "method_name": "storage_balance_of",
+        "args_base64": "eyJhY2NvdW50X2lkIjoiYWlkLWRlbW8tbWVyY2hhbXQudGVzdG5ldCJ9",
+        "block_id": 277402268
+      },
+      "result": {
+        "block_hash": "neRLbhdsdXHxkaqefpPTFEduko3H9Lu5jUvuBMknnsc",
+        "block_height": 277402268,
+        "logs": [],
+        "result": [110,117,108,108]
+      }
+    },
+    {
+      "label": "vault.get_config",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "vault.aid-demo-owner.testnet",
+        "method_name": "get_config",
+        "args_base64": "e30=",
+        "block_id": 277402268
+      },
+      "result": {
+        "block_hash": "neRLbhdsdXHxkaqefpPTFEduko3H9Lu5jUvuBMknnsc",
+        "block_height": 277402268,
+        "logs": [],
+        "result": [123,34,111,119,110,101,114,95,105,100,34,58,34,97,105,100,45,100,101,109,111,45,111,119,110,101,114,46,116,101,115,116,110,101,116,34,44,34,116,111,107,101,110,95,105,100,34,58,34,51,101,50,50,49,48,101,49,49,56,52,98,52,53,98,54,52,99,56,97,52,51,52,99,48,97,55,101,55,98,50,51,99,99,48,52,101,97,55,101,98,55,97,54,99,51,99,51,50,53,50,48,100,48,51,100,52,97,102,99,98,56,97,102,34,44,34,114,101,103,105,115,116,114,121,95,105,100,34,58,34,114,101,103,105,115,116,114,121,46,97,45,105,100,101,110,116,105,116,121,46,116,101,115,116,110,101,116,34,44,34,102,114,111,122,101,110,34,58,102,97,108,115,101,44,34,100,97,105,108,121,95,99,97,112,34,58,34,53,48,48,48,48,48,48,34,44,34,97,117,116,111,95,97,112,112,114,111,118,101,95,109,97,120,34,58,34,50,48,48,48,48,48,48,34,44,34,97,108,108,111,119,108,105,115,116,95,101,110,97,98,108,101,100,34,58,102,97,108,115,101,44,34,116,111,107,101,110,95,115,116,111,114,97,103,101,95,100,101,112,111,115,105,116,34,58,34,49,50,53,48,48,48,48,48,48,48,48,48,48,48,48,48,48,48,48,48,48,48,34,44,34,118,101,114,115,105,111,110,34,58,34,97,103,101,110,116,45,115,112,101,110,100,45,112,111,108,105,99,121,32,48,46,50,46,48,34,44,34,104,111,108,100,95,117,110,107,110,111,119,110,34,58,116,114,117,101,125]
+      }
+    },
+    {
+      "label": "vault.guard_refusal_count",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "vault.aid-demo-owner.testnet",
+        "method_name": "guard_refusal_count",
+        "args_base64": "eyJwYXllZSI6ImFpZC1kZW1vLW1lcmNoYW10LnRlc3RuZXQifQ==",
+        "block_id": 277402268
+      },
+      "result": {
+        "block_hash": "neRLbhdsdXHxkaqefpPTFEduko3H9Lu5jUvuBMknnsc",
+        "block_height": 277402268,
+        "logs": [],
+        "result": [49]
+      }
+    },
+    {
+      "label": "vault.is_allowed",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "vault.aid-demo-owner.testnet",
+        "method_name": "is_allowed",
+        "args_base64": "eyJwYXllZSI6ImFpZC1kZW1vLW1lcmNoYW10LnRlc3RuZXQifQ==",
+        "block_id": 277402268
+      },
+      "result": {
+        "block_hash": "neRLbhdsdXHxkaqefpPTFEduko3H9Lu5jUvuBMknnsc",
+        "block_height": 277402268,
+        "logs": [],
+        "result": [102,97,108,115,101]
+      }
+    },
+    {
+      "label": "vault.list_allowlist",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "vault.aid-demo-owner.testnet",
+        "method_name": "list_allowlist",
+        "args_base64": "e30=",
+        "block_id": 277402268
+      },
+      "result": {
+        "block_hash": "neRLbhdsdXHxkaqefpPTFEduko3H9Lu5jUvuBMknnsc",
+        "block_height": 277402268,
+        "logs": [],
+        "result": [91,93]
+      }
+    },
+    {
+      "label": "vault.paid_count",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "vault.aid-demo-owner.testnet",
+        "method_name": "paid_count",
+        "args_base64": "eyJwYXllZSI6ImFpZC1kZW1vLW1lcmNoYW10LnRlc3RuZXQifQ==",
+        "block_id": 277402268
+      },
+      "result": {
+        "block_hash": "neRLbhdsdXHxkaqefpPTFEduko3H9Lu5jUvuBMknnsc",
+        "block_height": 277402268,
+        "logs": [],
+        "result": [48]
+      }
+    },
+    {
+      "label": "vault.refusal_count",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "vault.aid-demo-owner.testnet",
+        "method_name": "refusal_count",
+        "args_base64": "eyJwYXllZSI6ImFpZC1kZW1vLW1lcmNoYW10LnRlc3RuZXQifQ==",
+        "block_id": 277402268
+      },
+      "result": {
+        "block_hash": "neRLbhdsdXHxkaqefpPTFEduko3H9Lu5jUvuBMknnsc",
+        "block_height": 277402268,
+        "logs": [],
+        "result": [48]
+      }
+    }
+  ],
+  "http": [
+    {
+      "label": "fastnear.newest",
+      "source": "fastnear",
+      "method": "POST",
+      "url": "https://tx.test.fastnear.com/v0/account",
+      "status": 200,
+      "json": {
+        "account_txs": [
+          {
+            "account_id": "aid-demo-merchamt.testnet",
+            "transaction_hash": "HzBqsRZWNLUUzcYtJ49DGQLcvdpmfW48Pa7TaoFeMQn8",
+            "tx_block_height": 277402265,
+            "tx_block_timestamp": "1794509433685126500",
+            "tx_index": 1,
+            "is_signer": false,
+            "is_delegated_signer": false,
+            "is_real_signer": false,
+            "is_any_signer": false,
+            "is_predecessor": false,
+            "is_explicit_refund_to": false,
+            "is_receiver": false,
+            "is_real_receiver": false,
+            "is_function_call": false,
+            "is_action_arg": true,
+            "is_event_log": false,
+            "is_success": true
+          }
+        ],
+        "resume_token": "1191433656011325441",
+        "txs_count": 4
+      },
+      "fetched_at": "2026-11-12T18:50:38.289Z",
+      "body": {
+        "account_id": "aid-demo-merchamt.testnet",
+        "limit": 1,
+        "desc": true
+      }
+    },
+    {
+      "label": "fastnear.oldest",
+      "source": "fastnear",
+      "method": "POST",
+      "url": "https://tx.test.fastnear.com/v0/account",
+      "status": 200,
+      "json": {
+        "account_txs": [
+          {
+            "account_id": "aid-demo-merchamt.testnet",
+            "transaction_hash": "CnivaEHGgGxh1DH72W9XZ73jNbCkTWiQbMqmfXQHsnwN",
+            "tx_block_height": 277402179,
+            "tx_block_timestamp": "1794509377743392071",
+            "tx_index": 3,
+            "is_signer": false,
+            "is_delegated_signer": false,
+            "is_real_signer": false,
+            "is_any_signer": false,
+            "is_predecessor": false,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": false,
+            "is_action_arg": false,
+            "is_event_log": false,
+            "is_success": true
+          },
+          {
+            "account_id": "aid-demo-merchamt.testnet",
+            "transaction_hash": "HzBqsRZWNLUUzcYtJ49DGQLcvdpmfW48Pa7TaoFeMQn8",
+            "tx_block_height": 277402265,
+            "tx_block_timestamp": "1794509433685126500",
+            "tx_index": 1,
+            "is_signer": false,
+            "is_delegated_signer": false,
+            "is_real_signer": false,
+            "is_any_signer": false,
+            "is_predecessor": false,
+            "is_explicit_refund_to": false,
+            "is_receiver": false,
+            "is_real_receiver": false,
+            "is_function_call": false,
+            "is_action_arg": true,
+            "is_event_log": false,
+            "is_success": true
+          }
+        ],
+        "txs_count": 4
+      },
+      "fetched_at": "2026-11-12T18:50:37.889Z",
+      "body": {
+        "account_id": "aid-demo-merchamt.testnet",
+        "limit": 5,
+        "desc": false
+      }
+    }
+  ],
+  "meta": {
+    "collected_at": "2026-11-12T18:50:39.712Z",
+    "collector": "a-identity-near-sdk/0.2.0",
+    "endpoints": ["archival-rpc.testnet.fastnear.com","rpc.testnet.fastnear.com","tx.test.fastnear.com"],
+    "notes": []
+  }
+}

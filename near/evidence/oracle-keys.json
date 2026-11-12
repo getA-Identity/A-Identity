@@ -1,0 +1,72 @@
+{
+  "schema": "a-identity-near-evidence/1",
+  "claim_id": "oracle-keys",
+  "claim": "The oracle account holds no full-access key: it writes verdicts only with a function-call key on the registry limited to set_verdict, set_verdicts, clear_verdict and clear_reports.",
+  "check": "access_keys",
+  "network": "testnet",
+  "captured_at": "2026-11-12T18:56:06.014Z",
+  "captured_with": {
+    "tool": "judge/capture.mjs",
+    "node": "v24.21.0",
+    "claims_sha256": "aab8596c97aa0e28b952d7904377952c503892c6aa0888652908ea5307ade6a3",
+    "deployments_sha256": "ca1e2c26bbaee279e4a58c46233c2703fac6af167d4cf35ea775d80ffb67a538"
+  },
+  "result": {
+    "status": "PASS",
+    "detail": "view_access_key_list at block 277402844: 0 full-access, 1 function-call (ed25519:DZTaJkebXp9ftmf8dCrB72MBxBTLvnGfXHHBh3jTsg6b FunctionCall registry.a-identity.testnet [set_verdict,set_verdicts,clear_verdict,clear_reports] allowance 0.9997 NEAR)"
+  },
+  "notes": [
+    "Raw JSON-RPC requests and responses. Views were read at finality \"final\"; block_height and block_hash say which block answered.",
+    "Transactions were read from archival RPC. A 64-byte ed25519 value (a signature) is stored as ed25519-signature-sha256:<sha256 of its bytes>.",
+    "Replay: node judge/judge.mjs --offline. Re-check against the chain: node judge/judge.mjs --verify-evidence."
+  ],
+  "calls": [
+    {
+      "network": "testnet",
+      "kind": "state",
+      "rpc_url": "https://rpc.testnet.fastnear.com",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": "judge",
+        "method": "query",
+        "params": {
+          "request_type": "view_access_key_list",
+          "finality": "final",
+          "account_id": "oracle.a-identity.testnet"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "result": {
+          "block_hash": "7iyVVkWtk1wseckwCfxfk11JuFesDPGkhTfYkkoDCL4x",
+          "block_height": 277402844,
+          "keys": [
+            {
+              "access_key": {
+                "nonce": 277402106000001,
+                "permission": {
+                  "FunctionCall": {
+                    "allowance": "999774535607604400000000",
+                    "method_names": [
+                      "set_verdict",
+                      "set_verdicts",
+                      "clear_verdict",
+                      "clear_reports"
+                    ],
+                    "receiver_id": "registry.a-identity.testnet"
+                  }
+                }
+              },
+              "public_key": "ed25519:DZTaJkebXp9ftmf8dCrB72MBxBTLvnGfXHHBh3jTsg6b"
+            }
+          ]
+        },
+        "id": "judge"
+      },
+      "fetched_at": "2026-11-12T18:56:05.921Z",
+      "ms": 92,
+      "block_height": 277402844,
+      "block_hash": "7iyVVkWtk1wseckwCfxfk11JuFesDPGkhTfYkkoDCL4x"
+    }
+  ]
+}

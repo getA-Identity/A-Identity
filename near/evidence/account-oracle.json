@@ -1,0 +1,57 @@
+{
+  "schema": "a-identity-near-evidence/1",
+  "claim_id": "account-oracle",
+  "claim": "oracle.a-identity.testnet, the oracle that writes verdicts, exists on NEAR testnet.",
+  "check": "account_exists",
+  "network": "testnet",
+  "captured_at": "2026-11-12T18:56:04.796Z",
+  "captured_with": {
+    "tool": "judge/capture.mjs",
+    "node": "v24.21.0",
+    "claims_sha256": "aab8596c97aa0e28b952d7904377952c503892c6aa0888652908ea5307ade6a3",
+    "deployments_sha256": "ca1e2c26bbaee279e4a58c46233c2703fac6af167d4cf35ea775d80ffb67a538"
+  },
+  "result": {
+    "status": "PASS",
+    "detail": "view_account at block 277402841: 1.9996 NEAR, no contract"
+  },
+  "notes": [
+    "Raw JSON-RPC requests and responses. Views were read at finality \"final\"; block_height and block_hash say which block answered.",
+    "Transactions were read from archival RPC. A 64-byte ed25519 value (a signature) is stored as ed25519-signature-sha256:<sha256 of its bytes>.",
+    "Replay: node judge/judge.mjs --offline. Re-check against the chain: node judge/judge.mjs --verify-evidence."
+  ],
+  "calls": [
+    {
+      "network": "testnet",
+      "kind": "state",
+      "rpc_url": "https://rpc.testnet.fastnear.com",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": "judge",
+        "method": "query",
+        "params": {
+          "request_type": "view_account",
+          "finality": "final",
+          "account_id": "oracle.a-identity.testnet"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "result": {
+          "amount": "1999691858549095800000000",
+          "block_hash": "4bLSiWT3b8xS4Fa3b5sWLY7rCwDXwcmdi1vUipn22Y4e",
+          "block_height": 277402841,
+          "code_hash": "11111111111111111111111111111111",
+          "locked": "0",
+          "storage_paid_at": 0,
+          "storage_usage": 299
+        },
+        "id": "judge"
+      },
+      "fetched_at": "2026-11-12T18:56:04.713Z",
+      "ms": 82,
+      "block_height": 277402841,
+      "block_hash": "4bLSiWT3b8xS4Fa3b5sWLY7rCwDXwcmdi1vUipn22Y4e"
+    }
+  ]
+}

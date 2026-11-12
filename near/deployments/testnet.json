@@ -1,8 +1,8 @@
 {
   "schema": "a-identity-near-deployments/1",
   "network": "testnet",
-  "status": "pending",
-  "updated_at": null,
+  "status": "deployed",
+  "updated_at": "2026-11-12T18:54:18Z",
   "notes": [
     "Written by the deploy and demo steps, read by judge/judge.mjs. Every null is something that has not happened yet.",
     "A claim in judge/claims.json that needs a null field is printed as SKIP (pending), never PASS.",
@@ -44,24 +44,24 @@
     "registry": {
       "account_id": "registry.a-identity.testnet",
       "role": "The A-Identity risk registry contract.",
-      "status": "planned"
+      "status": "created"
     },
     "vault": {
       "account_id": "vault.aid-demo-owner.testnet",
       "role": "The agent's spend vault contract. Holds no full-access key after setup.",
-      "status": "planned"
+      "status": "created"
     }
   },
   "payees": {
     "lookalike": {
       "account_id": "aid-demo-merchamt.testnet",
       "role": "Fresh lookalike of the merchant (one letter changed), created by the deploy step minutes before the run. No hand-written label: its verdict comes from the engine's computed signals.",
-      "status": "planned"
+      "status": "created"
     },
     "new_vendor": {
       "account_id": "aid-demo-printshop.testnet",
       "role": "Fresh legitimate vendor nobody has judged or paid; its first payment waits for the owner.",
-      "status": "planned"
+      "status": "created"
     }
   },
   "token": {
@@ -73,27 +73,27 @@
   },
   "contracts": {
     "registry": {
-      "status": "pending",
+      "status": "deployed",
       "account_id": "registry.a-identity.testnet",
       "crate": "contracts/a-identity-registry",
-      "version": null,
+      "version": "0.2.0",
       "wasm_path": "deployments/wasm/a_identity_registry.wasm",
-      "wasm_bytes": null,
-      "wasm_sha256_hex": null,
-      "wasm_sha256_base58": null,
-      "code_hash": null,
+      "wasm_bytes": 178793,
+      "wasm_sha256_hex": "5d8cf45af8fde6de39e5df79c5f32529656eb8511f6e7330e593ffb3300e985c",
+      "wasm_sha256_base58": "7JBaTHGEmZpDHcyWacXBaRSkmwUUiYwg9oFRqfcsPogX",
+      "code_hash": "7JBaTHGEmZpDHcyWacXBaRSkmwUUiYwg9oFRqfcsPogX",
       "build": {
         "command": "cargo near build non-reproducible-wasm --manifest-path contracts/a-identity-registry/Cargo.toml --locked",
         "reproducible": false,
         "reproducible_command": null,
-        "rustc": null,
-        "cargo_near": null,
-        "git_commit": null
+        "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+        "cargo_near": "cargo-near-near 0.23.0",
+        "git_commit": "8a210e123946845c3b335afc34ae6d5239ba43d7"
       },
       "deploy_tx": {
-        "hash": null,
-        "signer_id": null,
-        "block_height": null
+        "hash": "5F38SuVmnzrAjWjVwAmheVzyU1PZ2Sb2pSzW4JcgqumL",
+        "signer_id": "a-identity.testnet",
+        "block_height": 277401995
       },
       "init": {
         "method": "new",
@@ -106,27 +106,27 @@
       }
     },
     "vault": {
-      "status": "pending",
+      "status": "deployed",
       "account_id": "vault.aid-demo-owner.testnet",
       "crate": "contracts/agent-spend-policy",
-      "version": null,
+      "version": "0.2.0",
       "wasm_path": "deployments/wasm/agent_spend_policy.wasm",
-      "wasm_bytes": null,
-      "wasm_sha256_hex": null,
-      "wasm_sha256_base58": null,
-      "code_hash": null,
+      "wasm_bytes": 285642,
+      "wasm_sha256_hex": "303ddcd92f7188f5ffdefa39a3a8733166a10afbe8703e44df5117743f5de316",
+      "wasm_sha256_base58": "4FKHJrJm1iyphfbCcAaxGGdhS5vUEjH5BpnZScNjFgny",
+      "code_hash": "4FKHJrJm1iyphfbCcAaxGGdhS5vUEjH5BpnZScNjFgny",
       "build": {
         "command": "cargo near build non-reproducible-wasm --manifest-path contracts/agent-spend-policy/Cargo.toml --locked",
         "reproducible": false,
         "reproducible_command": null,
-        "rustc": null,
-        "cargo_near": null,
-        "git_commit": null
+        "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+        "cargo_near": "cargo-near-near 0.23.0",
+        "git_commit": "8a210e123946845c3b335afc34ae6d5239ba43d7"
       },
       "deploy_tx": {
-        "hash": null,
-        "signer_id": null,
-        "block_height": null
+        "hash": "9b7Zna2t2jaVso4WqSpxM6HYcVGMjAMX7FPzcpb8dMJ",
+        "signer_id": "aid-demo-owner.testnet",
+        "block_height": 277402011
       },
       "init": {
         "method": "new",
@@ -137,15 +137,15 @@
           },
           "registry_id": "registry.a-identity.testnet",
           "token_storage_deposit": "1250000000000000000000",
-          "daily_cap": null,
-          "auto_approve_max": null
+          "daily_cap": "5000000",
+          "auto_approve_max": "2000000"
         }
       }
     }
   },
   "policy": {
-    "daily_cap": null,
-    "auto_approve_max": null,
+    "daily_cap": "5000000",
+    "auto_approve_max": "2000000",
     "allowlist_enabled": false,
     "hold_unknown": true
   },
@@ -153,29 +153,29 @@
     "vault": {
       "full_access_keys": 0,
       "lock": {
-        "how": null,
-        "tx_hash": null
+        "how": "created keyless: the create, deploy and init batch adds no access key, and the only key on the account is the agent key the contract added itself",
+        "tx_hash": "9b7Zna2t2jaVso4WqSpxM6HYcVGMjAMX7FPzcpb8dMJ"
       },
       "agent": {
-        "public_key": null,
+        "public_key": "ed25519:AyrM3caas16rWjMky2fPdQKPgQptdRrHRvPJaP7YFbeA",
         "receiver_id": "vault.aid-demo-owner.testnet",
         "method_names": [
           "pay",
           "request_payment",
           "record_refusal"
         ],
-        "allowance_yocto": null,
-        "add_tx_hash": null
+        "allowance_yocto": "500000000000000000000000",
+        "add_tx_hash": "CEHAa3QYVp2zBM2vT36Kd3waKD93ss44uPE1TBzmRWMA"
       }
     },
     "oracle": {
       "full_access_keys": 0,
       "lock": {
-        "how": null,
-        "tx_hash": null
+        "how": "its full-access key was deleted after the function-call key on the registry was confirmed on chain",
+        "tx_hash": "23WazyK4C7XHha1DLpiNAPUUCHZn8AcEUKzzx8Neoxxz"
       },
       "function_call": {
-        "public_key": null,
+        "public_key": "ed25519:DZTaJkebXp9ftmf8dCrB72MBxBTLvnGfXHHBh3jTsg6b",
         "receiver_id": "registry.a-identity.testnet",
         "method_names": [
           "set_verdict",
@@ -183,15 +183,15 @@
           "clear_verdict",
           "clear_reports"
         ],
-        "allowance_yocto": null,
-        "add_tx_hash": null
+        "allowance_yocto": "1000000000000000000000000",
+        "add_tx_hash": "dghHot5rjpQc2e1WoCuyuH1h2JkHYmUb3PzzG7eBQge"
       }
     },
     "registry": {
       "full_access_keys": 0,
       "lock": {
-        "how": null,
-        "tx_hash": null
+        "how": "created keyless: the create, deploy and init batch adds no access key",
+        "tx_hash": "5F38SuVmnzrAjWjVwAmheVzyU1PZ2Sb2pSzW4JcgqumL"
       }
     }
   },
@@ -199,18 +199,20 @@
     "lookalike": {
       "account_id": "aid-demo-merchamt.testnet",
       "verdict": "DENY",
-      "reasons": null,
-      "evidence": null,
-      "snapshot": null,
-      "snapshot_sha256": null,
-      "set_tx_hash": null,
-      "read_block": null
+      "reasons": [
+        "lookalike_new_account"
+      ],
+      "evidence": "near-snapshot sha256:aa339b86c1c318eaea54ffd18d213791587b1e85dcbaaa23738f1c1ab9e47e00 block:277402268 engine:1.1.0",
+      "snapshot": "demo/logs/oracle/snapshots/aa339b86c1c318eaea54ffd18d213791587b1e85dcbaaa23738f1c1ab9e47e00.json",
+      "snapshot_sha256": "aa339b86c1c318eaea54ffd18d213791587b1e85dcbaaa23738f1c1ab9e47e00",
+      "set_tx_hash": "8hsAQaxwSj4Fv356wF6HV3XUE49DDLznFrQ4uivBEQFJ",
+      "read_block": 277402650
     }
   },
   "demo": {
-    "status": "pending",
-    "log": null,
-    "state_block": null,
+    "status": "ran",
+    "log": "demo/logs/20261112T185000Z-scripted.json",
+    "state_block": 277402650,
     "transactions": {
       "setup_request": {
         "phase": "setup",
@@ -219,8 +221,8 @@
         "receiver_id": "vault.aid-demo-owner.testnet",
         "method": "request_payment",
         "payee": "aid-demo-merchant.testnet",
-        "amount": null,
-        "tx_hash": null,
+        "amount": "10000",
+        "tx_hash": "85qMwnxtHJdhD2fw9NsaamZPeXEu1QdFTsPmfmtWYH7w",
         "expected_outcome": "held"
       },
       "setup_owner_pay": {
@@ -230,8 +232,8 @@
         "receiver_id": "vault.aid-demo-owner.testnet",
         "method": "owner_pay",
         "payee": "aid-demo-merchant.testnet",
-        "amount": null,
-        "tx_hash": null,
+        "amount": "10000",
+        "tx_hash": "8Ab947vHrsUHGXozTxES8qFuw6JXGcrMBj7epnmX6dZb",
         "expected_outcome": "sent by_owner"
       },
       "pay_known": {
@@ -241,8 +243,8 @@
         "receiver_id": "vault.aid-demo-owner.testnet",
         "method": "pay",
         "payee": "aid-demo-merchant.testnet",
-        "amount": null,
-        "tx_hash": null,
+        "amount": "500000",
+        "tx_hash": "5neFuaofbgvpSBVEdhVip3WtNdHFYHvKBKYToM5EMSEY",
         "expected_outcome": "sent"
       },
       "guard_refusal": {
@@ -252,8 +254,8 @@
         "receiver_id": "vault.aid-demo-owner.testnet",
         "method": "record_refusal",
         "payee": "aid-demo-merchamt.testnet",
-        "amount": null,
-        "tx_hash": null,
+        "amount": "500000",
+        "tx_hash": "Cwa9mBuAdU3hgJx9HV7gbhGxfji5GtKxJvsEgA7dA8Rg",
         "expected_outcome": "refused agent_guard"
       },
       "pay_unknown": {
@@ -263,8 +265,8 @@
         "receiver_id": "vault.aid-demo-owner.testnet",
         "method": "pay",
         "payee": "aid-demo-merchamt.testnet",
-        "amount": null,
-        "tx_hash": null,
+        "amount": "500000",
+        "tx_hash": "HzBqsRZWNLUUzcYtJ49DGQLcvdpmfW48Pa7TaoFeMQn8",
         "expected_outcome": "held UnknownPayee"
       },
       "oracle_deny": {
@@ -275,7 +277,7 @@
         "method": "set_verdict",
         "payee": "aid-demo-merchamt.testnet",
         "amount": null,
-        "tx_hash": null,
+        "tx_hash": "8hsAQaxwSj4Fv356wF6HV3XUE49DDLznFrQ4uivBEQFJ",
         "expected_outcome": "verdict_set DENY"
       },
       "pay_deny": {
@@ -285,8 +287,8 @@
         "receiver_id": "vault.aid-demo-owner.testnet",
         "method": "pay",
         "payee": "aid-demo-merchamt.testnet",
-        "amount": null,
-        "tx_hash": null,
+        "amount": "500000",
+        "tx_hash": "9YR7ohek5GcaDdHzQc3PgU3mX9xFL3i3w5dAbEFPB6nG",
         "expected_outcome": "refused RegistryDeny"
       },
       "owner_pay_denied": {
@@ -296,8 +298,8 @@
         "receiver_id": "vault.aid-demo-owner.testnet",
         "method": "owner_pay",
         "payee": "aid-demo-merchamt.testnet",
-        "amount": null,
-        "tx_hash": null,
+        "amount": "500000",
+        "tx_hash": "3jjcff1vS13e1kCenuEQhSif5Z68gx2fzKK5GYZDShoT",
         "expected_outcome": "refused RegistryDeny"
       },
       "vendor_request": {
@@ -307,8 +309,8 @@
         "receiver_id": "vault.aid-demo-owner.testnet",
         "method": "request_payment",
         "payee": "aid-demo-printshop.testnet",
-        "amount": null,
-        "tx_hash": null,
+        "amount": "750000",
+        "tx_hash": "BnJiyxbW3Rs44wq5vbXqUvTKLNZGQY8y4bh4qsgm7iH2",
         "expected_outcome": "held"
       },
       "vendor_owner_pay": {
@@ -318,8 +320,8 @@
         "receiver_id": "vault.aid-demo-owner.testnet",
         "method": "owner_pay",
         "payee": "aid-demo-printshop.testnet",
-        "amount": null,
-        "tx_hash": null,
+        "amount": "750000",
+        "tx_hash": "5HssYfKT5kKwWJ5TnJ4FroRA81cVYsB1ZnHCvqVCL3fY",
         "expected_outcome": "sent by_owner"
       },
       "over_ceiling": {
@@ -329,8 +331,8 @@
         "receiver_id": "vault.aid-demo-owner.testnet",
         "method": "pay",
         "payee": "aid-demo-merchant.testnet",
-        "amount": null,
-        "tx_hash": null,
+        "amount": "2010000",
+        "tx_hash": "9EzeUqDWTeDgtcWGTzp9Dzex5fqCBvgq4u4wZ5uqtPpX",
         "expected_outcome": "refused AboveAutoApprove"
       }
     },

@@ -1,0 +1,71 @@
+{
+  "schema": "a-identity-near-evidence/1",
+  "claim_id": "vault-keys",
+  "claim": "The vault account holds no full-access key: every key on it is a function-call key for exactly pay, request_payment and record_refusal on the vault, with a finite NEAR allowance.",
+  "check": "access_keys",
+  "network": "testnet",
+  "captured_at": "2026-11-12T18:56:05.849Z",
+  "captured_with": {
+    "tool": "judge/capture.mjs",
+    "node": "v24.21.0",
+    "claims_sha256": "aab8596c97aa0e28b952d7904377952c503892c6aa0888652908ea5307ade6a3",
+    "deployments_sha256": "ca1e2c26bbaee279e4a58c46233c2703fac6af167d4cf35ea775d80ffb67a538"
+  },
+  "result": {
+    "status": "PASS",
+    "detail": "view_access_key_list at block 277402843: 0 full-access, 1 function-call (ed25519:AyrM3caas16rWjMky2fPdQKPgQptdRrHRvPJaP7YFbeA FunctionCall vault.aid-demo-owner.testnet [pay,request_payment,record_refusal] allowance 0.4939 NEAR)"
+  },
+  "notes": [
+    "Raw JSON-RPC requests and responses. Views were read at finality \"final\"; block_height and block_hash say which block answered.",
+    "Transactions were read from archival RPC. A 64-byte ed25519 value (a signature) is stored as ed25519-signature-sha256:<sha256 of its bytes>.",
+    "Replay: node judge/judge.mjs --offline. Re-check against the chain: node judge/judge.mjs --verify-evidence."
+  ],
+  "calls": [
+    {
+      "network": "testnet",
+      "kind": "state",
+      "rpc_url": "https://rpc.testnet.fastnear.com",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": "judge",
+        "method": "query",
+        "params": {
+          "request_type": "view_access_key_list",
+          "finality": "final",
+          "account_id": "vault.aid-demo-owner.testnet"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "result": {
+          "block_hash": "6QE9cHyATyuMTUokgHzH4TyRgLhaAFusNzDueemQYsVk",
+          "block_height": 277402843,
+          "keys": [
+            {
+              "access_key": {
+                "nonce": 277402051000010,
+                "permission": {
+                  "FunctionCall": {
+                    "allowance": "493928917423015000000000",
+                    "method_names": [
+                      "pay",
+                      "request_payment",
+                      "record_refusal"
+                    ],
+                    "receiver_id": "vault.aid-demo-owner.testnet"
+                  }
+                }
+              },
+              "public_key": "ed25519:AyrM3caas16rWjMky2fPdQKPgQptdRrHRvPJaP7YFbeA"
+            }
+          ]
+        },
+        "id": "judge"
+      },
+      "fetched_at": "2026-11-12T18:56:05.770Z",
+      "ms": 78,
+      "block_height": 277402843,
+      "block_hash": "6QE9cHyATyuMTUokgHzH4TyRgLhaAFusNzDueemQYsVk"
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "schema": "a-identity-near-evidence/1",
+  "claim_id": "usdc-mainnet-blocklist",
+  "claim": "Circle's USDC on NEAR mainnet (17208628...36133a1) answers is_blocklisted, so the same signal works on real mainnet accounts (read-only).",
+  "check": "view_equals",
+  "network": "mainnet",
+  "captured_at": "2026-11-12T18:56:04.288Z",
+  "captured_with": {
+    "tool": "judge/capture.mjs",
+    "node": "v24.21.0",
+    "claims_sha256": "aab8596c97aa0e28b952d7904377952c503892c6aa0888652908ea5307ade6a3",
+    "deployments_sha256": "ca1e2c26bbaee279e4a58c46233c2703fac6af167d4cf35ea775d80ffb67a538"
+  },
+  "result": {
+    "status": "PASS",
+    "detail": "is_blocklisted({\"account_id\":\"wrap.near\"}) on 17208628...133a1 at block 224253080 = false"
+  },
+  "notes": [
+    "Raw JSON-RPC requests and responses. Views were read at finality \"final\"; block_height and block_hash say which block answered.",
+    "Transactions were read from archival RPC. A 64-byte ed25519 value (a signature) is stored as ed25519-signature-sha256:<sha256 of its bytes>.",
+    "Replay: node judge/judge.mjs --offline. Re-check against the chain: node judge/judge.mjs --verify-evidence."
+  ],
+  "calls": [
+    {
+      "network": "mainnet",
+      "kind": "state",
+      "rpc_url": "https://rpc.mainnet.fastnear.com",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": "judge",
+        "method": "query",
+        "params": {
+          "request_type": "call_function",
+          "finality": "final",
+          "account_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+          "method_name": "is_blocklisted",
+          "args_base64": "eyJhY2NvdW50X2lkIjoid3JhcC5uZWFyIn0="
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "result": {
+          "block_hash": "3gQCUcUVDpa1KQLLhK3esgtMjHj56VChbUzJyjtQamJe",
+          "block_height": 224253080,
+          "logs": [],
+          "result": [
+            102,
+            97,
+            108,
+            115,
+            101
+          ]
+        },
+        "id": "judge"
+      },
+      "fetched_at": "2026-11-12T18:56:04.147Z",
+      "ms": 141,
+      "block_height": 224253080,
+      "block_hash": "3gQCUcUVDpa1KQLLhK3esgtMjHj56VChbUzJyjtQamJe"
+    }
+  ]
+}

@@ -1,0 +1,86 @@
+{
+  "schema": "a-identity-near-evidence/1",
+  "claim_id": "registry-oracles",
+  "claim": "Only oracle.a-identity.testnet may write verdicts: the registry's oracles() is exactly [oracle.a-identity.testnet].",
+  "check": "view_equals",
+  "network": "testnet",
+  "captured_at": "2026-11-12T18:56:06.638Z",
+  "captured_with": {
+    "tool": "judge/capture.mjs",
+    "node": "v24.21.0",
+    "claims_sha256": "aab8596c97aa0e28b952d7904377952c503892c6aa0888652908ea5307ade6a3",
+    "deployments_sha256": "ca1e2c26bbaee279e4a58c46233c2703fac6af167d4cf35ea775d80ffb67a538"
+  },
+  "result": {
+    "status": "PASS",
+    "detail": "oracles({}) on registry.a-identity.testnet at block 277402846 = [\"oracle.a-identity.testnet\"]"
+  },
+  "notes": [
+    "Raw JSON-RPC requests and responses. Views were read at finality \"final\"; block_height and block_hash say which block answered.",
+    "Transactions were read from archival RPC. A 64-byte ed25519 value (a signature) is stored as ed25519-signature-sha256:<sha256 of its bytes>.",
+    "Replay: node judge/judge.mjs --offline. Re-check against the chain: node judge/judge.mjs --verify-evidence."
+  ],
+  "calls": [
+    {
+      "network": "testnet",
+      "kind": "state",
+      "rpc_url": "https://rpc.testnet.fastnear.com",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": "judge",
+        "method": "query",
+        "params": {
+          "request_type": "call_function",
+          "finality": "final",
+          "account_id": "registry.a-identity.testnet",
+          "method_name": "oracles",
+          "args_base64": "e30="
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "result": {
+          "block_hash": "37ySNpCFe9NuibGWPzpnuQWHF1Fsxh5EmFwMduVdgWhM",
+          "block_height": 277402846,
+          "logs": [],
+          "result": [
+            91,
+            34,
+            111,
+            114,
+            97,
+            99,
+            108,
+            101,
+            46,
+            97,
+            45,
+            105,
+            100,
+            101,
+            110,
+            116,
+            105,
+            116,
+            121,
+            46,
+            116,
+            101,
+            115,
+            116,
+            110,
+            101,
+            116,
+            34,
+            93
+          ]
+        },
+        "id": "judge"
+      },
+      "fetched_at": "2026-11-12T18:56:06.550Z",
+      "ms": 88,
+      "block_height": 277402846,
+      "block_hash": "37ySNpCFe9NuibGWPzpnuQWHF1Fsxh5EmFwMduVdgWhM"
+    }
+  ]
+}

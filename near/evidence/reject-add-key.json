@@ -1,0 +1,65 @@
+{
+  "schema": "a-identity-near-evidence/1",
+  "claim_id": "reject-add-key",
+  "claim": "The agent key cannot give itself more power: the protocol rejected adding a full-access key to the vault account (RequiresFullAccess), before execution.",
+  "check": "protocol_rejection",
+  "network": "testnet",
+  "captured_at": "2026-11-12T18:57:21.167Z",
+  "captured_with": {
+    "tool": "judge/capture.mjs",
+    "node": "v24.21.0",
+    "claims_sha256": "aab8596c97aa0e28b952d7904377952c503892c6aa0888652908ea5307ade6a3",
+    "deployments_sha256": "ca1e2c26bbaee279e4a58c46233c2703fac6af167d4cf35ea775d80ffb67a538"
+  },
+  "result": {
+    "status": "PASS",
+    "detail": "recorded send_tx error RequiresFullAccess (2026-11-12T18:51:10.994Z); tx FqFbGvwigwHbbsyoieogVuUiwbYsTEGjdtiGGGJdyELL by vault.aid-demo-owner.testnet with ed25519:AyrM3caas16rWjMky2fPdQKPgQptdRrHRvPJaP7YFbeA: AddKey FullAccess to vault.aid-demo-owner.testnet; signature valid; key at block 277402324: FunctionCall vault.aid-demo-owner.testnet [pay,request_payment,record_refusal], so nearcore rejects it with RequiresFullAccess"
+  },
+  "notes": [
+    "Raw JSON-RPC requests and responses. Views were read at finality \"final\"; block_height and block_hash say which block answered.",
+    "Transactions were read from archival RPC. A 64-byte ed25519 value (a signature) is stored as ed25519-signature-sha256:<sha256 of its bytes>.",
+    "Replay: node judge/judge.mjs --offline. Re-check against the chain: node judge/judge.mjs --verify-evidence."
+  ],
+  "calls": [
+    {
+      "network": "testnet",
+      "kind": "archival",
+      "rpc_url": "https://archival-rpc.testnet.fastnear.com",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": "judge",
+        "method": "query",
+        "params": {
+          "request_type": "view_access_key",
+          "block_id": "A1iXmRzUp17sW7ejWzHK1Lo98ttVyFE97EKsHoUkG7rh",
+          "account_id": "vault.aid-demo-owner.testnet",
+          "public_key": "ed25519:AyrM3caas16rWjMky2fPdQKPgQptdRrHRvPJaP7YFbeA"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "result": {
+          "block_hash": "A1iXmRzUp17sW7ejWzHK1Lo98ttVyFE97EKsHoUkG7rh",
+          "block_height": 277402324,
+          "nonce": 277402051000006,
+          "permission": {
+            "FunctionCall": {
+              "allowance": "495937302919523400000000",
+              "method_names": [
+                "pay",
+                "request_payment",
+                "record_refusal"
+              ],
+              "receiver_id": "vault.aid-demo-owner.testnet"
+            }
+          }
+        },
+        "id": "judge"
+      },
+      "fetched_at": "2026-11-12T18:57:21.072Z",
+      "ms": 95,
+      "block_height": 277402324,
+      "block_hash": "A1iXmRzUp17sW7ejWzHK1Lo98ttVyFE97EKsHoUkG7rh"
+    }
+  ]
+}

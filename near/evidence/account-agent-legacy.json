@@ -1,0 +1,61 @@
+{
+  "schema": "a-identity-near-evidence/1",
+  "claim_id": "account-agent-legacy",
+  "claim": "aid-demo-agent.testnet is not the agent: it predates the keyless vault and holds one full-access key and no function-call key; every agent transaction in this table is signed by the vault account with its function-call key instead.",
+  "check": "access_keys",
+  "network": "testnet",
+  "captured_at": "2026-11-12T18:56:05.435Z",
+  "captured_with": {
+    "tool": "judge/capture.mjs",
+    "node": "v24.21.0",
+    "claims_sha256": "aab8596c97aa0e28b952d7904377952c503892c6aa0888652908ea5307ade6a3",
+    "deployments_sha256": "ca1e2c26bbaee279e4a58c46233c2703fac6af167d4cf35ea775d80ffb67a538"
+  },
+  "result": {
+    "status": "PASS",
+    "detail": "view_access_key_list at block 277402842: 1 full-access, 0 function-call (ed25519:2CHL4RuYp4a84rh2bVZo6iVZci99SUkQzCpbG3HgVryf FullAccess)"
+  },
+  "notes": [
+    "Raw JSON-RPC requests and responses. Views were read at finality \"final\"; block_height and block_hash say which block answered.",
+    "Transactions were read from archival RPC. A 64-byte ed25519 value (a signature) is stored as ed25519-signature-sha256:<sha256 of its bytes>.",
+    "Replay: node judge/judge.mjs --offline. Re-check against the chain: node judge/judge.mjs --verify-evidence."
+  ],
+  "calls": [
+    {
+      "network": "testnet",
+      "kind": "state",
+      "rpc_url": "https://rpc.testnet.fastnear.com",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": "judge",
+        "method": "query",
+        "params": {
+          "request_type": "view_access_key_list",
+          "finality": "final",
+          "account_id": "aid-demo-agent.testnet"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "result": {
+          "block_hash": "ACSUnCshRP1Z1Fmvcn1ohLw3eAZu9RezX7ienK5wfrfa",
+          "block_height": 277402842,
+          "keys": [
+            {
+              "access_key": {
+                "nonce": 277284573000001,
+                "permission": "FullAccess"
+              },
+              "public_key": "ed25519:2CHL4RuYp4a84rh2bVZo6iVZci99SUkQzCpbG3HgVryf"
+            }
+          ]
+        },
+        "id": "judge"
+      },
+      "fetched_at": "2026-11-12T18:56:05.316Z",
+      "ms": 118,
+      "block_height": 277402842,
+      "block_hash": "ACSUnCshRP1Z1Fmvcn1ohLw3eAZu9RezX7ienK5wfrfa"
+    }
+  ]
+}
