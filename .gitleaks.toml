@@ -21,6 +21,19 @@ regex = '''\bS[A-Z2-7]{55}\b'''
 keywords = ["S"]
 entropy = 3.5
 
+[[rules]]
+id = "near-ed25519-secret-key"
+description = "NEAR ed25519 secret key (ed25519: + base58 of 64 bytes)"
+# NEAR serializes an ed25519 secret key as the 32-byte seed followed by the 32-byte public
+# key, base58-encoded, which is 86 to 88 characters after the prefix. A public key or a
+# transaction hash is 32 bytes, 43 or 44 characters, so the length alone keeps them out:
+# this repository quotes NEAR public keys and tx hashes on purpose and must not trip on
+# them. An ed25519 SIGNATURE is also 64 bytes and would match, which is acceptable,
+# because none belongs in the tree either. Verified against a generated key, a real
+# testnet public key and a real testnet tx hash on 2026-11-12.
+regex = '''ed25519:[1-9A-HJ-NP-Za-km-z]{85,90}\b'''
+keywords = ["ed25519:"]
+
 # There is deliberately NO rule for EVM private keys, and the reason is worth writing down
 # so nobody adds one back. An EVM private key is 0x plus 64 hex characters. So is a
 # transaction hash. So is a block hash. They are indistinguishable by shape, and this
@@ -129,3 +142,15 @@ regexes = ['''^"?authNonce": "0x[0-9a-f.]+"$''']
 description = "OUR_KEY_PUBLIC_ADDRESSES: an env var name and the public address of that key"
 regexTarget = "match"
 regexes = ['''^[A-Z0-9_]+_KEY: '0x[0-9a-fA-F]{40}'$''']
+
+# NEAR public keys. The NEAR integration (near/, its docs and the proof page) quotes the agent's
+# function-call PUBLIC key on purpose, because "which key may call what" is the claim a reader has
+# to be able to check on chain. The generic-api-key rule reads "key" beside the base58 value as a
+# credential. Allowed by the shape of the whole match: ed25519: plus exactly 43 or 44 base58
+# characters (32 bytes) at the end of the match. A NEAR SECRET key is 64 bytes, 86 to 88
+# characters, so it cannot fit this shape, and the near-ed25519-secret-key rule above still
+# reports it. Added 2026-11-12, verified against a real testnet public key and a generated key.
+[[allowlists]]
+description = "NEAR ed25519 public keys (32-byte base58) quoted in the NEAR docs and proof"
+regexTarget = "match"
+regexes = ['''ed25519:[1-9A-HJ-NP-Za-km-z]{43,44}[.,;:'")\]]*$''']
