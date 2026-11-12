@@ -1,0 +1,456 @@
+{
+  "schema": "a-identity.near.snapshot/1",
+  "network": "mainnet",
+  "subject": "linear-protoco1.near",
+  "block": {
+    "height": 224273467,
+    "hash": "7ovLFvy4XTHoLQnppDnnCix2SNcjKH8gTrD2DvxBP4Fb",
+    "timestamp_ns": "1794521366410455891"
+  },
+  "context": {
+    "known": ["linear-protocol.near"],
+    "vault_id": "vault.a-identity.near",
+    "registry_id": "registry.a-identity.near",
+    "usdc_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+    "third_party": [
+      {
+        "id": "mimicwatch",
+        "name": "MimicWatch",
+        "contract": "registry.mimicwatch-e7iig5g5.testnet",
+        "network": "testnet",
+        "method": "is_flagged",
+        "arg": "id"
+      }
+    ],
+    "erc8004": {
+      "identity": "identity-registry.erc-8004.near",
+      "reputation": "reputation-registry.erc-8004.near"
+    },
+    "probes": {
+      "recent_s": 259200,
+      "long_s": 2592000
+    },
+    "activity_window": 5
+  },
+  "rpc": [
+    {
+      "label": "account",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "view_account",
+        "account_id": "linear-protoco1.near",
+        "block_id": 224273467
+      },
+      "error": {
+        "name": "HANDLER_ERROR",
+        "cause": "UNKNOWN_ACCOUNT",
+        "message": "account linear-protoco1.near does not exist while viewing"
+      }
+    },
+    {
+      "label": "block",
+      "network": "mainnet",
+      "archival": false,
+      "method": "block",
+      "params": {
+        "block_id": 224273467
+      },
+      "result": {
+        "header": {
+          "height": 224273467,
+          "hash": "7ovLFvy4XTHoLQnppDnnCix2SNcjKH8gTrD2DvxBP4Fb",
+          "prev_hash": "BMex5wjWTMpgW2MZrKJuVK4sLkryatjND5iZEBpwQtWo",
+          "timestamp_nanosec": "1794521366410455891"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "block.testnet",
+      "network": "testnet",
+      "archival": false,
+      "method": "block",
+      "params": {
+        "block_id": 277422714
+      },
+      "result": {
+        "header": {
+          "height": 277422714,
+          "hash": "Dbev9ZUo4ExChTSP9io9KytiKn6idvnMduxmej4WmkVV",
+          "prev_hash": "DGQ1KvLcufRffbTPwDUgb22Hiqj8wHeyEErtzdFNuxKX",
+          "timestamp_nanosec": "1794521366379523688"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "block.testnet.next",
+      "network": "testnet",
+      "archival": false,
+      "method": "block",
+      "params": {
+        "block_id": 277422715
+      },
+      "result": {
+        "header": {
+          "height": 277422715,
+          "hash": "9LHWr5xziWF9niovFu3M8FswnfX4855NWyHByYq7KVML",
+          "prev_hash": "Dbev9ZUo4ExChTSP9io9KytiKn6idvnMduxmej4WmkVV",
+          "timestamp_nanosec": "1794521366912320050"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "erc8004.nft_tokens_for_owner",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "identity-registry.erc-8004.near",
+        "method_name": "nft_tokens_for_owner",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibGluZWFyLXByb3RvY28xLm5lYXIiLCJmcm9tX2luZGV4IjpudWxsLCJsaW1pdCI6NX0=",
+        "block_id": 224273467
+      },
+      "result": {
+        "block_hash": "7ovLFvy4XTHoLQnppDnnCix2SNcjKH8gTrD2DvxBP4Fb",
+        "block_height": 224273467,
+        "logs": [],
+        "result": [91,93]
+      }
+    },
+    {
+      "label": "registry.get_reports",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "registry.a-identity.near",
+        "method_name": "get_reports",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibGluZWFyLXByb3RvY28xLm5lYXIifQ==",
+        "block_id": 224273467
+      },
+      "result": {
+        "block_hash": "7ovLFvy4XTHoLQnppDnnCix2SNcjKH8gTrD2DvxBP4Fb",
+        "block_height": 224273467,
+        "logs": [],
+        "result": [91,93]
+      }
+    },
+    {
+      "label": "registry.get_verdict",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "registry.a-identity.near",
+        "method_name": "get_verdict",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibGluZWFyLXByb3RvY28xLm5lYXIifQ==",
+        "block_id": 224273467
+      },
+      "result": {
+        "block_hash": "7ovLFvy4XTHoLQnppDnnCix2SNcjKH8gTrD2DvxBP4Fb",
+        "block_height": 224273467,
+        "logs": [],
+        "result": [110,117,108,108]
+      }
+    },
+    {
+      "label": "registry.list_verdicts",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "registry.a-identity.near",
+        "method_name": "list_verdicts",
+        "args_base64": "eyJmcm9tX2luZGV4IjoiMCIsImxpbWl0IjoiMTAwIn0=",
+        "block_id": 224273467
+      },
+      "result": {
+        "block_hash": "7ovLFvy4XTHoLQnppDnnCix2SNcjKH8gTrD2DvxBP4Fb",
+        "block_height": 224273467,
+        "logs": [],
+        "result": [91,93]
+      }
+    },
+    {
+      "label": "registry.report_count",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "registry.a-identity.near",
+        "method_name": "report_count",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibGluZWFyLXByb3RvY28xLm5lYXIifQ==",
+        "block_id": 224273467
+      },
+      "result": {
+        "block_hash": "7ovLFvy4XTHoLQnppDnnCix2SNcjKH8gTrD2DvxBP4Fb",
+        "block_height": 224273467,
+        "logs": [],
+        "result": [48]
+      }
+    },
+    {
+      "label": "third_party.mimicwatch",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "registry.mimicwatch-e7iig5g5.testnet",
+        "method_name": "is_flagged",
+        "args_base64": "eyJpZCI6ImxpbmVhci1wcm90b2NvMS5uZWFyIn0=",
+        "block_id": 277422714
+      },
+      "result": {
+        "block_hash": "Dbev9ZUo4ExChTSP9io9KytiKn6idvnMduxmej4WmkVV",
+        "block_height": 277422714,
+        "logs": [],
+        "result": [123,34,113,117,101,114,121,34,58,34,108,105,110,101,97,114,45,112,114,111,116,111,99,111,49,46,110,101,97,114,34,44,34,102,108,97,103,103,101,100,34,58,102,97,108,115,101,44,34,118,105,97,34,58,110,117,108,108,44,34,101,110,116,114,121,34,58,110,117,108,108,44,34,99,108,101,97,114,101,100,34,58,110,117,108,108,125]
+      }
+    },
+    {
+      "label": "usdc.is_blocklisted",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+        "method_name": "is_blocklisted",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibGluZWFyLXByb3RvY28xLm5lYXIifQ==",
+        "block_id": 224273467
+      },
+      "result": {
+        "block_hash": "7ovLFvy4XTHoLQnppDnnCix2SNcjKH8gTrD2DvxBP4Fb",
+        "block_height": 224273467,
+        "logs": [],
+        "result": [102,97,108,115,101]
+      }
+    },
+    {
+      "label": "usdc.storage_balance_of",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+        "method_name": "storage_balance_of",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibGluZWFyLXByb3RvY28xLm5lYXIifQ==",
+        "block_id": 224273467
+      },
+      "result": {
+        "block_hash": "7ovLFvy4XTHoLQnppDnnCix2SNcjKH8gTrD2DvxBP4Fb",
+        "block_height": 224273467,
+        "logs": [],
+        "result": [110,117,108,108]
+      }
+    },
+    {
+      "label": "vault.get_config",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "vault.a-identity.near",
+        "method_name": "get_config",
+        "args_base64": "e30=",
+        "block_id": 224273467
+      },
+      "result": {
+        "block_hash": "7ovLFvy4XTHoLQnppDnnCix2SNcjKH8gTrD2DvxBP4Fb",
+        "block_height": 224273467,
+        "logs": [],
+        "result": [123,34,111,119,110,101,114,95,105,100,34,58,34,97,45,105,100,101,110,116,105,116,121,46,110,101,97,114,34,44,34,116,111,107,101,110,95,105,100,34,58,34,49,55,50,48,56,54,50,56,102,56,52,102,53,100,54,97,100,51,51,102,48,100,97,51,98,98,98,101,98,50,55,102,102,99,98,51,57,56,101,97,99,53,48,49,97,51,49,98,100,54,97,100,50,48,49,49,101,51,54,49,51,51,97,49,34,44,34,114,101,103,105,115,116,114,121,95,105,100,34,58,34,114,101,103,105,115,116,114,121,46,97,45,105,100,101,110,116,105,116,121,46,110,101,97,114,34,44,34,102,114,111,122,101,110,34,58,102,97,108,115,101,44,34,100,97,105,108,121,95,99,97,112,34,58,34,53,48,48,48,48,48,48,34,44,34,97,117,116,111,95,97,112,112,114,111,118,101,95,109,97,120,34,58,34,50,48,48,48,48,48,48,34,44,34,97,108,108,111,119,108,105,115,116,95,101,110,97,98,108,101,100,34,58,102,97,108,115,101,44,34,116,111,107,101,110,95,115,116,111,114,97,103,101,95,100,101,112,111,115,105,116,34,58,34,49,50,53,48,48,48,48,48,48,48,48,48,48,48,48,48,48,48,48,48,48,48,34,44,34,118,101,114,115,105,111,110,34,58,34,97,103,101,110,116,45,115,112,101,110,100,45,112,111,108,105,99,121,32,48,46,50,46,48,34,44,34,104,111,108,100,95,117,110,107,110,111,119,110,34,58,116,114,117,101,125]
+      }
+    },
+    {
+      "label": "vault.guard_refusal_count",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "vault.a-identity.near",
+        "method_name": "guard_refusal_count",
+        "args_base64": "eyJwYXllZSI6ImxpbmVhci1wcm90b2NvMS5uZWFyIn0=",
+        "block_id": 224273467
+      },
+      "result": {
+        "block_hash": "7ovLFvy4XTHoLQnppDnnCix2SNcjKH8gTrD2DvxBP4Fb",
+        "block_height": 224273467,
+        "logs": [],
+        "result": [48]
+      }
+    },
+    {
+      "label": "vault.is_allowed",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "vault.a-identity.near",
+        "method_name": "is_allowed",
+        "args_base64": "eyJwYXllZSI6ImxpbmVhci1wcm90b2NvMS5uZWFyIn0=",
+        "block_id": 224273467
+      },
+      "result": {
+        "block_hash": "7ovLFvy4XTHoLQnppDnnCix2SNcjKH8gTrD2DvxBP4Fb",
+        "block_height": 224273467,
+        "logs": [],
+        "result": [102,97,108,115,101]
+      }
+    },
+    {
+      "label": "vault.list_allowlist",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "vault.a-identity.near",
+        "method_name": "list_allowlist",
+        "args_base64": "e30=",
+        "block_id": 224273467
+      },
+      "result": {
+        "block_hash": "7ovLFvy4XTHoLQnppDnnCix2SNcjKH8gTrD2DvxBP4Fb",
+        "block_height": 224273467,
+        "logs": [],
+        "result": [91,93]
+      }
+    },
+    {
+      "label": "vault.paid_count",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "vault.a-identity.near",
+        "method_name": "paid_count",
+        "args_base64": "eyJwYXllZSI6ImxpbmVhci1wcm90b2NvMS5uZWFyIn0=",
+        "block_id": 224273467
+      },
+      "result": {
+        "block_hash": "7ovLFvy4XTHoLQnppDnnCix2SNcjKH8gTrD2DvxBP4Fb",
+        "block_height": 224273467,
+        "logs": [],
+        "result": [48]
+      }
+    },
+    {
+      "label": "vault.refusal_count",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "vault.a-identity.near",
+        "method_name": "refusal_count",
+        "args_base64": "eyJwYXllZSI6ImxpbmVhci1wcm90b2NvMS5uZWFyIn0=",
+        "block_id": 224273467
+      },
+      "result": {
+        "block_hash": "7ovLFvy4XTHoLQnppDnnCix2SNcjKH8gTrD2DvxBP4Fb",
+        "block_height": 224273467,
+        "logs": [],
+        "result": [48]
+      }
+    }
+  ],
+  "http": [
+    {
+      "label": "fastnear.newest",
+      "source": "fastnear",
+      "method": "POST",
+      "url": "https://tx.main.fastnear.com/v0/account",
+      "status": 200,
+      "json": {
+        "account_txs": [
+          {
+            "account_id": "linear-protoco1.near",
+            "transaction_hash": "AQf6d11pTUjkW7AbWyTuJTdZXyNnRjaWRyQuXMz4UefJ",
+            "tx_block_height": 224273455,
+            "tx_block_timestamp": "1794521359433791927",
+            "tx_index": 2,
+            "is_signer": false,
+            "is_delegated_signer": false,
+            "is_real_signer": false,
+            "is_any_signer": false,
+            "is_predecessor": false,
+            "is_explicit_refund_to": false,
+            "is_receiver": false,
+            "is_real_receiver": false,
+            "is_function_call": false,
+            "is_action_arg": true,
+            "is_event_log": false,
+            "is_success": true
+          }
+        ],
+        "resume_token": "963247154585927682",
+        "txs_count": 1
+      },
+      "fetched_at": "2026-11-12T22:09:29.252Z",
+      "body": {
+        "account_id": "linear-protoco1.near",
+        "limit": 1,
+        "desc": true
+      }
+    },
+    {
+      "label": "fastnear.oldest",
+      "source": "fastnear",
+      "method": "POST",
+      "url": "https://tx.main.fastnear.com/v0/account",
+      "status": 200,
+      "json": {
+        "account_txs": [
+          {
+            "account_id": "linear-protoco1.near",
+            "transaction_hash": "AQf6d11pTUjkW7AbWyTuJTdZXyNnRjaWRyQuXMz4UefJ",
+            "tx_block_height": 224273455,
+            "tx_block_timestamp": "1794521359433791927",
+            "tx_index": 2,
+            "is_signer": false,
+            "is_delegated_signer": false,
+            "is_real_signer": false,
+            "is_any_signer": false,
+            "is_predecessor": false,
+            "is_explicit_refund_to": false,
+            "is_receiver": false,
+            "is_real_receiver": false,
+            "is_function_call": false,
+            "is_action_arg": true,
+            "is_event_log": false,
+            "is_success": true
+          }
+        ],
+        "txs_count": 1
+      },
+      "fetched_at": "2026-11-12T22:09:28.851Z",
+      "body": {
+        "account_id": "linear-protoco1.near",
+        "limit": 5,
+        "desc": false
+      }
+    }
+  ],
+  "meta": {
+    "collected_at": "2026-11-12T22:09:30.063Z",
+    "collector": "a-identity-near-sdk/0.2.0",
+    "endpoints": ["rpc.mainnet.fastnear.com","rpc.testnet.fastnear.com","tx.main.fastnear.com"],
+    "notes": ["Registries on testnet were read at its latest block at or before this block's time (labels block.testnet and block.testnet.next), so the same block always reads them at the same height."]
+  }
+}

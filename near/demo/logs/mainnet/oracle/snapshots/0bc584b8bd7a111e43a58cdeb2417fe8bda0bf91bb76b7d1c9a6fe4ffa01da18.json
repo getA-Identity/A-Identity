@@ -1,0 +1,893 @@
+{
+  "schema": "a-identity.near.snapshot/1",
+  "network": "mainnet",
+  "subject": "linear_protocol.near",
+  "block": {
+    "height": 224273477,
+    "hash": "5iCx6nr7rb9YDWQ9LVJPQXWZD1ALAHKdYQF5SpEWdsi2",
+    "timestamp_ns": "1794521372067021531"
+  },
+  "context": {
+    "known": ["linear-protocol.near"],
+    "vault_id": "vault.a-identity.near",
+    "registry_id": "registry.a-identity.near",
+    "usdc_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+    "third_party": [
+      {
+        "id": "mimicwatch",
+        "name": "MimicWatch",
+        "contract": "registry.mimicwatch-e7iig5g5.testnet",
+        "network": "testnet",
+        "method": "is_flagged",
+        "arg": "id"
+      }
+    ],
+    "erc8004": {
+      "identity": "identity-registry.erc-8004.near",
+      "reputation": "reputation-registry.erc-8004.near"
+    },
+    "probes": {
+      "recent_s": 259200,
+      "long_s": 2592000
+    },
+    "activity_window": 5
+  },
+  "rpc": [
+    {
+      "label": "account",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "view_account",
+        "account_id": "linear_protocol.near",
+        "block_id": 224273477
+      },
+      "result": {
+        "amount": "19016687547246792800000011",
+        "block_hash": "5iCx6nr7rb9YDWQ9LVJPQXWZD1ALAHKdYQF5SpEWdsi2",
+        "block_height": 224273477,
+        "code_hash": "12p7js1vHix1YrMhL7XKunpcxGNuFij2pmfuRSz7kocn",
+        "locked": "0",
+        "storage_paid_at": 0,
+        "storage_usage": 1892973
+      }
+    },
+    {
+      "label": "block",
+      "network": "mainnet",
+      "archival": false,
+      "method": "block",
+      "params": {
+        "block_id": 224273477
+      },
+      "result": {
+        "header": {
+          "height": 224273477,
+          "hash": "5iCx6nr7rb9YDWQ9LVJPQXWZD1ALAHKdYQF5SpEWdsi2",
+          "prev_hash": "HgEfyxEmzfw3DykdvEUzncscJacFp4KPEWFoebEZTHLg",
+          "timestamp_nanosec": "1794521372067021531"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "block.testnet",
+      "network": "testnet",
+      "archival": false,
+      "method": "block",
+      "params": {
+        "block_id": 277422723
+      },
+      "result": {
+        "header": {
+          "height": 277422723,
+          "hash": "AetogHmEjix6smZbT3zFiLfMMDdawAQyWrf2wz96YsPg",
+          "prev_hash": "5s8gzqX7oPfVWsTjUwtUqjHAiNvsTd6Rw1ss3tXBGSbL",
+          "timestamp_nanosec": "1794521371854324551"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "block.testnet.next",
+      "network": "testnet",
+      "archival": false,
+      "method": "block",
+      "params": {
+        "block_id": 277422724
+      },
+      "result": {
+        "header": {
+          "height": 277422724,
+          "hash": "AfhwRTLLuwdpcuRe3veKjBi7ndedcnThP2sRzjbTz9Jk",
+          "prev_hash": "AetogHmEjix6smZbT3zFiLfMMDdawAQyWrf2wz96YsPg",
+          "timestamp_nanosec": "1794521372426913139"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "erc8004.nft_tokens_for_owner",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "identity-registry.erc-8004.near",
+        "method_name": "nft_tokens_for_owner",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibGluZWFyX3Byb3RvY29sLm5lYXIiLCJmcm9tX2luZGV4IjpudWxsLCJsaW1pdCI6NX0=",
+        "block_id": 224273477
+      },
+      "result": {
+        "block_hash": "5iCx6nr7rb9YDWQ9LVJPQXWZD1ALAHKdYQF5SpEWdsi2",
+        "block_height": 224273477,
+        "logs": [],
+        "result": [91,93]
+      }
+    },
+    {
+      "label": "keys#0",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "view_access_key_list",
+        "account_id": "linear_protocol.near",
+        "block_id": 224273477,
+        "limit": 100
+      },
+      "result": {
+        "block_hash": "5iCx6nr7rb9YDWQ9LVJPQXWZD1ALAHKdYQF5SpEWdsi2",
+        "block_height": 224273477,
+        "keys": [
+          {
+            "access_key": {
+              "nonce": 119178128000002,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:APvEtXGBMSegbVB3EJAwpnr9KzvXq7HZApZb6kUJ1X5o"
+          },
+          {
+            "access_key": {
+              "nonce": 145885933000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "nearrewards.near"
+                }
+              }
+            },
+            "public_key": "ed25519:AVWMZQfvAeXmYoEhbBQXi3hDYzqyavqUGTYUcXfqBVTP"
+          },
+          {
+            "access_key": {
+              "nonce": 119183629000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "linear_protocol.near"
+                }
+              }
+            },
+            "public_key": "ed25519:BzfeEPDp4pJiprKjUYG82AHHqCgoYMZnPn8GTGLz9ctR"
+          },
+          {
+            "access_key": {
+              "nonce": 119183489000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "linear_protocol.near"
+                }
+              }
+            },
+            "public_key": "ed25519:D5j4zw9mbQ2unz3FqEb6aJ8x57oozZR7z8pAj7Upt3CM"
+          },
+          {
+            "access_key": {
+              "nonce": 119178118000137,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:H5KSv7QciMim7P5cCfALB8zGyRqdFkBJmCRRWe3TCoAc"
+          }
+        ]
+      }
+    },
+    {
+      "label": "probe.long.account",
+      "network": "mainnet",
+      "archival": true,
+      "method": "query",
+      "params": {
+        "request_type": "view_account",
+        "account_id": "linear_protocol.near",
+        "block_id": 219870329
+      },
+      "result": {
+        "amount": "19016687547246792800000011",
+        "block_hash": "GqpbnFAHBsonRQjLJLXwPFJcjTT2SLq8yKLzsmjWDMyn",
+        "block_height": 219870329,
+        "code_hash": "12p7js1vHix1YrMhL7XKunpcxGNuFij2pmfuRSz7kocn",
+        "locked": "0",
+        "storage_paid_at": 0,
+        "storage_usage": 1892973
+      }
+    },
+    {
+      "label": "probe.long.block",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 219870329
+      },
+      "result": {
+        "header": {
+          "height": 219870329,
+          "hash": "GqpbnFAHBsonRQjLJLXwPFJcjTT2SLq8yKLzsmjWDMyn",
+          "prev_hash": "Prn1WDU42P8PjZjmd6nRAsD7U9K7ACLnfm9cG81cUkz",
+          "timestamp_nanosec": "1791928882289304673"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "probe.long.search#0",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 219952977
+      },
+      "result": {
+        "header": {
+          "height": 219952977,
+          "hash": "5dyxBbTtYe2LuS4YZsSV8b8JP1Gttr84ZhYqeA3sMei5",
+          "prev_hash": "9PogLnubqC3TAJZsTx5piNd31K7Fv4xif8UhXaM72HM9",
+          "timestamp_nanosec": "1791993827483761161"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "probe.long.search#1",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 219842287
+      },
+      "result": {
+        "header": {
+          "height": 219842287,
+          "hash": "9m9ZzypbvP57XbExh1VydMW4fEnVAJJzU7XiUJ32RpBQ",
+          "prev_hash": "5m8KaBHii6eT8fLR2i3VRpgHCU8ha3ztCku7vnBW77qa",
+          "timestamp_nanosec": "1791909832688123444"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "probe.long.search#2",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 219874931
+      },
+      "result": {
+        "header": {
+          "height": 219874931,
+          "hash": "Gx1ZoXYpMgtrueu2F1ViBZ9MaBZUq5V7KqbtpjKSpHsn",
+          "prev_hash": "7QwnB6BV1SP65Qcs628pQRJeHUFMtjGAWc5zxTXqxeK",
+          "timestamp_nanosec": "1791932605121191252"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "probe.long.search#3",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 219868929
+      },
+      "result": {
+        "header": {
+          "height": 219868929,
+          "hash": "B56286VrnsGak6C3WayQUkuigW6b5uSwiqvezGtMsL6s",
+          "prev_hash": "8GTjhVZHeQuaYogsF9qJ4kD23GsyipfYwnKy1yhH2mBB",
+          "timestamp_nanosec": "1791927760818992031"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "probe.long.search#4",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 219871155
+      },
+      "result": {
+        "header": {
+          "height": 219871155,
+          "hash": "Qkdpe54eGvsAC845VFYu1sR8SZryXvMdovfB6Awdy55",
+          "prev_hash": "9uNftiRrK9ue2U3veEanf15Kyq7PCqkQmvQW3d3fohXJ",
+          "timestamp_nanosec": "1791929558897462840"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "probe.recent.account",
+      "network": "mainnet",
+      "archival": true,
+      "method": "query",
+      "params": {
+        "request_type": "view_account",
+        "account_id": "linear_protocol.near",
+        "block_id": 223826257
+      },
+      "result": {
+        "amount": "19016687547246792800000011",
+        "block_hash": "GURVxLhFZwCPwkjFJnUQeUkEb3ffA4pNRfNgFfSkEzbm",
+        "block_height": 223826257,
+        "code_hash": "12p7js1vHix1YrMhL7XKunpcxGNuFij2pmfuRSz7kocn",
+        "locked": "0",
+        "storage_paid_at": 0,
+        "storage_usage": 1892973
+      }
+    },
+    {
+      "label": "probe.recent.block",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 223826257
+      },
+      "result": {
+        "header": {
+          "height": 223826257,
+          "hash": "GURVxLhFZwCPwkjFJnUQeUkEb3ffA4pNRfNgFfSkEzbm",
+          "prev_hash": "EGSnxvjnyfjCbs8aSdcUkbdhoy3se9tNJjj9nbr8YxCj",
+          "timestamp_nanosec": "1794261732002863530"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "probe.recent.keys#0",
+      "network": "mainnet",
+      "archival": true,
+      "method": "query",
+      "params": {
+        "request_type": "view_access_key_list",
+        "account_id": "linear_protocol.near",
+        "block_id": 223826257,
+        "limit": 100
+      },
+      "result": {
+        "block_hash": "GURVxLhFZwCPwkjFJnUQeUkEb3ffA4pNRfNgFfSkEzbm",
+        "block_height": 223826257,
+        "keys": [
+          {
+            "access_key": {
+              "nonce": 119178128000002,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:APvEtXGBMSegbVB3EJAwpnr9KzvXq7HZApZb6kUJ1X5o"
+          },
+          {
+            "access_key": {
+              "nonce": 145885933000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "nearrewards.near"
+                }
+              }
+            },
+            "public_key": "ed25519:AVWMZQfvAeXmYoEhbBQXi3hDYzqyavqUGTYUcXfqBVTP"
+          },
+          {
+            "access_key": {
+              "nonce": 119183629000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "linear_protocol.near"
+                }
+              }
+            },
+            "public_key": "ed25519:BzfeEPDp4pJiprKjUYG82AHHqCgoYMZnPn8GTGLz9ctR"
+          },
+          {
+            "access_key": {
+              "nonce": 119183489000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "linear_protocol.near"
+                }
+              }
+            },
+            "public_key": "ed25519:D5j4zw9mbQ2unz3FqEb6aJ8x57oozZR7z8pAj7Upt3CM"
+          },
+          {
+            "access_key": {
+              "nonce": 119178118000137,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:H5KSv7QciMim7P5cCfALB8zGyRqdFkBJmCRRWe3TCoAc"
+          }
+        ]
+      }
+    },
+    {
+      "label": "probe.recent.search#0",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 223840977
+      },
+      "result": {
+        "header": {
+          "height": 223840977,
+          "hash": "BVC1W6Bm2Fy8BxAubH1FgWYHX9CTi2zcwqVLTb959GiB",
+          "prev_hash": "DStbqbXZa2hTgRqs7tZaXsJkCaPk6SuERKXzPLvhaNbT",
+          "timestamp_nanosec": "1794270413803671522"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "registry.get_reports",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "registry.a-identity.near",
+        "method_name": "get_reports",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibGluZWFyX3Byb3RvY29sLm5lYXIifQ==",
+        "block_id": 224273477
+      },
+      "result": {
+        "block_hash": "5iCx6nr7rb9YDWQ9LVJPQXWZD1ALAHKdYQF5SpEWdsi2",
+        "block_height": 224273477,
+        "logs": [],
+        "result": [91,93]
+      }
+    },
+    {
+      "label": "registry.get_verdict",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "registry.a-identity.near",
+        "method_name": "get_verdict",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibGluZWFyX3Byb3RvY29sLm5lYXIifQ==",
+        "block_id": 224273477
+      },
+      "result": {
+        "block_hash": "5iCx6nr7rb9YDWQ9LVJPQXWZD1ALAHKdYQF5SpEWdsi2",
+        "block_height": 224273477,
+        "logs": [],
+        "result": [110,117,108,108]
+      }
+    },
+    {
+      "label": "registry.list_verdicts",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "registry.a-identity.near",
+        "method_name": "list_verdicts",
+        "args_base64": "eyJmcm9tX2luZGV4IjoiMCIsImxpbWl0IjoiMTAwIn0=",
+        "block_id": 224273477
+      },
+      "result": {
+        "block_hash": "5iCx6nr7rb9YDWQ9LVJPQXWZD1ALAHKdYQF5SpEWdsi2",
+        "block_height": 224273477,
+        "logs": [],
+        "result": [91,123,34,97,99,99,111,117,110,116,95,105,100,34,58,34,108,105,110,101,97,114,45,112,114,111,116,111,99,111,49,46,110,101,97,114,34,44,34,118,101,114,100,105,99,116,34,58,34,68,69,78,89,34,44,34,114,101,97,115,111,110,115,34,58,91,34,97,99,99,111,117,110,116,95,110,111,116,95,102,111,117,110,100,34,44,34,108,111,111,107,97,108,105,107,101,95,110,101,119,95,97,99,99,111,117,110,116,34,93,44,34,101,118,105,100,101,110,99,101,34,58,34,110,101,97,114,45,115,110,97,112,115,104,111,116,32,115,104,97,50,53,54,58,98,50,52,54,102,101,54,102,102,57,99,56,102,101,55,102,102,101,52,52,102,102,54,97,56,99,101,49,48,100,56,56,49,100,53,52,56,100,52,53,57,55,48,49,53,49,55,50,54,51,57,101,101,54,55,102,56,101,102,50,99,57,51,53,32,98,108,111,99,107,58,50,50,52,50,55,51,52,54,55,32,101,110,103,105,110,101,58,49,46,49,46,48,34,44,34,115,99,111,114,101,34,58,48,44,34,99,111,100,101,95,104,97,115,104,34,58,110,117,108,108,44,34,117,112,100,97,116,101,100,95,97,116,95,110,115,34,58,34,49,55,57,52,53,50,49,51,55,49,54,49,53,52,51,57,54,55,54,34,44,34,117,112,100,97,116,101,100,95,98,121,34,58,34,111,114,97,99,108,101,46,97,45,105,100,101,110,116,105,116,121,46,110,101,97,114,34,44,34,101,120,112,105,114,101,115,95,97,116,95,110,115,34,58,34,49,55,57,55,49,49,51,51,55,49,54,49,53,52,51,57,54,55,54,34,125,93]
+      }
+    },
+    {
+      "label": "registry.report_count",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "registry.a-identity.near",
+        "method_name": "report_count",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibGluZWFyX3Byb3RvY29sLm5lYXIifQ==",
+        "block_id": 224273477
+      },
+      "result": {
+        "block_hash": "5iCx6nr7rb9YDWQ9LVJPQXWZD1ALAHKdYQF5SpEWdsi2",
+        "block_height": 224273477,
+        "logs": [],
+        "result": [48]
+      }
+    },
+    {
+      "label": "third_party.mimicwatch",
+      "network": "testnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "registry.mimicwatch-e7iig5g5.testnet",
+        "method_name": "is_flagged",
+        "args_base64": "eyJpZCI6ImxpbmVhcl9wcm90b2NvbC5uZWFyIn0=",
+        "block_id": 277422723
+      },
+      "result": {
+        "block_hash": "AetogHmEjix6smZbT3zFiLfMMDdawAQyWrf2wz96YsPg",
+        "block_height": 277422723,
+        "logs": [],
+        "result": [123,34,113,117,101,114,121,34,58,34,108,105,110,101,97,114,95,112,114,111,116,111,99,111,108,46,110,101,97,114,34,44,34,102,108,97,103,103,101,100,34,58,116,114,117,101,44,34,118,105,97,34,58,34,101,120,97,99,116,34,44,34,101,110,116,114,121,34,58,123,34,115,117,98,106,101,99,116,34,58,34,108,105,110,101,97,114,95,112,114,111,116,111,99,111,108,46,110,101,97,114,34,44,34,107,105,110,100,34,58,34,97,99,99,111,117,110,116,34,44,34,99,97,116,101,103,111,114,121,34,58,34,102,97,107,101,45,116,111,107,101,110,34,44,34,115,101,118,101,114,105,116,121,34,58,34,99,114,105,116,105,99,97,108,34,44,34,115,116,97,116,117,115,34,58,34,97,99,116,105,118,101,34,44,34,98,114,97,110,100,34,58,34,108,105,110,101,97,114,34,44,34,101,118,105,100,101,110,99,101,95,117,114,108,34,58,34,104,116,116,112,115,58,47,47,103,105,116,104,117,98,46,99,111,109,47,107,97,99,112,101,114,103,117,109,105,101,110,105,117,107,47,109,105,109,105,99,119,97,116,99,104,45,110,101,97,114,47,98,108,111,98,47,109,97,105,110,47,101,118,105,100,101,110,99,101,47,97,99,99,111,117,110,116,47,108,105,110,101,97,114,95,112,114,111,116,111,99,111,108,46,110,101,97,114,46,106,115,111,110,34,44,34,101,118,105,100,101,110,99,101,95,104,97,115,104,34,58,34,100,99,54,56,101,53,54,51,49,99,102,52,53,48,54,102,100,54,98,56,99,100,102,57,55,98,52,50,101,101,50,100,56,98,57,48,99,56,98,53,102,99,98,97,49,57,55,52,57,99,97,50,102,99,98,100,98,57,54,52,50,52,97,101,34,44,34,110,111,116,101,34,58,34,102,97,107,101,45,116,111,107,101,110,58,32,105,109,105,116,97,116,101,115,32,76,105,78,69,65,82,32,80,114,111,116,111,99,111,108,34,44,34,114,101,112,111,114,116,101,114,34,58,34,114,101,112,111,114,116,101,114,46,109,105,109,105,99,119,97,116,99,104,45,101,55,105,105,103,53,103,53,46,116,101,115,116,110,101,116,34,44,34,114,101,112,111,114,116,101,100,95,97,116,95,109,115,34,58,49,55,57,51,53,53,52,48,53,52,57,49,55,44,34,117,112,100,97,116,101,100,95,97,116,95,109,115,34,58,49,55,57,51,53,53,52,48,53,52,57,49,55,44,34,100,105,115,112,117,116,101,34,58,110,117,108,108,44,34,100,105,115,112,117,116,101,115,95,114,101,106,101,99,116,101,100,34,58,48,125,44,34,99,108,101,97,114,101,100,34,58,110,117,108,108,125]
+      }
+    },
+    {
+      "label": "usdc.is_blocklisted",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+        "method_name": "is_blocklisted",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibGluZWFyX3Byb3RvY29sLm5lYXIifQ==",
+        "block_id": 224273477
+      },
+      "result": {
+        "block_hash": "5iCx6nr7rb9YDWQ9LVJPQXWZD1ALAHKdYQF5SpEWdsi2",
+        "block_height": 224273477,
+        "logs": [],
+        "result": [102,97,108,115,101]
+      }
+    },
+    {
+      "label": "usdc.storage_balance_of",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+        "method_name": "storage_balance_of",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibGluZWFyX3Byb3RvY29sLm5lYXIifQ==",
+        "block_id": 224273477
+      },
+      "result": {
+        "block_hash": "5iCx6nr7rb9YDWQ9LVJPQXWZD1ALAHKdYQF5SpEWdsi2",
+        "block_height": 224273477,
+        "logs": [],
+        "result": [110,117,108,108]
+      }
+    },
+    {
+      "label": "vault.get_config",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "vault.a-identity.near",
+        "method_name": "get_config",
+        "args_base64": "e30=",
+        "block_id": 224273477
+      },
+      "result": {
+        "block_hash": "5iCx6nr7rb9YDWQ9LVJPQXWZD1ALAHKdYQF5SpEWdsi2",
+        "block_height": 224273477,
+        "logs": [],
+        "result": [123,34,111,119,110,101,114,95,105,100,34,58,34,97,45,105,100,101,110,116,105,116,121,46,110,101,97,114,34,44,34,116,111,107,101,110,95,105,100,34,58,34,49,55,50,48,56,54,50,56,102,56,52,102,53,100,54,97,100,51,51,102,48,100,97,51,98,98,98,101,98,50,55,102,102,99,98,51,57,56,101,97,99,53,48,49,97,51,49,98,100,54,97,100,50,48,49,49,101,51,54,49,51,51,97,49,34,44,34,114,101,103,105,115,116,114,121,95,105,100,34,58,34,114,101,103,105,115,116,114,121,46,97,45,105,100,101,110,116,105,116,121,46,110,101,97,114,34,44,34,102,114,111,122,101,110,34,58,102,97,108,115,101,44,34,100,97,105,108,121,95,99,97,112,34,58,34,53,48,48,48,48,48,48,34,44,34,97,117,116,111,95,97,112,112,114,111,118,101,95,109,97,120,34,58,34,50,48,48,48,48,48,48,34,44,34,97,108,108,111,119,108,105,115,116,95,101,110,97,98,108,101,100,34,58,102,97,108,115,101,44,34,116,111,107,101,110,95,115,116,111,114,97,103,101,95,100,101,112,111,115,105,116,34,58,34,49,50,53,48,48,48,48,48,48,48,48,48,48,48,48,48,48,48,48,48,48,48,34,44,34,118,101,114,115,105,111,110,34,58,34,97,103,101,110,116,45,115,112,101,110,100,45,112,111,108,105,99,121,32,48,46,50,46,48,34,44,34,104,111,108,100,95,117,110,107,110,111,119,110,34,58,116,114,117,101,125]
+      }
+    },
+    {
+      "label": "vault.guard_refusal_count",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "vault.a-identity.near",
+        "method_name": "guard_refusal_count",
+        "args_base64": "eyJwYXllZSI6ImxpbmVhcl9wcm90b2NvbC5uZWFyIn0=",
+        "block_id": 224273477
+      },
+      "result": {
+        "block_hash": "5iCx6nr7rb9YDWQ9LVJPQXWZD1ALAHKdYQF5SpEWdsi2",
+        "block_height": 224273477,
+        "logs": [],
+        "result": [48]
+      }
+    },
+    {
+      "label": "vault.is_allowed",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "vault.a-identity.near",
+        "method_name": "is_allowed",
+        "args_base64": "eyJwYXllZSI6ImxpbmVhcl9wcm90b2NvbC5uZWFyIn0=",
+        "block_id": 224273477
+      },
+      "result": {
+        "block_hash": "5iCx6nr7rb9YDWQ9LVJPQXWZD1ALAHKdYQF5SpEWdsi2",
+        "block_height": 224273477,
+        "logs": [],
+        "result": [102,97,108,115,101]
+      }
+    },
+    {
+      "label": "vault.list_allowlist",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "vault.a-identity.near",
+        "method_name": "list_allowlist",
+        "args_base64": "e30=",
+        "block_id": 224273477
+      },
+      "result": {
+        "block_hash": "5iCx6nr7rb9YDWQ9LVJPQXWZD1ALAHKdYQF5SpEWdsi2",
+        "block_height": 224273477,
+        "logs": [],
+        "result": [91,93]
+      }
+    },
+    {
+      "label": "vault.paid_count",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "vault.a-identity.near",
+        "method_name": "paid_count",
+        "args_base64": "eyJwYXllZSI6ImxpbmVhcl9wcm90b2NvbC5uZWFyIn0=",
+        "block_id": 224273477
+      },
+      "result": {
+        "block_hash": "5iCx6nr7rb9YDWQ9LVJPQXWZD1ALAHKdYQF5SpEWdsi2",
+        "block_height": 224273477,
+        "logs": [],
+        "result": [48]
+      }
+    },
+    {
+      "label": "vault.refusal_count",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "vault.a-identity.near",
+        "method_name": "refusal_count",
+        "args_base64": "eyJwYXllZSI6ImxpbmVhcl9wcm90b2NvbC5uZWFyIn0=",
+        "block_id": 224273477
+      },
+      "result": {
+        "block_hash": "5iCx6nr7rb9YDWQ9LVJPQXWZD1ALAHKdYQF5SpEWdsi2",
+        "block_height": 224273477,
+        "logs": [],
+        "result": [48]
+      }
+    }
+  ],
+  "http": [
+    {
+      "label": "fastnear.newest",
+      "source": "fastnear",
+      "method": "POST",
+      "url": "https://tx.main.fastnear.com/v0/account",
+      "status": 200,
+      "json": {
+        "account_txs": [
+          {
+            "account_id": "linear_protocol.near",
+            "transaction_hash": "HgYUEU7KAx1N2gidU5t4RvUB1XWFtNFjnioTLPiFSref",
+            "tx_block_height": 224273463,
+            "tx_block_timestamp": "1794521364161858362",
+            "tx_index": 5,
+            "is_signer": false,
+            "is_delegated_signer": false,
+            "is_real_signer": false,
+            "is_any_signer": false,
+            "is_predecessor": false,
+            "is_explicit_refund_to": false,
+            "is_receiver": false,
+            "is_real_receiver": false,
+            "is_function_call": false,
+            "is_action_arg": true,
+            "is_event_log": false,
+            "is_success": true
+          }
+        ],
+        "resume_token": "963247188945666053",
+        "txs_count": 213
+      },
+      "fetched_at": "2026-11-12T22:09:35.168Z",
+      "body": {
+        "account_id": "linear_protocol.near",
+        "limit": 1,
+        "desc": true
+      }
+    },
+    {
+      "label": "fastnear.oldest",
+      "source": "fastnear",
+      "method": "POST",
+      "url": "https://tx.main.fastnear.com/v0/account",
+      "status": 200,
+      "json": {
+        "account_txs": [
+          {
+            "account_id": "linear_protocol.near",
+            "transaction_hash": "2W8ZVLsPiQios6sVaB8uE6DW1qwkrtVeFvp4kLVeNZUK",
+            "tx_block_height": 119178117,
+            "tx_block_timestamp": "1716016261746677834",
+            "tx_index": 30,
+            "is_signer": false,
+            "is_delegated_signer": false,
+            "is_real_signer": false,
+            "is_any_signer": false,
+            "is_predecessor": false,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": false,
+            "is_action_arg": true,
+            "is_event_log": false,
+            "is_success": true
+          },
+          {
+            "account_id": "linear_protocol.near",
+            "transaction_hash": "D9TAELNwyY73acb3cTcevJQh7CkBGEV84iV1dYN7m4Y8",
+            "tx_block_height": 119178129,
+            "tx_block_timestamp": "1716016274606851725",
+            "tx_index": 27,
+            "is_signer": true,
+            "is_delegated_signer": false,
+            "is_real_signer": true,
+            "is_any_signer": true,
+            "is_predecessor": true,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": false,
+            "is_action_arg": false,
+            "is_event_log": false,
+            "is_success": true
+          },
+          {
+            "account_id": "linear_protocol.near",
+            "transaction_hash": "zXiDaw2LXDqFxvx2UT6xBmBoMWbbFJZjZ71e2faAhSw",
+            "tx_block_height": 119178481,
+            "tx_block_timestamp": "1716016675782885857",
+            "tx_index": 52,
+            "is_signer": false,
+            "is_delegated_signer": false,
+            "is_real_signer": false,
+            "is_any_signer": false,
+            "is_predecessor": false,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": false,
+            "is_action_arg": false,
+            "is_event_log": false,
+            "is_success": true
+          },
+          {
+            "account_id": "linear_protocol.near",
+            "transaction_hash": "9WRRRdSgi4AD1ELGnj2CfJ1et6TevUEebf1pBqcgZUqm",
+            "tx_block_height": 119181974,
+            "tx_block_timestamp": "1716020694005553159",
+            "tx_index": 53,
+            "is_signer": true,
+            "is_delegated_signer": false,
+            "is_real_signer": true,
+            "is_any_signer": true,
+            "is_predecessor": true,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": false,
+            "is_action_arg": false,
+            "is_event_log": false,
+            "is_success": true
+          },
+          {
+            "account_id": "linear_protocol.near",
+            "transaction_hash": "B46SpSo8V19T2eeZgr6Un5KmhoguYPt9VVtTiWyo2BXs",
+            "tx_block_height": 119182079,
+            "tx_block_timestamp": "1716020811115541044",
+            "tx_index": 47,
+            "is_signer": true,
+            "is_delegated_signer": false,
+            "is_real_signer": true,
+            "is_any_signer": true,
+            "is_predecessor": true,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": true,
+            "is_action_arg": true,
+            "is_event_log": true,
+            "is_success": true
+          }
+        ],
+        "resume_token": "511883131574288431",
+        "txs_count": 213
+      },
+      "fetched_at": "2026-11-12T22:09:34.751Z",
+      "body": {
+        "account_id": "linear_protocol.near",
+        "limit": 5,
+        "desc": false
+      }
+    },
+    {
+      "label": "nearblocks.deployments",
+      "source": "nearblocks",
+      "method": "GET",
+      "url": "https://api.nearblocks.io/v3/accounts/linear_protocol.near/contract/deployments",
+      "status": 200,
+      "json": {
+        "data": [
+          {
+            "block": {
+              "block_hash": "DScxat3oAVwANX56Xg9fu2tNzvNcE9CBbDRJLxguRdRU",
+              "block_height": "119181974",
+              "block_timestamp": "1716020694005553159"
+            },
+            "predecessor_account_id": "linear_protocol.near",
+            "transaction_hash": "9WRRRdSgi4AD1ELGnj2CfJ1et6TevUEebf1pBqcgZUqm"
+          },
+          {
+            "block": {
+              "block_hash": "6cHBXN4ivLdqFX4fxiv7dW6y2Tg63bNZh3Hg46N3WcLD",
+              "block_height": "119237568",
+              "block_timestamp": "1716084496140036724"
+            },
+            "predecessor_account_id": "linear_protocol.near",
+            "transaction_hash": "5VjugY4n5eGK4C59BNYPc5rPmjYZ8pjJJVHRKKMS1WoX"
+          }
+        ]
+      },
+      "fetched_at": "2026-11-12T22:09:35.322Z"
+    }
+  ],
+  "meta": {
+    "collected_at": "2026-11-12T22:09:46.735Z",
+    "collector": "a-identity-near-sdk/0.2.0",
+    "endpoints": ["api.nearblocks.io","archival-rpc.mainnet.fastnear.com","archival-rpc.mainnet.near.org","rpc.mainnet.fastnear.com","rpc.testnet.fastnear.com","tx.main.fastnear.com"],
+    "notes": ["Some data: Powered by Nearblocks.io APIs (https://nearblocks.io).","Registries on testnet were read at its latest block at or before this block's time (labels block.testnet and block.testnet.next), so the same block always reads them at the same height."]
+  }
+}

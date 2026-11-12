@@ -1,0 +1,95 @@
+{
+  "run_id": "20261112T220918Z-mainnet",
+  "network": "mainnet",
+  "vault": "vault.a-identity.near",
+  "registry": "registry.a-identity.near",
+  "oracle": "oracle.a-identity.near",
+  "txs": [
+    {
+      "step": "mainnet 1: unjudged lookalike",
+      "payee": "linear-protoco1.near",
+      "tx_hash": "AQf6d11pTUjkW7AbWyTuJTdZXyNnRjaWRyQuXMz4UefJ",
+      "outcome": {
+        "status": "held",
+        "payment_id": "1",
+        "reason": "UnknownPayee",
+        "held_id": "1"
+      },
+      "hold_kind": "unknown_payee",
+      "events": [
+        "payment_held"
+      ]
+    },
+    {
+      "step": "mainnet 2: registry-flagged account",
+      "payee": "linear_protocol.near",
+      "tx_hash": "HgYUEU7KAx1N2gidU5t4RvUB1XWFtNFjnioTLPiFSref",
+      "outcome": {
+        "status": "held",
+        "payment_id": "2",
+        "reason": "UnknownPayee",
+        "held_id": "2"
+      },
+      "hold_kind": "unknown_payee",
+      "events": [
+        "payment_held"
+      ]
+    },
+    {
+      "step": "mainnet 3: retry after the oracle",
+      "payee": "linear-protoco1.near",
+      "tx_hash": "G9q2HkSAnsSv1JL9KZgeRAqBa2v3cT6WDBeMpwTz8qFM",
+      "outcome": {
+        "status": "refused",
+        "payment_id": "3",
+        "reason": "RegistryDeny",
+        "held_id": null
+      },
+      "hold_kind": null,
+      "events": [
+        "payment_refused"
+      ]
+    },
+    {
+      "step": "mainnet 4: retry after the oracle",
+      "payee": "linear_protocol.near",
+      "tx_hash": "3PkqJJmgmYJSsdwtw6oTK7exPZ3D1jcXarajXMEU4oLh",
+      "outcome": {
+        "status": "held",
+        "payment_id": "4",
+        "reason": "RegistryWarn",
+        "held_id": "3"
+      },
+      "hold_kind": "registry_warn",
+      "events": [
+        "payment_held"
+      ]
+    }
+  ],
+  "lines": [
+    "2026-11-12T22:09:18Z vault vault.a-identity.near: agent-spend-policy 0.2.0, registry registry.a-identity.near, hold_unknown true, USDC balance 0",
+    "2026-11-12T22:09:23Z mainnet 1: unjudged lookalike: pay(linear-protoco1.near, 0.50 USDC) tx AQf6d11pTUjkW7AbWyTuJTdZXyNnRjaWRyQuXMz4UefJ: vault answered held UnknownPayee (kind unknown_payee); events payment_held",
+    "2026-11-12T22:09:23Z   explorer: https://nearblocks.io/txns/AQf6d11pTUjkW7AbWyTuJTdZXyNnRjaWRyQuXMz4UefJ",
+    "2026-11-12T22:09:27Z mainnet 2: registry-flagged account: pay(linear_protocol.near, 0.50 USDC) tx HgYUEU7KAx1N2gidU5t4RvUB1XWFtNFjnioTLPiFSref: vault answered held UnknownPayee (kind unknown_payee); events payment_held",
+    "2026-11-12T22:09:27Z   explorer: https://nearblocks.io/txns/HgYUEU7KAx1N2gidU5t4RvUB1XWFtNFjnioTLPiFSref",
+    "2026-11-12T22:09:27Z oracle: judging the held payees on mainnet (known payee linear-protocol.near)",
+    "2026-11-12T22:09:50Z   oracle: engine: sdk/src/collect/snapshot.ts#collectSnapshot + sdk/src/engine/index.ts#verdictFromSnapshot (a-identity-near-engine/1.1.0)",
+    "2026-11-12T22:09:50Z   oracle: signing as oracle.a-identity.near ed25519:2eqV2YcQs836yXx8Y9NZ3u9oMh53ymtKFmFZtdBK3Mig (~/.near-credentials/mainnet/oracle.a-identity.near/ed25519_2eqV2YcQs836yXx8Y9NZ3u9oMh53ymtKFmFZtdBK3Mig.json): function-call key, receiver registry.a-identity.near, methods [set_verdict, set_verdicts, clear_verdict, clear_reports]",
+    "2026-11-12T22:09:50Z   oracle: vault vault.a-identity.near, registry registry.a-identity.near, oracle oracle.a-identity.near, engine a-identity-near-engine/1.1.0",
+    "2026-11-12T22:09:50Z   oracle: 2 held payment(s) on vault.a-identity.near, 2 payee(s) with a live hold; known payees (configured [linear-protocol.near], plus the vault allowlist []): linear-protocol.near",
+    "2026-11-12T22:09:50Z   oracle: linear-protoco1.near engine DENY score 0 [account_not_found, lookalike_new_account]; snapshot sha256 b246fe6ff9c8fe7ffe44ff6a8ce10d881d548d4597015172639ee67f8ef2c935 at block 224273467",
+    "2026-11-12T22:09:50Z   oracle: linear-protoco1.near wrote DENY [account_not_found, lookalike_new_account], ttl 2592000 s, expires about 2026-12-12T22:09:30Z; tx H3aeCuM9bsr5Zm4hf6krcaBTPNUUyiXzpjtpdv5kVPRv",
+    "2026-11-12T22:09:50Z   oracle:   https://nearblocks.io/txns/H3aeCuM9bsr5Zm4hf6krcaBTPNUUyiXzpjtpdv5kVPRv",
+    "2026-11-12T22:09:50Z   oracle:   curl -s -X POST https://archival-rpc.mainnet.fastnear.com -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"id\":\"aid\",\"method\":\"EXPERIMENTAL_tx_status\",\"params\":{\"tx_hash\":\"H3aeCuM9bsr5Zm4hf6krcaBTPNUUyiXzpjtpdv5kVPRv\",\"sender_account_id\":\"oracle.a-identity.near\",\"wait_until\":\"FINAL\"}}'",
+    "2026-11-12T22:09:50Z   oracle: linear_protocol.near engine WARN (hard) score 440 [third_party_flag, lookalike_known]; snapshot sha256 0bc584b8bd7a111e43a58cdeb2417fe8bda0bf91bb76b7d1c9a6fe4ffa01da18 at block 224273477",
+    "2026-11-12T22:09:50Z   oracle: linear_protocol.near wrote WARN [third_party_flag, lookalike_known], ttl 2592000 s, expires about 2026-12-12T22:09:46Z; tx BaG8AY6E516MND2iU1yDLgKNZrjGiHUE1rx4EHheyN3k",
+    "2026-11-12T22:09:50Z   oracle:   https://nearblocks.io/txns/BaG8AY6E516MND2iU1yDLgKNZrjGiHUE1rx4EHheyN3k",
+    "2026-11-12T22:09:50Z   oracle:   curl -s -X POST https://archival-rpc.mainnet.fastnear.com -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"id\":\"aid\",\"method\":\"EXPERIMENTAL_tx_status\",\"params\":{\"tx_hash\":\"BaG8AY6E516MND2iU1yDLgKNZrjGiHUE1rx4EHheyN3k\",\"sender_account_id\":\"oracle.a-identity.near\",\"wait_until\":\"FINAL\"}}'",
+    "2026-11-12T22:09:50Z   oracle: done, 2 payee(s): linear-protoco1.near written; linear_protocol.near written",
+    "2026-11-12T22:09:55Z mainnet 3: retry after the oracle: pay(linear-protoco1.near, 0.50 USDC) tx G9q2HkSAnsSv1JL9KZgeRAqBa2v3cT6WDBeMpwTz8qFM: vault answered refused RegistryDeny; events payment_refused",
+    "2026-11-12T22:09:55Z   explorer: https://nearblocks.io/txns/G9q2HkSAnsSv1JL9KZgeRAqBa2v3cT6WDBeMpwTz8qFM",
+    "2026-11-12T22:10:00Z mainnet 4: retry after the oracle: pay(linear_protocol.near, 0.50 USDC) tx 3PkqJJmgmYJSsdwtw6oTK7exPZ3D1jcXarajXMEU4oLh: vault answered held RegistryWarn (kind registry_warn); events payment_held",
+    "2026-11-12T22:10:00Z   explorer: https://nearblocks.io/txns/3PkqJJmgmYJSsdwtw6oTK7exPZ3D1jcXarajXMEU4oLh",
+    "2026-11-12T22:10:00Z vault USDC balance after: 0 (nothing could move)"
+  ]
+}
