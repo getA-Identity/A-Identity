@@ -27,7 +27,10 @@
 //!   the things it exists to go around, and it reserves nothing.
 //! * `record_refusal` runs the same first gates as `request_payment`. It moves nothing, but it
 //!   writes a per-payee counter (`guard_refusal_count`) that the owner and the console read, so
-//!   a frozen vault or an expired key must not be able to write it either.
+//!   a frozen vault or an expired key must not be able to write it either. Its last rung is the
+//!   counter's own bound (`check_guard_capacity`), in the place the held limit has for a
+//!   request: a payee name does not have to be an existing account, so without a bound a key
+//!   could lock the vault's NEAR in counters for names it makes up.
 
 use near_sdk::AccountId;
 
@@ -118,8 +121,9 @@ pub fn check_agent_request(
     check_held_capacity(s.held_count)
 }
 
-/// The agent's `record_refusal` ladder: the same first gates as a request, and no capacity rung,
-/// because a recorded refusal is a counter and an event, not a held entry.
+/// The agent's `record_refusal` ladder: the same first gates as a request. Its capacity rung,
+/// `check_guard_capacity`, needs a storage read of the payee's counter, so the caller runs it
+/// after this one answers `Ok`, and a malformed or frozen record never pays for that read.
 pub fn check_agent_record(
     s: &Snapshot,
     payee: &AccountId,
@@ -195,6 +199,16 @@ pub fn check_live_session(s: &Snapshot) -> Result<(), Error> {
 pub fn check_held_capacity(held_count: u32) -> Result<(), Error> {
     if held_count >= MAX_PENDING_HELD {
         return Err(Error::HeldLimitReached);
+    }
+    Ok(())
+}
+
+/// The last rung of `record_refusal`. A payee that already has a guard counter only increments
+/// it, which adds no storage, so it always passes. A payee without one gets a new counter only
+/// while fewer than `max` payees have one.
+pub fn check_guard_capacity(has_counter: bool, guard_payees: u32, max: u32) -> Result<(), Error> {
+    if !has_counter && guard_payees >= max {
+        return Err(Error::GuardRefusalLimitReached);
     }
     Ok(())
 }

@@ -7,8 +7,10 @@
 
 mod common;
 
+use std::sync::Arc;
+
 use common::*;
-use near_api::NearToken;
+use near_api::{AccountId, NearGas, NearToken, Signer};
 use near_sdk::serde_json::json;
 
 // ---------------------------------------------------------------------------------------
@@ -152,6 +154,172 @@ async fn a_failed_transfer_rolls_the_reservation_back_and_says_so() {
         .outcome()
         .assert_sent();
     assert_eq!(w.spent_today().await, 10 * UNIT);
+}
+
+// ---------------------------------------------------------------------------------------
+// The storage an agent key can make the vault stake
+// ---------------------------------------------------------------------------------------
+
+/// The vault's `MAX_GUARD_PAYEES`.
+const MAX_GUARD_PAYEES: u64 = 100;
+
+/// The vault's `MAX_FORGET_BATCH`: the most payees one forget call may name.
+const MAX_FORGET_BATCH: usize = 50;
+
+/// A distinct 64-byte payee name for each `n`, the longest NEAR allows. None is an account.
+fn invented(n: u64) -> AccountId {
+    let head = format!("g{n:03}-");
+    let tail = ".sandbox";
+    format!("{head}{}{tail}", "x".repeat(64 - head.len() - tail.len()))
+        .parse()
+        .expect("a valid 64-byte account id")
+}
+
+/// `record_refusal` for each payee in turn, signed by one agent key.
+async fn record_each(w: &World, signer: Arc<Signer>, payees: &[AccountId]) -> Vec<PayOutcome> {
+    let mut outcomes = Vec::new();
+    for payee in payees {
+        let tx = w
+            .agent_call("record_refusal", refusal_args(payee, 1, "guard_deny"))
+            .gas(NearGas::from_tgas(10))
+            .signed_with(signer.clone())
+            .send()
+            .await
+            .assert_ok();
+        outcomes.push(tx.outcome());
+    }
+    outcomes
+}
+
+/// Findings AUTH-2, STOR-1 and NEAR-MP-02, on chain. `record_refusal` starts a counter for each
+/// payee it names, a name does not have to be an account, and nothing but the owner removes a
+/// counter, so an unbounded map was NEAR any agent key could lock for good. The vault stops at
+/// `MAX_GUARD_PAYEES` payees: past that a new name is refused `GuardRefusalLimitReached` and the
+/// vault's storage does not grow by a byte. The records go out over five agent keys at once,
+/// each key with its own nonce, so the 105 of them take seconds rather than minutes. Then the
+/// owner forgets them all, which takes two calls: one call names at most `MAX_FORGET_BATCH`
+/// payees, because 100 removals would log more than a receipt may.
+#[tokio::test]
+async fn guard_counters_stop_at_their_bound_and_the_vault_stops_growing() {
+    let w = World::new(Setup::default()).await;
+    let mut signers = vec![w.agent_signer.clone()];
+    for n in 1..5 {
+        let (secret, public) = new_key();
+        w.add_agent_key(&public, &format!("lane-{n}"), 0, AGENT_ALLOWANCE)
+            .await
+            .assert_ok();
+        signers.push(signer_for(secret));
+    }
+    let names: Vec<AccountId> = (0..MAX_GUARD_PAYEES + 5).map(invented).collect();
+    let lanes: Vec<&[AccountId]> = names[..100].chunks(20).collect();
+    let before = w.storage_usage(&w.vault).await;
+
+    let (a, b, c, d, e) = tokio::join!(
+        record_each(&w, signers[0].clone(), lanes[0]),
+        record_each(&w, signers[1].clone(), lanes[1]),
+        record_each(&w, signers[2].clone(), lanes[2]),
+        record_each(&w, signers[3].clone(), lanes[3]),
+        record_each(&w, signers[4].clone(), lanes[4]),
+    );
+    for outcome in [a, b, c, d, e].concat() {
+        outcome.assert_refused("guard_deny");
+    }
+    assert_eq!(w.guard_refusal_payees().await, MAX_GUARD_PAYEES);
+    let full = w.storage_usage(&w.vault).await;
+    assert_eq!(
+        full - before,
+        MAX_GUARD_PAYEES * 113,
+        "113 bytes a counter for a 64-byte name: the whole bound is 11300 bytes"
+    );
+
+    // Five more names, one per key: refused by the vault's policy, and not a byte stored.
+    let over = &names[100..];
+    let (a, b, c, d, e) = tokio::join!(
+        record_each(&w, signers[0].clone(), &over[0..1]),
+        record_each(&w, signers[1].clone(), &over[1..2]),
+        record_each(&w, signers[2].clone(), &over[2..3]),
+        record_each(&w, signers[3].clone(), &over[3..4]),
+        record_each(&w, signers[4].clone(), &over[4..5]),
+    );
+    for outcome in [a, b, c, d, e].concat() {
+        outcome.assert_refused("GuardRefusalLimitReached");
+    }
+    assert_eq!(w.storage_usage(&w.vault).await, full);
+    for payee in over {
+        assert_eq!(w.guard_refusal_count(payee).await, 0);
+    }
+    let tx = w
+        .agent_call("record_refusal", refusal_args(&over[0], 1, "guard_deny"))
+        .gas(NearGas::from_tgas(10))
+        .send()
+        .await
+        .assert_ok();
+    tx.outcome().assert_refused("GuardRefusalLimitReached");
+    assert_eq!(
+        str_field(&tx.vault_event("payment_refused"), "source"),
+        "policy"
+    );
+
+    // A payee that has a counter still counts, at no storage.
+    record_each(&w, signers[0].clone(), &names[0..1]).await[0].assert_refused("guard_deny");
+    assert_eq!(w.guard_refusal_count(&names[0]).await, 2);
+    assert_eq!(w.storage_usage(&w.vault).await, full);
+
+    // The owner reads the names from the events and forgets them: the stake comes back.
+    w.call(
+        &w.stranger,
+        &w.vault,
+        "forget_guard_refusals",
+        json!({ "payees": [names[0]] }),
+    )
+    .one_yocto()
+    .send()
+    .await
+    .assert_panicked_with("NotOwner");
+
+    // Not all 100 in one call. Each removal logs a line of about 190 bytes for these names,
+    // and a receipt may log 16384 bytes, so the call is refused by name, and it is atomic:
+    // nothing is removed and not a byte of stake moves.
+    let all = &names[..100];
+    w.owner_call("forget_guard_refusals", json!({ "payees": all }))
+        .send()
+        .await
+        .assert_panicked_with("BatchTooLarge");
+    assert_eq!(w.guard_refusal_payees().await, MAX_GUARD_PAYEES);
+    assert_eq!(w.storage_usage(&w.vault).await, full);
+    assert_eq!(w.guard_refusal_count(&names[0]).await, 2);
+
+    // A full batch, then the rest: two calls clear the bound, and the stake of every counter
+    // comes back, down to the byte the vault started from.
+    for (batch, left) in [
+        (&all[..MAX_FORGET_BATCH], 50),
+        (&all[MAX_FORGET_BATCH..], 0),
+    ] {
+        let tx = w
+            .owner_call("forget_guard_refusals", json!({ "payees": batch }))
+            .send()
+            .await
+            .assert_ok();
+        let forgotten = tx
+            .vault_events()
+            .into_iter()
+            .filter(|event| event.event == "guard_refusals_forgotten")
+            .count();
+        assert_eq!(forgotten, MAX_FORGET_BATCH);
+        let logged: usize = tx.logs().iter().map(String::len).sum();
+        record_gas_report(&json!({
+            "test": "guard_counters_stop_at_their_bound_and_the_vault_stops_growing",
+            "call": "forget_guard_refusals",
+            "payees": MAX_FORGET_BATCH,
+            "payee_bytes": 64,
+            "log_bytes": logged,
+            "gas_burnt_tgas": tx.gas_burnt().as_gas() as f64 / 1e12,
+        }));
+        assert_eq!(w.guard_refusal_payees().await, left);
+        assert_eq!(w.storage_usage(&w.vault).await, before + left * 113);
+    }
+    assert_eq!(w.guard_refusal_count(&names[0]).await, 0);
+    record_each(&w, signers[0].clone(), &over[0..1]).await[0].assert_refused("guard_deny");
 }
 
 // ---------------------------------------------------------------------------------------

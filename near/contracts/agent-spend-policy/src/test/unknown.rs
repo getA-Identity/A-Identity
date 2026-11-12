@@ -10,7 +10,9 @@
 use near_sdk::json_types::{U64, U128};
 
 use super::*;
-use crate::{AgentSpendPolicy, MAX_PENDING_HELD, PayMode, PayStatus, REASON_UNKNOWN_PAYEE};
+use crate::{
+    AgentSpendPolicy, HoldKind, MAX_PENDING_HELD, PayMode, PayStatus, REASON_UNKNOWN_PAYEE,
+};
 
 const ALLOW: &str = r#"{"verdict":"ALLOW","reasons":[]}"#;
 const WARN: &str = r#"{"verdict":"WARN","reasons":["new_account"]}"#;
@@ -88,8 +90,11 @@ fn without_a_registry_a_pay_to_an_unknown_payee_is_held_and_moves_nothing() {
     assert_eq!(e["payment_id"], out.payment_id.0.to_string());
     assert_eq!(e["held_id"], held_id.0.to_string());
 
+    assert_eq!(e["kind"], "unknown_payee");
+
     let held = v.get_held(held_id).unwrap();
     assert_eq!(held.reason, "UnknownPayee");
+    assert_eq!(held.kind, HoldKind::UnknownPayee);
     assert_eq!(held.payee, newcomer());
     assert_eq!(held.agent_pk, agent());
     assert_eq!(held.memo.as_deref(), Some("first order"));
@@ -240,6 +245,23 @@ fn a_settlement_that_fails_to_transfer_leaves_the_payee_unknown() {
     assert_unknown_hold(&value(v.pay(newcomer(), U128(60), None)));
 }
 
+/// The transfer path writes a payee's `paid_count` entry at 0 before the token is called, so
+/// `on_transfer` never adds storage after the money moved. An entry at 0 means "never paid", not
+/// "known": while a first payment is still in flight, silence about the payee holds the next
+/// one for the owner exactly as before.
+#[test]
+fn a_payee_whose_first_payment_is_in_flight_is_not_yet_known() {
+    let mut v = registry_vault();
+    // The registry vouches for the payee, so the first payment goes on to the token.
+    promise(pay_answered(&mut v, newcomer(), ALLOW));
+    assert_eq!(call_names(), TRANSFER_CHAIN);
+    assert_eq!(v.paid_count(newcomer()), 0, "in flight, not paid");
+
+    // Before it lands, the oracle clears the verdict and the agent pays the payee again.
+    assert_unknown_hold(&value(pay_answered(&mut v, newcomer(), "null")));
+    assert!(calls().is_empty(), "nothing goes to the token");
+}
+
 #[test]
 fn with_hold_unknown_off_silence_pays_as_before() {
     let mut v = plain_vault();
@@ -260,13 +282,54 @@ fn with_hold_unknown_off_silence_pays_as_before() {
 
 #[test]
 fn a_request_is_held_with_the_agents_own_reason_known_or_not() {
+    // The reason is the agent's; whether nobody had judged the payee is the vault's, in `kind`.
     let mut v = plain_vault();
-    for payee in [newcomer(), shop()] {
+    for (payee, kind) in [
+        (newcomer(), HoldKind::UnknownPayee),
+        (shop(), HoldKind::AgentRequest),
+    ] {
         as_agent();
         let out =
             value(v.request_payment(payee.clone(), U128(60), None, "AboveAutoApprove".to_owned()));
         assert_status(&out, PayStatus::Held);
         assert_eq!(out.reason.as_deref(), Some("AboveAutoApprove"), "{payee}");
+        assert_eq!(
+            v.get_held(out.held_id.unwrap()).unwrap().kind,
+            kind,
+            "{payee}"
+        );
+    }
+    // `kind` is a fact, so it does not depend on `hold_unknown`.
+    as_owner_yocto();
+    v.set_hold_unknown(false);
+    as_agent();
+    let out = value(v.request_payment(newcomer(), U128(60), None, "why".to_owned()));
+    assert_eq!(
+        v.get_held(out.held_id.unwrap()).unwrap().kind,
+        HoldKind::UnknownPayee
+    );
+}
+
+#[test]
+fn with_a_registry_a_request_records_what_the_registry_said() {
+    for (payee, answer, kind) in [
+        (newcomer(), "null", HoldKind::UnknownPayee),
+        (shop(), "null", HoldKind::AgentRequest),
+        (newcomer(), ALLOW, HoldKind::AgentRequest),
+        (newcomer(), WARN, HoldKind::RegistryWarn),
+    ] {
+        let mut v = registry_vault();
+        as_agent();
+        promise(v.request_payment(payee.clone(), U128(60), None, "why".to_owned()));
+        let ctx = scheduled_ctx("on_verdict");
+        as_callback(vec![ok_json(answer)]);
+        let out = value(v.on_verdict(ctx));
+        assert_status(&out, PayStatus::Held);
+        assert_eq!(
+            v.get_held(out.held_id.unwrap()).unwrap().kind,
+            kind,
+            "{payee} {answer}"
+        );
     }
 }
 

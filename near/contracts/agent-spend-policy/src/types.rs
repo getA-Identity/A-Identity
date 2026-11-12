@@ -83,6 +83,27 @@ pub struct PaymentCtx {
     pub held_id: Option<U64>,
 }
 
+/// What the VAULT saw when it held a payment, written by the vault and never by the agent.
+///
+/// A held payment's `reason` is `RegistryWarn` or `UnknownPayee` for a held `pay`, but for a
+/// `request_payment` it is the agent's own text, and an agent (a prompt-injected one included)
+/// can write `UnknownPayee` about a payee the registry warned on. The owner's one tap must rest
+/// on the vault's facts, so they are recorded here, from the registry's answer and the vault's
+/// own state at the moment of the hold, in every mode.
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum HoldKind {
+    /// The registry answered WARN for the payee.
+    RegistryWarn,
+    /// The registry had no verdict on the payee (or no registry is set), and the payee was not
+    /// known: the owner had not listed it and the vault had never paid it.
+    UnknownPayee,
+    /// The agent asked for a human (`request_payment`) about a payee the registry said ALLOW
+    /// for, or had no verdict on but the vault knew.
+    AgentRequest,
+}
+
 /// An agent key record. The key itself is a real function-call access key on the vault account.
 #[near(serializers = [borsh])]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -114,11 +135,14 @@ pub struct HeldPayment {
     pub memo: Option<String>,
     /// `RegistryWarn` when a `pay` was held because the registry warned, `UnknownPayee` when it
     /// was held because nobody has judged the payee (`hold_unknown`); otherwise the agent's own
-    /// reason from `request_payment`.
+    /// reason from `request_payment`, which can read like either. `kind` is the vault's word.
     pub reason: String,
     pub created_at_s: u64,
     /// `created_at_s + HELD_TTL_S`. Valid through that second inclusive.
     pub expires_at_s: u64,
+    /// What the vault saw when it held the payment. Last, because it was added after the first
+    /// shape was published.
+    pub kind: HoldKind,
 }
 
 /// JSON view of an agent key record.
@@ -154,9 +178,14 @@ pub struct HeldPaymentView {
     pub payee: AccountId,
     pub amount: U128,
     pub memo: Option<String>,
+    /// The vault's code for a held `pay`, or the agent's own words for a request. A client
+    /// decides what to show the owner from `kind`, never from this.
     pub reason: String,
     pub created_at_s: U64,
     pub expires_at_s: U64,
+    /// What the vault saw when it held the payment. Last, because it was added after the first
+    /// shape was published.
+    pub kind: HoldKind,
 }
 
 impl From<&HeldPayment> for HeldPaymentView {
@@ -171,6 +200,7 @@ impl From<&HeldPayment> for HeldPaymentView {
             reason: h.reason.clone(),
             created_at_s: U64(h.created_at_s),
             expires_at_s: U64(h.expires_at_s),
+            kind: h.kind,
         }
     }
 }

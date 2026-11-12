@@ -378,6 +378,28 @@ fn record_ignores_allowlist_ceiling_cap_and_held_limit() {
     );
 }
 
+/// The record ladder's last rung, which the contract runs only after `check_agent_record`
+/// passed: a new counter fits while fewer than `max` payees have one, and an existing counter
+/// always does, because incrementing it adds no storage.
+#[test]
+fn record_guard_capacity_bounds_new_counters_only() {
+    const MAX: u32 = crate::MAX_GUARD_PAYEES;
+    assert_eq!(policy::check_guard_capacity(false, 0, MAX), Ok(()));
+    assert_eq!(policy::check_guard_capacity(false, MAX - 1, MAX), Ok(()));
+    assert_eq!(
+        policy::check_guard_capacity(false, MAX, MAX),
+        Err(Error::GuardRefusalLimitReached)
+    );
+    assert_eq!(
+        policy::check_guard_capacity(false, u32::MAX, MAX),
+        Err(Error::GuardRefusalLimitReached)
+    );
+    for payees in [0, MAX - 1, MAX, u32::MAX] {
+        assert_eq!(policy::check_guard_capacity(true, payees, MAX), Ok(()));
+    }
+    assert_eq!(MAX, 100, "the bound the docs and the SDK quote");
+}
+
 // -- owner_pay ----------------------------------------------------------------------------------
 
 #[test]

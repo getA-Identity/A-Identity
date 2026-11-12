@@ -16,10 +16,18 @@
 //! entry is removed when `owner_pay` starts (so it cannot be approved twice concurrently), which
 //! means a failed settlement leaves the owner nothing to read in storage; the event is the only
 //! place left that says what the agent would have to request again.
+//!
+//! Added after the first shape was published, each at the end so a client that ignores unknown
+//! fields reads the old shape unchanged: `payment_held` carries `kind`, what the VAULT saw when
+//! it held the payment (its `reason` can be the agent's own words), and two owner events,
+//! `guard_refusals_forgotten` and `refusals_forgotten`, record a counter the owner removed and
+//! the count it had.
 
 use near_sdk::json_types::{U64, U128};
 use near_sdk::serde::Serialize;
 use near_sdk::{AccountId, PublicKey, near};
+
+use crate::types::HoldKind;
 
 /// Who refused a payment. Only `registry` refusals (a DENY) count against the payee, in
 /// `refusal_count`. `agent_guard` refusals are counted apart, in `guard_refusal_count`, because
@@ -111,7 +119,13 @@ pub enum VaultEvent<'a> {
         held_id: U64,
         payee: &'a AccountId,
         amount: U128,
+        /// `RegistryWarn` or `UnknownPayee` for a held `pay`; the agent's own words for a
+        /// request. Free text from the agent can read like a vault code, so a client decides
+        /// what to show from `kind`, never from this.
         reason: &'a str,
+        /// What the vault itself saw: the registry warned, nobody had judged the payee, or the
+        /// agent asked about a payee that was neither.
+        kind: HoldKind,
     },
     #[event_version("1.0.0")]
     PaymentFailed {
@@ -137,4 +151,12 @@ pub enum VaultEvent<'a> {
     Withdrawn { amount: U128 },
     #[event_version("1.0.0")]
     WithdrawFailed { amount: U128 },
+    /// The owner removed `payee`'s guard refusal counter (`forget_guard_refusals`), which read
+    /// `count`, and freed its slot under `MAX_GUARD_PAYEES`.
+    #[event_version("1.0.0")]
+    GuardRefusalsForgotten { payee: &'a AccountId, count: u32 },
+    /// The owner removed `payee`'s registry refusal counter (`forget_refusals`), which read
+    /// `count`, and freed its slot under `MAX_REFUSAL_PAYEES`.
+    #[event_version("1.0.0")]
+    RefusalsForgotten { payee: &'a AccountId, count: u32 },
 }

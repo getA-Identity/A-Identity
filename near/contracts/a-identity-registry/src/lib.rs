@@ -49,9 +49,11 @@
 //!
 //! No `#[private]` on `new`. Deploy and init are sent as one batch transaction, either by the
 //! registry account itself or by the parent account that creates it, and `#[private]` would
-//! refuse the second. A deploy sent WITHOUT its init call leaves the first caller of `new`
-//! free to make itself owner, so never deploy this contract without the init in the same
-//! transaction.
+//! refuse the second. `new` admits exactly those two callers instead and refuses anyone else
+//! `InitNotAllowed`, so a deploy that went out WITHOUT its init cannot be claimed by the
+//! first stranger to call `new` (an owner and an oracle of its choosing, on an account that
+//! may have no full-access key left to redeploy it). Still send the init in the same
+//! transaction as the deploy; the check is the backstop, not the plan.
 
 mod error;
 mod event;
@@ -113,10 +115,19 @@ impl Registry {
     /// Sets the owner and the initial oracles. Duplicate oracles collapse into one; more
     /// than `MAX_ORACLES` distinct ones are refused.
     ///
+    /// Only the registry account itself or its parent may call it; see the crate comment.
+    ///
     /// Emits `owner_set` and one `oracle_added` per oracle, so the owner and the oracle set
     /// can be rebuilt from the event log alone, from the first block.
+    ///
+    /// Refusals, in order: `InitNotAllowed`, `OracleLimitReached`.
     #[init]
     pub fn new(owner_id: AccountId, oracles: Vec<AccountId>) -> Self {
+        let registry_id = env::current_account_id();
+        let caller = env::predecessor_account_id();
+        if caller != registry_id && !registry_id.is_sub_account_of(&caller) {
+            Error::InitNotAllowed.panic();
+        }
         let mut set = IterableSet::new(StorageKey::Oracles);
         for oracle in oracles {
             set.insert(oracle);

@@ -144,7 +144,7 @@ fn config_json_shape() {
             "auto_approve_max": "100",
             "allowlist_enabled": false,
             "token_storage_deposit": STORAGE_DEPOSIT.to_string(),
-            "version": "agent-spend-policy 0.1.0",
+            "version": "agent-spend-policy 0.2.0",
             "hold_unknown": true
         })
     );
@@ -166,4 +166,22 @@ fn held_view_json_shape() {
         u128_of(&json["expires_at_s"]),
         u128::from(T0_S + crate::HELD_TTL_S)
     );
+    // Added after the first shape, last, as a snake_case string.
+    assert_eq!(json["kind"], "agent_request");
+    let keys: Vec<&String> = json.as_object().unwrap().keys().collect();
+    assert_eq!(keys.last().map(|k| k.as_str()), Some("kind"));
+    for (kind, name) in [
+        (crate::HoldKind::RegistryWarn, "registry_warn"),
+        (crate::HoldKind::UnknownPayee, "unknown_payee"),
+        (crate::HoldKind::AgentRequest, "agent_request"),
+    ] {
+        assert_eq!(serde_json::to_value(kind).unwrap(), name);
+    }
+}
+
+#[test]
+fn counter_payees_start_at_zero() {
+    let v = plain_vault();
+    assert_eq!(v.guard_refusal_payees(), 0);
+    assert_eq!(v.refusal_payees(), 0);
 }

@@ -2,8 +2,12 @@
 //!
 //! One local near-sandbox per test, so no test can see another test's state, and the three
 //! contracts built ONCE per test binary with `cargo near build`, each from its own
-//! manifest. That is the same command the deploy uses, so the artifact under test is the
-//! artifact that ships, ABI and all.
+//! manifest. That is the same command the deploy uses, ABI and all, but not the same
+//! compiler: here it is the host's rustc (1.95.0, `rust-toolchain.toml`), while the
+//! reproducible build that ships runs in the image named in each contract's Cargo.toml
+//! (rustc 1.99.1). So the vault and the registry can be swapped for given bytes instead
+//! (`SANDBOX_WASM_DIR`, below), and CI's reproducible job runs this whole suite against
+//! exactly the wasm it publishes.
 //!
 //! The world a full `Setup` starts from:
 //!
@@ -41,6 +45,14 @@
 //! Environment:
 //!
 //! * `cargo near` must be on PATH; the builds shell out to it.
+//! * `SANDBOX_WASM_DIR`, when set, is an absolute path to a directory holding
+//!   `agent_spend_policy.wasm` and `a_identity_registry.wasm`, and the tests deploy those
+//!   bytes instead of building the two contracts. A missing or unreadable file is a panic
+//!   that names it, never a quiet fallback to building, so a run against given bytes cannot
+//!   turn into a run against the source without saying so. mock-ft is built either way.
+//!   Either way, each test binary prints to stderr once, past the test harness's capture,
+//!   where the vault's and the registry's bytes came from, with their length and sha256 (hex,
+//!   and base58, the `code_hash` NEAR reports for an account running them).
 //! * `SANDBOX_TESTS_PARALLEL` caps how many sandboxes one test binary runs at once
 //!   (default 4). Each is a full neard process, and a laptop running a dozen of them in
 //!   parallel produces blocks slowly enough to turn timing margins into flakes.
@@ -67,11 +79,15 @@ use near_api::advanced::ExecuteSignedTransaction;
 use near_api::errors::ExecuteTransactionError;
 use near_api::signer::generate_secret_key;
 use near_api::types::account::ContractState;
+use near_api::types::signable_message::{SignableMessage, SignableMessageType};
 use near_api::types::transaction::actions::{
     AccessKey, AccessKeyPermission, FunctionCallAction, FunctionCallPermission, TransferAction,
 };
+use near_api::types::transaction::delegate_action::{
+    DelegateAction, NonDelegateAction, SignedDelegateAction,
+};
 use near_api::types::transaction::result::{ExecutionFinalResult, TransactionResult};
-use near_api::types::{Action, TxExecutionStatus};
+use near_api::types::{Action, CryptoHash, TxExecutionStatus};
 use near_api::{
     Account, AccountId, Chain, Contract, NearGas, NearToken, NetworkConfig, PublicKey, SecretKey,
     Signer, Transaction,
@@ -155,23 +171,127 @@ static VAULT_WASM: Built = OnceLock::new();
 /// would only queue on cargo's own lock anyway; this keeps their output from interleaving.
 static BUILD_LOCK: Mutex<()> = Mutex::new(());
 
+/// Names a directory of contract wasm to deploy instead of building the vault and the
+/// registry (see the module docs). CI sets it to the reproducible job's output.
+pub const WASM_DIR_VAR: &str = "SANDBOX_WASM_DIR";
+
 pub fn mock_ft_wasm() -> Vec<u8> {
     built(&MOCK_FT_WASM, "mock-ft")
 }
 
 pub fn registry_wasm() -> Vec<u8> {
-    built(&REGISTRY_WASM, "a-identity-registry")
+    contract_wasm(
+        &REGISTRY_WASM,
+        "a-identity-registry",
+        "a_identity_registry.wasm",
+    )
 }
 
 pub fn vault_wasm() -> Vec<u8> {
-    built(&VAULT_WASM, "agent-spend-policy")
+    contract_wasm(&VAULT_WASM, "agent-spend-policy", "agent_spend_policy.wasm")
 }
 
 fn built(cell: &'static Built, crate_dir: &str) -> Vec<u8> {
-    match cell.get_or_init(|| build(crate_dir)) {
+    unwrap_built(cell.get_or_init(|| build(crate_dir)))
+}
+
+/// A contract that ships: the file `file_name` in `SANDBOX_WASM_DIR` when that is set, a
+/// build of `crate_dir` otherwise, announced on stderr once per test binary either way.
+fn contract_wasm(cell: &'static Built, crate_dir: &str, file_name: &str) -> Vec<u8> {
+    unwrap_built(cell.get_or_init(|| {
+        let (code, origin) = match std::env::var_os(WASM_DIR_VAR) {
+            Some(dir) => {
+                let path = given_wasm_path(&dir, file_name)?;
+                let code = read_given_wasm(&path)?;
+                (code, format!("{WASM_DIR_VAR} file {}", path.display()))
+            }
+            None => (
+                build(crate_dir)?,
+                format!(
+                    "built here from {} with `cargo near build`",
+                    crate_root(crate_dir).display()
+                ),
+            ),
+        };
+        announce_wasm(file_name, &origin, &code);
+        Ok(code)
+    }))
+}
+
+/// The directory of the workspace crate `crate_dir`, as this test binary was compiled to see
+/// it. Printed with every build, because a test binary carries that directory with it: one
+/// compiled for another copy of this workspace and reused from a shared target directory
+/// builds that copy's contracts, and the line says so (`audit/run-negative-controls.mjs`
+/// checks it).
+fn crate_root(crate_dir: &str) -> std::path::PathBuf {
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    manifest_dir
+        .parent()
+        .unwrap_or(manifest_dir)
+        .join(crate_dir)
+}
+
+fn unwrap_built(result: &Result<Vec<u8>, String>) -> Vec<u8> {
+    match result {
         Ok(code) => code.clone(),
         Err(err) => panic!("{err}"),
     }
+}
+
+/// `<SANDBOX_WASM_DIR>/<file_name>`. The directory must be named by an absolute path: cargo
+/// runs each test binary from the package directory, so a relative one would quietly mean
+/// something other than what the caller typed.
+fn given_wasm_path(dir: &std::ffi::OsStr, file_name: &str) -> Result<std::path::PathBuf, String> {
+    let dir = std::path::Path::new(dir);
+    if dir.as_os_str().is_empty() {
+        return Err(format!(
+            "{WASM_DIR_VAR} is set but empty. Point it at the directory holding {file_name}, \
+             or unset it to build the contracts here."
+        ));
+    }
+    if !dir.is_absolute() {
+        return Err(format!(
+            "{WASM_DIR_VAR}={} is not an absolute path; test binaries run from the package \
+             directory, so a relative path would not mean what it says.",
+            dir.display()
+        ));
+    }
+    Ok(dir.join(file_name))
+}
+
+/// The given bytes, or an error that names the file. Never a fallback to building: a run that
+/// was asked to test given bytes must test exactly those or fail.
+fn read_given_wasm(path: &std::path::Path) -> Result<Vec<u8>, String> {
+    let code = std::fs::read(path).map_err(|err| {
+        format!(
+            "{WASM_DIR_VAR} names {}, which cannot be read: {err}. Nothing is built in its \
+             place; unset {WASM_DIR_VAR} to build the contracts here.",
+            path.display()
+        )
+    })?;
+    if !code.starts_with(b"\0asm") {
+        return Err(format!(
+            "{} ({} bytes) is not a wasm module: it does not start with the wasm magic \
+             number.",
+            path.display(),
+            code.len()
+        ));
+    }
+    Ok(code)
+}
+
+/// One line on stderr saying which bytes this test binary deploys. Written to the stream
+/// itself rather than through `eprintln!`, which the test harness captures and shows only for
+/// a failing test, because the point is to see it on a green run.
+fn announce_wasm(file_name: &str, origin: &str, code: &[u8]) {
+    use std::io::Write as _;
+    let digest = CryptoHash::hash(code);
+    let hex: String = digest.0.iter().map(|byte| format!("{byte:02x}")).collect();
+    let _ = writeln!(
+        std::io::stderr().lock(),
+        "sandbox-tests: {file_name}: {origin}: {} bytes, sha256 {hex} (base58 {digest})",
+        code.len()
+    );
 }
 
 /// `build_with_cli` runs `cargo near build non-reproducible-wasm --locked` with the
@@ -371,6 +491,9 @@ pub struct HeldView {
     pub reason: String,
     pub created_at_s: N64,
     pub expires_at_s: N64,
+    /// What the vault saw when it held the payment: "registry_warn", "unknown_payee" or
+    /// "agent_request". The reason can be the agent's own words; this is the vault's.
+    pub kind: String,
 }
 
 /// `get_verdict(account_id)` (spec 2.2). The vault parses this shape cross-contract, so its
@@ -986,6 +1109,19 @@ pub fn agent_methods_sorted() -> Vec<String> {
     sorted(&AGENT_METHODS.map(String::from))
 }
 
+/// The implicit account of an ed25519 key: the 64 hex characters of its key bytes. A plain
+/// NEAR transfer to it creates it, with that key as its only, full-access key. For a leaked
+/// agent key, that is an account the thief controls without anyone's help.
+pub fn implicit_account_of(public_key: &PublicKey) -> AccountId {
+    let hex: String = public_key
+        .key_data()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    hex.parse()
+        .expect("64 hex characters are a valid implicit account id")
+}
+
 /// The permission of a key the vault created for an agent, or a panic naming what is wrong.
 #[track_caller]
 pub fn function_call_permission(key: &AccessKey) -> FunctionCallPermission {
@@ -1437,6 +1573,64 @@ impl World {
             .send()
             .await
             .unwrap_or_else(|err| panic!("create {account}: {err:?}"));
+    }
+
+    /// Deploy WITHOUT an init call, signed by the account itself: the mistake a deploy script
+    /// could make, which leaves the contract uninitialized for whoever calls `new` first.
+    pub async fn deploy_without_init(&self, account: &AccountId, code: Vec<u8>) -> Tx {
+        let sent = Contract::deploy(account.clone())
+            .use_code(code)
+            .without_init_call()
+            .with_signer(self.root.clone())
+            .send_to(&self.network)
+            .await;
+        Tx::from_send(sent)
+            .unwrap_or_else(|err| panic!("deploy to {account} was not accepted: {err}"))
+    }
+
+    /// A NEP-366 delegate action: `secret` (the key `public_key` on the vault account) signs
+    /// one zero-deposit call of `method` from the vault to the vault, at the key's next nonce,
+    /// valid for 1000 blocks. Whoever holds it can relay it in a transaction of their own, and
+    /// the protocol checks it against the key's permission on the vault.
+    pub async fn signed_delegate(
+        &self,
+        secret: &SecretKey,
+        public_key: &PublicKey,
+        method: &str,
+        args: Value,
+        gas: NearGas,
+    ) -> SignedDelegateAction {
+        let key = self
+            .access_key(&self.vault, public_key)
+            .await
+            .expect("the key is on the vault account");
+        let height = Chain::block()
+            .fetch_from(&self.network)
+            .await
+            .expect("fetch the latest block")
+            .header
+            .height;
+        let call = Action::FunctionCall(Box::new(FunctionCallAction {
+            method_name: method.to_owned(),
+            args: serde_json::to_vec(&args).expect("serialize"),
+            gas,
+            deposit: ZERO,
+        }));
+        let delegate_action = DelegateAction {
+            sender_id: self.vault.clone(),
+            receiver_id: self.vault.clone(),
+            actions: vec![NonDelegateAction::try_from(call).expect("not a delegate action")],
+            nonce: key.nonce.0 + 1,
+            max_block_height: height + 1_000,
+            public_key: *public_key,
+        };
+        let signable = SignableMessage::new(&delegate_action, SignableMessageType::DelegateAction);
+        let bytes = near_sdk::borsh::to_vec(&signable).expect("borsh");
+        let signature = secret.sign(CryptoHash::hash(&bytes));
+        SignedDelegateAction {
+            delegate_action,
+            signature,
+        }
     }
 
     /// Deploy and init in one transaction, signed by the account itself. The two actions
@@ -1936,6 +2130,12 @@ impl World {
             .vault_view("guard_refusal_count", json!({ "payee": payee }))
             .await;
         lenient_u64(&count).unwrap_or_else(|| panic!("guard_refusal_count() returned {count}"))
+    }
+
+    /// How many payees have a guard refusal counter (the vault bounds it).
+    pub async fn guard_refusal_payees(&self) -> u64 {
+        let count: Value = self.vault_view("guard_refusal_payees", json!({})).await;
+        lenient_u64(&count).unwrap_or_else(|| panic!("guard_refusal_payees() returned {count}"))
     }
 
     pub async fn paid_count(&self, payee: &AccountId) -> u64 {

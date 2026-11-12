@@ -94,7 +94,7 @@ fn init_records_the_config_and_announces_it() {
     assert!(!config.allowlist_enabled);
     assert_eq!(config.token_storage_deposit, U128(STORAGE_DEPOSIT));
     assert_eq!(config.version, VERSION);
-    assert_eq!(config.version, "agent-spend-policy 0.1.0");
+    assert_eq!(config.version, "agent-spend-policy 0.2.0");
     assert!(
         config.hold_unknown,
         "a new vault holds payees nobody has judged"
@@ -272,6 +272,53 @@ fn revoke_marks_the_record_and_deletes_the_access_key() {
     assert_panics_with("NotAgent", || {
         let _ = v.pay(shop(), U128(1), None);
     });
+}
+
+/// Finding AUTH-3: a revoked key's requests do not outlive it. They are dropped in the revoking
+/// receipt, each with `held_rejected`, so a leaked key's crafted requests neither keep the
+/// owner's queue full nor wait there to be approved by mistake. Another key's are untouched.
+#[test]
+fn revoking_a_key_drops_its_held_payments_and_only_its_own() {
+    let mut v = plain_vault();
+    grant(&mut v, key(2));
+    as_agent();
+    let a1 = value(v.request_payment(shop(), U128(500), None, "why".to_owned()))
+        .held_id
+        .unwrap();
+    as_agent();
+    let a2 = value(v.pay(newcomer(), U128(5), None)).held_id.unwrap();
+    as_agent_key(key(2));
+    let b1 = value(v.request_payment(shop(), U128(7), None, "why".to_owned()))
+        .held_id
+        .unwrap();
+    assert_eq!(v.list_held(None, None).len(), 3);
+
+    as_owner_yocto();
+    v.revoke_agent_key(agent());
+    let rejected: Vec<String> = events()
+        .iter()
+        .filter(|e| e["event"] == "held_rejected")
+        .map(|e| e["data"]["held_id"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(rejected, vec![a1.0.to_string(), a2.0.to_string()]);
+    assert_eq!(
+        event_names().first().map(String::as_str),
+        Some("agent_key_revoked")
+    );
+    let left: Vec<U64> = v.list_held(None, None).iter().map(|h| h.id).collect();
+    assert_eq!(left, vec![b1]);
+    assert_eq!(v.get_held(b1).unwrap().agent_pk, key(2));
+
+    // What the revoked key asked for is gone; the owner cannot approve it by mistake.
+    as_owner_yocto();
+    assert_panics_with("HeldNotFound", || {
+        let _ = v.owner_pay(a1);
+    });
+    // Revoking again finds nothing left to drop.
+    as_owner_yocto();
+    v.revoke_agent_key(agent());
+    assert!(!event_names().iter().any(|n| n == "held_rejected"));
+    assert_eq!(v.list_held(None, None).len(), 1);
 }
 
 #[test]

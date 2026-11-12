@@ -88,6 +88,41 @@ fn new_with_no_oracles_leaves_nobody_able_to_write() {
     });
 }
 
+/// Finding AUTH-4: `new` is `#[init]` but has no `#[private]`, because the batch that creates
+/// `registry.<parent>` comes from the parent. It admits the registry account itself and its
+/// parent, and nobody else, so a deploy sent without its init is not the first stranger's to
+/// claim with an owner and an oracle of its own.
+#[test]
+fn only_the_registry_account_or_its_parent_may_initialize_it() {
+    for (caller, who) in [
+        (stranger(), "a stranger"),
+        (
+            owner(),
+            "the owner named in the call, which is not the parent here",
+        ),
+        (acc("x.registry.near"), "a sub-account of the registry"),
+        (acc("try.near"), "a suffix that is not the parent"),
+    ] {
+        begin();
+        call(&caller, NO_DEPOSIT, T0);
+        expect_err(Error::InitNotAllowed, || {
+            Registry::new(caller.clone(), vec![caller.clone()])
+        });
+        assert!(events().is_empty(), "{who}: nothing logged");
+    }
+
+    // The parent that creates `registry.near` in the same batch.
+    begin();
+    call(&acc("near"), NO_DEPOSIT, T0);
+    let registry = Registry::new(owner(), vec![oracle()]);
+    assert_eq!(registry.owner(), owner());
+
+    // The registry account itself, as in a self-deploy.
+    begin();
+    let registry = Registry::new(owner(), vec![oracle()]);
+    assert_eq!(registry.oracles(), vec![oracle()]);
+}
+
 #[test]
 fn new_starts_with_no_verdicts_and_no_reports() {
     let registry = fresh();

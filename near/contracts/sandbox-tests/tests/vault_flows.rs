@@ -10,6 +10,10 @@
 mod common;
 
 use common::*;
+use near_api::types::Action;
+use near_api::types::transaction::actions::{
+    CreateAccountAction, DeployContractAction, FunctionCallAction, TransferAction,
+};
 use near_api::{AccountId, NearToken};
 use near_sdk::serde_json::{Value, json};
 
@@ -30,11 +34,25 @@ async fn deploy_init_and_fund_leave_a_vault_ready_to_pay() {
     assert_eq!(config.auto_approve_max.0, DEFAULT_AUTO_APPROVE_MAX);
     assert!(!config.allowlist_enabled);
     assert_eq!(config.token_storage_deposit.0, w.storage_min);
-    assert_eq!(config.version, "agent-spend-policy 0.1.0");
+    assert_eq!(config.version, "agent-spend-policy 0.2.0");
     assert!(
         config.hold_unknown,
         "a new vault holds payees nobody has judged"
     );
+    // NEP-330: each contract reports the crate version it was built from, read from the
+    // deployed code (the build embeds it), so it holds for given bytes as well as built ones.
+    // Both crates are at 0.2.0, the version in which each last extended its error ABI.
+    for contract in [&w.vault, &w.registry] {
+        let metadata: Value = w
+            .view(contract, "contract_source_metadata", json!({}))
+            .await;
+        assert_eq!(metadata["version"], "0.2.0", "{contract}: {metadata}");
+        assert_eq!(
+            metadata["standards"][0],
+            json!({ "standard": "nep330", "version": "1.3.0" }),
+            "{contract}: {metadata}"
+        );
+    }
     // Amounts are U128 JSON, decimal strings, in every public shape.
     let raw = w.config_json().await;
     for key in ["daily_cap", "auto_approve_max", "token_storage_deposit"] {
@@ -113,6 +131,103 @@ async fn init_refuses_a_vault_that_owns_itself_or_is_its_own_token() {
         .assert_panicked_with("The contract has already been initialized");
     let config: Value = w.view(&fresh, "get_config", json!({})).await;
     assert_eq!(config["owner_id"], w.owner.as_str());
+}
+
+/// Finding AUTH-4. A deploy sent WITHOUT its init leaves `new` open, and both contracts are
+/// meant for accounts with no full-access key left to redeploy them. So `new` admits only the
+/// account itself and its parent: a stranger who sees the bare deploy first is refused by
+/// name, and the rightful init still works afterwards. The keyless path the deploy plans, a
+/// parent creating `vault.<parent>` and initializing it in one batch with no key added at all,
+/// is admitted.
+#[tokio::test]
+async fn a_deploy_without_its_init_cannot_be_claimed_by_a_stranger() {
+    let w = World::new(Setup::token_only()).await;
+
+    for (account, code, hijack, rightful) in [
+        (
+            "vault3.sandbox",
+            vault_wasm(),
+            vault_init_args(&w.stranger, &w.token, None, w.storage_min, 0, 0),
+            vault_init_args(&w.owner, &w.token, None, w.storage_min, 0, 0),
+        ),
+        (
+            "registry3.sandbox",
+            registry_wasm(),
+            json!({ "owner_id": w.stranger, "oracles": [w.stranger] }),
+            json!({ "owner_id": w.owner, "oracles": [w.oracle] }),
+        ),
+    ] {
+        let account: AccountId = account.parse().expect("a valid account id");
+        w.create_account(&account, NearToken::from_near(50)).await;
+        w.deploy_without_init(&account, code).await.assert_ok();
+        assert!(w.has_contract(&account).await);
+
+        let tx = w.call(&w.stranger, &account, "new", hijack).send().await;
+        tx.assert_panicked_with("InitNotAllowed");
+        assert!(
+            tx.events().is_empty(),
+            "{account}: a refused init logs nothing"
+        );
+
+        // The account itself (a self-deploy's init) is admitted.
+        w.call(&account, &account, "new", rightful.clone())
+            .send()
+            .await
+            .assert_ok();
+
+        // Once. A second `new`, even from a caller `new` admits, is refused by near-sdk's
+        // generated entry point before the contract's code runs, so nobody re-initializes a
+        // live vault or registry over the funds or the verdicts it holds. Only the wasm has
+        // this check; the unit tests call `new` as a plain function.
+        w.call(&account, &account, "new", rightful)
+            .send()
+            .await
+            .assert_panicked_with("The contract has already been initialized");
+    }
+    let config: Value = w
+        .view(&"vault3.sandbox".parse().unwrap(), "get_config", json!({}))
+        .await;
+    assert_eq!(config["owner_id"], w.owner.as_str());
+    let owner: String = w
+        .view(&"registry3.sandbox".parse().unwrap(), "owner", json!({}))
+        .await;
+    assert_eq!(owner, w.owner.as_str());
+
+    // The parent creates `vault.owner.sandbox`, funds it, deploys and initializes it in one
+    // batch. No key is ever added to it, so it is keyless from its first block.
+    let child: AccountId = format!("vault.{}", w.owner)
+        .parse()
+        .expect("a valid account id");
+    let init = vault_init_args(&w.owner, &w.token, None, w.storage_min, 0, 0);
+    let tx = w
+        .send_actions_raw(
+            &w.owner,
+            &child,
+            vec![
+                Action::CreateAccount(CreateAccountAction {}),
+                Action::Transfer(TransferAction {
+                    deposit: NearToken::from_near(5),
+                }),
+                Action::DeployContract(DeployContractAction { code: vault_wasm() }),
+                Action::FunctionCall(Box::new(FunctionCallAction {
+                    method_name: "new".to_owned(),
+                    args: near_sdk::serde_json::to_vec(&init).expect("serialize"),
+                    gas: near_api::NearGas::from_tgas(100),
+                    deposit: NearToken::from_yoctonear(0),
+                })),
+            ],
+            w.root.clone(),
+        )
+        .await
+        .expect("the batch is accepted")
+        .assert_ok();
+    let config: Value = w.view(&child, "get_config", json!({})).await;
+    assert_eq!(config["owner_id"], w.owner.as_str());
+    assert!(
+        w.access_keys(&child).await.is_empty(),
+        "no key was ever added to the vault account"
+    );
+    assert!(tx.events().iter().any(|e| e.event == "vault_initialized"));
 }
 
 // ---------------------------------------------------------------------------------------
@@ -198,9 +313,11 @@ async fn a_payee_nobody_has_judged_waits_for_one_owner_tap_and_then_flows() {
     );
     let held_event = tx.vault_event("payment_held");
     assert_eq!(str_field(&held_event, "reason"), "UnknownPayee");
+    assert_eq!(str_field(&held_event, "kind"), "unknown_payee");
     assert_eq!(num_field(&held_event, "held_id"), u128::from(held_id));
     let held = w.held(held_id).await.expect("the hold is stored");
     assert_eq!(held.reason, "UnknownPayee");
+    assert_eq!(held.kind, "unknown_payee");
     assert_eq!(held.memo.as_deref(), Some("first order"));
 
     // The one human tap.
@@ -482,6 +599,7 @@ async fn a_warn_payee_is_held_and_the_owner_settles_it() {
     assert_eq!(held.amount.0, 5 * UNIT);
     assert_eq!(held.memo.as_deref(), Some("invoice-7"));
     assert_eq!(held.reason, "RegistryWarn");
+    assert_eq!(held.kind, "registry_warn");
     assert_eq!(held.agent_pk, w.agent_pk.to_string());
     assert_eq!(held.expires_at_s.0, held.created_at_s.0 + 86_400);
     assert_eq!(w.held_ids().await, vec![held_id]);
@@ -511,6 +629,22 @@ async fn a_warn_payee_is_held_and_the_owner_settles_it() {
     // A hold settles once.
     assert_refused_or_panicked(&w.owner_pay(held_id).await, "HeldNotFound");
     assert_eq!(w.ft_balance(&w.merchant).await, 5 * UNIT);
+
+    // A request's reason is the agent's own text, and an injected agent can make it read like
+    // a vault code to pass the warned payee off as merely new. The hold's `kind` is the
+    // vault's word, from the registry's answer, and that is what the console shows.
+    let tx = w
+        .request_payment(&w.merchant, 4 * UNIT, None, "UnknownPayee")
+        .await
+        .assert_ok();
+    let spoofed = tx.outcome().assert_held_because("UnknownPayee");
+    assert_eq!(
+        str_field(&tx.vault_event("payment_held"), "kind"),
+        "registry_warn"
+    );
+    let held = w.held(spoofed).await.expect("stored");
+    assert_eq!(held.reason, "UnknownPayee");
+    assert_eq!(held.kind, "registry_warn");
 }
 
 #[tokio::test]
@@ -582,6 +716,10 @@ async fn an_agent_request_above_the_ceiling_waits_for_the_owner() {
     assert_eq!(w.spent_today().await, 0, "asking reserves nothing");
     let held = w.held(held_id).await.expect("stored");
     assert_eq!(held.reason, "above_ceiling");
+    assert_eq!(
+        held.kind, "agent_request",
+        "the registry said ALLOW; the agent asked"
+    );
     assert_eq!(held.amount.0, amount);
 
     let settle = w.owner_pay(held_id).await.assert_ok();

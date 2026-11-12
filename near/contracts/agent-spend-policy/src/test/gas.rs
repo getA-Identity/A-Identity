@@ -28,10 +28,10 @@ use crate::{
 /// aborts at 50, against 47 Tgas of budgets, so at most 4 Tgas; without one it landed at 40
 /// against 35, so 4.5 Tgas (three receipts instead of two).
 const PAY_OVERHEAD: Gas = Gas::from_tgas(5);
-/// What `on_verdict` needs on top of the transfer chain's three budgets. Measured: with a 37
-/// Tgas budget it ran dry on the lightest ALLOW already, with 39 it settled the heaviest ALLOW
-/// the registry can produce, so at most 4 Tgas (its own execution, sending fees included, and
-/// the three receipts' prepaid execution fees).
+/// What `on_verdict` needs on top of the transfer chain's three budgets. Measured on 0.2.0:
+/// with a 39 Tgas budget it ran dry on the heaviest ALLOW the registry can produce, with 40 it
+/// settled it, so at most 5 Tgas (its own execution, sending fees included, the payee's
+/// `paid_count` entry, and the three receipts' prepaid execution fees).
 const ON_VERDICT_OVERHEAD: Gas = Gas::from_tgas(7);
 /// The smallest prepaid gas at which an ALLOW payment through the registry lands, measured to
 /// the Tgas in `sandbox-tests/tests/gas.rs` for the lightest and the heaviest ALLOW.

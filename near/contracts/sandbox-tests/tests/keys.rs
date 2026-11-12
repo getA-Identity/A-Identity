@@ -346,6 +346,13 @@ async fn a_revoked_agent_key_cannot_sign_at_all() {
         .assert_ok()
         .outcome()
         .assert_sent();
+    // Something the key asked the owner for, still waiting when the key is revoked.
+    let asked = w
+        .request_payment(&w.merchant, 30 * UNIT, None, "above_ceiling")
+        .await
+        .assert_ok()
+        .outcome()
+        .assert_held();
     let nonce = w
         .access_key(&w.vault, &w.agent_pk)
         .await
@@ -377,6 +384,14 @@ async fn a_revoked_agent_key_cannot_sign_at_all() {
         w.access_key(&w.vault, &w.agent_pk).await.is_none(),
         "revoke deleted the access key from the vault account"
     );
+    // ...and dropped what it had asked for, in the same receipt: a revoked key's requests do
+    // not keep the owner's queue full or wait there to be approved by mistake.
+    assert_eq!(
+        num_field(&tx.vault_event("held_rejected"), "held_id"),
+        u128::from(asked)
+    );
+    assert!(w.held_ids().await.is_empty());
+    assert_refused_or_panicked(&w.owner_pay(asked).await, "HeldNotFound");
     let record = w.agent_record(&w.agent_pk).await.expect("kept for audit");
     assert!(record.revoked);
 
@@ -488,6 +503,138 @@ async fn anyone_but_an_agent_key_signing_as_the_vault_is_not_an_agent() {
     assert_eq!(w.guard_refusal_count(&w.attacker).await, 0);
     assert!(w.held_ids().await.is_empty());
     assert_eq!(w.spent_today().await, 0);
+}
+
+/// Finding AUTH-1. A thief with a leaked agent key does not need the key's allowance: a plain
+/// transfer to the key's implicit account creates an account where the same public key has
+/// full access, and from there the thief can relay a NEP-366 delegate action the key signed as
+/// the vault. The protocol checks such an action against the key's method list and bumps its
+/// nonce on the vault, but charges its allowance nothing, and the vault pays no gas. Accepted,
+/// it would let the key create storage on the vault (guard counters, holds, registrations) at
+/// the thief's gas price with no bound from the allowance. The inner receipt has the vault as
+/// predecessor and the agent key as signer key, so only the signer ACCOUNT gives it away, and
+/// the vault refuses it `NotAgent`: nothing written, nothing logged, the allowance untouched.
+/// The outer transaction still reports success, so the refusal is read from the receipt.
+#[tokio::test]
+async fn a_delegate_action_relayed_from_the_agent_keys_own_account_is_refused() {
+    let w = World::new(Setup::default()).await;
+    let thief = implicit_account_of(&w.agent_pk);
+    w.transfer_near(&w.stranger, &thief, NearToken::from_near(5), w.root.clone())
+        .await
+        .expect("a transfer creates the implicit account")
+        .assert_ok();
+    let thief_keys = w.access_keys(&thief).await;
+    assert_eq!(thief_keys.len(), 1);
+    assert_eq!(
+        thief_keys[0].0, w.agent_pk,
+        "the leaked key, with full access"
+    );
+    let as_thief = signer_for(w.agent_secret.clone());
+
+    let allowance = w.agent_allowance(&w.agent_pk).await;
+    let storage = w.storage_usage(&w.vault).await;
+    let invented: near_api::AccountId = format!("invented-{}.sandbox", "x".repeat(47))
+        .parse()
+        .expect("a valid 64-byte account id");
+
+    let record = w
+        .signed_delegate(
+            &w.agent_secret,
+            &w.agent_pk,
+            "record_refusal",
+            refusal_args(&invented, 1, "guard_deny"),
+            NearGas::from_tgas(10),
+        )
+        .await;
+    let tx = w
+        .send_actions_raw(
+            &thief,
+            &w.vault,
+            vec![Action::Delegate(Box::new(record))],
+            as_thief.clone(),
+        )
+        .await
+        .expect("the relay is accepted");
+    assert!(
+        tx.receipt_failure_text().contains("NotAgent"),
+        "the vault must refuse the relayed call: {}",
+        tx.failure_text()
+    );
+    assert!(tx.vault_events().is_empty(), "a refused relay logs nothing");
+    assert_eq!(w.guard_refusal_count(&invented).await, 0);
+    assert_eq!(w.guard_refusal_payees().await, 0);
+
+    // The same path to `pay`: refused before anything is reserved or scheduled.
+    let pay = w
+        .signed_delegate(
+            &w.agent_secret,
+            &w.agent_pk,
+            "pay",
+            pay_args(&w.merchant, UNIT, None),
+            AGENT_GAS,
+        )
+        .await;
+    let tx = w
+        .send_actions_raw(
+            &thief,
+            &w.vault,
+            vec![Action::Delegate(Box::new(pay))],
+            as_thief,
+        )
+        .await
+        .expect("the relay is accepted");
+    assert!(
+        tx.receipt_failure_text().contains("NotAgent"),
+        "{}",
+        tx.failure_text()
+    );
+    assert!(!tx.touched(&w.registry) && !tx.touched(&w.token));
+    assert_eq!(w.ft_balance(&w.merchant).await, 0);
+    assert_eq!(w.spent_today().await, 0);
+
+    assert_eq!(
+        w.storage_usage(&w.vault).await,
+        storage,
+        "the vault stored nothing"
+    );
+    assert_eq!(
+        w.agent_allowance(&w.agent_pk).await,
+        allowance,
+        "and the relays never touched the allowance either"
+    );
+
+    // Relaying from the vault account itself would make the signer the vault, but the agent's
+    // function-call key cannot sign a delegate action at all.
+    let again = w
+        .signed_delegate(
+            &w.agent_secret,
+            &w.agent_pk,
+            "record_refusal",
+            refusal_args(&invented, 1, "guard_deny"),
+            NearGas::from_tgas(10),
+        )
+        .await;
+    assert_protocol_rejected(
+        w.send_actions_raw(
+            &w.vault,
+            &w.vault,
+            vec![Action::Delegate(Box::new(again))],
+            w.agent_signer.clone(),
+        )
+        .await,
+        &["RequiresFullAccess"],
+    );
+
+    // The key signing directly, as the agent does, is charged and counted as before.
+    let tx = w
+        .agent_call("record_refusal", refusal_args(&invented, 1, "guard_deny"))
+        .gas(NearGas::from_tgas(10))
+        .send()
+        .await
+        .assert_ok();
+    tx.outcome().assert_refused("guard_deny");
+    assert_eq!(w.guard_refusal_count(&invented).await, 1);
+    assert!(w.agent_allowance(&w.agent_pk).await < allowance);
 }
 
 /// A scheduled callback always carries exactly one promise result, and a direct call

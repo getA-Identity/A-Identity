@@ -15,15 +15,91 @@ fn agent_key_signing_as_the_vault_is_authenticated() {
     promise(v.pay(shop(), U128(10), None));
 }
 
+/// The registered agent key, signing for an account that is not the vault. A public key can be
+/// an access key on any number of accounts, and a thief who holds the leaked agent key holds it
+/// with full access on the key's implicit account, which anyone can create with a transfer. A
+/// transaction such an account signs and sends to the vault directly arrives with that account
+/// as both signer and predecessor, and the agent key as `signer_account_pk`, so the key check
+/// alone would pass. Both account checks refuse it, so this test stays green with either one
+/// deleted: what each check alone stops is pinned by its own test, the predecessor check by
+/// `a_contract_forwarding_the_agent_keys_transaction_is_not_an_agent` and the signer check by
+/// `a_delegate_action_relayed_by_another_account_is_not_an_agent`.
 #[test]
-fn registered_key_forwarded_through_another_account_is_not_an_agent() {
-    // The signer's key survives every hop of a call chain. A contract the key holder was lured
-    // into calling arrives with the agent's signer key but its own account as predecessor.
+fn a_registered_key_signing_for_another_account_is_not_an_agent() {
     let mut v = plain_vault();
-    env_as(stranger(), agent(), 0, vec![]);
-    assert_panics_with("NotAgent", || {
-        let _ = v.pay(shop(), U128(10), None);
-    });
+    for account in [implicit_account_of(&agent()), stranger()] {
+        env_as(account.clone(), agent(), 0, vec![]);
+        assert_panics_with("NotAgent", || {
+            let _ = v.pay(shop(), U128(10), None);
+        });
+        assert!(
+            events().is_empty(),
+            "{account}: a refused call logs nothing"
+        );
+        env_as(account.clone(), agent(), 0, vec![]);
+        assert_panics_with("NotAgent", || {
+            let _ = v.record_refusal(newcomer(), U128(1), "guard_deny".to_owned());
+        });
+    }
+}
+
+/// The agent key's own transaction, as a contract further along its call chain sees it. The key
+/// can only sign calls to the vault, so the forwarder is something the vault itself calls: its
+/// token in the middle of `ft_transfer`, its registry in the middle of `get_verdict`, or a
+/// contract one of them calls. The signer account and the signer's key are the vault's and the
+/// agent's, exactly as in the agent's own call, so only the predecessor tells them apart.
+#[test]
+fn a_contract_forwarding_the_agent_keys_transaction_is_not_an_agent() {
+    let mut v = registry_vault();
+    for forwarder in [token(), registry(), stranger()] {
+        forwarded_by(&forwarder, agent());
+        assert_panics_with("NotAgent", || {
+            let _ = v.pay(shop(), U128(10), None);
+        });
+        assert!(
+            events().is_empty(),
+            "{forwarder}: a refused call logs nothing"
+        );
+        assert!(calls().is_empty(), "{forwarder}: and schedules nothing");
+        forwarded_by(&forwarder, agent());
+        assert_panics_with("NotAgent", || {
+            let _ = v.request_payment(shop(), U128(10), None, "why".to_owned());
+        });
+        forwarded_by(&forwarder, agent());
+        assert_panics_with("NotAgent", || {
+            let _ = v.record_refusal(newcomer(), U128(1), "guard_deny".to_owned());
+        });
+    }
+    assert_eq!(v.spent_today(), U128(0));
+    assert_eq!(v.guard_refusal_count(newcomer()), 0);
+    assert!(v.list_held(None, None).is_empty());
+
+    // The same key, in the transaction it signed itself, is the agent.
+    as_agent();
+    promise(v.pay(shop(), U128(10), None));
+}
+
+/// A receipt on the vault from `forwarder`, inside a transaction the vault account signed with
+/// `pk`. (`env_as` makes the signer the predecessor, which is a different case: an account that
+/// is not the vault signing for itself, which both account checks refuse; see
+/// `a_registered_key_signing_for_another_account_is_not_an_agent`.)
+fn forwarded_by(forwarder: &AccountId, pk: PublicKey) {
+    let context = VMContextBuilder::new()
+        .current_account_id(vault())
+        .signer_account_id(vault())
+        .signer_account_pk(pk)
+        .predecessor_account_id(forwarder.clone())
+        .account_balance(NearToken::from_yoctonear(DEFAULT_BALANCE))
+        .block_timestamp(now_ns())
+        .prepaid_gas(MAX_PREPAID_GAS)
+        .build();
+    testing_env!(
+        context,
+        test_vm_config(),
+        RuntimeFeesConfig::test(),
+        Default::default(),
+        vec![]
+    );
 }
 
 #[test]
@@ -79,6 +155,55 @@ fn an_unauthenticated_call_writes_nothing_and_logs_nothing() {
     assert_eq!(v.spent_today(), U128(0));
 }
 
+/// A NEP-366 delegate action the agent key signed, relayed by the key's own implicit account
+/// (where a thief who holds the leaked key has it as a full-access key). The inner receipt has
+/// the vault as predecessor and the agent key as `signer_account_pk`, so the first and the last
+/// check pass; only the signer account tells it apart. Accepted, it would let the key act with
+/// no charge to its allowance, so the allowance would stop bounding what it can make the vault
+/// store.
+#[test]
+fn a_delegate_action_relayed_by_another_account_is_not_an_agent() {
+    let mut v = plain_vault();
+    let thief = implicit_account_of(&agent());
+    assert_eq!(thief.as_str(), "01".repeat(32));
+
+    as_relayed(thief.clone(), agent());
+    assert_panics_with("NotAgent", || {
+        let _ = v.record_refusal(newcomer(), U128(1), "guard_deny".to_owned());
+    });
+    assert!(events().is_empty(), "a refused relay logs nothing");
+    as_relayed(thief.clone(), agent());
+    assert_panics_with("NotAgent", || {
+        let _ = v.pay(shop(), U128(10), None);
+    });
+    assert!(events().is_empty());
+    assert!(calls().is_empty(), "and schedules nothing");
+    as_relayed(thief, agent());
+    assert_panics_with("NotAgent", || {
+        let _ = v.request_payment(newcomer(), U128(10), None, "why".to_owned());
+    });
+    assert!(events().is_empty());
+
+    // A relayer that is any other account is the same case.
+    as_relayed(stranger(), agent());
+    assert_panics_with("NotAgent", || {
+        let _ = v.record_refusal(newcomer(), U128(1), "guard_deny".to_owned());
+    });
+
+    assert_eq!(v.guard_refusal_count(newcomer()), 0);
+    assert_eq!(v.guard_refusal_payees(), 0);
+    assert_eq!(v.spent_today(), U128(0));
+    assert!(v.list_held(None, None).is_empty());
+
+    // The same key, signing directly as the vault, is the agent.
+    as_agent();
+    assert_refused(
+        &v.record_refusal(newcomer(), U128(1), "guard_deny".to_owned()),
+        "guard_deny",
+    );
+    assert_eq!(v.guard_refusal_count(newcomer()), 1);
+}
+
 // -- the owner -----------------------------------------------------------------------------------
 
 /// An owner method's name and a call to it.
@@ -125,6 +250,14 @@ fn owner_methods() -> Vec<OwnerMethod> {
             Box::new(|v| {
                 let _ = v.withdraw(U128(1));
             }),
+        ),
+        (
+            "forget_guard_refusals",
+            Box::new(|v| v.forget_guard_refusals(vec![shop()])),
+        ),
+        (
+            "forget_refusals",
+            Box::new(|v| v.forget_refusals(vec![shop()])),
         ),
     ]
 }
@@ -205,6 +338,70 @@ fn a_vault_cannot_own_itself() {
             U128(0),
         );
     });
+}
+
+/// `new` is `#[init]` but has no `#[private]`: the batch that creates `vault.<parent>` comes
+/// from the parent. So it admits the vault account itself and its parent, and nobody else. A
+/// deploy that went out without its init would otherwise be the first stranger's to claim.
+#[test]
+fn only_the_vault_account_or_its_parent_may_initialize_it() {
+    let init = || {
+        let _ = AgentSpendPolicy::new(
+            owner(),
+            token(),
+            None,
+            U128(STORAGE_DEPOSIT),
+            U128(0),
+            U128(0),
+        );
+    };
+    for (caller, who) in [
+        (stranger(), "a stranger"),
+        ("testnet".parse().unwrap(), "the parent's parent"),
+        ("other.owner.testnet".parse().unwrap(), "a sibling"),
+        (
+            "x.vault.owner.testnet".parse().unwrap(),
+            "a sub-account of the vault",
+        ),
+        (
+            "ner.testnet".parse().unwrap(),
+            "a suffix that is not the parent",
+        ),
+    ] {
+        begin();
+        env_as(caller, key(99), 0, vec![]);
+        let text = panic_text(init);
+        assert!(
+            text.contains("panic_msg: \"InitNotAllowed\""),
+            "{who}: {text}"
+        );
+        assert!(events().is_empty(), "{who}: nothing logged");
+    }
+
+    // The parent that creates `vault.owner.testnet` in the same batch (also the owner here).
+    begin();
+    let v = AgentSpendPolicy::new(
+        owner(),
+        token(),
+        None,
+        U128(STORAGE_DEPOSIT),
+        U128(0),
+        U128(0),
+    );
+    assert_eq!(v.get_config().owner_id, owner());
+
+    // The vault account itself, as in a self-deploy, may name any other account as owner.
+    begin();
+    env_as(vault(), owner_key(), 0, vec![]);
+    let v = AgentSpendPolicy::new(
+        stranger(),
+        token(),
+        None,
+        U128(STORAGE_DEPOSIT),
+        U128(0),
+        U128(0),
+    );
+    assert_eq!(v.get_config().owner_id, stranger());
 }
 
 #[test]

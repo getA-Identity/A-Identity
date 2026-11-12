@@ -42,6 +42,24 @@
 //!   key signs as the vault account itself, so `#[private]` alone cannot tell a scheduled callback
 //!   from a direct call. A real callback always has exactly one promise result and a direct call
 //!   has none; anything else is refused with this name.
+//! * `GuardRefusalLimitReached` is appended next. `record_refusal` writes a counter for each payee
+//!   it names, and a payee name does not have to be an existing account, so the number of payees
+//!   with a guard counter is bounded (`MAX_GUARD_PAYEES`). A record that would add one more is
+//!   refused with this name and writes nothing; the owner frees room with
+//!   `forget_guard_refusals`.
+//! * `StorageNotCovered` is appended next. A receipt whose new storage the vault's NEAR cannot
+//!   cover fails at its end with no event, and in a callback that would also strand the day's
+//!   reservation. So a held payment or a payee's first guard counter is refused with this name
+//!   instead of written when the vault's liquid NEAR is below `STORAGE_HEADROOM`.
+//! * `InitNotAllowed` is appended next. `new` is `#[init]` but open to any caller, so it also
+//!   requires the vault account itself or the parent account that creates it in the same batch:
+//!   a deploy sent without its init must not let the first stranger make itself the owner.
+//! * `BatchTooLarge` is appended last, with the registry's name for the same refusal.
+//!   `forget_guard_refusals` and `forget_refusals` log one event per counter they remove, and a
+//!   receipt may log at most 16384 bytes, which 100 removals of 64-byte payees overrun. So one
+//!   call names at most `MAX_FORGET_BATCH` payees, and more is refused with this name before
+//!   anything is removed, instead of failing in the runtime (`TotalLogLengthExceeded`) after
+//!   the owner paid for the attempt.
 //!
 //! What the Solidity original has that this enum does not: `ZeroAddress` (a NEAR `AccountId` is
 //! validated at deserialization, there is no zero account) and Solidity's `TransferFailed` as a
@@ -113,12 +131,24 @@ pub enum Error {
     RequiresOneYocto,
     /// A callback was invoked directly, or with other than exactly one promise result.
     NotCallback,
+    /// `record_refusal` named a payee with no guard counter while `MAX_GUARD_PAYEES` payees
+    /// already have one. Nothing was written; `forget_guard_refusals` makes room.
+    GuardRefusalLimitReached,
+    /// The vault's NEAR above its storage stake is below `STORAGE_HEADROOM`, so it does not write
+    /// the held payment or the new counter this call would add. Nothing moved and nothing was
+    /// held; the owner tops the vault up with a plain NEAR transfer.
+    StorageNotCovered,
+    /// `new` was called by an account that is neither the vault account itself nor its parent.
+    InitNotAllowed,
+    /// `forget_guard_refusals` or `forget_refusals` named more than `MAX_FORGET_BATCH` payees.
+    /// Nothing was removed; the owner splits the list over several calls.
+    BatchTooLarge,
 }
 
 impl Error {
     /// Every variant, in ABI order. A test pins this list, so an edit that renames, removes or
     /// reorders a name fails the build's test run instead of shipping.
-    pub const ALL: [Error; 25] = [
+    pub const ALL: [Error; 29] = [
         Error::NotOwner,
         Error::NotAgent,
         Error::Frozen,
@@ -144,6 +174,10 @@ impl Error {
         Error::MemoTooLong,
         Error::RequiresOneYocto,
         Error::NotCallback,
+        Error::GuardRefusalLimitReached,
+        Error::StorageNotCovered,
+        Error::InitNotAllowed,
+        Error::BatchTooLarge,
     ];
 
     /// The stable name. Written out rather than derived from `Debug`, because `Debug` output is
@@ -175,6 +209,10 @@ impl Error {
             Error::MemoTooLong => "MemoTooLong",
             Error::RequiresOneYocto => "RequiresOneYocto",
             Error::NotCallback => "NotCallback",
+            Error::GuardRefusalLimitReached => "GuardRefusalLimitReached",
+            Error::StorageNotCovered => "StorageNotCovered",
+            Error::InitNotAllowed => "InitNotAllowed",
+            Error::BatchTooLarge => "BatchTooLarge",
         }
     }
 

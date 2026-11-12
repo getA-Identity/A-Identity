@@ -72,7 +72,8 @@ pub fn call_signed(signer: &AccountId, predecessor: &AccountId, deposit: NearTok
     testing_env!(builder.build());
 }
 
-/// Start over on an empty mocked trie, as the owner, at `T0`.
+/// Start over on an empty mocked trie, at `T0`, as the registry account itself: the caller a
+/// self-deploy's `new` has (only it and its parent may initialize the registry).
 ///
 /// `testing_env!` carries storage from one context to the next on purpose, so the calls in
 /// one test share state the way consecutive transactions do. The cost is that a second
@@ -90,13 +91,16 @@ pub fn begin() {
         Default::default(),
         None,
     ));
-    call(&owner(), NO_DEPOSIT, T0);
+    call(&registry_id(), NO_DEPOSIT, T0);
 }
 
-/// A registry owned by `owner()` with `oracle()` as its only oracle, at `T0`.
+/// A registry owned by `owner()` with `oracle()` as its only oracle, at `T0`, and the owner's
+/// context entered after the init.
 pub fn fresh() -> Registry {
     begin();
-    Registry::new(owner(), vec![oracle()])
+    let registry = Registry::new(owner(), vec![oracle()]);
+    call(&owner(), NO_DEPOSIT, T0);
+    registry
 }
 
 /// A minimal valid entry.

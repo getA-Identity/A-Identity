@@ -9,8 +9,8 @@ use near_sdk::serde_json::json;
 
 // -- errors -------------------------------------------------------------------------------
 
-/// The spec's list, then the two appended names, in declaration order.
-const NAMES: [&str; 15] = [
+/// The spec's list, then the three appended names, in declaration order.
+const NAMES: [&str; 16] = [
     "NotOwner",
     "NotOracle",
     "OracleLimitReached",
@@ -26,6 +26,7 @@ const NAMES: [&str; 15] = [
     "RequiresOneYocto",
     "CodeHashTooLong",
     "MathOverflow",
+    "InitNotAllowed",
 ];
 
 #[test]
@@ -73,7 +74,8 @@ fn the_variant_list_is_exhaustive() {
             | Error::ScoreOutOfRange
             | Error::RequiresOneYocto
             | Error::CodeHashTooLong
-            | Error::MathOverflow => error.as_str(),
+            | Error::MathOverflow
+            | Error::InitNotAllowed => error.as_str(),
         };
         assert!(NAMES.contains(&named));
     }

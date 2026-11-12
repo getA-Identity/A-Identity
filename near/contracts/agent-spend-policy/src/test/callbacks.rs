@@ -2,11 +2,11 @@
 //! reply that is too long, and a failed promise, in each mode, asserting the outcome, the events
 //! and what happened to the reservation. None of them may abort.
 
-use near_sdk::PromiseResult;
 use near_sdk::json_types::{U64, U128};
+use near_sdk::{PromiseResult, env};
 
 use super::*;
-use crate::{AgentSpendPolicy, MAX_PENDING_HELD, PayMode, PayStatus, PaymentCtx};
+use crate::{AgentSpendPolicy, HoldKind, MAX_PENDING_HELD, PayMode, PayStatus, PaymentCtx};
 
 const DENY: &str = r#"{"account_id":"shop.testnet","verdict":"DENY","reasons":["kya_revoked","wash_traded","sybil_cluster","fourth_reason"],"evidence":null,"score":12,"code_hash":null,"updated_at_ns":"1","updated_by":"oracle.testnet","expires_at_ns":null}"#;
 const WARN: &str = r#"{"account_id":"shop.testnet","verdict":"WARN","reasons":["kya_unverified"]}"#;
@@ -93,10 +93,13 @@ fn pay_warn_releases_and_holds_for_the_owner() {
     assert_eq!(v.refusal_count(shop()), 0, "a WARN is not a refusal");
     let held = v.get_held(out.held_id.unwrap()).unwrap();
     assert_eq!(held.reason, "RegistryWarn");
+    assert_eq!(held.kind, HoldKind::RegistryWarn);
     assert_eq!(held.amount, U128(60));
     assert_eq!(held.memo.as_deref(), Some("memo"));
     assert_eq!(held.payment_id, ctx.payment_id);
-    assert_eq!(event("payment_held")["reason"], "RegistryWarn");
+    let e = event("payment_held");
+    assert_eq!(e["reason"], "RegistryWarn");
+    assert_eq!(e["kind"], "registry_warn");
     assert!(calls().is_empty());
 }
 
@@ -241,7 +244,12 @@ fn request_deny_is_refused_and_counted() {
 
 #[test]
 fn request_warn_allow_and_no_verdict_are_all_held_with_the_agents_reason() {
-    for answer in [WARN, ALLOW, "null"] {
+    // `shop()` is a payee the owner listed, so silence about it is not an unknown payee.
+    for (answer, kind) in [
+        (WARN, HoldKind::RegistryWarn),
+        (ALLOW, HoldKind::AgentRequest),
+        ("null", HoldKind::AgentRequest),
+    ] {
         let mut v = registry_vault();
         let ctx = request_in_flight(&mut v);
         as_callback(vec![ok_json(answer)]);
@@ -251,8 +259,76 @@ fn request_warn_allow_and_no_verdict_are_all_held_with_the_agents_reason() {
         let held = v.get_held(out.held_id.unwrap()).unwrap();
         assert_eq!(held.amount, U128(5_000));
         assert_eq!(held.reason, "AboveAutoApprove");
+        assert_eq!(held.kind, kind, "{answer}");
+        assert_eq!(
+            event("payment_held")["kind"],
+            serde_json::to_value(kind).unwrap(),
+            "{answer}"
+        );
         assert_eq!(v.spent_today(), U128(0), "{answer}");
         assert!(calls().is_empty(), "{answer}");
+    }
+}
+
+/// Finding ABI-1: a request's reason is the agent's own text, and a prompt-injected agent can
+/// make it read like a vault code, here to pass a payee the registry warned on off as merely
+/// new. The hold's `kind` is the vault's word, from the registry's answer.
+#[test]
+fn an_agent_cannot_relabel_a_registry_warn_as_an_unknown_payee() {
+    let mut v = registry_vault();
+    as_agent();
+    promise(v.request_payment(newcomer(), U128(60), None, "UnknownPayee".to_owned()));
+    let ctx = scheduled_ctx("on_verdict");
+    as_callback(vec![ok_json(WARN)]);
+    let out = value(v.on_verdict(ctx));
+    assert_status(&out, PayStatus::Held);
+    assert_eq!(
+        out.reason.as_deref(),
+        Some("UnknownPayee"),
+        "the agent's words stay its words"
+    );
+    let held = v.get_held(out.held_id.unwrap()).unwrap();
+    assert_eq!(held.kind, HoldKind::RegistryWarn);
+    let e = event("payment_held");
+    assert_eq!(e["reason"], "UnknownPayee");
+    assert_eq!(e["kind"], "registry_warn");
+}
+
+/// Finding AUTH-3: a request in flight when the owner revokes its key is refused, not held.
+/// The revocation already dropped the key's held payments; one arriving after it must not
+/// refill the owner's queue.
+#[test]
+fn a_request_in_flight_when_its_key_is_revoked_is_refused_not_held() {
+    for answer in [WARN, ALLOW, "null"] {
+        let mut v = registry_vault();
+        let ctx = request_in_flight(&mut v);
+        as_owner_yocto();
+        v.revoke_agent_key(agent());
+        as_callback(vec![ok_json(answer)]);
+        let out = value(v.on_verdict(ctx));
+        assert_refused(&out, "NotAgent");
+        assert_eq!(event("payment_refused")["source"], "policy", "{answer}");
+        assert!(v.list_held(None, None).is_empty(), "{answer}");
+        assert_eq!(v.spent_today(), U128(0), "{answer}");
+    }
+}
+
+/// The same for the agent's own `pay`: a WARN, or silence about a payee nobody has judged,
+/// would have been held. A freeze still holds it (`test/unknown.rs`); a revoked key does not.
+#[test]
+fn a_pay_in_flight_when_its_key_is_revoked_is_refused_rather_than_held() {
+    for (payee, answer) in [(shop(), WARN), (newcomer(), "null")] {
+        let mut v = registry_vault();
+        as_agent();
+        promise(v.pay(payee.clone(), U128(60), None));
+        let ctx = scheduled_ctx("on_verdict");
+        assert_eq!(v.spent_today(), U128(60));
+        as_owner_yocto();
+        v.revoke_agent_key(agent());
+        as_callback(vec![ok_json(answer)]);
+        assert_refused(&value(v.on_verdict(ctx)), "NotAgent");
+        assert_eq!(v.spent_today(), U128(0), "{payee}: released");
+        assert!(v.list_held(None, None).is_empty(), "{payee}");
     }
 }
 
@@ -266,6 +342,30 @@ fn request_fails_closed_on_every_unusable_answer() {
         assert_refused(&out, "RegistryUnavailable");
         assert!(v.list_held(None, None).is_empty(), "{what}");
         assert_eq!(v.refusal_count(shop()), 0, "{what}");
+    }
+}
+
+/// A request reserves nothing, so its refusal gives nothing back. Given back anyway, a refused
+/// request would be a budget refund on demand: an agent at its cap asks for a payment the
+/// registry refuses (a DENY payee, or any payee while the registry cannot answer) and has that
+/// much to spend again the same day.
+#[test]
+fn a_refused_request_gives_back_no_budget() {
+    for (answer, reason) in [
+        (ok_json(DENY), "RegistryDeny"),
+        (failed(), "RegistryUnavailable"),
+    ] {
+        let mut v = registry_vault();
+        // 60 of the day's 1000 is reserved by a payment on its way to the token.
+        let paying = pay_in_flight(&mut v);
+        as_callback(vec![ok_json(ALLOW)]);
+        promise(v.on_verdict(paying));
+        assert_eq!(v.spent_today(), U128(60));
+
+        let ctx = request_of(&mut v, 50);
+        as_callback(vec![answer]);
+        assert_refused(&value(v.on_verdict(ctx)), reason);
+        assert_eq!(v.spent_today(), U128(60), "{reason}: nothing to give back");
     }
 }
 
@@ -391,6 +491,139 @@ fn a_successful_transfer_is_counted_and_announced() {
     assert_eq!(e["day"], T0_DAY.to_string());
     assert_eq!(e["by_owner"], false);
     assert_eq!(e["memo"], "memo");
+}
+
+/// Finding NEAR-MP-04: `on_transfer` runs after the token moved the money, so it must not add
+/// storage: a receipt whose new storage the vault cannot cover fails at its end, and here that
+/// would be tokens gone with no `payment_sent` and the agent told the payment failed. The
+/// payee's `paid_count` entry is written by the receipt that checked the vault can afford it.
+#[test]
+fn on_transfer_adds_no_storage_after_the_token_moved() {
+    // `other_shop()` is listed, so it is paid on silence, and it has never been paid.
+    let mut v = registry_vault();
+    as_agent();
+    promise(v.pay(other_shop(), U128(60), None));
+    let ctx = scheduled_ctx("on_verdict");
+    as_callback(vec![ok_json("null")]);
+    let before = env::storage_usage();
+    promise(v.on_verdict(ctx));
+    v.paid_count.flush();
+    assert_eq!(
+        env::storage_usage() - before,
+        counter_entry_bytes(&other_shop()),
+        "the entry is written before the token is called"
+    );
+    assert_eq!(
+        v.paid_count(other_shop()),
+        0,
+        "an entry at 0 is still never paid"
+    );
+
+    let ctx = scheduled_ctx("on_transfer");
+    as_callback(vec![ok_bytes(b"")]);
+    let before = env::storage_usage();
+    assert_status(&v.on_transfer(ctx), PayStatus::Sent);
+    v.paid_count.flush();
+    assert_eq!(
+        env::storage_usage(),
+        before,
+        "on_transfer only overwrote it"
+    );
+    assert_eq!(v.paid_count(other_shop()), 1);
+
+    // Without a registry the entry is written by `pay` itself, the same way.
+    let mut v = plain_vault();
+    as_agent();
+    let before = env::storage_usage();
+    promise(v.pay(other_shop(), U128(60), None));
+    v.paid_count.flush();
+    assert_eq!(
+        env::storage_usage() - before,
+        counter_entry_bytes(&other_shop())
+    );
+    let ctx = scheduled_ctx("on_transfer");
+    as_callback(vec![ok_bytes(b"")]);
+    let before = env::storage_usage();
+    assert_status(&v.on_transfer(ctx), PayStatus::Sent);
+    v.paid_count.flush();
+    assert_eq!(env::storage_usage(), before);
+}
+
+/// An entry left at 0 by a transfer that failed changes nothing: the payee is still unknown.
+#[test]
+fn a_failed_first_transfer_leaves_nothing_behind() {
+    let mut v = plain_vault();
+    as_owner_yocto();
+    v.set_hold_unknown(false);
+    as_agent();
+    promise(v.pay(newcomer(), U128(60), None));
+    v.paid_count.flush();
+    let ctx = scheduled_ctx("on_transfer");
+    as_callback(vec![failed()]);
+    let before = env::storage_usage();
+    assert_status(&v.on_transfer(ctx), PayStatus::Failed);
+    v.paid_count.flush();
+    assert_eq!(
+        before - env::storage_usage(),
+        counter_entry_bytes(&newcomer()),
+        "the entry written for the attempt is gone with it"
+    );
+    assert_eq!(v.paid_count(newcomer()), 0);
+
+    // Never paid, so still unknown once the owner holds unknown payees again.
+    as_owner_yocto();
+    v.set_hold_unknown(true);
+    as_agent();
+    let out = value(v.pay(newcomer(), U128(60), None));
+    assert_status(&out, PayStatus::Held);
+    assert_eq!(out.reason.as_deref(), Some("UnknownPayee"));
+}
+
+#[test]
+fn a_failed_transfer_never_removes_a_count_that_landed() {
+    // Two payments to a listed, never-paid payee in flight; the first lands, the second fails.
+    let mut v = plain_vault();
+    as_agent();
+    promise(v.pay(other_shop(), U128(60), None));
+    let first = scheduled_ctx("on_transfer");
+    as_agent();
+    promise(v.pay(other_shop(), U128(40), None));
+    let second = scheduled_ctx("on_transfer");
+    as_callback(vec![ok_bytes(b"")]);
+    assert_status(&v.on_transfer(first), PayStatus::Sent);
+    as_callback(vec![failed()]);
+    assert_status(&v.on_transfer(second), PayStatus::Failed);
+    assert_eq!(v.paid_count(other_shop()), 1);
+}
+
+/// The other order: a failed transfer removed the entry while a second payment to the same
+/// never-paid payee was still in flight, so the landing finds none. It writes one if the vault
+/// can cover it, and otherwise skips the count, never the event and never the receipt: the
+/// money has moved, and an uncounted payee only stays unknown.
+#[test]
+fn a_landing_after_a_failed_one_counts_when_it_can_and_never_aborts() {
+    for (balance, counted) in [
+        (DEFAULT_BALANCE, 1),
+        // 300 KiB of mocked storage locks 3.072 NEAR; 1 milliNEAR is under the headroom.
+        (3_073_000_000_000_000_000_000_000, 0),
+    ] {
+        let mut v = plain_vault();
+        as_agent();
+        promise(v.pay(other_shop(), U128(60), None));
+        let first = scheduled_ctx("on_transfer");
+        as_agent();
+        promise(v.pay(other_shop(), U128(40), None));
+        let second = scheduled_ctx("on_transfer");
+        as_callback(vec![failed()]);
+        assert_status(&v.on_transfer(first), PayStatus::Failed);
+
+        set_balance(balance);
+        as_callback(vec![ok_bytes(b"")]);
+        assert_status(&v.on_transfer(second), PayStatus::Sent);
+        assert_eq!(event("payment_sent")["amount"], "40");
+        assert_eq!(v.paid_count(other_shop()), counted, "balance {balance}");
+        assert_eq!(v.spent_today(), U128(40));
+    }
 }
 
 #[test]

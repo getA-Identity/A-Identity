@@ -10,8 +10,8 @@
 //! the name and nothing else. No formatting, no account ids, no amounts: a client matches
 //! the whole message, and a message with data in it is a message nobody can match.
 //!
-//! The last two variants are not in the spec's list, and each is there because the spec's
-//! list had no honest name for a refusal the spec's own rules require:
+//! The last three variants are not in the spec's list, and each is there because the spec's
+//! list had no honest name for a refusal the contract needs:
 //!
 //! * `CodeHashTooLong`. The spec bounds `code_hash` at 64 bytes but names no error for it.
 //!   Reusing `EvidenceTooLong` would send a client looking at the wrong field.
@@ -19,6 +19,10 @@
 //!   counter at `u32::MAX`. Wrapping the deadline would put it in the past, which would
 //!   expire a DENY the moment it was written, so it is refused by name instead. The vault
 //!   uses the same name for the same class of refusal.
+//! * `InitNotAllowed`. `new` is `#[init]` but open to any caller, so it also requires the
+//!   registry account itself or the parent that creates it in the same batch. A deploy sent
+//!   without its init must not let the first stranger name itself owner and oracle. The vault
+//!   uses the same name for the same check.
 //!
 //! Two failures deliberately have NO name here, because near-sdk raises them in the
 //! generated entry point before any code in this crate runs, and clients must expect the
@@ -66,11 +70,14 @@ pub enum Error {
     /// A deadline or a counter would not fit its integer type. Appended; see the module
     /// comment.
     MathOverflow,
+    /// `new` was called by an account that is neither the registry account itself nor its
+    /// parent. Appended; see the module comment.
+    InitNotAllowed,
 }
 
 impl Error {
     /// Every variant, in declaration order, so tests can hold the names to the spec.
-    pub const ALL: [Error; 15] = [
+    pub const ALL: [Error; 16] = [
         Error::NotOwner,
         Error::NotOracle,
         Error::OracleLimitReached,
@@ -86,6 +93,7 @@ impl Error {
         Error::RequiresOneYocto,
         Error::CodeHashTooLong,
         Error::MathOverflow,
+        Error::InitNotAllowed,
     ];
 
     /// The stable name. It is the whole panic message.
@@ -106,6 +114,7 @@ impl Error {
             Error::RequiresOneYocto => "RequiresOneYocto",
             Error::CodeHashTooLong => "CodeHashTooLong",
             Error::MathOverflow => "MathOverflow",
+            Error::InitNotAllowed => "InitNotAllowed",
         }
     }
 

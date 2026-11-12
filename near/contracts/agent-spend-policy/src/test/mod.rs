@@ -30,6 +30,7 @@
 mod agent;
 mod auth;
 mod callbacks;
+mod counters;
 mod errors;
 mod gas;
 mod ladder;
@@ -210,6 +211,39 @@ pub fn as_callback_with_gas(results: Vec<PromiseResult>, prepaid_gas: Gas) {
 }
 pub fn as_stranger() {
     env_as(stranger(), key(99), 0, vec![]);
+}
+/// The receipt a NEP-366 delegate action becomes: `pk` signed the action as the vault, so the
+/// predecessor is the vault, but the transaction around it came from `relayer`, so the signer
+/// account (and, when the relayer holds the same public key, the signer's key) is the
+/// relayer's. What nearcore builds for the inner receipt, field for field.
+pub fn as_relayed(relayer: AccountId, pk: PublicKey) {
+    let context = VMContextBuilder::new()
+        .current_account_id(vault())
+        .signer_account_id(relayer)
+        .predecessor_account_id(vault())
+        .signer_account_pk(pk)
+        .account_balance(NearToken::from_yoctonear(BALANCE.with(Cell::get)))
+        .block_timestamp(now_ns())
+        .prepaid_gas(MAX_PREPAID_GAS)
+        .build();
+    testing_env!(
+        context,
+        test_vm_config(),
+        RuntimeFeesConfig::test(),
+        Default::default(),
+        vec![]
+    );
+}
+/// The implicit account of `pk`: the 64 hex characters of its 32 key bytes. Anyone can create
+/// it with a plain transfer, and its only key is `pk` with full access, which is how a thief
+/// holding a leaked agent key gets an account to relay from.
+pub fn implicit_account_of(pk: &PublicKey) -> AccountId {
+    // A near-sdk `PublicKey` is the curve byte followed by the key bytes.
+    let hex: String = pk.as_bytes()[1..]
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    hex.parse().unwrap()
 }
 /// A view call at the current test clock. Views read block time from the context, so this is
 /// what a test enters after `advance_s` and before it reads `today`, `spent_today` or
@@ -441,6 +475,13 @@ pub fn assert_status(out: &PayOutcome, status: crate::PayStatus) {
 /// A memo or reason of exactly `n` bytes.
 pub fn text(n: usize) -> String {
     "m".repeat(n)
+}
+
+/// What one per-payee counter (`paid_count`, `refusals`, `guard_refusals`) adds to storage: the
+/// collection's one-byte prefix, the payee id as borsh (a 4-byte length and its bytes), the u32
+/// count, and the 40 bytes the protocol charges for every record. So `len(payee) + 49`.
+pub fn counter_entry_bytes(payee: &AccountId) -> u64 {
+    u64::try_from(payee.as_str().len()).unwrap() + 49
 }
 
 pub fn u128_of(v: &Value) -> u128 {

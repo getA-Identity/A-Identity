@@ -1,7 +1,7 @@
 [package]
 name = "a-identity-registry"
 description = "A-Identity's counterparty risk registry on NEAR: oracle-written verdicts and evidence-backed reports any contract can read."
-version = "0.1.0"
+version = "0.2.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -10,6 +10,45 @@ repository.workspace = true
 
 [lib]
 crate-type = ["cdylib", "rlib"]
+
+# NEP-330 reproducible build. `cargo near build reproducible-wasm` builds this crate inside the
+# image below from what is COMMITTED at HEAD (it clones the repository and drops uncommitted
+# changes), and records the image digest and the command in the wasm's contract source metadata,
+# so anyone can rebuild the same bytes and compare them with the deployed code hash.
+#
+# The image is the one `cargo near new` (cargo-near 0.23.0) writes into its template, NOT one
+# whose Rust matches rust-toolchain.toml, because none exists: of the 49 sourcescan/cargo-near
+# tags on Docker Hub on 2026-11-12, none carries Rust 1.95 (the nearest are 0.21.1-rust-1.93.0
+# and 0.21.1-rust-1.96.0). The image sets RUSTUP_TOOLCHAIN=1.99.1, which takes precedence over
+# rust-toolchain.toml, and runs cargo-near 0.22.0. So the reproducible wasm is compiled by rustc
+# 1.99.1, while every build on the host uses 1.95.0. CI closes that gap rather than the pin: the
+# `reproducible` job in .github/workflows/near.yml runs the whole sandbox suite against the
+# reproducible wasm itself (SANDBOX_WASM_DIR, see sandbox-tests/tests/common/mod.rs) and
+# uploads it only if the suite passes, so the bytes that ship are bytes the sandbox suite
+# exercised. The unit tests run on the host with 1.95.0, as native code: they prove the logic,
+# not the wasm. A local sandbox run builds both contracts with 1.95.0 unless SANDBOX_WASM_DIR
+# names other bytes. Repin this and rust-toolchain.toml together once a tag with matching Rust
+# exists. Kept identical in agent-spend-policy/Cargo.toml.
+[package.metadata.near.reproducible_build]
+# docker image, descriptor of build environment
+image = "sourcescan/cargo-near:0.22.0-rust-1.99.1"
+# tag after colon above serves only descriptive purpose; image is identified by digest
+image_digest = "sha256:c9655eaf7436b90c87ea8b25739f91063032c5c30ba24cfeafe72c142943b5bb"
+# list of environment variables names, whose values, if set, will be used as external build parameters
+# in a reproducible manner
+# supported by `sourcescan/cargo-near:0.10.1-rust-1.82.0` image or later images
+passed_env = []
+# build command inside of docker container
+# if docker image from default gallery is used https://hub.docker.com/r/sourcescan/cargo-near/tags,
+# the command may be any combination of flags of `cargo-near`,
+# supported by respective version of binary inside the container besides `--no-locked` flag
+container_build_command = [
+    "cargo",
+    "near",
+    "build",
+    "non-reproducible-wasm",
+    "--locked",
+]
 
 [dependencies]
 near-sdk = { workspace = true }

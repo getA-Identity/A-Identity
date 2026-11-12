@@ -22,24 +22,40 @@
 //! protocol, not this contract, then guarantees that the key can only ever call those three
 //! methods here, can never attach a deposit (so it cannot call the token's 1-yocto `ft_transfer`,
 //! move NEAR, add or delete keys, or deploy code), and can burn at most its allowance on gas.
-//! The allowance caps NEAR, not tokens; the token is capped by the policy. `revoke_agent_key`
-//! marks the record revoked and deletes the key from the account, so a revoked agent cannot even
-//! sign.
+//! The allowance caps NEAR, not tokens; the token is capped by the policy. That last guarantee
+//! holds for a transaction the key signs itself, and only that: the protocol does not charge a
+//! function-call key's allowance for a NEP-366 delegate action the key signed and someone else
+//! relayed, so the contract refuses every relayed call (next section). `revoke_agent_key` marks
+//! the record revoked, drops the key's held payments and deletes the key from the account, so a
+//! revoked agent cannot even sign.
 //!
 //! The vault account itself should carry NO full-access key. Such a key is total control (it can
 //! redeploy the code or delete the account) and nothing in a contract can bound it.
 //!
-//! ## The one check this contract rests on
+//! ## The checks this contract rests on
 //!
-//! `authenticate_agent` requires `env::predecessor_account_id() == env::current_account_id()`
-//! AND that `env::signer_account_pk()` is a registered, non-revoked agent key. Both halves are
-//! load-bearing. The signer's public key survives every hop of a cross-contract call chain, so on
-//! its own it only proves that some transaction somewhere was signed with that key; a contract the
-//! key holder was lured into calling could forward a `pay`. Requiring the predecessor to be the
-//! vault makes it mean "this transaction was sent by the vault account itself", which is only
-//! possible with a key on the vault account, and the only keys this contract ever adds are the
-//! restricted ones above. Anything else panics `NotAgent`, which writes nothing and logs nothing,
-//! so an outsider cannot spam the vault's event log either.
+//! `authenticate_agent` requires three things, and each one is load-bearing:
+//!
+//! * `env::predecessor_account_id() == env::current_account_id()`. The signer's public key
+//!   survives every hop of a cross-contract call chain, so on its own it only proves that some
+//!   transaction somewhere was signed with that key; a contract the key holder was lured into
+//!   calling could forward a `pay`. A predecessor equal to the vault means the call came from
+//!   the vault account itself, not from a contract along the way.
+//! * `env::signer_account_id() == env::current_account_id()`. A delegate action the agent key
+//!   signed arrives with the vault as predecessor and the RELAYER as signer, and a thief holding
+//!   a leaked key can relay from that key's own implicit account, where the same public key is a
+//!   full-access key, so `signer_account_pk` is the agent key as well. The protocol checks such
+//!   an action against the key's method list but never charges its allowance, and the vault pays
+//!   no gas for it, so the allowance would stop bounding what a leaked key can make the vault
+//!   store or register. With the signer required to be the vault, the transaction itself was
+//!   signed by a key ON the vault account, and a function-call key cannot sign a delegate action
+//!   (the protocol answers `RequiresFullAccess`): every agent call the vault accepts was paid
+//!   from the calling key's own allowance.
+//! * `env::signer_account_pk()` is a registered, non-revoked agent key. The only keys this
+//!   contract ever adds are the restricted ones above.
+//!
+//! Anything else panics `NotAgent`, which writes nothing and logs nothing, so an outsider cannot
+//! spam the vault's event log either.
 //!
 //! The same fact cuts the other way for callbacks. Because the agent's key signs AS the vault,
 //! `#[private]` (predecessor == current account) does not keep the agent out of a callback; the
@@ -65,6 +81,15 @@
 //! included, can record a refusal against any payee, so that count is this vault's agent's
 //! word, never a signal another vault should read about the payee.
 //!
+//! Each counter is a storage entry per payee, and a payee name does not have to be an existing
+//! account, so both are bounded by the number of payees they cover. `record_refusal` starts a
+//! new payee's guard counter only while fewer than `MAX_GUARD_PAYEES` payees have one, and
+//! refuses `GuardRefusalLimitReached` past that, writing nothing. A registry DENY starts a new
+//! payee's `refusal_count` only while fewer than `MAX_REFUSAL_PAYEES` payees have one; past that
+//! the payment is still refused `RegistryDeny`, it is just not counted. The owner removes
+//! counters with `forget_guard_refusals` and `forget_refusals`, which frees their slots, at
+//! most `MAX_FORGET_BATCH` (50) payees a call, so a full map of 100 takes two calls.
+//!
 //! ## Reservation before every external call
 //!
 //! NEAR is asynchronous: between a cross-contract call and its callback, any number of other
@@ -74,6 +99,13 @@
 //! therefore all count against the cap the moment they start, and a callback that never runs
 //! leaves the budget charged, which fails closed. Callbacks read promise results as raw bytes and
 //! never abort on anything a registry or token can send (`verdict.rs`).
+//!
+//! The cap rests on one assumption about the token, stated because a token's issuer can upgrade
+//! it: a failed `ft_transfer` moved nothing. NEP-141's `ft_transfer` returns no promise, and the
+//! near-contract-standards implementation (mock-ft's too) panics before it moves anything. A
+//! token whose `ft_transfer` moved the balance and then returned a promise that failed would
+//! make `on_transfer` release the reservation of a payment that went out. Check the token's
+//! code hash before pointing a vault at it, and again after the issuer upgrades it.
 //!
 //! ## What is not here, on purpose
 //!
@@ -101,11 +133,11 @@
 //! release wasm, the A-Identity registry and the workspace's mock-ft (`sandbox-tests/tests/
 //! gas.rs` records every figure below):
 //!
-//! * A payment that lands (registry check, payee registration, transfer, callback) burns 13.7
-//!   Tgas across its receipts: `pay` 2.3, `get_verdict` 1.3, `on_verdict` 2.9, `storage_deposit`
+//! * A payment that lands (registry check, payee registration, transfer, callback) burns 14.0
+//!   Tgas across its receipts: `pay` 2.4, `get_verdict` 1.3, `on_verdict` 3.0, `storage_deposit`
 //!   1.7, `ft_transfer` 1.7, `on_transfer` 1.8, and the gas refunds. A DENY, a WARN hold, an
-//!   unknown-payee hold and a held request each burn about 6.5 Tgas, and `record_refusal` 2.4.
-//!   The owner's `owner_pay` burns about 14, `withdraw` 6.4 and `add_agent_key` 5.2.
+//!   unknown-payee hold and a held request each burn 6.5 to 6.8 Tgas, and `record_refusal` 2.4.
+//!   The owner's `owner_pay` burns about 14.5, `withdraw` 6.4 and `add_agent_key` 5.3.
 //! * The smallest prepaid gas at which a payment lands through the registry is 51 Tgas, for
 //!   the lightest ALLOW and for the heaviest one the registry can produce (every verdict field
 //!   at its limit, a 128-byte memo, a 64-byte payee id). With 50, `pay` aborts while scheduling,
@@ -114,9 +146,10 @@
 //! * That schedule is only safe if every callback can finish on its static budget alone, which
 //!   is all it gets when the agent attaches exactly the floor. A budget below its callback's need
 //!   is worse than a high floor: `pay` schedules, the callback runs dry, and the day's
-//!   reservation is stranded with no event. Measured: with a 37 Tgas budget `on_verdict` ran dry
-//!   on the lightest ALLOW already, with 39 it settled the heaviest, so its 42 keeps 3 Tgas over
-//!   its need.
+//!   reservation is stranded with no event. Measured: with a 39 Tgas budget `on_verdict` settled
+//!   the lightest ALLOW and ran dry on the heaviest, with 40 it settled the heaviest, so its 42
+//!   keeps 2 Tgas over its need (3 before this version wrote the payee's `paid_count` entry in
+//!   that receipt).
 //! * So `AGENT_PREPAID_GAS`, 73 Tgas, is what to attach to `pay` and `request_payment`: the
 //!   smallest whole figure that keeps 30 percent of it free over the 51 Tgas floor. 10 Tgas is
 //!   enough for `record_refusal`. The margin flows to `on_verdict` and `on_transfer`, never to
@@ -124,7 +157,7 @@
 //! * The allowance this implies: 0.073 NEAR held for each payment in flight, and only the burnt
 //!   gas actually spent, at the network's gas price, the rest credited back: 0.0012 NEAR per
 //!   landed payment at 0.0001 NEAR per Tgas. 0.1 NEAR covers ten payments one after the other
-//!   (measured: ten charged 0.0122 NEAR) and still would at twice the gas price; ten at once need
+//!   (measured: ten charged 0.0123 NEAR) and still would at twice the gas price; ten at once need
 //!   ten holds, 0.73 NEAR. A 0.25 NEAR allowance runs three payments at once, and roughly 140 in
 //!   total before the key can no longer prepay 73 Tgas and the owner has to issue a new one (an
 //!   allowance cannot be topped up: revoke, forget, add). The vault's liquid NEAR must cover the
@@ -140,20 +173,28 @@
 //! the token is called. With it off, an agent key that keeps paying new payees can spend about
 //! as much again in registrations as in gas, and only the allowlist bounds that.
 //!
-//! Storage is another matter. Holds are bounded (`MAX_PENDING_HELD`), but `record_refusal`
-//! creates a guard counter for each payee it names, and a payee name does not have to be an
-//! existing account, so a leaked agent key can lock the vault's NEAR in counters: up to about
-//! 0.0011 NEAR of storage per call against about 0.0002 NEAR of burnt allowance, roughly 5
-//! times the allowance it has left. Nothing moves and the counters stay readable, but nothing
-//! deletes them either. Revoking the key stops it; a bound on it needs a new error name, which
-//! is ABI, so it is left for a version that adds one.
+//! Storage is bounded the same way, because a key that cannot spend the vault's tokens could
+//! otherwise still lock its NEAR in storage stake. Everything an agent key can make the vault
+//! store has a bound: held payments (`MAX_PENDING_HELD`, at most about 0.005 NEAR each with an
+//! ed25519 key), guard counters (`MAX_GUARD_PAYEES`) and registry refusal counters
+//! (`MAX_REFUSAL_PAYEES`), at most 113 bytes, about 0.0011 NEAR, each for a 64-byte payee id, so
+//! about 0.23 NEAR for both kinds of counter at their bounds. A payee's `paid_count` entry costs
+//! a transfer attempt and its registration on the token, so it is bounded like those. A leaked
+//! key reaches these bounds only within its allowance (a `record_refusal` burns about 0.0002
+//! NEAR of it), and only directly (see "The checks this contract rests on"); the owner revokes
+//! the key, then forgets the counters it made, which unlocks their stake again.
 //!
-//! Keep a little NEAR beyond all that. A hold, or the first counter for a payee, adds storage
-//! (a held payment with an ed25519 agent key is at most about 0.005 NEAR), and a callback whose
-//! new storage the vault cannot cover fails at the end of its receipt. That fails closed (no
-//! money moves, and the day's reservation stays charged until the UTC day rolls over) but it
-//! leaves no event. The paying path checks for 0.01 NEAR of headroom before it attaches the
-//! registration deposit (`can_fund`) and reports `TransferFailed` instead of trying.
+//! Keep a little NEAR beyond all that. A receipt whose new storage the account cannot cover
+//! fails at its end with no event, and in a callback that would also strand the day's
+//! reservation until the UTC day rolls over. So no write of new storage is left to that check.
+//! A hold, or a payee's first counter, is written only while the vault's NEAR above its stake
+//! is at least `STORAGE_HEADROOM` (0.01 NEAR, about twice the largest hold); short of that the
+//! hold or the record is refused `StorageNotCovered`, and a registry DENY is refused without
+//! being counted. The paying path checks for the registration deposit plus that headroom
+//! before it attaches the deposit (`can_fund`) and reports `TransferFailed` instead of trying,
+//! and it writes the payee's `paid_count` entry in that same receipt, before the token is
+//! called, so `on_transfer` only overwrites that value (or removes it, when the transfer
+//! failed) and cannot fail after the money moved.
 
 mod error;
 mod event;
@@ -168,7 +209,7 @@ pub use crate::error::Error;
 pub use crate::event::{RefusalSource, VaultEvent};
 pub use crate::policy::{MAX_LABEL_BYTES, MAX_MEMO_BYTES, MAX_PENDING_HELD, MAX_REASON_BYTES};
 pub use crate::types::{
-    AgentKey, AgentKeyView, HeldPayment, HeldPaymentView, PayMode, PayOutcome, PayStatus,
+    AgentKey, AgentKeyView, HeldPayment, HeldPaymentView, HoldKind, PayMode, PayOutcome, PayStatus,
     PaymentCtx, VaultConfig,
 };
 pub use crate::verdict::Answer;
@@ -188,13 +229,33 @@ use crate::policy::Snapshot;
 pub const MAX_AGENT_KEYS: u32 = 5;
 /// Most payees on the allowlist. Bounded so `list_allowlist` and the vault's storage stay small.
 pub const MAX_ALLOWLIST: u32 = 100;
+/// Most payees with a guard refusal counter (`record_refusal`). A payee name does not have to
+/// be an existing account, so this bounds the storage any agent key can make the vault stake on
+/// counters: 113 bytes, about 0.0011 NEAR, for a 64-byte payee id, so about 0.11 NEAR at most.
+pub const MAX_GUARD_PAYEES: u32 = 100;
+/// Most payees with a registry refusal counter (`refusal_count`). Only a registry DENY starts
+/// one, but every DENY'd payee an agent names starts one, so it is bounded like the guard's.
+pub const MAX_REFUSAL_PAYEES: u32 = 100;
+/// Most payees one `forget_guard_refusals` or `forget_refusals` call may name, duplicates and
+/// payees without a counter included. More is refused `BatchTooLarge` before anything is
+/// removed. The bound is the receipt's log budget, not gas: every removal logs one event, and
+/// NEAR caps what one receipt may log at 16384 bytes and 100 lines. The longest such event, a
+/// 64-byte payee whose count is `u32::MAX`, is a 198-byte line, so 82 of them fit and a full
+/// map of 100 does not: a call that named them all would abort in the runtime
+/// (`TotalLogLengthExceeded`), removing nothing, after the owner paid for it. 50 lines take at
+/// most 9900 bytes, so a call within this bound always fits, and two calls clear a full map.
+/// Like the registry's `MAX_BATCH`, which is refused with the same name.
+pub const MAX_FORGET_BATCH: usize = 50;
 /// How long a held payment waits for the owner before it expires.
 pub const HELD_TTL_S: u64 = 86_400;
 /// The only methods an agent key may call. Passed verbatim to the protocol as the key's
 /// permission, and the reason `#[private]` callbacks are out of the agent's reach.
 pub const AGENT_METHODS: &str = "pay,request_payment,record_refusal";
-/// Reported by `get_config()`.
-pub const VERSION: &str = "agent-spend-policy 0.1.0";
+/// Reported by `get_config()`. Bumped with every change to the JSON or error ABI, so a client
+/// can tell builds apart without probing for methods: 0.2.0 refuses relayed agent calls, bounds
+/// the per-payee counters (and what one call to forget them may name), records `kind` on holds
+/// and checks the caller of `new`.
+pub const VERSION: &str = "agent-spend-policy 0.2.0";
 /// The held reason when a `pay` is held because the registry said WARN.
 pub const REASON_REGISTRY_WARN: &str = "RegistryWarn";
 /// The held reason when a `pay` is held because nobody has judged the payee: the registry has
@@ -216,12 +277,14 @@ pub const GAS_REGISTRY_VIEW: Gas = Gas::from_tgas(5);
 /// `on_verdict`: read and parse the answer, then either decide (refuse, hold) or schedule the
 /// transfer chain, which reserves the three budgets below (35 Tgas). It must be able to do that
 /// on this budget alone, because that is all it has when the agent attached exactly the floor:
-/// measured, it ran dry at 37 Tgas on the lightest ALLOW already and settled the heaviest ALLOW
-/// the registry can produce at 39. The 3 Tgas over that are for a longer reply from another
-/// registry, up to the vault's read limit. Paths that hold or refuse schedule nothing and have all 42, the heaviest of them
-/// a hold that prunes a full held map first. Every Tgas here raises the smallest prepaid gas at
-/// which a payment lands by one, so it is sized to the paying path rather than rounded up; the
-/// agent's margin over it arrives as leftover gas.
+/// measured on this version, it settled the lightest ALLOW at 39 Tgas, ran dry at 39 on the
+/// heaviest ALLOW the registry can produce and settled that one at 40 (0.1.0 settled it at 39;
+/// 0.2.0 also writes the payee's `paid_count` entry here, before the token is called). The 2
+/// Tgas over that are for a longer reply from another registry; an agent that attaches
+/// `AGENT_PREPAID_GAS` hands this callback about 22 Tgas more. Paths that hold or refuse schedule
+/// nothing and have all 42, the heaviest of them a hold that prunes a full held map first. Every
+/// Tgas here raises the smallest prepaid gas at which a payment lands by one, so it is sized to
+/// the paying path rather than rounded up; the agent's margin over it arrives as leftover gas.
 pub const GAS_ON_VERDICT: Gas = Gas::from_tgas(42);
 /// The token's `storage_deposit` for the payee. Measured on mock-ft: 0.6 to 0.8 Tgas used (a new
 /// payee's registration, an existing payee's refund). The margin
@@ -250,8 +313,10 @@ pub const GAS_ON_WITHDRAW: Gas = Gas::from_tgas(10);
 pub const AGENT_PREPAID_GAS: Gas = Gas::from_tgas(73);
 
 const ONE_YOCTO: NearToken = NearToken::from_yoctonear(1);
-/// NEAR kept free above the storage stake when the vault attaches a deposit, so the receipt that
-/// attaches it cannot then fail its own end-of-receipt storage check.
+/// NEAR kept free above the storage stake when the vault attaches a deposit or writes new
+/// storage (a hold, a payee's first counter, a payee's `paid_count` entry), so the receipt that
+/// does it cannot then fail its own end-of-receipt storage check. Each such receipt adds at most
+/// one entry, and the largest, a held payment, is about half of this.
 const STORAGE_HEADROOM: NearToken = NearToken::from_millinear(10);
 
 /// Collection prefixes. Order is frozen once deployed: a reordered variant points a collection
@@ -323,12 +388,21 @@ pub struct AgentSpendPolicy {
     /// count says what this vault's agent believed, never what is true about the payee, so it
     /// must not feed a reputation signal that crosses vaults.
     guard_refusals: LookupMap<AccountId, u32>,
+    /// How many payees have an entry in `guard_refusals`, at most `MAX_GUARD_PAYEES`. Kept here
+    /// because a `LookupMap` has no length. Changed only where an entry is created or removed.
+    guard_payees: u32,
+    /// How many payees have an entry in `refusals`, at most `MAX_REFUSAL_PAYEES`.
+    refusal_payees: u32,
 }
 
 #[near]
 impl AgentSpendPolicy {
-    /// Initialize the vault. Deploy and init happen in one batch from the owner, so there is no
-    /// window in which the contract exists uninitialized for someone else to claim.
+    /// Initialize the vault. Deploy and init belong in one batch, so there is no window in which
+    /// the contract exists uninitialized. Should a deploy ever go out without its init, the
+    /// caller is checked as well: only the vault account itself (a self-deploy) or its parent
+    /// (the account that creates `vault.<parent>` in the same batch) may call `new`, anyone else
+    /// is refused `InitNotAllowed`. Without that, the first stranger to see such a deploy could
+    /// make itself the owner of an account that has no full-access key left to redeploy it.
     ///
     /// A vault that owned itself would let any agent key (which signs as the vault account)
     /// satisfy the owner check, so `owner_id == vault` is refused. A token at the vault's own
@@ -347,6 +421,10 @@ impl AgentSpendPolicy {
         auto_approve_max: U128,
     ) -> Self {
         let vault_id = env::current_account_id();
+        let caller = env::predecessor_account_id();
+        if caller != vault_id && !vault_id.is_sub_account_of(&caller) {
+            Error::InitNotAllowed.panic();
+        }
         if owner_id == vault_id {
             Error::OwnerIsVault.panic();
         }
@@ -374,6 +452,8 @@ impl AgentSpendPolicy {
             refusals: LookupMap::new(StorageKey::Refusals),
             paid_count: LookupMap::new(StorageKey::PaidCount),
             guard_refusals: LookupMap::new(StorageKey::GuardRefusals),
+            guard_payees: 0,
+            refusal_payees: 0,
         };
         VaultEvent::VaultInitialized {
             owner_id: &this.owner_id,
@@ -457,6 +537,13 @@ impl AgentSpendPolicy {
     /// the key immediately, even before the scheduled `delete_key` lands and even if it were to
     /// fail. The record is kept for audit; `forget_agent_key` removes it. Revoking an already
     /// revoked key re-issues the delete, which is a harmless retry.
+    ///
+    /// The key's held payments are dropped in the same receipt, each with a `held_rejected`
+    /// event. A key is revoked because it is no longer trusted, and what it asked for must not
+    /// keep the owner's queue full or wait there to be approved by mistake; a payment of the
+    /// key's that is still in flight is refused `NotAgent` instead of held. Rotating a key
+    /// therefore drops its pending requests, and the agent asks again with its new key. The walk
+    /// is bounded by `MAX_PENDING_HELD`.
     #[payable]
     pub fn revoke_agent_key(&mut self, public_key: PublicKey) {
         self.assert_owner_one_yocto();
@@ -468,6 +555,19 @@ impl AgentSpendPolicy {
             public_key: &public_key,
         }
         .emit();
+        let dropped: Vec<u64> = self
+            .held
+            .iter()
+            .filter(|(_, held)| held.agent_pk == public_key)
+            .map(|(id, _)| *id)
+            .collect();
+        for held_id in dropped {
+            self.held.remove(&held_id);
+            VaultEvent::HeldRejected {
+                held_id: U64(held_id),
+            }
+            .emit();
+        }
         Promise::new(env::current_account_id())
             .delete_key(public_key)
             .detach();
@@ -656,6 +756,64 @@ impl AgentSpendPolicy {
         VaultEvent::HeldRejected { held_id }.emit();
     }
 
+    // -- owner: counters --------------------------------------------------------------------
+
+    /// Remove the guard refusal counters of `payees`, freeing their slots under
+    /// `MAX_GUARD_PAYEES` and the NEAR they held in storage stake. For the owner who has read
+    /// what the agent recorded (every record is a `payment_refused` event with source
+    /// `agent_guard`), typically after revoking a key that filled the slots with made-up names.
+    ///
+    /// Each removed counter emits `guard_refusals_forgotten` with the count it read. A payee
+    /// with no counter, or listed twice, is skipped without an event.
+    ///
+    /// At most `MAX_FORGET_BATCH` (50) names a call, or the call is refused `BatchTooLarge`.
+    /// The limit is the receipt's 16384-byte log budget, not gas: 100 removals of 64-byte names
+    /// would overrun it, so a full map of 100 counters takes two calls. The call is atomic: it
+    /// removes every counter it names, or, when it fails (`BatchTooLarge`, too little gas),
+    /// none. Measured on near-sandbox 2.14.0 (`sandbox-tests/tests/vault_guards.rs`): a full
+    /// batch of 50 removals of 64-byte names burns about 15.2 Tgas, so 30 Tgas covers a call.
+    #[payable]
+    pub fn forget_guard_refusals(&mut self, payees: Vec<AccountId>) {
+        self.assert_owner_one_yocto();
+        if payees.len() > MAX_FORGET_BATCH {
+            Error::BatchTooLarge.panic();
+        }
+        for payee in payees {
+            if let Some(count) = self.guard_refusals.remove(&payee) {
+                self.guard_payees = self.guard_payees.saturating_sub(1);
+                VaultEvent::GuardRefusalsForgotten {
+                    payee: &payee,
+                    count,
+                }
+                .emit();
+            }
+        }
+    }
+
+    /// Remove the registry refusal counters of `payees`, freeing their slots under
+    /// `MAX_REFUSAL_PAYEES` and their storage stake. A registry DENY that no longer stands
+    /// leaves its count behind, and only the owner can take it back out; each removal emits
+    /// `refusals_forgotten` with the count it read, so the log keeps what the counter said.
+    /// Skips a payee with no counter, and takes at most `MAX_FORGET_BATCH` names a call, all
+    /// or none, like `forget_guard_refusals`.
+    #[payable]
+    pub fn forget_refusals(&mut self, payees: Vec<AccountId>) {
+        self.assert_owner_one_yocto();
+        if payees.len() > MAX_FORGET_BATCH {
+            Error::BatchTooLarge.panic();
+        }
+        for payee in payees {
+            if let Some(count) = self.refusals.remove(&payee) {
+                self.refusal_payees = self.refusal_payees.saturating_sub(1);
+                VaultEvent::RefusalsForgotten {
+                    payee: &payee,
+                    count,
+                }
+                .emit();
+            }
+        }
+    }
+
     /// Move tokens back to the owner. There is deliberately no `to` argument: a compromised
     /// console session that can get the owner to sign a withdrawal still cannot send the funds
     /// to a third party. Not counted against the day, because it is the owner reclaiming their
@@ -813,6 +971,12 @@ impl AgentSpendPolicy {
     /// with a receipt and an event even though nothing was ever about to move. Increments the
     /// payee's `guard_refusal_count`, never its `refusal_count`: this is the agent's own word,
     /// and an agent key (a prompt-injected one included) can say it about any payee.
+    ///
+    /// A payee that has no counter yet costs the vault a new storage entry, so after the request
+    /// gates come two more: `GuardRefusalLimitReached` when `MAX_GUARD_PAYEES` payees already
+    /// have one, and `StorageNotCovered` when the vault's NEAR cannot cover it. Either way
+    /// nothing is written and the refusal is a `policy` one; a payee that already has a counter
+    /// only increments it and always passes both.
     pub fn record_refusal(&mut self, payee: AccountId, amount: U128, reason: String) -> PayOutcome {
         let (agent_pk, key_expires_at_s) = self.authenticate_agent();
         let payment_id = self.take_payment_id();
@@ -833,11 +997,8 @@ impl AgentSpendPolicy {
             reason: None,
             held_id: None,
         };
-        match verdict {
-            Ok(()) => {
-                bump(&mut self.guard_refusals, &ctx.payee);
-                refused(&ctx, &reason, RefusalSource::AgentGuard, &[])
-            }
+        match verdict.and_then(|()| self.count_guard_refusal(&ctx.payee)) {
+            Ok(()) => refused(&ctx, &reason, RefusalSource::AgentGuard, &[]),
             Err(err) => refused(&ctx, err.as_str(), RefusalSource::Policy, &[]),
         }
     }
@@ -864,14 +1025,18 @@ impl AgentSpendPolicy {
     /// The token transfer's result. Success counts the payment and emits `payment_sent`; failure
     /// releases the reservation (only if it still belongs to today) and emits `payment_failed`.
     /// Success is read from the promise status alone (`promise_succeeded`), so no reply body
-    /// can make this abort.
+    /// can make this abort. And it adds no storage the vault cannot cover, so it cannot fail its
+    /// end-of-receipt check after the token moved: `transfer` wrote the payee's `paid_count`
+    /// entry before the token was called, a landing overwrites it (`count_paid`), and a failure
+    /// removes it again if no payment to the payee has ever landed (`forget_unpaid`).
     #[private]
     pub fn on_transfer(&mut self, ctx: PaymentCtx) -> PayOutcome {
         require_callback();
         if !promise_succeeded() {
+            self.forget_unpaid(&ctx.payee);
             return self.transfer_failed(&ctx);
         }
-        bump(&mut self.paid_count, &ctx.payee);
+        self.count_paid(&ctx.payee);
         VaultEvent::PaymentSent {
             payment_id: ctx.payment_id,
             payee: &ctx.payee,
@@ -1006,7 +1171,13 @@ impl AgentSpendPolicy {
     }
 
     /// How often the registry's DENY refused a payment to `payee` here. Only registry verdicts
-    /// count, so this is the number that may be read as a signal about the payee.
+    /// count, so this is the number that may be read as a signal about the payee, with three
+    /// limits a reader from outside must apply. The registry is the one this vault's owner set
+    /// (`get_config().registry_id`): read it, and this vault's code hash, before trusting the
+    /// count. Every refused attempt counts, a repeated one included, so it says "refused, and
+    /// how persistently it was tried", not how many distinct payments. And it is 0 for a payee
+    /// first refused while `MAX_REFUSAL_PAYEES` payees already had a counter, or whose counter
+    /// the owner forgot (`forget_refusals`).
     pub fn refusal_count(&self, payee: AccountId) -> u32 {
         self.refusals.get(&payee).copied().unwrap_or(0)
     }
@@ -1015,6 +1186,18 @@ impl AgentSpendPolicy {
     /// word, not a fact about the payee; see `record_refusal`.
     pub fn guard_refusal_count(&self, payee: AccountId) -> u32 {
         self.guard_refusals.get(&payee).copied().unwrap_or(0)
+    }
+
+    /// How many payees have a guard refusal counter, at most `MAX_GUARD_PAYEES`. At the bound, a
+    /// `record_refusal` naming a payee without one is refused `GuardRefusalLimitReached`.
+    pub fn guard_refusal_payees(&self) -> u32 {
+        self.guard_payees
+    }
+
+    /// How many payees have a registry refusal counter, at most `MAX_REFUSAL_PAYEES`. At the
+    /// bound, a DENY of a payee without one is still refused, but not counted.
+    pub fn refusal_payees(&self) -> u32 {
+        self.refusal_payees
     }
 
     pub fn paid_count(&self, payee: AccountId) -> u32 {
@@ -1041,9 +1224,10 @@ impl AgentSpendPolicy {
         }
     }
 
-    /// See the crate docs, "The one check this contract rests on". Returns the key and its expiry.
+    /// See the crate docs, "The checks this contract rests on". Returns the key and its expiry.
     fn authenticate_agent(&self) -> (PublicKey, u64) {
-        if env::predecessor_account_id() != env::current_account_id() {
+        let vault_id = env::current_account_id();
+        if env::predecessor_account_id() != vault_id || env::signer_account_id() != vault_id {
             Error::NotAgent.panic();
         }
         let public_key = env::signer_account_pk();
@@ -1167,7 +1351,14 @@ impl AgentSpendPolicy {
     /// "Unknown" is `hold_unknown` on and a payee the owner has not listed and the vault has
     /// never paid (`is_unknown`). It only changes what silence means for the agent's own `pay`:
     /// a request is held anyway, and the owner settling a hold is the human it would ask.
+    ///
+    /// Every hold records its `HoldKind` from the answer and the vault's own state, whatever the
+    /// agent wrote as its reason, and every hold is refused `NotAgent` instead when the key that
+    /// started the payment was revoked while the registry answered (`hold`). "Count" starts a
+    /// new payee's counter only within `MAX_REFUSAL_PAYEES` (`count_refusal`); the refusal
+    /// stands either way.
     fn after_verdict(&mut self, ctx: PaymentCtx, answer: Answer) -> PromiseOrValue<PayOutcome> {
+        let silent = answer == Answer::NoVerdict;
         let outcome = match answer {
             Answer::Unusable => {
                 self.release(&ctx);
@@ -1180,7 +1371,7 @@ impl AgentSpendPolicy {
             }
             Answer::Deny { reasons } => {
                 self.release(&ctx);
-                bump(&mut self.refusals, &ctx.payee);
+                self.count_refusal(&ctx.payee);
                 refused_settlement(
                     &ctx,
                     Error::RegistryDeny.as_str(),
@@ -1191,21 +1382,21 @@ impl AgentSpendPolicy {
             Answer::Warn => match ctx.mode {
                 PayMode::Pay => {
                     self.release(&ctx);
-                    self.hold(&ctx, REASON_REGISTRY_WARN)
+                    self.hold(&ctx, REASON_REGISTRY_WARN, HoldKind::RegistryWarn)
                 }
                 PayMode::Request => {
                     let reason = ctx.reason.clone().unwrap_or_default();
-                    self.hold(&ctx, &reason)
+                    self.hold(&ctx, &reason, HoldKind::RegistryWarn)
                 }
                 // The owner is the human a WARN asks for.
                 PayMode::OwnerPay => return self.transfer(ctx),
             },
             // Silence about a payee nobody vouches for is not an ALLOW. Held like a WARN, and
-            // before the in-flight re-check, like a WARN: a hold moves nothing, and the owner
-            // reads it, whatever happened to the freeze or the key meanwhile.
+            // before the in-flight re-check of the freeze and the expiry, like a WARN: a hold
+            // moves nothing, and the owner reads it either way.
             Answer::NoVerdict if ctx.mode == PayMode::Pay && self.is_unknown(&ctx.payee) => {
                 self.release(&ctx);
-                self.hold(&ctx, REASON_UNKNOWN_PAYEE)
+                self.hold(&ctx, REASON_UNKNOWN_PAYEE, HoldKind::UnknownPayee)
             }
             Answer::Allow | Answer::NoVerdict => match ctx.mode {
                 PayMode::Pay => match self.in_flight_refusal(&ctx) {
@@ -1215,10 +1406,17 @@ impl AgentSpendPolicy {
                         refused(&ctx, err.as_str(), RefusalSource::Policy, &[])
                     }
                 },
-                // The agent asked for a human; a clean verdict does not change that.
+                // The agent asked for a human; a clean verdict does not change that. What the
+                // vault knows still goes on record: silence about a payee nobody has listed or
+                // been paid is an unknown payee, whatever the agent's reason says.
                 PayMode::Request => {
+                    let kind = if silent && !self.is_known(&ctx.payee) {
+                        HoldKind::UnknownPayee
+                    } else {
+                        HoldKind::AgentRequest
+                    };
                     let reason = ctx.reason.clone().unwrap_or_default();
-                    self.hold(&ctx, &reason)
+                    self.hold(&ctx, &reason, kind)
                 }
                 PayMode::OwnerPay => return self.transfer(ctx),
             },
@@ -1231,9 +1429,19 @@ impl AgentSpendPolicy {
     /// (`owner_pay`), and the `paid_count` that payment writes lets the next ones flow. The flag
     /// is read first, so a vault with it off pays for no storage reads here.
     fn is_unknown(&self, payee: &AccountId) -> bool {
-        self.hold_unknown
-            && !self.allowlist.contains(payee)
-            && self.paid_count.get(payee).copied().unwrap_or(0) == 0
+        self.hold_unknown && !self.is_known(payee)
+    }
+
+    /// The owner listed the payee or the vault has paid it before. The fact `is_unknown` and a
+    /// request's `HoldKind` are read from, independent of the `hold_unknown` flag.
+    fn is_known(&self, payee: &AccountId) -> bool {
+        self.allowlist.contains(payee) || self.paid_count.get(payee).copied().unwrap_or(0) > 0
+    }
+
+    /// Whether `public_key` is still a registered agent key the owner has not revoked. A held
+    /// payment must come from one: the owner revokes a key because it is no longer trusted.
+    fn key_is_live(&self, public_key: &PublicKey) -> bool {
+        self.agents.get(public_key).is_some_and(|key| !key.revoked)
     }
 
     /// The freeze is the owner's panic button, and revoking a key is how the owner stops one
@@ -1260,9 +1468,19 @@ impl AgentSpendPolicy {
     /// registered) and the 1 yoctoNEAR `ft_transfer` requires. If the vault cannot afford that,
     /// attaching it would abort this receipt (and, from a callback, strand the reservation), so
     /// the payment is reported failed instead.
+    ///
+    /// The payee's `paid_count` entry is written here, at 0 if it has none, while `can_fund`'s
+    /// headroom covers it. `on_transfer` runs after the token has moved the money, and a new
+    /// entry written there could fail that receipt's storage check: tokens gone, no
+    /// `payment_sent`, the agent told the payment failed. An entry at 0 still reads as never
+    /// paid, so it makes no payee known, and `on_transfer` removes it again when the transfer
+    /// fails, so a failed attempt leaves nothing behind.
     fn transfer(&mut self, ctx: PaymentCtx) -> PromiseOrValue<PayOutcome> {
         if !can_fund(self.token_storage_deposit) {
             return PromiseOrValue::Value(self.transfer_failed(&ctx));
+        }
+        if !self.paid_count.contains_key(&ctx.payee) {
+            self.paid_count.insert(ctx.payee.clone(), 0);
         }
         let token_id = self.token_id.clone();
         PromiseOrValue::Promise(
@@ -1305,15 +1523,35 @@ impl AgentSpendPolicy {
         }
     }
 
-    /// Put a payment in front of the owner. Prunes expired entries only when the map is full, so
-    /// the common path stays cheap; refuses `HeldLimitReached` (never aborts) when still full.
-    fn hold(&mut self, ctx: &PaymentCtx, reason: &str) -> PayOutcome {
+    /// Put a payment in front of the owner. Every way this can go wrong is a refusal with a
+    /// name, never an abort, because it runs in `on_verdict` after a reservation was made:
+    ///
+    /// * `NotAgent` when the key that started the payment was revoked while it was in flight.
+    ///   `revoke_agent_key` drops the key's holds, and this keeps one from arriving after it.
+    /// * `HeldLimitReached` when the map is still full after expired entries were pruned (only
+    ///   when it is full, so the common path stays cheap).
+    /// * `StorageNotCovered` when the vault's NEAR cannot cover the entry with
+    ///   `STORAGE_HEADROOM` to spare. Written anyway, it would fail this receipt at its end.
+    fn hold(&mut self, ctx: &PaymentCtx, reason: &str, kind: HoldKind) -> PayOutcome {
+        if !self.key_is_live(&ctx.agent_pk) {
+            return refused(ctx, Error::NotAgent.as_str(), RefusalSource::Policy, &[]);
+        }
         let now_s = policy::seconds(env::block_timestamp());
         if policy::check_held_capacity(self.held.len()).is_err() {
             self.prune_expired_held(now_s);
+            // Write the removals now, so the storage check below sees the room they made.
+            self.held.flush();
         }
         if let Err(err) = policy::check_held_capacity(self.held.len()) {
             return refused(ctx, err.as_str(), RefusalSource::Policy, &[]);
+        }
+        if !can_store() {
+            return refused(
+                ctx,
+                Error::StorageNotCovered.as_str(),
+                RefusalSource::Policy,
+                &[],
+            );
         }
         let Some(held_id) = self.take_held_id() else {
             return refused(
@@ -1335,6 +1573,7 @@ impl AgentSpendPolicy {
                 reason: reason.to_owned(),
                 created_at_s: now_s,
                 expires_at_s: now_s.saturating_add(HELD_TTL_S),
+                kind,
             },
         );
         VaultEvent::PaymentHeld {
@@ -1343,6 +1582,7 @@ impl AgentSpendPolicy {
             payee: &ctx.payee,
             amount: ctx.amount,
             reason,
+            kind,
         }
         .emit();
         PayOutcome {
@@ -1377,6 +1617,63 @@ impl AgentSpendPolicy {
             .with_static_gas(GAS_STORAGE_DEPOSIT)
             .with_unused_gas_weight(0)
             .storage_deposit(Some(env::current_account_id()), Some(true))
+    }
+
+    /// Count one recorded refusal against `payee`: increment its guard counter, or start one
+    /// within `MAX_GUARD_PAYEES` and the vault's NEAR (see `record_refusal`). Writes nothing
+    /// when it refuses.
+    fn count_guard_refusal(&mut self, payee: &AccountId) -> Result<(), Error> {
+        if let Some(count) = self.guard_refusals.get_mut(payee) {
+            *count = count.saturating_add(1);
+            return Ok(());
+        }
+        policy::check_guard_capacity(false, self.guard_payees, MAX_GUARD_PAYEES)?;
+        if !can_store() {
+            return Err(Error::StorageNotCovered);
+        }
+        self.guard_refusals.insert(payee.clone(), 1);
+        self.guard_payees = self.guard_payees.saturating_add(1);
+        Ok(())
+    }
+
+    /// One more payment to `payee` landed. Its entry normally exists, written by `transfer`, so
+    /// this only overwrites a value. If a failed transfer to the same never-paid payee removed
+    /// it in the meantime (`forget_unpaid`), a new entry is written only while the vault's NEAR
+    /// covers it, and otherwise the count is skipped: the money has moved and `payment_sent` is
+    /// the record, and a payee left uncounted only stays unknown, so its next payment waits for
+    /// the owner. Saturating, because a callback must never abort; a count stuck at `u32::MAX`
+    /// still says "at least this many".
+    fn count_paid(&mut self, payee: &AccountId) {
+        if let Some(count) = self.paid_count.get_mut(payee) {
+            *count = count.saturating_add(1);
+        } else if can_store() {
+            self.paid_count.insert(payee.clone(), 1);
+        }
+    }
+
+    /// A transfer to `payee` failed: remove the entry `transfer` wrote for it, if it is still 0,
+    /// so a failed attempt leaves no storage behind. A payee with a landed payment keeps its
+    /// count. Removing storage cannot fail the receipt.
+    fn forget_unpaid(&mut self, payee: &AccountId) {
+        if self.paid_count.get(payee) == Some(&0) {
+            self.paid_count.remove(payee);
+        }
+    }
+
+    /// Count one registry DENY against `payee`. Runs in `on_verdict`, so it never refuses and
+    /// never aborts: a payee past `MAX_REFUSAL_PAYEES`, or one the vault's NEAR cannot cover a
+    /// new counter for, is simply not counted, and the payment is refused `RegistryDeny` all the
+    /// same. A counter that exists always increments, which adds no storage.
+    fn count_refusal(&mut self, payee: &AccountId) {
+        if let Some(count) = self.refusals.get_mut(payee) {
+            *count = count.saturating_add(1);
+            return;
+        }
+        if self.refusal_payees >= MAX_REFUSAL_PAYEES || !can_store() {
+            return;
+        }
+        self.refusals.insert(payee.clone(), 1);
+        self.refusal_payees = self.refusal_payees.saturating_add(1);
     }
 }
 
@@ -1465,25 +1762,28 @@ fn promise_succeeded() -> bool {
     }
 }
 
-/// Add one to a per-payee counter. Saturating, because the callbacks bump counters and a
-/// callback must never abort; a counter stuck at `u32::MAX` still says "at least this many".
-fn bump(counter: &mut LookupMap<AccountId, u32>, payee: &AccountId) {
-    let count = counter.get(payee).copied().unwrap_or(0);
-    counter.insert(payee.clone(), count.saturating_add(1));
+/// The vault's NEAR above its storage stake, as this receipt sees it.
+fn liquid() -> u128 {
+    let locked = env::storage_byte_cost()
+        .as_yoctonear()
+        .saturating_mul(u128::from(env::storage_usage()));
+    env::account_balance().as_yoctonear().saturating_sub(locked)
 }
 
 /// Whether the vault's NEAR above its storage stake covers `deposit`, the 1 yoctoNEAR transfer
 /// fee and `STORAGE_HEADROOM`.
 fn can_fund(deposit: NearToken) -> bool {
-    let locked = env::storage_byte_cost()
-        .as_yoctonear()
-        .saturating_mul(u128::from(env::storage_usage()));
-    let liquid = env::account_balance().as_yoctonear().saturating_sub(locked);
     let needed = deposit
         .as_yoctonear()
         .saturating_add(ONE_YOCTO.as_yoctonear())
         .saturating_add(STORAGE_HEADROOM.as_yoctonear());
-    liquid >= needed
+    liquid() >= needed
+}
+
+/// Whether the vault's NEAR above its storage stake covers one new entry (a hold or a counter)
+/// with `STORAGE_HEADROOM` to spare, so the receipt that writes it passes its storage check.
+fn can_store() -> bool {
+    liquid() >= STORAGE_HEADROOM.as_yoctonear()
 }
 
 /// `(skip, take)` for a paginated view, with `take` capped at the collection's own bound.

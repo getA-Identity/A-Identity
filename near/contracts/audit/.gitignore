@@ -1,0 +1,3 @@
+# Written by run-negative-controls.mjs while a guard is mutated, removed when it is restored.
+# Left behind only by a run that was killed outright; the next run restores from it.
+.control-in-progress.json

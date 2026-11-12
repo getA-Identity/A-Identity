@@ -1,0 +1,276 @@
+name: NEAR
+
+# Scoped to near/**, so a Rust toolchain, cargo-near, a local neard and a Docker build do not tax
+# every frontend commit. ci.yml stays node-only and knows nothing about Rust.
+#
+# Two jobs.
+#
+# `contracts` proves the contracts pass their tests (format, clippy, the unit suites, the sandbox
+# suite on a local neard), then runs the step worth protecting: the negative controls, which
+# delete one guard at a time, in place, and require the tests that claim to cover it to go RED.
+# Everything above that step proves the vault and the registry pass their tests; only that step
+# proves the tests would notice if a guard went missing. It matters more here than on the
+# siblings, because the unit tests run the contracts against a mocked blockchain where
+# `#[private]`, `#[payable]` and `#[init]` do not exist, and a mocked context can make two
+# independent checks look like one.
+#
+# `reproducible` builds both contracts the way NEP-330 verification rebuilds them (cargo near
+# build reproducible-wasm, in the pinned sourcescan/cargo-near image) and publishes the wasm
+# with its sha256 in hex and in base58. The base58 form is the code_hash NEAR reports for an
+# account running that wasm, so it is the number to compare with a deployed contract.
+#
+# Then it runs the whole sandbox suite again, against exactly those bytes (SANDBOX_WASM_DIR).
+# The image compiles with its own rustc, 1.99.1, while everything else here builds with the
+# 1.95.0 that rust-toolchain.toml pins, so without this step the wasm that ships would be a
+# sibling of the one the sandbox suite passed on, built by another compiler. With it, the
+# shipped bytes are the bytes the sandbox suite passed on. The unit suites and the negative
+# controls stay in `contracts`, on the host with 1.95.0: the unit suites run the contracts as
+# native code, so they prove the logic and no wasm is involved either way. Only
+# when that suite passes is anything uploaded: the two wasm files, hashes.json, SHA256SUMS and
+# each contract's ABI JSON, as the workflow artifact near-reproducible-wasm, which is what a
+# deploy takes.
+
+on:
+  push:
+    paths:
+      - 'near/**'
+      - '.github/workflows/near.yml'
+  pull_request:
+    paths:
+      - 'near/**'
+      - '.github/workflows/near.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # The cargo-near release both jobs install, pinned by version AND by the sha256 of its Linux
+  # tarball (checked 2026-11-12 against the release's own .sha256 asset), so the tool that builds
+  # what ships cannot float or be swapped. It is the version rust-toolchain.toml was taken from.
+  CARGO_NEAR_VERSION: 0.23.0
+  CARGO_NEAR_SHA256: 94008b827a457750257eced4b571c33736062cc3bd1ffda3e7af70e2bc9a4073
+  CARGO_TERM_COLOR: never
+
+defaults:
+  run:
+    working-directory: near/contracts
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml pins the channel (1.95.0), the wasm32-unknown-unknown target and the
+      # components, and rustup installs exactly that on the first cargo call in this directory,
+      # so there is nothing to restate here. A version named in two places is a version that
+      # will disagree with itself.
+      - name: Show the pinned toolchain
+        run: rustc --version && cargo --version
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: near/contracts
+
+      # The published binary, not `cargo install`: the same official artifact at the same pinned
+      # version, installed in seconds, and checked against a recorded sha256 before it runs. The
+      # sandbox suite shells out to `cargo near build` for all three contracts.
+      - name: Install cargo-near (pinned release, sha256 checked)
+        working-directory: ${{ runner.temp }}
+        run: |
+          curl -sSfL -o cargo-near.tar.gz \
+            "https://github.com/near/cargo-near/releases/download/cargo-near-v${CARGO_NEAR_VERSION}/cargo-near-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${CARGO_NEAR_SHA256}  cargo-near.tar.gz" | sha256sum -c -
+          sudo tar -xzf cargo-near.tar.gz -C /usr/local/bin --strip-components=1 \
+            cargo-near-x86_64-unknown-linux-gnu/cargo-near
+          cargo near --version | grep -F " ${CARGO_NEAR_VERSION}"
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Unit tests
+        run: cargo test -p agent-spend-policy -p a-identity-registry
+
+      # One local neard per test, built and deployed with `cargo near build`, the command the
+      # deploy uses. Two sandboxes at a time: each is a full node, and a runner with too many of
+      # them produces blocks slowly enough to turn timing margins into flakes.
+      - name: Sandbox tests
+        env:
+          SANDBOX_TESTS_PARALLEL: 2
+        run: cargo test -p sandbox-tests
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # For every guard: delete or neutralize it with an exact find/replace that must match
+      # once, run the narrowest test that should notice (a unit filter, or the sandbox for the
+      # checks that exist in the wasm alone), require RED, restore unconditionally, and end
+      # with the full unit suite green on a tree byte for byte the one it started from. A
+      # control that stays green fails this step; the fix is the missing test, never dropping
+      # the control.
+      #
+      # Incremental compilation back on for this step only: rust-cache turns it off for the job,
+      # and every one of the ~160 controls recompiles a contract crate with one small change,
+      # which is what incremental compilation is for.
+      - name: Negative controls (the tests must go red without each guard)
+        env:
+          SANDBOX_TESTS_PARALLEL: 2
+          CARGO_INCREMENTAL: 1
+        run: node audit/run-negative-controls.mjs
+
+  reproducible:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      # The full history, not the default shallow clone: cargo-near clones the repository from
+      # this checkout's .git (with libgit2) to get a pristine copy of HEAD to build from.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Show the pinned toolchain
+        run: rustc --version && cargo --version
+
+      - name: Install cargo-near (pinned release, sha256 checked)
+        working-directory: ${{ runner.temp }}
+        run: |
+          curl -sSfL -o cargo-near.tar.gz \
+            "https://github.com/near/cargo-near/releases/download/cargo-near-v${CARGO_NEAR_VERSION}/cargo-near-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${CARGO_NEAR_SHA256}  cargo-near.tar.gz" | sha256sum -c -
+          sudo tar -xzf cargo-near.tar.gz -C /usr/local/bin --strip-components=1 \
+            cargo-near-x86_64-unknown-linux-gnu/cargo-near
+          cargo near --version | grep -F " ${CARGO_NEAR_VERSION}"
+
+      # reproducible-wasm needs a clean, committed tree. It builds what is COMMITTED at HEAD: it
+      # clones the repository and drops every uncommitted change, and for a build (as opposed to
+      # a deploy) a dirty tree is only a warning. So a dirty tree here would publish hashes of
+      # code that is not in the commit this run is labelled with. This job runs on a fresh
+      # checkout and writes its output outside it, and this step refuses to go on otherwise.
+      # On a pull request HEAD is GitHub's merge commit, so those hashes are for review only;
+      # the ones to compare with a deployment come from a run on the commit that was deployed.
+      - name: Require a clean, committed tree
+        run: |
+          git status --porcelain
+          test -z "$(git status --porcelain)"
+
+      # Inside the image named in [package.metadata.near.reproducible_build] of each crate's
+      # Cargo.toml, pinned by digest. That image is the one `cargo near new` (cargo-near 0.23.0)
+      # generates, because no sourcescan/cargo-near tag carries the Rust 1.95 that
+      # rust-toolchain.toml pins; the image's own RUSTUP_TOOLCHAIN (1.99.1) wins inside the
+      # container, which is why the sandbox suite runs again below, against what this step
+      # builds. The Cargo.toml comment has the details.
+      - name: Build both contracts reproducibly
+        env:
+          OUT: ${{ runner.temp }}/near-wasm
+        run: |
+          mkdir -p "$OUT"
+          for crate in agent-spend-policy a-identity-registry; do
+            cargo near build reproducible-wasm --manifest-path "$crate/Cargo.toml" --out-dir "$OUT"
+          done
+          ls -l "$OUT"
+
+      - name: sha256 of each wasm, in hex and base58
+        env:
+          OUT: ${{ runner.temp }}/near-wasm
+        run: |
+          python3 -I - "$OUT" <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import hashlib, json, pathlib, sys
+
+          ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+          def base58(raw):
+              n = int.from_bytes(raw, "big")
+              out = ""
+              while n:
+                  n, r = divmod(n, 58)
+                  out = ALPHABET[r] + out
+              return "1" * (len(raw) - len(raw.lstrip(b"\0"))) + out
+
+          out_dir = pathlib.Path(sys.argv[1])
+          names = ["agent_spend_policy.wasm", "a_identity_registry.wasm"]
+          found = sorted(p.name for p in out_dir.glob("*.wasm"))
+          if found != sorted(names):
+              sys.exit(f"expected exactly {names} in {out_dir}, found {found}")
+          rows = []
+          for name in names:
+              code = (out_dir / name).read_bytes()
+              digest = hashlib.sha256(code).digest()
+              rows.append({
+                  "file": name,
+                  "bytes": len(code),
+                  "sha256_hex": digest.hex(),
+                  "sha256_base58": base58(digest),
+              })
+          (out_dir / "hashes.json").write_text(json.dumps(rows, indent=2) + "\n")
+          (out_dir / "SHA256SUMS").write_text("".join(f"{r['sha256_hex']}  {r['file']}\n" for r in rows))
+          print("| wasm | bytes | sha256 (hex) | sha256 (base58, the NEAR code_hash) |")
+          print("|---|---|---|---|")
+          for r in rows:
+              print(f"| {r['file']} | {r['bytes']} | `{r['sha256_hex']}` | `{r['sha256_base58']}` |")
+          PY
+
+      # Everything below compiles on the host (the ABI generator, the sandbox suite and its
+      # mock-ft), with the 1.95.0 toolchain, so the job's builds are cached from here on. The
+      # reproducible builds above clone the commit into their own directory and never read
+      # this checkout's target/, which is git-ignored, so the clean-tree check still holds.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: near/contracts
+
+      # The reproducible build keeps each contract's ABI inside the wasm and copies only the
+      # wasm out of the container. `cargo near abi` writes the JSON a client reads, from this
+      # same commit. Its metadata names the crate and version and nothing about a build, so it
+      # makes no claim about the bytes; the hashes above do.
+      - name: ABI of each contract, from the same commit
+        env:
+          OUT: ${{ runner.temp }}/near-wasm
+        run: |
+          for crate in agent-spend-policy a-identity-registry; do
+            cargo near abi --locked --manifest-path "$crate/Cargo.toml" --out-dir "$OUT"
+          done
+          ls -l "$OUT"
+
+      # The whole sandbox suite against the bytes hashed above: the harness deploys the files
+      # in SANDBOX_WASM_DIR instead of building the vault and the registry (mock-ft, which never
+      # ships, is still built), refuses to run if either is missing rather than build it, and
+      # prints each file's sha256 as it deploys it, to compare with the table above. near-sandbox
+      # fetches its own neard for Linux. Two sandboxes at a time, as in `contracts`.
+      - name: Sandbox tests against the reproducible wasm
+        env:
+          SANDBOX_WASM_DIR: ${{ runner.temp }}/near-wasm
+          SANDBOX_TESTS_PARALLEL: 2
+        run: cargo test -p sandbox-tests --locked
+
+      # Uploaded only now, after the suite passed on these bytes, so a deploy can take exactly
+      # them. Every file is named, and checked to be there first: upload-artifact fails only
+      # when nothing at all matches, so a missing file would otherwise just be left out.
+      - name: Check the artifact is complete
+        env:
+          OUT: ${{ runner.temp }}/near-wasm
+        run: |
+          cd "$OUT"
+          for f in agent_spend_policy.wasm a_identity_registry.wasm \
+                   agent_spend_policy_abi.json a_identity_registry_abi.json \
+                   hashes.json SHA256SUMS; do
+            test -s "$f" || { echo "missing or empty: $f"; exit 1; }
+          done
+          sha256sum -c SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: near-reproducible-wasm
+          path: |
+            ${{ runner.temp }}/near-wasm/agent_spend_policy.wasm
+            ${{ runner.temp }}/near-wasm/a_identity_registry.wasm
+            ${{ runner.temp }}/near-wasm/agent_spend_policy_abi.json
+            ${{ runner.temp }}/near-wasm/a_identity_registry_abi.json
+            ${{ runner.temp }}/near-wasm/hashes.json
+            ${{ runner.temp }}/near-wasm/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 90

@@ -5,7 +5,7 @@ use super::assert_panics_with;
 use crate::Error;
 
 /// The spec's list (append-only), followed by what this crate appended.
-const FROZEN_NAMES: [&str; 25] = [
+const FROZEN_NAMES: [&str; 29] = [
     "NotOwner",
     "NotAgent",
     "Frozen",
@@ -32,7 +32,23 @@ const FROZEN_NAMES: [&str; 25] = [
     "RequiresOneYocto",
     // Appended by this crate, after the spec's list.
     "NotCallback",
+    "GuardRefusalLimitReached",
+    "StorageNotCovered",
+    "InitNotAllowed",
+    "BatchTooLarge",
 ];
+
+#[test]
+fn no_name_contains_another() {
+    // A client that matches a failure text by substring must not mistake one name for another.
+    for a in FROZEN_NAMES {
+        for b in FROZEN_NAMES {
+            if a != b {
+                assert!(!a.contains(b), "{a} contains {b}");
+            }
+        }
+    }
+}
 
 #[test]
 fn names_are_frozen_in_order() {
