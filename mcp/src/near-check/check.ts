@@ -201,6 +201,23 @@ function releaseSlot(): void {
   else active -= 1
 }
 
+/**
+ * Run a collection that is not nearCheck's own inside the same pool, so "at most four at once"
+ * holds server-wide whichever door a collection comes through. The NEAR AI market worker
+ * (near-market/verdict.ts) is that other door. It waits for a slot like any collection here and
+ * is never refused as busy: it runs one collection at a time, abandons one it stops waiting for
+ * (the request in flight is aborted and every later one fails at once, so the slot comes back
+ * within moments rather than after the collection's own retries), and has an hour to deliver.
+ */
+export async function inNearCollectionPool<T>(run: () => Promise<T>): Promise<T> {
+  await acquireSlot()
+  try {
+    return await run()
+  } finally {
+    releaseSlot()
+  }
+}
+
 /** Forget every kept answer and in-flight collection. Tests only. */
 export function __resetNearCheckForTests(): void {
   answers.clear()

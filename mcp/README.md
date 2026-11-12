@@ -130,6 +130,22 @@ Directories:
   name ending in `.testnet` and maps the verdict into the existing fields (`trust.ts`). Testnet
   only, read live, block-pinned, cached 60 s; the answer carries the CLI command that
   recomputes it. Nothing settles on NEAR through it.
+- `src/near-market/` - the worker behind A-Identity Guard for NEAR on the NEAR AI Agent Market
+  (market.near.ai, handle `a-identity-guard`, 0.50 USD per hire, 1 hour SLA, polling, no webhook).
+  `http.ts` starts it only when `MARKET_NEAR_AI_TOKEN` is set, and logs one line otherwise. It
+  polls the agent's assignments every 30 to 60 s, reads exactly one NEAR account from the brief
+  (`brief.ts`: `near:testnet:<id>`, `near:mainnet:<id>`, a name ending in `.testnet` or `.near`,
+  or 64-hex with its network named), runs the same verdict engine on testnet or mainnet
+  (`verdict.ts`; mainnet is read here only, read only, with no registry and no vault there) and
+  submits a Markdown deliverable with the snapshot inlined for offline replay (`deliverable.ts`).
+  No single account (or a brief and a message that name different ones): one clarifying message;
+  a reply that names one is checked, a reply with no account in it is waited on, and a reply that
+  names several, or no usable reply by 5 minutes before the deadline, is a decline that refunds the
+  buyer. A chain it cannot read: retries while the SLA allows, then a decline; never a made-up
+  verdict. It re-reads the assignment's state before every submit, stops on a 401 (or a 403 on its
+  own assignment list) and leaves alone an assignment that answers 403. One process per token: on
+  Render the replaced instance stops on SIGTERM and the first poll waits 120 s past a deploy's
+  overlap. The token goes only to market.near.ai and is never logged (`client.ts`).
 - `src/x402-3009/` - the self-facilitated EIP-3009 rail: the buyer signs a transfer
   authorization and pays no gas, we broadcast, and nothing counts as settled without a
   receipt carrying a matching `Transfer` log. Chain-generic, so a chain joins by declaring a
@@ -233,7 +249,7 @@ npm run start        # MCP server on stdio
 npm run start:http   # the HTTP server (REST + /mcp). Reads config from process.env directly.
 npm run smoke        # spin up the MCP server + exercise every read-only tool
 npm run http-smoke   # exercise the tools over HTTP (server must be running)
-npm test             # tsc + node:test unit tests (2674 across 138 files, as of Nov 2026)
+npm test             # tsc + node:test unit tests (2704 across 141 files, as of Nov 2026)
 npm run e2e          # full end-to-end flow against a running server (E2E_BASE=...)
 ```
 
@@ -245,7 +261,7 @@ node --env-file=.env dist/http.js     # Node 20.6+
 ARC_SIGNER_KEY=0x<funded-key> node dist/http.js
 ```
 
-Tests: **2674 unit tests across 138 colocated `*.test.ts` files** (as of Nov 2026; `npm test`) +
+Tests: **2704 unit tests across 141 colocated `*.test.ts` files** (as of Nov 2026; `npm test`) +
 a full **E2E of about 67 checks** (`npm run e2e`) that adapts to signer presence: green with no
 signer key (live Arc reads; on-chain writes reported as prepared), with the real Arc write
 checks activating under a funded `ARC_SIGNER_KEY`. CI runs the no-signer path.

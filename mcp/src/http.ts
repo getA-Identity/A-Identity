@@ -56,6 +56,7 @@ import { handleInstructionRoutes } from './http/instruction-routes.js'
 import { handleMarketplaceRoutes } from './http/marketplace-routes.js'
 import { mcpNonPostResponse } from './http/mcp-info.js'
 import { startVaultSweep } from './arc-vault-sweep.js'
+import { startNearMarketWorker } from './near-market/worker.js'
 
 // Render/most hosts inject PORT; fall back to our own var, then the local default.
 const PORT = Number(process.env.PORT ?? process.env.A_IDENTITY_HTTP_PORT ?? 3399)
@@ -441,6 +442,14 @@ server.listen(PORT, () => {
 
 // Looks for countable vaults on the chain by itself: unref'd, and a failed round ends only that round.
 startVaultSweep()
+
+// The NEAR AI Agent Market worker (a-identity-guard on market.near.ai): polls for hires, answers
+// each with the NEAR verdict, or asks once and declines. Off, with one log line, unless
+// MARKET_NEAR_AI_TOKEN is set; unref'd, and a failed poll ends only that poll. One process per
+// token: on a deploy, Render sends SIGTERM to the instance being replaced, which stops polling at
+// once, while the new instance's first poll waits past the overlap (worker.ts).
+const nearMarket = startNearMarketWorker()
+if (nearMarket) process.once('SIGTERM', () => nearMarket.stop())
 
 // Keep-alive: free-tier hosts (e.g. Render) idle-sleep after ~15 min without inbound
 // traffic. When RENDER_EXTERNAL_URL is present, ping our own public /health every 10

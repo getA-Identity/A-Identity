@@ -8,7 +8,14 @@
  * the copy differs from a fresh render of the source.
  *
  * What this file adds is the one thing the copy must not decide here: which hosts it reads. The
- * copy carries the SDK's own host list (it is a copy), and the backend never dials it. The
+ * copy carries the SDK's own host list (it is a copy), and the backend never dials its testnet
+ * list. One reader dials its mainnet list: the NEAR AI market worker (near-market/verdict.ts),
+ * for a buyer who asks about a mainnet account. The registry has no NEAR mainnet descriptor on
+ * purpose, so there is nothing else to take those hosts from, and they are exactly the ones the
+ * CLI's `--network mainnet` reads. A mainnet collection also reads NEAR testnet (MimicWatch keeps
+ * its registry there), and left to itself the copy would build that reader from its own testnet
+ * list; the worker passes one built from the near-testnet descriptor instead (createReader below),
+ * so NEAR_TESTNET_RPC_URL applies to that read too. For testnet, the
  * collectors get a NetworkConfig built from the near-testnet descriptor in ../registry.ts:
  * JSON-RPC through resolveRpcUrls (so NEAR_TESTNET_RPC_URL replaces the primary, as it does for
  * client.ts), the archival hosts, the indexers, the explorer and Circle's USDC account. The
@@ -23,8 +30,8 @@ import { resolveRpcUrls } from '../evm/client.js'
 import { NETWORKS, type NetworkConfig } from './sdk.generated/collect/networks.js'
 
 export { collectSnapshot, CollectError, type CollectOptions } from './sdk.generated/collect/snapshot.js'
-export type { FetchLike, FetchResponseLike } from './sdk.generated/collect/rpc.js'
-export { NETWORKS as SDK_NETWORKS, type NetworkConfig } from './sdk.generated/collect/networks.js'
+export { createReader, headersFromEnv, type FetchLike, type FetchResponseLike, type RpcReader } from './sdk.generated/collect/rpc.js'
+export { NETWORKS as SDK_NETWORKS, explorerAccountUrl, type NetworkConfig } from './sdk.generated/collect/networks.js'
 export {
   verdictFromSnapshot,
   assertSnapshot,
