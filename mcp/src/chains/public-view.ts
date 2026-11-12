@@ -16,7 +16,7 @@
  * chains without a network round-trip, and `frontend-sync.test.ts` fails the build if
  * the generated file drifts from the registry. See ./README.md.
  */
-import type { ChainDescriptor, ChainStatus } from './types.js'
+import type { ChainDescriptor, ChainStatus, Ecosystem } from './types.js'
 import { CHAINS } from './registry.js'
 
 /**
@@ -37,7 +37,7 @@ export type PublicChain = {
   caip2: string
   evmCompatible: boolean
   /** Which wallet and signing family this chain belongs to. */
-  ecosystem: 'evm' | 'stellar' | 'algorand'
+  ecosystem: Ecosystem
   /** The gas token, as a wallet needs it to add the chain (wallet_addEthereumChain). */
   nativeCurrency: { name: string; symbol: string; decimals: number }
   testnet: boolean
@@ -190,7 +190,7 @@ export type Chain = {
   caip2: string
   evmCompatible: boolean
   /** Which wallet and signing family this chain belongs to. */
-  ecosystem: 'evm' | 'stellar' | 'algorand'
+  ecosystem: 'evm' | 'stellar' | 'algorand' | 'near'
   /** The gas token, as a wallet needs it to add the chain (wallet_addEthereumChain). */
   nativeCurrency: { name: string; symbol: string; decimals: number }
   testnet: boolean

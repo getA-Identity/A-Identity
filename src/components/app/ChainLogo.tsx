@@ -4,7 +4,7 @@ import { cn } from '../../lib/utils'
 /**
  * Official network mark on a consistent circular badge.
  *
- * Every mark sits on a disc so nine differently-shaped logos read as one row of
+ * Every mark sits on a disc so logos of every shape read as one row of
  * tokens. The disc is white by default; the two near-white brand marks
  * (Robinhood lime, Celo yellow) get the fixed ink disc instead, so they hold
  * contrast on the light theme. The disc colours are deliberately theme-FIXED:
@@ -25,6 +25,7 @@ const LOGO: Record<ChainId, string> = {
   'celo-sepolia': '/chains/celo.svg',
   stellar: '/chains/stellar.svg',
   'stellar-testnet': '/chains/stellar.svg',
+  'near-testnet': '/chains/near.svg',
 }
 
 /** Marks too light to survive a white disc. */

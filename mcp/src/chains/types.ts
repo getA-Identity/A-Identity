@@ -7,7 +7,7 @@
  */
 
 /** Which virtual machine family a chain belongs to. Selects the adapter. */
-export type Ecosystem = 'evm' | 'stellar' | 'algorand'
+export type Ecosystem = 'evm' | 'stellar' | 'algorand' | 'near'
 
 /** Lifecycle status. Only `live` chains are fully wired end to end. */
 export type ChainStatus = 'live' | 'beta' | 'planned' | 'deprecated'
@@ -264,7 +264,7 @@ export interface ChainDescriptor {
   cctpDomain: number | null
 
   nativeCurrency: { name: string; symbol: string; decimals: number }
-  /** Decimals of the ERC-20 (or SEP-41 / SPL) USDC interface. Arc's native USDC is
+  /** Decimals of the ERC-20 (or SEP-41 / SPL / NEP-141) USDC interface. Arc's native USDC is
    *  18 decimals but its ERC-20 interface is 6 - this is the 6. */
   usdcDecimals: number
 

@@ -24,7 +24,7 @@
  *     the fix, so the arms are mapped deliberately and `pending` is NOT called success:
  *     a submitted-but-unconfirmed policy write has not changed the policy yet.
  */
-import { getChainById, CHAINS, addressUrl } from '../chains/index.js'
+import { getChainById, CHAINS, addressUrl, isNearAccountId } from '../chains/index.js'
 import type { BroadcastHooks, ChainDescriptor, VaultResult } from '../chains/types.js'
 import type { PlatformAgent } from './core.js'
 
@@ -124,11 +124,24 @@ async function stellar(chain: ChainDescriptor) {
   return createStellarAdapter(chain)
 }
 
+/** True for a chain whose vaults this platform cannot speak to: no adapter here, so every
+ *  vault call refuses before it reaches the Soroban adapter, the only non-EVM one there is. */
+function hasNoVaultPort(chain: ChainDescriptor): boolean {
+  return chain.ecosystem === 'algorand' || chain.ecosystem === 'near'
+}
+
 /** The one refusal every vault write shares on a chain with no vault port yet. The
  *  AgentSpendPolicy exists in Solidity and Rust; the Algorand (AVM) port is planned and
  *  routing its calls into the Soroban adapter would produce StrKey errors wearing the
- *  wrong chain's name. */
+ *  wrong chain's name. NEAR is refused the same way, in its own words: no NEAR adapter is
+ *  wired into the platform, and the sentence does not depend on what is deployed there. */
 function noVaultPortYet(chain: ChainDescriptor): VaultWriteResult {
+  if (chain.ecosystem === 'near') {
+    return {
+      ok: false,
+      reason: `The platform does not operate vaults on ${chain.name}: no NEAR vault adapter is wired here, so nothing was submitted.`,
+    }
+  }
   return {
     ok: false,
     reason: `No AgentSpendPolicy vault is deployed on ${chain.name} yet; the ${chain.ecosystem} port is planned and nothing was submitted.`,
@@ -140,7 +153,7 @@ function noVaultPortYet(chain: ChainDescriptor): VaultWriteResult {
 export async function readVaultPolicy(agent: PlatformAgent, vault: string): Promise<VaultPolicyView | null> {
   const chain = vaultChainFor(agent)
   if (!chain) return null
-  if (chain.ecosystem === 'algorand') return null
+  if (hasNoVaultPort(chain)) return null
   if (chain.ecosystem === 'evm') {
     const { readPolicyVault } = await import('../arc-contracts.js')
     const v = await readPolicyVault(vault)
@@ -187,7 +200,7 @@ export async function writeVaultPolicy(
 ): Promise<VaultWriteResult> {
   const chain = vaultChainFor(agent)
   if (!chain) return { ok: false, reason: `Unknown vault chain ${agent.vaultChainCaip2}` }
-  if (chain.ecosystem === 'algorand') return noVaultPortYet(chain)
+  if (hasNoVaultPort(chain)) return noVaultPortYet(chain)
   if (chain.ecosystem === 'evm') {
     const { policySetPolicy } = await import('../arc-contracts.js')
     const r = await policySetPolicy(vault, want)
@@ -202,7 +215,7 @@ export async function writeVaultPolicy(
 export async function writeVaultFrozen(agent: PlatformAgent, vault: string, frozen: boolean): Promise<VaultWriteResult> {
   const chain = vaultChainFor(agent)
   if (!chain) return { ok: false, reason: `Unknown vault chain ${agent.vaultChainCaip2}` }
-  if (chain.ecosystem === 'algorand') return noVaultPortYet(chain)
+  if (hasNoVaultPort(chain)) return noVaultPortYet(chain)
   if (chain.ecosystem === 'evm') {
     const { policySetFrozen } = await import('../arc-contracts.js')
     const r = await policySetFrozen(vault, frozen)
@@ -220,7 +233,7 @@ export async function writeVaultAllowed(
 ): Promise<VaultWriteResult> {
   const chain = vaultChainFor(agent)
   if (!chain) return { ok: false, reason: `Unknown vault chain ${agent.vaultChainCaip2}` }
-  if (chain.ecosystem === 'algorand') return noVaultPortYet(chain)
+  if (hasNoVaultPort(chain)) return noVaultPortYet(chain)
   if (chain.ecosystem === 'evm') {
     const { policySetAllowed } = await import('../arc-contracts.js')
     const r = await policySetAllowed(vault, payee, allowed)
@@ -253,7 +266,7 @@ export async function writeVaultSessionExpiry(
 ): Promise<VaultWriteResult> {
   const chain = vaultChainFor(agent)
   if (!chain) return { ok: false, reason: `Unknown vault chain ${agent.vaultChainCaip2}` }
-  if (chain.ecosystem === 'algorand') return noVaultPortYet(chain)
+  if (hasNoVaultPort(chain)) return noVaultPortYet(chain)
   // Same meaning on both chains: 0 is no time bound, so neither a 0 nor a value that floors or clamps to it is sent.
   const expiry = Math.floor(expiryUnix)
   if (!(expiry >= 1)) return { ok: false, reason: 'An expiry of 0 means the agent key never expires, so it is not written. To revoke, ask for a revoke.' }
@@ -302,7 +315,7 @@ export async function payFromVault(
   if (!chain) {
     return { executed: false, reverted: true, reason: `Unknown vault chain ${agent.vaultChainCaip2}` }
   }
-  if (chain.ecosystem === 'algorand') {
+  if (hasNoVaultPort(chain)) {
     const no = noVaultPortYet(chain)
     return { executed: false, reverted: true, reason: no.ok ? '' : no.reason }
   }
@@ -318,7 +331,18 @@ export async function payFromVault(
   return vaultResultFromOutcome(r, errorName)
 }
 
-/** One look at a settlement sent earlier, on the chain this agent's vault is on. */
+/**
+ * One look at a settlement sent earlier, on the chain this agent's vault is on.
+ *
+ * Only Stellar has a reader of its own here, and today that covers every hash this can be
+ * asked about. A vault is recorded on an agent only when one was deployed on Arc or Stellar
+ * (platform/vault.ts), and a chain with no vault port (Algorand, NEAR) refuses every vault
+ * call before anything is broadcast. So every other hash held for an agent was sent by the
+ * Arc rails, and Arc's reader is the right one. Before platform/vault.ts may record a NEAR
+ * vault, the NEAR vault work must add a NEAR reader here, and a stop like the Stellar one in
+ * platform/instructions.ts so that vault's payments never fall through to the Arc rails;
+ * otherwise a NEAR hash would be asked of Arc.
+ */
 export async function vaultReceiptStatus(agent: PlatformAgent | undefined, hash: string, held?: { nonce?: number; from?: string }) {
   const chain = agent?.vaultAddress ? vaultChainFor(agent) : null
   if (chain?.ecosystem === 'stellar') return (await stellar(chain)).receiptStatus(hash)
@@ -476,14 +500,19 @@ export function vaultPolicyPlan(input: {
 
 /** The address shape this chain's vault allowlist accepts. An EVM vault takes 0x
  *  addresses; a Soroban one takes StrKey, and mirroring one onto the other silently
- *  writes an entry that can never match a payee. */
+ *  writes an entry that can never match a payee. A NEAR payee is an account id, so only
+ *  a valid one is kept: a checksummed 0x address is not one (NEAR ids are lowercase), and
+ *  a lowercase one is kept because on NEAR it names that key's eth-implicit account.
+ *  Exhaustive on purpose: a new ecosystem is a compile error here, not a silent default. */
 export function allowlistEntriesFor(chain: ChainDescriptor, entries: string[]): string[] {
   switch (chain.ecosystem) {
     case 'evm':
       return entries.filter((x) => /^0x[0-9a-fA-F]{40}$/.test(x))
     case 'algorand':
       return entries.filter((x) => /^[A-Z2-7]{58}$/.test(x))
-    default:
+    case 'near':
+      return entries.filter((x) => isNearAccountId(x))
+    case 'stellar':
       return entries.filter((x) => /^[GC][A-Z2-7]{55}$/.test(x))
   }
 }

@@ -616,3 +616,30 @@ test('the Stellar fetch command runs on a stock CLI, and an Algorand contract li
     }
   }
 })
+
+/**
+ * NEAR has no rail in PROOF_RAILS yet, so the loop above never reaches it. The lines are
+ * pinned here instead, to the same standard, so the day a NEAR rail is added its page cannot
+ * open with EVM or Soroban instructions or describe a settlement log that does not exist.
+ */
+test('how to check NEAR speaks NEAR, names the routes NearBlocks has, and claims no rail', async () => {
+  const near = CHAINS.filter((c) => c.ecosystem === 'near')
+  assert.ok(near.length > 0, 'the registry carries no NEAR chain, so this test checks nothing')
+  const lines = await howToVerify(near.map((c) => c.id))
+  const text = lines.join('\n')
+  assert.ok(lines.length >= 3, 'a NEAR page would tell a reviewer almost nothing')
+  for (const l of lines) assert.ok(l.length > 40, `a throwaway line: ${l}`)
+  for (const evmOnly of ['ERC-8004 deployment', 'ownerOf', 'Transfer log', 'block named', 'stellar contract fetch', 'SEP-41']) {
+    assert.ok(!text.includes(evmOnly), `the NEAR lines tell a reviewer to check "${evmOnly}", which NEAR does not have`)
+  }
+  assert.match(text, /\/txns\//)
+  assert.match(text, /view_account/)
+  assert.match(text, /ft_transfer/)
+  // No x402 rail sells on NEAR, so no settlement log is pointed at and the absence is said.
+  assert.ok(near.every((c) => !c.payment.x402), 'a NEAR rail sells now: replace this assertion with its log')
+  assert.ok(!/GET \/api\/[a-z0-9/]*proof/.test(text), 'a NEAR line points at a settlement log that does not exist')
+  assert.match(text, /No x402 rail of ours settles on NEAR yet/)
+  for (const c of near) {
+    for (const t of c.documentedTokens ?? []) assert.ok(text.includes(t.address), `the NEAR lines do not name ${t.symbol} at ${t.address}`)
+  }
+})

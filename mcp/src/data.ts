@@ -35,6 +35,7 @@ export const CHAIN_NAMES = [
   'xlayer',
   'celo',
   'celo-sepolia',
+  'near-testnet',
   'avalanche',
 ] as const
 

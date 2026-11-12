@@ -10,7 +10,7 @@
  */
 
 /** Short slug of a chain in the registry. */
-export type ChainId = 'arc-mainnet' | 'arc' | 'stellar' | 'algorand' | 'base' | 'rhchain' | 'arbitrum' | 'xlayer' | 'celo' | 'stellar-testnet' | 'algorand-testnet' | 'rhchain-testnet' | 'celo-sepolia' | 'avalanche'
+export type ChainId = 'arc-mainnet' | 'arc' | 'stellar' | 'algorand' | 'base' | 'rhchain' | 'arbitrum' | 'xlayer' | 'celo' | 'stellar-testnet' | 'algorand-testnet' | 'rhchain-testnet' | 'celo-sepolia' | 'near-testnet' | 'avalanche'
 
 export type ChainProtocols = {
   /** x402 HTTP-402 payment support. Settlement is in a stablecoin. */
@@ -34,7 +34,7 @@ export type Chain = {
   caip2: string
   evmCompatible: boolean
   /** Which wallet and signing family this chain belongs to. */
-  ecosystem: 'evm' | 'stellar' | 'algorand'
+  ecosystem: 'evm' | 'stellar' | 'algorand' | 'near'
   /** The gas token, as a wallet needs it to add the chain (wallet_addEthereumChain). */
   nativeCurrency: { name: string; symbol: string; decimals: number }
   testnet: boolean
@@ -618,6 +618,46 @@ export const CHAINS: readonly Chain[] = [
     "settlementSymbol": null
   },
   {
+    "id": "near-testnet",
+    "name": "NEAR Testnet",
+    "shortName": "NEAR test",
+    "color": "#1FB858",
+    "chainId": null,
+    "caip2": "near:testnet",
+    "evmCompatible": false,
+    "ecosystem": "near",
+    "nativeCurrency": {
+      "name": "NEAR",
+      "symbol": "NEAR",
+      "decimals": 24
+    },
+    "testnet": true,
+    "stablecoins": [
+      "USDC"
+    ],
+    "rpcUrl": "https://rpc.testnet.fastnear.com",
+    "explorer": "https://testnet.nearblocks.io",
+    "role": "NEAR testnet, read side only: a JSON-RPC reader for accounts, contract views and Circle's testnet USDC exists, but no public route calls it yet, and no contract or payment rail of ours runs on it.",
+    "status": "beta",
+    "protocols": {
+      "payment": {
+        "x402": false,
+        "note": "No x402 rail settles on NEAR yet. Circle's testnet USDC is documented here, and nothing of ours settles in it."
+      },
+      "identity": {
+        "standard": "NEAR account id",
+        "erc8004Native": false,
+        "note": "No ERC-8004 on NEAR: that standard is EVM-only, so an agent's passport is bridged from an EVM chain and KYA is not anchored here. A NEAR account id is a name or an implicit key-derived id, not an agent registry."
+      }
+    },
+    "identity": "NEAR account id",
+    "erc8004Native": false,
+    "x402": false,
+    "registries": {},
+    "identityLive": false,
+    "settlementSymbol": null
+  },
+  {
     "id": "avalanche",
     "name": "Avalanche C-Chain",
     "shortName": "Avalanche",
@@ -720,6 +760,11 @@ export const CHAIN_RPC_URLS: Record<ChainId, readonly string[]> = {
   ],
   "celo-sepolia": [
     "https://forno.celo-sepolia.celo-testnet.org"
+  ],
+  "near-testnet": [
+    "https://rpc.testnet.fastnear.com",
+    "https://near-testnet.drpc.org",
+    "https://archival-rpc.testnet.fastnear.com"
   ],
   "avalanche": [
     "https://api.avax.network/ext/bc/C/rpc"

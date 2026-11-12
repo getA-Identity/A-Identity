@@ -25,6 +25,7 @@
  */
 import type { Ecosystem } from '../types.js'
 import { ALGORAND_ADDRESS_RE, ALGORAND_TX_ID_RE } from '../algorand/ids.js'
+import { NEAR_ACCOUNT_ID_RE, NEAR_TX_HASH_RE } from '../near/ids.js'
 
 const STRKEY_BODY = '[A-Z2-7]{55}'
 
@@ -107,11 +108,14 @@ export const isStellarTxHash = (s: string): boolean => STELLAR_TX_HASH_RE.test(s
 // asserted before Stellar existed.
 
 /** A token or contract address, per ecosystem. On Algorand a settlement token is an
- *  ASA, addressed by a uint64 id rather than an account: digits, not base32. */
+ *  ASA, addressed by a uint64 id rather than an account: digits, not base32. On NEAR a
+ *  contract is code on an ACCOUNT, so a token is addressed by an account id, named or
+ *  implicit: Circle's testnet USDC is an implicit one, 64 lowercase hex. */
 export const SETTLEMENT_ADDRESS_RE: Record<Ecosystem, RegExp> = {
   evm: /^0x[0-9a-fA-F]{40}$/,
   stellar: STELLAR_CONTRACT_RE,
   algorand: /^[0-9]{1,20}$/,
+  near: NEAR_ACCOUNT_ID_RE,
 }
 
 /** An account that can own something, per ecosystem. */
@@ -119,13 +123,16 @@ export const OWNER_ADDRESS_RE: Record<Ecosystem, RegExp> = {
   evm: /^0x[0-9a-fA-F]{40}$/,
   stellar: STELLAR_ACCOUNT_RE,
   algorand: ALGORAND_ADDRESS_RE,
+  near: NEAR_ACCOUNT_ID_RE,
 }
 
-/** A transaction hash, per ecosystem. Neither branch accepts the other's rendering. */
+/** A transaction hash, per ecosystem. No branch accepts another's rendering: NEAR's base58
+ *  is at most 44 characters, too short for Stellar's 64 hex or Algorand's 52 base32. */
 export const TX_HASH_RE: Record<Ecosystem, RegExp> = {
   evm: /^0x[0-9a-f]{64}$/,
   stellar: STELLAR_TX_HASH_RE,
   algorand: ALGORAND_TX_ID_RE,
+  near: NEAR_TX_HASH_RE,
 }
 
 /** Human-readable names for the shapes above, for assertion messages. */
@@ -138,5 +145,9 @@ export const SHAPE_NAME: Record<Ecosystem, { address: string; tx: string }> = {
   algorand: {
     address: 'ASA id (decimal uint64) for tokens; 58-char base32 for accounts',
     tx: '52-char base32 transaction id, no prefix',
+  },
+  near: {
+    address: 'NEAR account id (2 to 64 chars of a-z 0-9 and . - _, lowercase only)',
+    tx: 'base58 CryptoHash, 32 to 44 chars, no prefix',
   },
 }

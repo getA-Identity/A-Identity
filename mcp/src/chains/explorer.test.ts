@@ -129,6 +129,28 @@ test('the Stellar descriptor points at Stellar Expert, whose routes this module 
   }
 })
 
+/**
+ * NearBlocks routes a transaction at /txns/<hash>; /tx/ is not one of its routes. Its pages
+ * answer scripted requests with a challenge (HTTP 403), so no link checker can catch a wrong
+ * route there, and this test is the only thing that will.
+ */
+test('a NEAR transaction opens at /txns/ and an account at /address/, on NearBlocks', () => {
+  const near = CHAINS.find((c) => c.ecosystem === 'near') ?? assert.fail('the registry carries no NEAR chain')
+  assert.ok(
+    (near.explorer ?? '').includes('nearblocks.io'),
+    `${near.id}: explorer.ts encodes NearBlocks routes, and ${near.explorer} is not NearBlocks. A different explorer needs its own branch.`,
+  )
+  const hash = '5WxNCK9TqGdVCUA1JBz57hdU5rEkM2wDCFrmzTsG1Syw' // a real testnet transaction, block 277286341
+  assert.equal(txUrl(near, hash), `${near.explorer}/txns/${hash}`)
+  assert.ok(!txUrl(near, hash).includes('/tx/'), 'NearBlocks has no /tx/ route')
+  // Named and implicit accounts take the same route; Circle's testnet USDC is an implicit one.
+  for (const account of ['a-identity.testnet', '3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af']) {
+    assert.equal(addressUrl(near, account), `${near.explorer}/address/${account}`)
+  }
+  // The branch keys on the ecosystem, so every other chain keeps /tx/.
+  assert.equal(txUrl(requireChain('eip155:5042002'), '0xabc'), 'https://explorer.testnet.arc.io/tx/0xabc')
+})
+
 test('getChainById still resolves every registry id after the descriptor work', () => {
   for (const c of CHAINS) assert.equal(getChainById(c.id)?.caip2, c.caip2)
 })

@@ -9,15 +9,16 @@ What is accurate today, and what the registry
 ([`mcp/src/chains/registry.ts`](mcp/src/chains/registry.ts)) will confirm, because it is the
 single source of truth and a test fails the build if any other file disagrees:
 
-- **14 chains, 9 of them mainnet.** Eight of those mainnets are `live`: Arc Mainnet,
+- **15 chains, 9 of them mainnet.** Eight of those mainnets are `live`: Arc Mainnet,
   OKX X Layer, Celo, Robinhood Chain, Arbitrum One, **Base**, **Stellar pubnet** and
   **Algorand**; nothing of ours has sold on X Layer since OKX.AI delisted the oracle on
   2026-09-26, or on Arbitrum One since our EIP-3009 rail paused there on 2026-11-11.
-  Avalanche is the only `planned` entry, and every `beta` entry is a testnet mirror
-  (Stellar, Algorand, Robinhood Chain, Celo Sepolia). Base and Stellar pubnet were listed
-  here as "mainnet (`beta`)" until 2026-08-30, days after both went live and both started
-  settling real value. That understated the blast radius of two keys, which is the only
-  direction this document must never be wrong in.
+  Avalanche is the only `planned` entry, and every `beta` entry is a testnet: four mirror
+  a live mainnet (Stellar, Algorand, Robinhood Chain, Celo Sepolia), and NEAR Testnet,
+  added on 2026-11-12 with no mainnet entry, is read-only and has no signer at all. Base
+  and Stellar pubnet were listed here as "mainnet (`beta`)" until 2026-08-30, days after
+  both went live and both started settling real value. That understated the blast radius
+  of two keys, which is the only direction this document must never be wrong in.
 - **Circle Arc testnet is still `live`, and Arc Mainnet has been live beside it since 2026-09-16.**
   Arc testnet being test money is not a statement about the eight live mainnets.
 - **Money moves.** x402 calls settle in real Circle USDC on Arc Mainnet, Celo and Base,

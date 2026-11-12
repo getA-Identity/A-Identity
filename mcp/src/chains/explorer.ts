@@ -50,8 +50,14 @@ function explorerBase(chain: ChainDescriptor): string {
   return chain.explorer
 }
 
-/** Explorer link for a transaction hash. `/tx/<hash>` on every explorer we use. */
+/**
+ * Explorer link for a transaction hash: `/tx/<hash>` on every explorer we use except
+ * NearBlocks, which routes a transaction at `/txns/<hash>`. The NEAR branch keys on the
+ * ecosystem rather than the host so that the route cannot fall back to `/tx/` silently; that
+ * fallback is the dead-link shape this module was written to remove.
+ */
 export function txUrl(chain: ChainDescriptor, hash: string): string {
+  if (chain.ecosystem === 'near') return `${explorerBase(chain)}/txns/${hash}`
   return `${explorerBase(chain)}/tx/${hash}`
 }
 
@@ -75,6 +81,8 @@ export function addressUrl(chain: ChainDescriptor, address: string): string {
     if (/^[0-9]+$/.test(address)) return `${base}/asset/${address}`
     return `${base}/account/${address}`
   }
+  // NEAR needs no branch here: a contract is an account, and NearBlocks routes every account,
+  // named or implicit, at /address/<account>, which is the default below.
   return `${base}/address/${address}`
 }
 

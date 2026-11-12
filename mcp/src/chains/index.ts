@@ -53,3 +53,19 @@ export { sendCallSigned, nodeSaid, SignerBusyError, __resetSendStateForTests, ty
 export { txUrl, addressUrl } from './explorer.js'
 export * from './stellar/strkey.js'
 export * from './algorand/ids.js'
+export * from './near/ids.js'
+// NEAR reads only: no signer and no send exist for NEAR in this codebase. See ./near/client.ts.
+export {
+  nearRpc,
+  nearRpcUrls,
+  nearStatus,
+  nearViewAccount,
+  nearViewFunction,
+  NearRpcUnreachable,
+  NEAR_EMPTY_CODE_HASH,
+  type NearAnswer,
+  type NearReadDeps,
+  type NearStatus,
+  type NearAccountView,
+  type NearViewResult,
+} from './near/client.js'

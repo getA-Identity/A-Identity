@@ -107,12 +107,25 @@ const PROTOCOLS = [
 const isMirror = (c: { id: ChainId; testnet: boolean }) =>
   c.testnet && CHAINS.some((o) => !o.testnet && o.id !== c.id && c.id.startsWith(`${o.id}-`))
 
+/**
+ * The named exception to "Arc is the only testnet this sentence names": a testnet with no
+ * mainnet twin in the registry, kept in the sentence on purpose, with its reason beside it.
+ * It is named by its full registry name, so the line says Testnet out loud instead of
+ * presenting a test network as a bare chain name. public-copy.test.ts holds the same map and
+ * fails if the two differ, or if an entry here gains a mainnet twin and goes stale.
+ */
+const STANDALONE_TESTNETS: Partial<Record<ChainId, string>> = {
+  'near-testnet': 'hackathon-era testnet integration; no NEAR mainnet registry exists yet',
+}
+
 /** Console column-width names get their real ones in prose. */
 const nameOf = (id: ChainId, shortName: string) =>
   id === 'rhchain' ? 'Robinhood Chain' : id === 'rhchain-testnet' ? 'Robinhood Chain Testnet' : shortName
 
 const chainsWith = (status: ChainStatus) =>
-  CHAINS.filter((c) => c.status === status && !isMirror(c)).map((c) => nameOf(c.id, c.shortName))
+  CHAINS.filter((c) => c.status === status && !isMirror(c)).map((c) =>
+    STANDALONE_TESTNETS[c.id] ? c.name : nameOf(c.id, c.shortName),
+  )
 
 /** "a, b and c". */
 function listOf(names: string[]) {

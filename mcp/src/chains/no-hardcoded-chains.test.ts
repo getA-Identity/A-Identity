@@ -88,6 +88,10 @@ function codeOnly(text: string): string {
  * banning it would produce noise that gets exempted until the guard means nothing. What is
  * dangerous to duplicate is a value that can be WRONG and silently point money somewhere:
  * a numeric chain id, an RPC or explorer host, a token address. Those are what this catches.
+ *
+ * One limit, stated: an explorer host is matched as a substring, so a host that CONTAINS one
+ * is caught too. NearBlocks' API host (api-testnet.nearblocks.io) contains its explorer host,
+ * which is the intended result: it is a chain constant and belongs in the registry as well.
  */
 function fromRegistry(): { pattern: RegExp; what: string }[] {
   const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -107,6 +111,12 @@ function fromRegistry(): { pattern: RegExp; what: string }[] {
     if (eh) out.push({ pattern: new RegExp(esc(eh), 'g'), what: `${c.id}'s explorer host` })
     for (const t of c.settlementTokens ?? []) {
       out.push({ pattern: new RegExp(esc(t.address), 'gi'), what: `${c.id}'s settlement token address` })
+    }
+    // Documented tokens too (2026-11-12): nothing settles in them, but a pay check names them to
+    // a person deciding whether to pay, so a copy outside the registry is the same risk. This
+    // is what guards NEAR's Circle USDC account, which is a documented token, not a settled one.
+    for (const t of c.documentedTokens ?? []) {
+      out.push({ pattern: new RegExp(esc(t.address), 'gi'), what: `${c.id}'s documented ${t.symbol} address` })
     }
     if (c.contracts.usdc) {
       out.push({ pattern: new RegExp(esc(c.contracts.usdc), 'gi'), what: `${c.id}'s USDC address` })

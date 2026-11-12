@@ -129,6 +129,14 @@
           "status": "beta"
         },
         {
+          "id": "near-testnet",
+          "caip2": "near:testnet",
+          "identity": "NEAR account id",
+          "erc8004Native": false,
+          "note": "No ERC-8004 on NEAR; the passport is bridged from an EVM chain and KYA is not anchored here. Read-only so far: no contract of ours is deployed on this network.",
+          "status": "beta"
+        },
+        {
           "id": "avalanche",
           "chainId": 43114,
           "caip2": "eip155:43114",
@@ -251,6 +259,14 @@
           "chainId": 11142220,
           "role": "Celo testnet rail (Alfajores is deprecated): same ERC-8004 registry pair as Arc, x402 USDC via the Sepolia facilitator.",
           "x402": true,
+          "status": "beta"
+        },
+        {
+          "id": "near-testnet",
+          "name": "NEAR Testnet",
+          "caip2": "near:testnet",
+          "role": "NEAR testnet, read side only: a JSON-RPC reader for accounts, contract views and Circle's testnet USDC exists, but no public route calls it yet, and no contract or payment rail of ours runs on it.",
+          "x402": false,
           "status": "beta"
         },
         {
@@ -399,6 +415,7 @@
         "xlayer",
         "celo",
         "celo-sepolia",
+        "near-testnet",
         "avalanche"
       ]
     },

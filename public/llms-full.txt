@@ -504,7 +504,7 @@ https://a-identity.xyz/.well-known/mcp/server-card.json
 
 ## 8. Chains
 
-14 chains sit in the registry, in three buckets. The bucket a chain is in comes
+15 chains sit in the registry, in three buckets. The bucket a chain is in comes
 from its descriptor, so this list and the running server cannot disagree.
 
 Live today:
@@ -708,6 +708,15 @@ Beta, wired and readable:
   and owner_pay, InvalidPayee can come before InvalidAmount), and so does every vault
   the /stellar page deploys on pubnet, which has no v0.1.1 code entry. The live state of any of our
   vaults is readable without a wallet at https://a-identity.xyz/app/vault/stellar.
+- **NEAR Testnet** (`near:testnet`), added 2026-11-12 with no mainnet entry beside it.
+  What is wired is the read side: a NEAR JSON-RPC reader in the backend (status,
+  view_account and contract views) that fails over across the registry's public hosts,
+  NearBlocks as the explorer (a transaction opens at /txns/<hash>), and Circle's testnet
+  USDC documented at the NEP-141 account
+  `3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af` (6 decimals, read live
+  that day). No public route calls that reader yet, no contract of ours is on this
+  network, no x402 rail settles here, and NEAR has no ERC-8004, so an agent's passport
+  stays bridged from an EVM chain.
 
 Planned, descriptor only:
 

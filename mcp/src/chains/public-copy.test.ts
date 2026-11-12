@@ -241,6 +241,16 @@ test('the landing chain sentence names no testnet mirror, and still names Arc', 
   const isMirror = (c: (typeof CHAINS)[number]) =>
     c.testnet && CHAINS.some((o) => !o.testnet && o.id !== c.id && c.id.startsWith(`${o.id}-`))
 
+  /**
+   * The named exception, the only one: a testnet with no mainnet twin in the registry that the
+   * sentence names on purpose, with the reason written beside it. ProtocolsWall.tsx declares
+   * the same map, and the loop below keeps the two in step. A new twinless testnet therefore
+   * fails here until someone decides about it in writing, which is the point of naming it.
+   */
+  const STANDALONE_TESTNETS: Record<string, string> = {
+    'near-testnet': 'hackathon-era testnet integration; no NEAR mainnet registry exists yet',
+  }
+
   const named = CHAINS.filter((c) => !isMirror(c))
   const mirrors = CHAINS.filter(isMirror).map((c) => c.id)
 
@@ -250,8 +260,8 @@ test('the landing chain sentence names no testnet mirror, and still names Arc', 
 
   assert.ok(named.some((c) => c.id === 'arc'), 'Arc has no mainnet twin and must stay in the sentence')
   assert.equal(
-    named.filter((c) => c.testnet).map((c) => c.id).join(','), 'arc',
-    'Arc is the only testnet the public sentence may name',
+    named.filter((c) => c.testnet).map((c) => c.id).join(','), ['arc', ...Object.keys(STANDALONE_TESTNETS)].join(','),
+    'Arc and the named standalone testnets are the only testnets the public sentence may name',
   )
 
   // And the component must actually use the derived rule rather than growing a new list.
@@ -261,4 +271,11 @@ test('the landing chain sentence names no testnet mirror, and still names Arc', 
   )
   assert.match(src, /const isMirror = /, 'ProtocolsWall must derive its mirror set')
   assert.doesNotMatch(src, /MIRRORS = new Set/, 'a hand-written mirror list is what missed stellar-testnet')
+
+  for (const [id, reason] of Object.entries(STANDALONE_TESTNETS)) {
+    const c = CHAINS.find((x) => x.id === id)
+    assert.ok(c?.testnet, `${id} is listed as a standalone testnet but the registry does not call it a testnet`)
+    assert.ok(!isMirror(c), `the exception for ${id} is stale: it has a mainnet twin now, so the mirror rule drops it. Delete the entry.`)
+    assert.ok(src.includes(`'${id}': '${reason}'`), `ProtocolsWall.tsx must declare the same exception for ${id}, with the same reason`)
+  }
 })

@@ -219,6 +219,13 @@ export async function provisionAgentVault(
         'nothing was deployed.',
     }
   }
+  // Without this arm a NEAR chain fell through to the Arc deploy below and would have
+  // deployed an EVM vault on Arc testnet while the caller asked for NEAR.
+  if (chain.ecosystem === 'near') {
+    return {
+      error: `The platform does not deploy vaults on ${chain.name}: no NEAR vault adapter is wired here, so nothing was deployed.`,
+    }
+  }
   if (chain.ecosystem === 'evm' && chain.id !== ARC_CHAIN.id) {
     return {
       error:

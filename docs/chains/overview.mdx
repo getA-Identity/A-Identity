@@ -10,9 +10,9 @@ path. The table below is the honest state of that registry.
 The vocabulary is exact. **Live** is the registry's status for the chains that carry
 the product today, and it has never meant "no caveats": Arc Mainnet is live with its first
 payments self-funded, Arc testnet still carries escrow and KYA, and each row states exactly what runs where, including what does not run
-there yet. **Beta** marks the testnet mirrors of live chains: wired and readable, test
-money. **Planned** means the descriptor exists so onboarding is a data edit, and
-nothing is deployed yet.
+there yet. **Beta** marks testnets that are wired and readable, in test money: the mirrors
+of live chains, and NEAR testnet, which has no mainnet entry. **Planned** means the
+descriptor exists so onboarding is a data edit, and nothing is deployed yet.
 
 | Chain | CAIP-2 | Status | What is deployed |
 | --- | --- | --- | --- |
@@ -29,6 +29,7 @@ nothing is deployed yet.
 | [Robinhood Chain Testnet](/chains/robinhood) | `eip155:46630` | beta | The full canonical ERC-8004 trio plus a deployed AgentSpendPolicy vault |
 | [Celo Sepolia](/chains/celo) | `eip155:11142220` | beta | Same ERC-8004 pair as Arc, x402 over testnet USDC |
 | [Arbitrum One](/chains/arbitrum) | `eip155:42161` | live | Canonical ERC-8004 identity and reputation, agent #1259, and x402 settled in native Circle USDC through our own facilitator (paused since 2026-11-11, until its new broadcaster key has gas here) |
+| NEAR (testnet) | `near:testnet` | beta | Nothing of ours is deployed here; the read side is wired, but no public route calls it yet. A NEAR JSON-RPC reader in the backend fails over across the registry's public hosts, NearBlocks is the explorer, and Circle's testnet USDC is documented at its NEP-141 account (6 decimals, read live 2026-11-12). No x402 rail settles here, and NEAR has no ERC-8004, so identity stays bridged from an EVM chain |
 | Avalanche C-Chain | `eip155:43114` | planned | Descriptor only |
 
 <Note>

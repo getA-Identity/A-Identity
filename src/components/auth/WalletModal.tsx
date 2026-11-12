@@ -20,7 +20,8 @@ import { EASE_OUT_EXPO } from '../../lib/brand'
 import ChainLogo from '../app/ChainLogo'
 
 /**
- * The wallet picker: one list, every chain family.
+ * The wallet picker: one list across every family with wallet sign-in (EVM, Stellar and
+ * Algorand; NEAR, which the chain registry also knows, has none yet).
  *
  * Each row is a wallet; on its right sit the marks of the networks that wallet reaches,
  * which is the only chain information a person needs and the only one shown. Wallets

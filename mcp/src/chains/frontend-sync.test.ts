@@ -224,6 +224,9 @@ test('the public surface reports exactly the wired chains as live/beta', () => {
       { id: 'algorand-testnet', status: 'beta' },
       { id: 'rhchain-testnet', status: 'beta' },
       { id: 'celo-sepolia', status: 'beta' },
+      // 2026-11-12: NEAR Testnet enters at beta, read-side only and with no mainnet twin, and
+      // sorts last of the betas because the registry places it after the last pair.
+      { id: 'near-testnet', status: 'beta' },
     ],
   )
 })

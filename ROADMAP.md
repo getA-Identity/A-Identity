@@ -42,9 +42,10 @@ The rules this document keeps:
 | **All tracks** | **39** | **2** | **2** | **4** | **5** |
 
 Chains in the registry: 9 live (Arc Mainnet, Circle Arc (Testnet), Stellar, Algorand,
-Base, Robinhood Chain, Arbitrum One, OKX X Layer, Celo), 4 beta (Stellar Testnet, Algorand
-Testnet, Robinhood Chain Testnet, Celo Sepolia (Testnet)), 1 planned (Avalanche C-Chain).
-Read from `mcp/src/chains/registry.ts` through its generated mirror, never typed here.
+Base, Robinhood Chain, Arbitrum One, OKX X Layer, Celo), 5 beta (Stellar Testnet, Algorand
+Testnet, Robinhood Chain Testnet, Celo Sepolia (Testnet), NEAR Testnet), 1 planned
+(Avalanche C-Chain). Read from `mcp/src/chains/registry.ts` through its generated mirror,
+never typed here.
 
 ## Shipped
 

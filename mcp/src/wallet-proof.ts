@@ -1,6 +1,7 @@
 /**
- * Wallet ownership proofs for sign-in and wallet linking, across every ecosystem the chain
- * registry knows: EVM, Stellar and Algorand.
+ * Wallet ownership proofs for sign-in and wallet linking, on three of the four ecosystems the
+ * chain registry knows: EVM, Stellar and Algorand. NEAR (in the registry since 2026-11-12)
+ * has no wallet sign-in yet: nothing here verifies a NEAR signed message (NEP-413).
  *
  * Sign-In with Ethereum was the only door, so a person whose money lives in Freighter or
  * Pera could look at the product and never sign in, on chains where the product settles

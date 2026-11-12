@@ -6,7 +6,7 @@ human sets, and can then pay other agents.
 
 Live: **https://a-identity.xyz** · backend **https://a-identity-backend.onrender.com**.
 
-The registry holds **14 chains**. Nine are `live`, and eight of those are mainnets that have carried
+The registry holds **15 chains**. Nine are `live`, and eight of those are mainnets that have carried
 our own traffic and real money: **Arc Mainnet** (live since it opened on 2026-09-16),
 **OKX X Layer**, **Celo**, **Robinhood Chain**, **Arbitrum One**, **Base**, **Stellar**
 (pubnet) and **Algorand**. Nothing of ours has sold on X Layer since OKX.AI delisted the oracle
@@ -16,10 +16,12 @@ live chain is
 where phase 1 started and it still carries all three ERC-8004 registries (identity +
 reputation + validation), which is what makes KYA anchorable there. No mainnet descriptor
 in the registry carries a ValidationRegistry we wire, so KYA is anchored on none of them. The four
-testnet mirrors (Stellar, Algorand, Robinhood Chain, Celo Sepolia) are `beta`, and Avalanche
-is the only `planned` entry. This header said "eleven registry entries" and described Stellar
-pubnet as merely holding a vault until 2026-08-30; both had gone stale, and understating the
-blast radius is the expensive direction for that kind of error to point.
+testnet mirrors (Stellar, Algorand, Robinhood Chain, Celo Sepolia) are `beta`, and so is
+**NEAR Testnet** (added 2026-11-12): read-only, with no mainnet entry, no signer, and no
+contract or payment rail of ours on it yet. Avalanche is the only `planned` entry. This header
+said "eleven registry entries" and described Stellar pubnet as merely holding a vault until
+2026-08-30; both had gone stale, and understating the blast radius is the expensive direction
+for that kind of error to point.
 
 [`mcp/src/chains/registry.ts`](mcp/src/chains/registry.ts) is the source of truth for which
 chain is which, [`mcp/src/chains/provenance.ts`](mcp/src/chains/provenance.ts) is the ledger
@@ -420,7 +422,7 @@ flowchart TD
     PLAT --> REG
     RAILS --> REG
   end
-  BE -->|reads and writes| CH[(14 chains<br/>9 live)]
+  BE -->|reads and writes| CH[(15 chains<br/>9 live)]
   BE -->|durable state| DB[(Postgres, JSON fallback)]
   REG -.generates.-> UI
 ```
@@ -437,9 +439,9 @@ day it lands rather than the day someone remembers to add it.
   `/health` to the backend (first-party → dodges ad-blocker false "offline").
 - **Backend** - Node HTTP + **MCP** (Model Context Protocol) server (Render). REST companion for the UI,
   `/mcp` JSON-RPC for agents. Durable state via Postgres (`DATABASE_URL`), JSON-file fallback for dev.
-- **Auth** - wallet sign-in on any chain family the registry knows (EVM personal_sign, Stellar SEP-43 signMessage, an Algorand signed zero-value self-payment; mcp/src/wallet-proof.ts) + email magic link (Resend) are *verified*; a plain guest
+- **Auth** - wallet sign-in on the EVM, Stellar and Algorand families (EVM personal_sign, Stellar SEP-43 signMessage, an Algorand signed zero-value self-payment; mcp/src/wallet-proof.ts; NEAR, the registry's fourth family, has no wallet sign-in yet) + email magic link (Resend) are *verified*; a plain guest
   session is read-only. Agent ownership is bound to a verified identity.
-- **Tests / CI** - `node:test` unit suite: **2629 tests across 133 colocated `*.test.ts` files**
+- **Tests / CI** - `node:test` unit suite: **2648 tests across 135 colocated `*.test.ts` files**
   (as of Nov 2026; `npm test` in `mcp/`) + a full E2E (`mcp/e2e.mjs`) of about **67 checks** that
   adapts to signer presence: live reads always run, and the on-chain write checks (x402, ERC-8183
   escrow, Gateway, **Nanopayments settle**, **CCTP burn-and-mint**) activate with a funded

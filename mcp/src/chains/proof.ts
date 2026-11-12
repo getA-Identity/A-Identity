@@ -14,6 +14,7 @@
 import { CHAINS, getChainById } from './registry.js'
 import type { ChainDescriptor } from './types.js'
 import { evmPublicClient } from './evm/client.js'
+import { nearStatus, nearViewAccount, type NearReadDeps } from './near/client.js'
 import {
   artifactUrl,
   contractUrl,
@@ -181,6 +182,7 @@ const VERIFY_BY_ECOSYSTEM: Record<ChainDescriptor['ecosystem'], (chains: ChainDe
   evm: evmVerifyLines,
   stellar: stellarVerifyLines,
   algorand: algorandVerifyLines,
+  near: nearVerifyLines,
 }
 
 /**
@@ -332,6 +334,34 @@ function algorandVerifyLines(chains: ChainDescriptor[]): string[] {
 }
 
 /**
+ * NEAR, in NEAR's own terms. A contract there is code on an account, a transaction hash is
+ * base58 and opens at /txns/ on NearBlocks, and a token transfer is a NEP-141 event rather
+ * than an EVM log, so none of the EVM or Soroban wording applies. Every line is derived from
+ * the descriptor, including the settlement line, which says no rail sells here for as long as
+ * the descriptor's payment.x402 is false rather than describing one that does not exist.
+ */
+function nearVerifyLines(chains: ChainDescriptor[]): string[] {
+  const lines = [
+    'Open any transaction link below: each is a real transaction on the network named, linked to that network\'s own explorer. A NEAR hash is base58 with no prefix, and NearBlocks opens it at /txns/, never /tx/.',
+  ]
+  if (!chains.some((c) => c.contracts.identityRegistry)) {
+    lines.push(
+      'No agent is re-read here because none is claimed: NEAR has no ERC-8004 registry, so an agent\'s passport is bridged from an EVM chain and this network makes no identity claim of its own.',
+    )
+  }
+  lines.push(
+    'A contract on NEAR is code on an account. The live check above asks the network for each one on every load (view_account at final finality) and counts it deployed only when the account exists and its code_hash is not the empty hash of 32 ones; any public NEAR RPC answers the same query for you.',
+  )
+  const documented = chains.flatMap((c) => (c.documentedTokens ?? []).map((t) => `${t.symbol} (NEP-141 account ${t.address}) on ${c.name}`))
+  if (chains.some((c) => !c.payment.x402)) {
+    lines.push(
+      `No x402 rail of ours settles on NEAR yet, so there is no settlement log to point at${documented.length ? `, and ${listNames(documented)} ${documented.length === 1 ? 'is' : 'are'} documented here but not settled in` : ''}. A NEAR transfer is checked by its NEP-141 ft_transfer event in a transaction read with wait_until FINAL, never by a broadcaster reporting success.`,
+    )
+  }
+  return lines
+}
+
+/**
  * The Soroban analogue, doing the same job with the same standard of evidence.
  *
  * `getLedgerEntries` on a contract instance is the honest counterpart of eth_getCode: it
@@ -458,12 +488,44 @@ export function proofRailIndex(): RailIndexEntry[] {
   })
 }
 
+/**
+ * NEAR, by NEAR's own protocol: `status` for reachability, which also proves the host is on
+ * the network the descriptor names, then `view_account` for each contract. A NEAR contract is
+ * code on an account, so `deployed` means the account exists AND its code_hash is not the
+ * empty hash; an account with no code is reported as not deployed rather than guessed at. A
+ * missing account is a decided answer (UNKNOWN_ACCOUNT) and reads `deployed: false`; anything
+ * no host could answer fails the whole check as unreachable, the same rule the Algorand arm
+ * keeps. Exported, with the fetch seam, so a test pins it without a network.
+ */
+export async function nearLiveCheck(
+  chain: ChainDescriptor,
+  entry: Pick<ChainProvenance, 'contracts'>,
+  env: NodeJS.ProcessEnv = process.env,
+  checkedAt: string = new Date().toISOString(),
+  deps: NearReadDeps = {},
+): Promise<LiveCheck> {
+  try {
+    const status = await nearStatus(chain, env, deps)
+    const contracts = await Promise.all(
+      entry.contracts.map(async (c) => {
+        const account = await nearViewAccount(chain, c.address, env, deps)
+        return { name: c.name, address: c.address, deployed: account.exists && account.hasContract }
+      }),
+    )
+    return { reachable: true, checkedAt, blockNumber: String(status.latestBlockHeight), contracts }
+  } catch (e) {
+    return { reachable: false, checkedAt, reason: e instanceof Error ? e.message : String(e) }
+  }
+}
+
 async function liveCheck(chain: ChainDescriptor, entry: ChainProvenance, env: NodeJS.ProcessEnv): Promise<LiveCheck> {
   const checkedAt = new Date().toISOString()
   // Branched, because the EVM path asked a Soroban RPC for eth_blockNumber and rendered the
   // resulting "method not found" as reachable: false. That is a lie in the honest direction
-  // but a lie: the chain was reachable, we were speaking the wrong protocol at it.
+  // but a lie: the chain was reachable, we were speaking the wrong protocol at it. NEAR has
+  // its own arm for the same reason; sent down the EVM path it would publish that lie.
   if (chain.ecosystem === 'stellar') return stellarLiveCheck(chain, entry, env, checkedAt)
+  if (chain.ecosystem === 'near') return nearLiveCheck(chain, entry, env, checkedAt)
   if (chain.ecosystem === 'algorand') {
     // Reachability by the chain's own protocol (algod /v2/status), then each contract by
     // the question that matters for it. An Algorand contract is an application, and

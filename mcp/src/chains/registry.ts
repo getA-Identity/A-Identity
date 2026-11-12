@@ -34,8 +34,9 @@ export const CHAINS: ChainDescriptor[] = [
   // llms buckets), set deliberately on 2026-08-30: Arc, Stellar and Algorand lead as
   // the product's three flagship rails, then Base, Robinhood Chain, Arbitrum One,
   // X Layer and Celo, with planned Avalanche last. Testnet mirrors sit next to their
-  // mainnet twin. Statuses stay the honest part: live = a real payment recorded,
-  // beta = wired, planned = descriptor only.
+  // mainnet twin. NEAR Testnet (2026-11-12) has no twin, so it sits after the last pair
+  // and ahead of the planned entry. Statuses stay the honest part: live = a real payment
+  // recorded, beta = wired, planned = descriptor only.
   //
   // The Arc pair. Arc mainnet opened publicly on 2026-09-16, and it enters as its OWN
   // descriptor rather than by promoting `arc`, for the same two reasons the Stellar split
@@ -1145,6 +1146,85 @@ export const CHAINS: ChainDescriptor[] = [
       note: 'Identity + Reputation registries LIVE (same addresses as Arc). A ValidationRegistry proxy is deployed here too (read live 2026-10-11) but not wired, mirroring mainnet. Self Agent ID proof-of-human registry readable (testnet, mock passports).',
     },
     payment: { x402: true, note: 'x402 over testnet USDC via the Celo Sepolia facilitator (api.x402.sepolia.celo.org).' },
+  },
+  // ── NEAR ─────────────────────────────────────────────────────────────────────────────
+  // The third non-EVM ecosystem, entered 2026-11-12 as a TESTNET ONLY descriptor, for the
+  // NEAR hackathon work. There is deliberately no NEAR mainnet entry beside it: nothing of
+  // ours runs on NEAR mainnet, and a `planned` twin would be a name with nothing behind it.
+  // `beta` rather than `planned` on the registry's own definition: the network is wired and
+  // readable here (chains/near/client.ts can read it over JSON-RPC, failing over across the
+  // hosts below) and nothing has settled on it. No public route calls that reader yet: its only
+  // production caller is the liveCheck behind /proof/:rail, which runs only for a chain with a
+  // provenance entry, and NEAR has none. The role says so. Every value was read live on
+  // 2026-11-12.
+  {
+    // The id NEAR's own wallet-selector builds (`near:${networkId}`). The ChainAgnostic
+    // namespaces registry has no NEAR profile yet, so this is the de-facto form, not a CASA one.
+    caip2: 'near:testnet',
+    id: 'near-testnet',
+    name: 'NEAR Testnet',
+    shortName: 'NEAR test',
+    // NEAR's docs site sets #1fb858 as its primary for BOTH its light and dark themes (near/docs,
+    // docs.json colors.primary, read 2026-11-12). NEAR's mark itself is monochrome, which would
+    // fail the chip rule in one theme, the same reason Algorand and X Layer carry a non-mark color.
+    color: '#1FB858',
+    role: 'NEAR testnet, read side only: a JSON-RPC reader for accounts, contract views and Circle\'s testnet USDC exists, but no public route calls it yet, and no contract or payment rail of ours runs on it.',
+    ecosystem: 'near',
+    testnet: true,
+    status: 'beta',
+    evmChainId: null,
+    // Circle's CCTP supported-blockchains page names no NEAR (read 2026-11-12).
+    cctpDomain: null,
+    nativeCurrency: { name: 'NEAR', symbol: 'NEAR', decimals: 24 }, // 1 NEAR = 10^24 yoctoNEAR
+    usdcDecimals: 6,
+    // Primary, fallback, then FastNEAR's archival host. All three answered `status` with
+    // chain_id testnet and protocol_version 88 at the same height (277291084) on 2026-11-12.
+    // The archival host is last on purpose: an ordinary read starts at the regular hosts, and
+    // a read older than a pruned node's window (an unknown or garbage-collected block, which
+    // the reader treats as "could not answer") falls through to the host that keeps history.
+    rpcUrls: ['https://rpc.testnet.fastnear.com', 'https://near-testnet.drpc.org', 'https://archival-rpc.testnet.fastnear.com'],
+    // NearBlocks routes a transaction at /txns/<hash> (not /tx/) and an account at
+    // /address/<account>; explorer.ts encodes both. Its pages refuse scripted requests
+    // (HTTP 403 challenge), so no link checker can confirm them: docs.near.org's own links
+    // are the evidence for the routes.
+    explorer: 'https://testnet.nearblocks.io',
+    // The testnet faucet docs.near.org names (getting-started/faucet, read 2026-11-12).
+    faucet: 'https://near-faucet.io',
+    // Empty on purpose. The vault and risk-registry accounts are not deployed: view_account on
+    // registry.a-identity.testnet answered UNKNOWN_ACCOUNT on 2026-11-12. Filled from deploy
+    // receipts, never before.
+    contracts: {},
+    // A read at `final` finality cannot be reverted on NEAR, so one is enough.
+    confirmations: 1,
+    stablecoins: ['USDC'],
+    // Documented, not settled: payment.x402 is false and nothing of ours settles in it. NEVER
+    // `usdc.testnet`, which is a different account and not Circle's.
+    documentedTokens: [
+      {
+        symbol: 'USDC',
+        name: 'USDC',
+        address: '3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af',
+        decimals: 6,
+        issuer: 'Circle',
+        verified:
+          'Circle documents this NEP-141 account as NEAR Testnet USDC (developers.circle.com/stablecoins/usdc-contract-addresses, ' +
+          'NEAR Testnet row, read 2026-11-12). Read live the same day: ft_metadata on rpc.testnet.fastnear.com and near-testnet.drpc.org ' +
+          'at block 277291098 answered spec ft-1.0.0, name USDC, symbol USDC, decimals 6.',
+      },
+    ],
+    rpcEnvVar: 'NEAR_TESTNET_RPC_URL',
+    identity: {
+      standard: 'NEAR account id',
+      erc8004Native: false,
+      note:
+        'No ERC-8004 on NEAR: that standard is EVM-only, so an agent\'s passport is bridged from an EVM ' +
+        'chain and KYA is not anchored here. A NEAR account id is a name or an implicit key-derived id, ' +
+        'not an agent registry.',
+    },
+    payment: {
+      x402: false,
+      note: 'No x402 rail settles on NEAR yet. Circle\'s testnet USDC is documented here, and nothing of ours settles in it.',
+    },
   },
   {
     caip2: 'eip155:43114',

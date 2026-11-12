@@ -82,7 +82,11 @@ test('Arc, X Layer, Celo (live), Base, Celo Sepolia and RH Chain Testnet (beta) 
   // chain met.
   // 2026-09-16: arc-mainnet enters planned in the morning and goes LIVE the same day, on agent
   // #0 plus a real EIP-3009 settlement, a Gateway credit and a vault payment.
-  assert.deepEqual(live.map((c) => c.id).sort(), ['algorand', 'algorand-testnet', 'arbitrum', 'arc', 'arc-mainnet', 'base', 'celo', 'celo-sepolia', 'rhchain', 'rhchain-testnet', 'stellar', 'stellar-testnet', 'xlayer'])
+  // 2026-11-12: near-testnet enters at beta, the third non-EVM ecosystem, wired for reads only
+  // and with no mainnet twin; its own test below pins what it does and does not claim.
+  assert.deepEqual(live.map((c) => c.id).sort(), ['algorand', 'algorand-testnet', 'arbitrum', 'arc', 'arc-mainnet', 'base', 'celo', 'celo-sepolia', 'near-testnet', 'rhchain', 'rhchain-testnet', 'stellar', 'stellar-testnet', 'xlayer'])
+  assert.equal(live.find((c) => c.id === 'near-testnet')?.status, 'beta')
+  assert.equal(live.find((c) => c.id === 'near-testnet')?.ecosystem, 'near')
   // pubnet joined on 2026-08-24 with the vault deploy, was called live on 2026-08-27,
   // and the x402 rail started SELLING there on 2026-08-27 (first sale tx f213371c,
   // settled by our own broadcaster at the network's market-rate inclusion fee). The
@@ -319,6 +323,16 @@ test('every settlement token is well formed and agrees with its chain', () => {
         )
       }
     }
+    // A documented token is never settled in, but a pay check names it to a person deciding
+    // whether to pay, so its address is held to the same shape and the same provenance rule.
+    for (const d of c.documentedTokens ?? []) {
+      assert.match(
+        d.address,
+        SETTLEMENT_ADDRESS_RE[c.ecosystem],
+        `${c.id}: documented ${d.symbol} address is not a ${SHAPE_NAME[c.ecosystem].address}`,
+      )
+      assert.ok(d.verified.length > 40, `${c.id}: documented ${d.symbol} needs a provenance note`)
+    }
   }
 })
 
@@ -417,4 +431,45 @@ test('the Stellar vault slots: v0.1.0 is a known build on both networks, and the
   for (const c of CHAINS.filter((x) => x.ecosystem !== 'stellar')) {
     assert.equal(c.contracts.knownVaultWasmHashes, undefined, `${c.id} is not a Soroban chain`)
   }
+})
+
+// ── NEAR Testnet (2026-11-12) ────────────────────────────────────────────────────
+
+test('NEAR Testnet carries the values read live on 2026-11-12, and claims nothing it has not got', () => {
+  const near = getChainById('near-testnet')
+  assert.ok(near)
+  assert.equal(near.caip2, 'near:testnet')
+  assert.equal(near.ecosystem, 'near')
+  assert.equal(near.testnet, true)
+  assert.equal(near.status, 'beta')
+  assert.equal(near.evmChainId, null)
+  assert.equal(near.cctpDomain, null, 'Circle\'s CCTP supported-blockchains page names no NEAR')
+  assert.equal(near.nativeCurrency.decimals, 24, '1 NEAR is 10^24 yoctoNEAR')
+  assert.equal(near.usdcDecimals, 6)
+  // Each answered status with chain_id testnet on 2026-11-12. The archival host stays last.
+  assert.deepEqual(near.rpcUrls, [
+    'https://rpc.testnet.fastnear.com',
+    'https://near-testnet.drpc.org',
+    'https://archival-rpc.testnet.fastnear.com',
+  ])
+  assert.equal(near.explorer, 'https://testnet.nearblocks.io')
+  assert.equal(near.rpcEnvVar, 'NEAR_TESTNET_RPC_URL')
+  // No write path exists for NEAR in this backend, so no signer is declared: a variable nothing
+  // reads would still be listed in SECURITY.md as a hot wallet.
+  assert.equal(near.signerEnvVar, undefined)
+  // The only NEAR descriptor, deliberately: there is no mainnet twin, planned or otherwise.
+  assert.deepEqual(CHAINS.filter((c) => c.ecosystem === 'near').map((c) => c.id), ['near-testnet'])
+  // Nothing of ours is deployed there yet, so nothing is claimed, and no rail sells.
+  assert.deepEqual(near.contracts, {})
+  assert.equal(near.settlementTokens, undefined)
+  assert.equal(near.payment.x402, false)
+  assert.equal(near.identity.erc8004Native, false)
+  // Circle's NEAR Testnet USDC, documented and not settled in. usdc.testnet is a different
+  // account, not Circle's, and must never stand in for it.
+  const usdc = near.documentedTokens?.[0]
+  assert.equal(usdc?.symbol, 'USDC')
+  assert.equal(usdc?.address, '3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af')
+  assert.equal(usdc?.decimals, 6)
+  assert.equal(usdc?.issuer, 'Circle')
+  assert.ok(!JSON.stringify(near).includes('usdc.testnet'), 'usdc.testnet is a lookalike, not Circle USDC')
 })

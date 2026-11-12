@@ -9,6 +9,7 @@ import {
   vaultChainFor, isEvmVault, toRaw, fromRaw, fromCallOutcome, allowlistEntriesFor,
   vaultResultFromOutcome, type VaultPolicyView,
   sessionKeyExpiryFor, REVOKED_SESSION_EXPIRY, vaultPolicyPlan, writeVaultSessionExpiry,
+  readVaultPolicy, writeVaultFrozen, payFromVault,
 } from './vault-adapter.js'
 import { __resetPlatformStateForTests, createAgent, provisionAgentVault } from '../platform.js'
 import { state, type PlatformAgent } from './core.js'
@@ -88,6 +89,12 @@ test('an allowlist entry is filtered to the address shape its own chain accepts'
   const mixed = ['0x000000000000000000000000000000000000dEaD', 'GBLHNAL57WLA5GKTIGPBHCJTQDNEZFX2CVH53EDUOGWIERNKECRENHQ5', 'agent://x']
   assert.deepEqual(allowlistEntriesFor(arc, mixed), ['0x000000000000000000000000000000000000dEaD'])
   assert.deepEqual(allowlistEntriesFor(stellar, mixed), ['GBLHNAL57WLA5GKTIGPBHCJTQDNEZFX2CVH53EDUOGWIERNKECRENHQ5'])
+  // NEAR keeps account ids only. The checksummed 0x and the G... are not NEAR ids at all (NEAR
+  // is lowercase); the lowercase 0x is kept, because on NEAR it names that key's eth-implicit
+  // account. This arm used to be the default, which kept StrKeys and dropped every NEAR id.
+  const near = CHAINS.find((c) => c.ecosystem === 'near')!
+  const lower = '0x000000000000000000000000000000000000dead'
+  assert.deepEqual(allowlistEntriesFor(near, [...mixed, 'alice.testnet', lower]), ['alice.testnet', lower])
 })
 
 // ── the Soroban payment, mapped onto the shape the settlement ladder branches on ──
@@ -175,6 +182,35 @@ test('a Stellar payee is a G... account and an Arc one is 0x, on the same helper
   // A contract may hold an allowlist entry (an agent paying another contract), but a
   // 0x address never can: it is not an address on this chain at all.
   assert.deepEqual(allowlistEntriesFor(stellar, [g, c, '0x000000000000000000000000000000000000dEaD']), [g, c])
+})
+
+test('a NEAR vault is refused in its own words, before the Soroban adapter or the Arc deployer is reached', async () => {
+  // Without the NEAR arms every call below fell through: reads and writes into the Soroban
+  // adapter, which throws on a chain that is not Stellar, and a deploy into the Arc path, which
+  // would have put an EVM vault on Arc testnet for a caller who asked for NEAR.
+  const near = CHAINS.find((c) => c.ecosystem === 'near')!
+  const a = agent({ vaultChainCaip2: near.caip2 })
+  assert.equal(vaultChainFor(a)?.id, near.id)
+  assert.equal(isEvmVault(a), false)
+  assert.equal(await readVaultPolicy(a, 'vault.example.testnet'), null)
+  for (const w of [
+    await writeVaultFrozen(a, 'vault.example.testnet', true),
+    await writeVaultSessionExpiry(a, 'vault.example.testnet', 1_893_456_000),
+  ]) {
+    assert.equal(w.ok, false)
+    assert.match((w as { reason: string }).reason, /no NEAR vault adapter is wired here, so nothing was submitted/)
+  }
+  const paid = await payFromVault(a, 'vault.example.testnet', 'alice.testnet', 1, false)
+  assert.equal(paid.executed, false)
+  assert.equal((paid as { reverted?: boolean }).reverted, true, 'refused, so the ladder cannot read it as in flight')
+  assert.match((paid as { reason: string }).reason, /no NEAR vault adapter/)
+
+  __resetPlatformStateForTests()
+  const OWNER = 'owner@test'
+  const made = createAgent({ name: 'NEAR vault', description: 'Seeded for the NEAR deploy refusal.', category: 'Research', capabilities: [], permissions: {}, owner: OWNER })
+  const r = await provisionAgentVault(made.id, { caller: OWNER, ownerAddress: '0x000000000000000000000000000000000000dEaD', chain: near.id })
+  assert.match((r as { error?: string }).error ?? '', new RegExp(`does not deploy vaults on ${near.name}`))
+  assert.equal(state.agents.find((x) => x.id === made.id)?.vaultAddress ?? null, null, 'a refused deploy records nothing')
 })
 
 test('the session-key expiry survives the trip through the view, on both chains', () => {
