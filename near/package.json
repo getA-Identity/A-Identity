@@ -22,11 +22,14 @@
     "scan:build": "node scan/build-dataset.mjs",
     "scan:check": "node scan/check-citations.mjs",
     "scan:score": "node scan/score.mjs",
-    "test": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test 'sdk/test/*.test.ts' 'demo/test/*.test.ts' 'scripts/*.test.ts' 'judge/test/*.test.mjs' 'scan/*.test.mjs'",
+    "scan:bench": "node --experimental-strip-types --no-warnings=ExperimentalWarning scan/benchmark/run.mjs",
+    "scan:bench:check": "node --experimental-strip-types --no-warnings=ExperimentalWarning scan/benchmark/run.mjs --offline --check && node --experimental-strip-types --no-warnings=ExperimentalWarning scan/benchmark/report.mjs --check",
+    "scan:bench:report": "node --experimental-strip-types --no-warnings=ExperimentalWarning scan/benchmark/report.mjs",
+    "test": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test 'sdk/test/*.test.ts' 'demo/test/*.test.ts' 'scripts/*.test.ts' 'judge/test/*.test.mjs' 'scan/*.test.mjs' 'scan/benchmark/*.test.mjs'",
     "test:sdk": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test 'sdk/test/*.test.ts'",
     "test:demo": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test 'demo/test/*.test.ts' 'scripts/*.test.ts'",
     "test:judge": "node --test 'judge/test/*.test.mjs'",
-    "test:scan": "node --test 'scan/*.test.mjs'",
+    "test:scan": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test 'scan/*.test.mjs' 'scan/benchmark/*.test.mjs'",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {

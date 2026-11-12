@@ -1,0 +1,212 @@
+{
+  "purpose": "The fixed known-payee list the benchmark passes to the engine (the CLI flag --known). The engine reads it in two ways: lookalike detection compares every payee that is not on the list with these names, and a payee that is on the list is never compared as a lookalike and gets the known_payee info reason instead (sdk/src/engine/normalize.ts). Some of these names are known_good rows of scan/dataset.json, so that exemption protects those negatives; verdicts.leave-self-out.json replays the run without it.",
+  "rule": "The first 25 tokens of NearBlocks public token list ordered by on-chain market cap, descending, as returned by one GET on 2026-11-12. The rule was fixed before the list was fetched and before any benchmark verdict was computed. The list was not edited after fetching. The rule does not read scan/dataset.json, its labels, its seed files, its cited sources, or the brands the suspicious rows imitate.",
+  "source": "https://api.nearblocks.io/v1/fts?page=1&per_page=25&sort=onchain_market_cap&order=desc",
+  "attribution": "Powered by Nearblocks.io APIs",
+  "fetched_at": "2026-11-12T08:38:33Z",
+  "fields": "rank, account_id (the token contract), symbol and name (token metadata as NearBlocks returned it, non-ASCII replaced by ?), onchain_market_cap_usd (NearBlocks figure at fetch time, rounded)",
+  "accounts": [
+    "usdt.tether-token.near",
+    "zec.omft.near",
+    "wrap.near",
+    "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+    "meta-pool.near",
+    "linear-protocol.near",
+    "token.rhealab.near",
+    "aaaaaa20d9e0e2461697782ef11675f668207961.factory.bridge.near",
+    "eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near",
+    "walc.near",
+    "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.factory.bridge.near",
+    "eth-0xdac17f958d2ee523a2206206994597c13d831ec7.omft.near",
+    "nbtc.bridge.near",
+    "near20.margaritafinance.near",
+    "mpdao-token.near",
+    "btc.omft.near",
+    "token.v2.ref-finance.near",
+    "eth.bridge.near",
+    "eth.omft.near",
+    "far-token.fewandfar-protocol.near",
+    "meta-token.near",
+    "dac17f958d2ee523a2206206994597c13d831ec7.factory.bridge.near",
+    "token.publicailab.near",
+    "usn",
+    "npro.nearmobile.near"
+  ],
+  "ranking": [
+    {
+      "rank": 1,
+      "account_id": "usdt.tether-token.near",
+      "symbol": "USDt",
+      "name": "Tether USD",
+      "onchain_market_cap_usd": "525458148"
+    },
+    {
+      "rank": 2,
+      "account_id": "zec.omft.near",
+      "symbol": "ZEC",
+      "name": "Zcash",
+      "onchain_market_cap_usd": "146978747"
+    },
+    {
+      "rank": 3,
+      "account_id": "wrap.near",
+      "symbol": "wNEAR",
+      "name": "Wrapped NEAR fungible token",
+      "onchain_market_cap_usd": "121606596"
+    },
+    {
+      "rank": 4,
+      "account_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+      "symbol": "USDC",
+      "name": "USDC",
+      "onchain_market_cap_usd": "75342955"
+    },
+    {
+      "rank": 5,
+      "account_id": "meta-pool.near",
+      "symbol": "STNEAR",
+      "name": "Staked NEAR",
+      "onchain_market_cap_usd": "75092379"
+    },
+    {
+      "rank": 6,
+      "account_id": "linear-protocol.near",
+      "symbol": "LINEAR",
+      "name": "LiNEAR",
+      "onchain_market_cap_usd": "44517066"
+    },
+    {
+      "rank": 7,
+      "account_id": "token.rhealab.near",
+      "symbol": "RHEA",
+      "name": "Rhea",
+      "onchain_market_cap_usd": "37714349"
+    },
+    {
+      "rank": 8,
+      "account_id": "aaaaaa20d9e0e2461697782ef11675f668207961.factory.bridge.near",
+      "symbol": "AURORA",
+      "name": "Aurora",
+      "onchain_market_cap_usd": "30762201"
+    },
+    {
+      "rank": 9,
+      "account_id": "eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near",
+      "symbol": "USDC",
+      "name": "USD Coin",
+      "onchain_market_cap_usd": "27387100"
+    },
+    {
+      "rank": 10,
+      "account_id": "walc.near",
+      "symbol": "WALC",
+      "name": "WALC",
+      "onchain_market_cap_usd": "25991750"
+    },
+    {
+      "rank": 11,
+      "account_id": "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.factory.bridge.near",
+      "symbol": "USDC.e",
+      "name": "Bridged USDC",
+      "onchain_market_cap_usd": "14515293"
+    },
+    {
+      "rank": 12,
+      "account_id": "eth-0xdac17f958d2ee523a2206206994597c13d831ec7.omft.near",
+      "symbol": "USDT",
+      "name": "Tether USD",
+      "onchain_market_cap_usd": "12889671"
+    },
+    {
+      "rank": 13,
+      "account_id": "nbtc.bridge.near",
+      "symbol": "NBTC",
+      "name": "Near WBTC",
+      "onchain_market_cap_usd": "11269434"
+    },
+    {
+      "rank": 14,
+      "account_id": "near20.margaritafinance.near",
+      "symbol": "NEAR20",
+      "name": "NEAR20 Yield Strategy",
+      "onchain_market_cap_usd": "9630321"
+    },
+    {
+      "rank": 15,
+      "account_id": "mpdao-token.near",
+      "symbol": "mpDAO",
+      "name": "metapool.app DAO Governance Token",
+      "onchain_market_cap_usd": "7992169"
+    },
+    {
+      "rank": 16,
+      "account_id": "btc.omft.near",
+      "symbol": "BTC",
+      "name": "Bitcoin",
+      "onchain_market_cap_usd": "6416895"
+    },
+    {
+      "rank": 17,
+      "account_id": "token.v2.ref-finance.near",
+      "symbol": "REF",
+      "name": "Ref Finance Token",
+      "onchain_market_cap_usd": "6389293"
+    },
+    {
+      "rank": 18,
+      "account_id": "eth.bridge.near",
+      "symbol": "ETH",
+      "name": "Ether",
+      "onchain_market_cap_usd": "5737564"
+    },
+    {
+      "rank": 19,
+      "account_id": "eth.omft.near",
+      "symbol": "ETH",
+      "name": "Ethereum",
+      "onchain_market_cap_usd": "5642800"
+    },
+    {
+      "rank": 20,
+      "account_id": "far-token.fewandfar-protocol.near",
+      "symbol": "FAR",
+      "name": "FAR Token",
+      "onchain_market_cap_usd": "5015765"
+    },
+    {
+      "rank": 21,
+      "account_id": "meta-token.near",
+      "symbol": "$META",
+      "name": "Meta Token",
+      "onchain_market_cap_usd": "4500450"
+    },
+    {
+      "rank": 22,
+      "account_id": "dac17f958d2ee523a2206206994597c13d831ec7.factory.bridge.near",
+      "symbol": "USDT.e",
+      "name": "Tether USD",
+      "onchain_market_cap_usd": "3945509"
+    },
+    {
+      "rank": 23,
+      "account_id": "token.publicailab.near",
+      "symbol": "PUBLIC",
+      "name": "PublicAI",
+      "onchain_market_cap_usd": "3943340"
+    },
+    {
+      "rank": 24,
+      "account_id": "usn",
+      "symbol": "USN",
+      "name": "USN",
+      "onchain_market_cap_usd": "3282231"
+    },
+    {
+      "rank": 25,
+      "account_id": "npro.nearmobile.near",
+      "symbol": "NPRO",
+      "name": "NPRO",
+      "onchain_market_cap_usd": "2394920"
+    }
+  ]
+}

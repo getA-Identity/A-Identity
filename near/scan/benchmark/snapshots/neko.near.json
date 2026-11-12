@@ -1,0 +1,979 @@
+{
+  "schema": "a-identity.near.snapshot/1",
+  "network": "mainnet",
+  "subject": "neko.near",
+  "block": {
+    "height": 224191308,
+    "hash": "4j4GE1M9LMLopGTKQBHXQ48k2kHbLCLq62BuxA6osDFE",
+    "timestamp_ns": "1794473200012194525"
+  },
+  "context": {
+    "known": ["17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1","a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.factory.bridge.near","aaaaaa20d9e0e2461697782ef11675f668207961.factory.bridge.near","btc.omft.near","dac17f958d2ee523a2206206994597c13d831ec7.factory.bridge.near","eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near","eth-0xdac17f958d2ee523a2206206994597c13d831ec7.omft.near","eth.bridge.near","eth.omft.near","far-token.fewandfar-protocol.near","linear-protocol.near","meta-pool.near","meta-token.near","mpdao-token.near","nbtc.bridge.near","near20.margaritafinance.near","npro.nearmobile.near","token.publicailab.near","token.rhealab.near","token.v2.ref-finance.near","usdt.tether-token.near","usn","walc.near","wrap.near","zec.omft.near"],
+    "vault_id": null,
+    "registry_id": null,
+    "usdc_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+    "third_party": [],
+    "erc8004": {
+      "identity": "identity-registry.erc-8004.near",
+      "reputation": "reputation-registry.erc-8004.near"
+    },
+    "probes": {
+      "recent_s": 259200,
+      "long_s": 2592000
+    },
+    "activity_window": 5
+  },
+  "rpc": [
+    {
+      "label": "account",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "view_account",
+        "account_id": "neko.near",
+        "block_id": 224191308
+      },
+      "result": {
+        "amount": "861977833436965889438042",
+        "block_hash": "4j4GE1M9LMLopGTKQBHXQ48k2kHbLCLq62BuxA6osDFE",
+        "block_height": 224191308,
+        "code_hash": "E8jZ1giWcVrps8PcV75ATauu6gFRkcwjNtKp7NKmipZG",
+        "locked": "0",
+        "storage_paid_at": 0,
+        "storage_usage": 2824
+      }
+    },
+    {
+      "label": "block",
+      "network": "mainnet",
+      "archival": false,
+      "method": "block",
+      "params": {
+        "block_id": 224191308
+      },
+      "result": {
+        "header": {
+          "height": 224191308,
+          "hash": "4j4GE1M9LMLopGTKQBHXQ48k2kHbLCLq62BuxA6osDFE",
+          "prev_hash": "CNpi81xWZEkHjaf7wBGJ83JLWHbRqYdgARVdjwDQbuFE",
+          "timestamp_nanosec": "1794473200012194525"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "erc8004.nft_tokens_for_owner",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "identity-registry.erc-8004.near",
+        "method_name": "nft_tokens_for_owner",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibmVrby5uZWFyIiwiZnJvbV9pbmRleCI6bnVsbCwibGltaXQiOjV9",
+        "block_id": 224191308
+      },
+      "result": {
+        "block_hash": "4j4GE1M9LMLopGTKQBHXQ48k2kHbLCLq62BuxA6osDFE",
+        "block_height": 224191308,
+        "logs": [],
+        "result": [91,93]
+      }
+    },
+    {
+      "label": "keys#0",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "view_access_key_list",
+        "account_id": "neko.near",
+        "block_id": 224191308,
+        "limit": 100
+      },
+      "result": {
+        "block_hash": "4j4GE1M9LMLopGTKQBHXQ48k2kHbLCLq62BuxA6osDFE",
+        "block_height": 224191308,
+        "keys": [
+          {
+            "access_key": {
+              "nonce": 7,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "245141933034646600000000",
+                  "method_names": [],
+                  "receiver_id": "farm.berryclub.ek.near"
+                }
+              }
+            },
+            "public_key": "ed25519:2Qs33GV4UbcCQSdJmFkQFDudPwQo1x5Hh4MvUoqh27hj"
+          },
+          {
+            "access_key": {
+              "nonce": 3,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "247507408134727200000000",
+                  "method_names": [],
+                  "receiver_id": "pixelparty.near"
+                }
+              }
+            },
+            "public_key": "ed25519:2gbzGwdMaKFCZsaHgbpbYsyii5tpmrf1wuS9RxJKSz84"
+          },
+          {
+            "access_key": {
+              "nonce": 49485904000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "250000000000000000000000",
+                  "method_names": [],
+                  "receiver_id": "v2.ref-farming.near"
+                }
+              }
+            },
+            "public_key": "ed25519:3wiAXwYrqjVRoeTaA4uFnnH1sohBhzs71pLTrHGLkAZX"
+          },
+          {
+            "access_key": {
+              "nonce": 5,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:5BrqbCk8Ww5Wg8DZgzHSZv2BxQYyEXM2SnguzShZCM8y"
+          },
+          {
+            "access_key": {
+              "nonce": 0,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "250000000000000000000000",
+                  "method_names": [],
+                  "receiver_id": "contract.paras.near"
+                }
+              }
+            },
+            "public_key": "ed25519:6FfiGviwcaPTDU7157YTy2mb7UfeSio84Y6SbnPDbHT5"
+          },
+          {
+            "access_key": {
+              "nonce": 50479944000000,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:75HeNdf6B1oU5krAYR5uwresX7T3vcZbSjD3fo6mV7JR"
+          },
+          {
+            "access_key": {
+              "nonce": 0,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "250000000000000000000000",
+                  "method_names": [],
+                  "receiver_id": "sputnikdao.near"
+                }
+              }
+            },
+            "public_key": "ed25519:7sKaHdc41VDXoGhAjtESMYZMxR6MAYF2PABjZNUiNuTg"
+          },
+          {
+            "access_key": {
+              "nonce": 61910944000001,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:8LmayUN8jpJ3mokupv4fkms29QUuvHc2QEeEx7y1uc3E"
+          },
+          {
+            "access_key": {
+              "nonce": 153,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "73962546545791100000000",
+                  "method_names": [],
+                  "receiver_id": "cards.berryclub.ek.near"
+                }
+              }
+            },
+            "public_key": "ed25519:AXFfSoAuoSYquZecJRuFcG6K5YshvtaD4t8wHtmWUNsx"
+          },
+          {
+            "access_key": {
+              "nonce": 50480311000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "250000000000000000000000",
+                  "method_names": [],
+                  "receiver_id": "c.nearbet.near"
+                }
+              }
+            },
+            "public_key": "ed25519:AfiFkDKA7NQaiPyHVyfrzR6ARsLsmeG3nvbK7BpxncHV"
+          },
+          {
+            "access_key": {
+              "nonce": 50479944000008,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:Atc1eCqmMD2dEgHPQ6yTD2S3Bu5DCKnNsqhV5uF3RAif"
+          },
+          {
+            "access_key": {
+              "nonce": 44842132000004,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "246865702012652400000000",
+                  "method_names": [],
+                  "receiver_id": "pixelparty.near"
+                }
+              }
+            },
+            "public_key": "ed25519:B4aWCF98oK6n1HKqti6keeNgxGR8iW7mEYaZbUgtjQ6L"
+          },
+          {
+            "access_key": {
+              "nonce": 115,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "11715536064463400000000",
+                  "method_names": [],
+                  "receiver_id": "berryclub.ek.near"
+                }
+              }
+            },
+            "public_key": "ed25519:BminiCEdio7pXC6zDy3esyRVJyvQtqf7t6k8Zo8qUvz4"
+          },
+          {
+            "access_key": {
+              "nonce": 0,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "250000000000000000000000",
+                  "method_names": [],
+                  "receiver_id": "null_address.near"
+                }
+              }
+            },
+            "public_key": "ed25519:CvALxN3SNovnccbRZuf157sGofs54MHtneJvZhr6BzgK"
+          },
+          {
+            "access_key": {
+              "nonce": 50479944000000,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:DLrurs5e7RWgbPQPoHKbCuQtmKaVZh1FtTHiy5tzHFAD"
+          },
+          {
+            "access_key": {
+              "nonce": 61911054000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "250000000000000000000000",
+                  "method_names": [],
+                  "receiver_id": "learnclub.near"
+                }
+              }
+            },
+            "public_key": "ed25519:DUMo32wHkdbUy3mso7u4MqUaKjL4z23UpMqFucnAwyZ9"
+          },
+          {
+            "access_key": {
+              "nonce": 0,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "250000000000000000000000",
+                  "method_names": [],
+                  "receiver_id": "bananaswap.near"
+                }
+              }
+            },
+            "public_key": "ed25519:E5ECmqmzFNNWC7oDZBmGdzVdk2w33fawYYDr19vgEaZx"
+          },
+          {
+            "access_key": {
+              "nonce": 50479944000000,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:FHZsGH9aSwcqvU9PNoFe1zCGLoifKZRiZ9WiWeUJMeQQ"
+          },
+          {
+            "access_key": {
+              "nonce": 49485051000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "250000000000000000000000",
+                  "method_names": [],
+                  "receiver_id": "berryclub.ek.near"
+                }
+              }
+            },
+            "public_key": "ed25519:GePFUVMyssLvqSrF3hHqSrtwKdJuTgHz8qwihyah8hYa"
+          },
+          {
+            "access_key": {
+              "nonce": 44841929000004,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "247215938195249200000000",
+                  "method_names": [],
+                  "receiver_id": "farm.berryclub.ek.near"
+                }
+              }
+            },
+            "public_key": "ed25519:HFR2VRZ9ERnawqdWiciyrhTuArmUG8WgR9u29ePMSxow"
+          },
+          {
+            "access_key": {
+              "nonce": 49485370000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "250000000000000000000000",
+                  "method_names": [],
+                  "receiver_id": "berryclub.ek.near"
+                }
+              }
+            },
+            "public_key": "ed25519:HTzQvrWYM8eEvLK6qTjuMPiuHFX1uB22WUCM2FwvsGsP"
+          },
+          {
+            "access_key": {
+              "nonce": 50478643000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "250000000000000000000000",
+                  "method_names": [],
+                  "receiver_id": "c.nearbet.near"
+                }
+              }
+            },
+            "public_key": "ed25519:HnYk7TL3wZisQgCLxerCZLGduU1fKvanj9GWiaN9dQ7q"
+          }
+        ]
+      }
+    },
+    {
+      "label": "probe.long.account",
+      "network": "mainnet",
+      "archival": true,
+      "method": "query",
+      "params": {
+        "request_type": "view_account",
+        "account_id": "neko.near",
+        "block_id": 219793567
+      },
+      "result": {
+        "amount": "861977833436965889438042",
+        "block_hash": "8VrPsZdK4Axys82weHwsFruHLoNxscJS1kRF4ed3sTDU",
+        "block_height": 219793567,
+        "code_hash": "E8jZ1giWcVrps8PcV75ATauu6gFRkcwjNtKp7NKmipZG",
+        "locked": "0",
+        "storage_paid_at": 0,
+        "storage_usage": 2824
+      }
+    },
+    {
+      "label": "probe.long.block",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 219793567
+      },
+      "result": {
+        "header": {
+          "height": 219793567,
+          "hash": "8VrPsZdK4Axys82weHwsFruHLoNxscJS1kRF4ed3sTDU",
+          "prev_hash": "BzREr9nGDX1gFHwJMAxs2h7os7FZ7A8zPkwoKmjjUFyW",
+          "timestamp_nanosec": "1791880907862705784"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "probe.long.search#0",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 219870808
+      },
+      "result": {
+        "header": {
+          "height": 219870808,
+          "hash": "nAFA16yhC29sjBxzZVbWGonrX3AcJgjXoyYUPTKCPYX",
+          "prev_hash": "8SsAHKm1wnJGj5VmYu9xRmhZQQF2ZqKGHUsjL3mStQVL",
+          "timestamp_nanosec": "1791929279409435746"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "probe.long.search#1",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 219788643
+      },
+      "result": {
+        "header": {
+          "height": 219788643,
+          "hash": "9disR7y5nzRURBH1ndNfueEsFKwPkcohjXNGCvPUBBqQ",
+          "prev_hash": "C5LmdU8MtxX5RxDFmSvvqvEQtWar81aaepNXNzMscz8k",
+          "timestamp_nanosec": "1791877997392583562"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "probe.recent.account",
+      "network": "mainnet",
+      "archival": true,
+      "method": "query",
+      "params": {
+        "request_type": "view_account",
+        "account_id": "neko.near",
+        "block_id": 223743655
+      },
+      "result": {
+        "amount": "861977833436965889438042",
+        "block_hash": "HEU8w8JtjNZhrDgAp3EZnAf6qS4ZSwyasXSFRE3ef95P",
+        "block_height": 223743655,
+        "code_hash": "E8jZ1giWcVrps8PcV75ATauu6gFRkcwjNtKp7NKmipZG",
+        "locked": "0",
+        "storage_paid_at": 0,
+        "storage_usage": 2824
+      }
+    },
+    {
+      "label": "probe.recent.block",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 223743655
+      },
+      "result": {
+        "header": {
+          "height": 223743655,
+          "hash": "HEU8w8JtjNZhrDgAp3EZnAf6qS4ZSwyasXSFRE3ef95P",
+          "prev_hash": "8nZxkRomAYQ2bMwM5LU7WW5emj2SCaTgGFGGzuo1rLPg",
+          "timestamp_nanosec": "1794213800941919884"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "probe.recent.keys#0",
+      "network": "mainnet",
+      "archival": true,
+      "method": "query",
+      "params": {
+        "request_type": "view_access_key_list",
+        "account_id": "neko.near",
+        "block_id": 223743655,
+        "limit": 100
+      },
+      "result": {
+        "block_hash": "HEU8w8JtjNZhrDgAp3EZnAf6qS4ZSwyasXSFRE3ef95P",
+        "block_height": 223743655,
+        "keys": [
+          {
+            "access_key": {
+              "nonce": 7,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "245141933034646600000000",
+                  "method_names": [],
+                  "receiver_id": "farm.berryclub.ek.near"
+                }
+              }
+            },
+            "public_key": "ed25519:2Qs33GV4UbcCQSdJmFkQFDudPwQo1x5Hh4MvUoqh27hj"
+          },
+          {
+            "access_key": {
+              "nonce": 3,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "247507408134727200000000",
+                  "method_names": [],
+                  "receiver_id": "pixelparty.near"
+                }
+              }
+            },
+            "public_key": "ed25519:2gbzGwdMaKFCZsaHgbpbYsyii5tpmrf1wuS9RxJKSz84"
+          },
+          {
+            "access_key": {
+              "nonce": 49485904000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "250000000000000000000000",
+                  "method_names": [],
+                  "receiver_id": "v2.ref-farming.near"
+                }
+              }
+            },
+            "public_key": "ed25519:3wiAXwYrqjVRoeTaA4uFnnH1sohBhzs71pLTrHGLkAZX"
+          },
+          {
+            "access_key": {
+              "nonce": 5,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:5BrqbCk8Ww5Wg8DZgzHSZv2BxQYyEXM2SnguzShZCM8y"
+          },
+          {
+            "access_key": {
+              "nonce": 0,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "250000000000000000000000",
+                  "method_names": [],
+                  "receiver_id": "contract.paras.near"
+                }
+              }
+            },
+            "public_key": "ed25519:6FfiGviwcaPTDU7157YTy2mb7UfeSio84Y6SbnPDbHT5"
+          },
+          {
+            "access_key": {
+              "nonce": 50479944000000,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:75HeNdf6B1oU5krAYR5uwresX7T3vcZbSjD3fo6mV7JR"
+          },
+          {
+            "access_key": {
+              "nonce": 0,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "250000000000000000000000",
+                  "method_names": [],
+                  "receiver_id": "sputnikdao.near"
+                }
+              }
+            },
+            "public_key": "ed25519:7sKaHdc41VDXoGhAjtESMYZMxR6MAYF2PABjZNUiNuTg"
+          },
+          {
+            "access_key": {
+              "nonce": 61910944000001,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:8LmayUN8jpJ3mokupv4fkms29QUuvHc2QEeEx7y1uc3E"
+          },
+          {
+            "access_key": {
+              "nonce": 153,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "73962546545791100000000",
+                  "method_names": [],
+                  "receiver_id": "cards.berryclub.ek.near"
+                }
+              }
+            },
+            "public_key": "ed25519:AXFfSoAuoSYquZecJRuFcG6K5YshvtaD4t8wHtmWUNsx"
+          },
+          {
+            "access_key": {
+              "nonce": 50480311000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "250000000000000000000000",
+                  "method_names": [],
+                  "receiver_id": "c.nearbet.near"
+                }
+              }
+            },
+            "public_key": "ed25519:AfiFkDKA7NQaiPyHVyfrzR6ARsLsmeG3nvbK7BpxncHV"
+          },
+          {
+            "access_key": {
+              "nonce": 50479944000008,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:Atc1eCqmMD2dEgHPQ6yTD2S3Bu5DCKnNsqhV5uF3RAif"
+          },
+          {
+            "access_key": {
+              "nonce": 44842132000004,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "246865702012652400000000",
+                  "method_names": [],
+                  "receiver_id": "pixelparty.near"
+                }
+              }
+            },
+            "public_key": "ed25519:B4aWCF98oK6n1HKqti6keeNgxGR8iW7mEYaZbUgtjQ6L"
+          },
+          {
+            "access_key": {
+              "nonce": 115,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "11715536064463400000000",
+                  "method_names": [],
+                  "receiver_id": "berryclub.ek.near"
+                }
+              }
+            },
+            "public_key": "ed25519:BminiCEdio7pXC6zDy3esyRVJyvQtqf7t6k8Zo8qUvz4"
+          },
+          {
+            "access_key": {
+              "nonce": 0,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "250000000000000000000000",
+                  "method_names": [],
+                  "receiver_id": "null_address.near"
+                }
+              }
+            },
+            "public_key": "ed25519:CvALxN3SNovnccbRZuf157sGofs54MHtneJvZhr6BzgK"
+          },
+          {
+            "access_key": {
+              "nonce": 50479944000000,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:DLrurs5e7RWgbPQPoHKbCuQtmKaVZh1FtTHiy5tzHFAD"
+          },
+          {
+            "access_key": {
+              "nonce": 61911054000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "250000000000000000000000",
+                  "method_names": [],
+                  "receiver_id": "learnclub.near"
+                }
+              }
+            },
+            "public_key": "ed25519:DUMo32wHkdbUy3mso7u4MqUaKjL4z23UpMqFucnAwyZ9"
+          },
+          {
+            "access_key": {
+              "nonce": 0,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "250000000000000000000000",
+                  "method_names": [],
+                  "receiver_id": "bananaswap.near"
+                }
+              }
+            },
+            "public_key": "ed25519:E5ECmqmzFNNWC7oDZBmGdzVdk2w33fawYYDr19vgEaZx"
+          },
+          {
+            "access_key": {
+              "nonce": 50479944000000,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:FHZsGH9aSwcqvU9PNoFe1zCGLoifKZRiZ9WiWeUJMeQQ"
+          },
+          {
+            "access_key": {
+              "nonce": 49485051000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "250000000000000000000000",
+                  "method_names": [],
+                  "receiver_id": "berryclub.ek.near"
+                }
+              }
+            },
+            "public_key": "ed25519:GePFUVMyssLvqSrF3hHqSrtwKdJuTgHz8qwihyah8hYa"
+          },
+          {
+            "access_key": {
+              "nonce": 44841929000004,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "247215938195249200000000",
+                  "method_names": [],
+                  "receiver_id": "farm.berryclub.ek.near"
+                }
+              }
+            },
+            "public_key": "ed25519:HFR2VRZ9ERnawqdWiciyrhTuArmUG8WgR9u29ePMSxow"
+          },
+          {
+            "access_key": {
+              "nonce": 49485370000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "250000000000000000000000",
+                  "method_names": [],
+                  "receiver_id": "berryclub.ek.near"
+                }
+              }
+            },
+            "public_key": "ed25519:HTzQvrWYM8eEvLK6qTjuMPiuHFX1uB22WUCM2FwvsGsP"
+          },
+          {
+            "access_key": {
+              "nonce": 50478643000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": "250000000000000000000000",
+                  "method_names": [],
+                  "receiver_id": "c.nearbet.near"
+                }
+              }
+            },
+            "public_key": "ed25519:HnYk7TL3wZisQgCLxerCZLGduU1fKvanj9GWiaN9dQ7q"
+          }
+        ]
+      }
+    },
+    {
+      "label": "probe.recent.search#0",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 223758808
+      },
+      "result": {
+        "header": {
+          "height": 223758808,
+          "hash": "2ntZY8Tn2QhumXf8uAEkGwiUdALEqTKwiZNYR95gufxo",
+          "prev_hash": "7LodrP2sh4PhvzctzCBmogVbioLERweo2Xj8Mx5y2swa",
+          "timestamp_nanosec": "1794222484161486435"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "usdc.is_blocklisted",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+        "method_name": "is_blocklisted",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibmVrby5uZWFyIn0=",
+        "block_id": 224191308
+      },
+      "result": {
+        "block_hash": "4j4GE1M9LMLopGTKQBHXQ48k2kHbLCLq62BuxA6osDFE",
+        "block_height": 224191308,
+        "logs": [],
+        "result": [102,97,108,115,101]
+      }
+    },
+    {
+      "label": "usdc.storage_balance_of",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+        "method_name": "storage_balance_of",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibmVrby5uZWFyIn0=",
+        "block_id": 224191308
+      },
+      "result": {
+        "block_hash": "4j4GE1M9LMLopGTKQBHXQ48k2kHbLCLq62BuxA6osDFE",
+        "block_height": 224191308,
+        "logs": [],
+        "result": [110,117,108,108]
+      }
+    }
+  ],
+  "http": [
+    {
+      "label": "fastnear.newest",
+      "source": "fastnear",
+      "method": "POST",
+      "url": "https://tx.main.fastnear.com/v0/account",
+      "status": 200,
+      "json": {
+        "account_txs": [
+          {
+            "account_id": "neko.near",
+            "transaction_hash": "5pyoEZgcqAgsvZuVfPv2kgzABCPy3Q85QtSe3WEoaksJ",
+            "tx_block_height": 136036358,
+            "tx_block_timestamp": "1735399759212405653",
+            "tx_index": 28,
+            "is_signer": false,
+            "is_delegated_signer": false,
+            "is_real_signer": false,
+            "is_any_signer": false,
+            "is_predecessor": false,
+            "is_explicit_refund_to": false,
+            "is_receiver": false,
+            "is_real_receiver": false,
+            "is_function_call": false,
+            "is_action_arg": true,
+            "is_event_log": true,
+            "is_success": true
+          }
+        ],
+        "resume_token": "584271708676947996",
+        "txs_count": 495
+      },
+      "fetched_at": "2026-11-12T09:03:34.229Z",
+      "body": {
+        "account_id": "neko.near",
+        "limit": 1,
+        "desc": true
+      }
+    },
+    {
+      "label": "fastnear.oldest",
+      "source": "fastnear",
+      "method": "POST",
+      "url": "https://tx.main.fastnear.com/v0/account",
+      "status": 200,
+      "json": {
+        "account_txs": [
+          {
+            "account_id": "neko.near",
+            "transaction_hash": "HSvT3eitipskQGem4NtC75CvNdEqyJ8oyPFzKvYqeHet",
+            "tx_block_height": 29352955,
+            "tx_block_timestamp": "1612676365577443098",
+            "tx_index": 0,
+            "is_signer": false,
+            "is_delegated_signer": false,
+            "is_real_signer": false,
+            "is_any_signer": false,
+            "is_predecessor": false,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": false,
+            "is_action_arg": true,
+            "is_event_log": false,
+            "is_success": true
+          },
+          {
+            "account_id": "neko.near",
+            "transaction_hash": "FuSiVtJdq1sTE7sXnBQAjqqPR9coE5bk7eZnDbYSXizq",
+            "tx_block_height": 29352970,
+            "tx_block_timestamp": "1612676382491512167",
+            "tx_index": 0,
+            "is_signer": false,
+            "is_delegated_signer": false,
+            "is_real_signer": false,
+            "is_any_signer": false,
+            "is_predecessor": false,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": false,
+            "is_function_call": false,
+            "is_action_arg": false,
+            "is_event_log": false,
+            "is_success": true
+          },
+          {
+            "account_id": "neko.near",
+            "transaction_hash": "6rvpYfJKNePr5r4FTucTuNddaXsoKJpVcKZ6Q6nMptwE",
+            "tx_block_height": 29352980,
+            "tx_block_timestamp": "1612676393783604077",
+            "tx_index": 0,
+            "is_signer": true,
+            "is_delegated_signer": false,
+            "is_real_signer": true,
+            "is_any_signer": true,
+            "is_predecessor": true,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": false,
+            "is_action_arg": false,
+            "is_event_log": false,
+            "is_success": true
+          },
+          {
+            "account_id": "neko.near",
+            "transaction_hash": "C3v8mLEuKDAS3YXCY49v19ByMVRgxizV26uSrJ6eRLs5",
+            "tx_block_height": 29353670,
+            "tx_block_timestamp": "1612677166184709638",
+            "tx_index": 0,
+            "is_signer": false,
+            "is_delegated_signer": false,
+            "is_real_signer": false,
+            "is_any_signer": false,
+            "is_predecessor": false,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": false,
+            "is_action_arg": false,
+            "is_event_log": false,
+            "is_success": true
+          },
+          {
+            "account_id": "neko.near",
+            "transaction_hash": "Ex87PpYDpsfwJaRqYNMoRQXJ3DBuimdX1w4rYjtawNpY",
+            "tx_block_height": 29353844,
+            "tx_block_timestamp": "1612677361580415860",
+            "tx_index": 0,
+            "is_signer": false,
+            "is_delegated_signer": false,
+            "is_real_signer": false,
+            "is_any_signer": false,
+            "is_predecessor": false,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": false,
+            "is_action_arg": false,
+            "is_event_log": false,
+            "is_success": true
+          }
+        ],
+        "resume_token": "126073799991885824",
+        "txs_count": 495
+      },
+      "fetched_at": "2026-11-12T09:03:33.906Z",
+      "body": {
+        "account_id": "neko.near",
+        "limit": 5,
+        "desc": false
+      }
+    },
+    {
+      "label": "nearblocks.deployments",
+      "source": "nearblocks",
+      "method": "GET",
+      "url": "https://api.nearblocks.io/v3/accounts/neko.near/contract/deployments",
+      "status": 200,
+      "json": {
+        "data": [
+          {
+            "block": {
+              "block_hash": "EuVULr9aTFygSWDh2FDrjpEHMKUoPQ2MWEvQRsQU7JHS",
+              "block_height": "29354006",
+              "block_timestamp": "1612677543514166655"
+            },
+            "predecessor_account_id": "neko.near",
+            "transaction_hash": "GKo1oEHHD2yPZ14W6Zw96WPGZFPFnL3ynPYurwy2WpYF"
+          },
+          {
+            "block": {
+              "block_hash": "3fkBsY6kL6fC9tfeG1S596EzR2kukya7CXwVeXX4M9wK",
+              "block_height": "50479944",
+              "block_timestamp": "1634541066770341438"
+            },
+            "predecessor_account_id": "neko.near",
+            "transaction_hash": "FWny5ph8BMou8whBaGg961sk6JCu976rQMn5m2jfaYS9"
+          }
+        ]
+      },
+      "fetched_at": "2026-11-12T09:03:34.809Z"
+    }
+  ],
+  "meta": {
+    "collected_at": "2026-11-12T09:03:35.869Z",
+    "collector": "a-identity-near-sdk/0.2.0",
+    "endpoints": ["api.nearblocks.io","archival-rpc.mainnet.fastnear.com","rpc.mainnet.fastnear.com","tx.main.fastnear.com"],
+    "notes": ["Some data: Powered by Nearblocks.io APIs (https://nearblocks.io)."]
+  }
+}
