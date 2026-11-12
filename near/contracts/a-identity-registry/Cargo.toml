@@ -1,0 +1,21 @@
+[package]
+name = "a-identity-registry"
+description = "A-Identity's counterparty risk registry on NEAR: oracle-written verdicts and evidence-backed reports any contract can read."
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+near-sdk = { workspace = true }
+
+[dev-dependencies]
+near-sdk = { workspace = true, features = ["unit-testing"] }
+
+[lints]
+workspace = true
