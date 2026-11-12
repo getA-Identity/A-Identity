@@ -1,0 +1,118 @@
+{
+  "generated_at": "2026-11-12T05:35:17Z",
+  "started_at": "2026-11-12T05:34:03Z",
+  "network": "mainnet",
+  "dataset": "dataset.json",
+  "generator": "lookalikes/2",
+  "sources": {
+    "rpc": [
+      "https://rpc.mainnet.fastnear.com",
+      "https://free.rpc.fastnear.com",
+      "https://near-mainnet.drpc.org"
+    ],
+    "archival_rpc": "https://archival-rpc.mainnet.fastnear.com",
+    "tx_indexer": "https://tx.main.fastnear.com",
+    "mimicwatch_scan": "https://raw.githubusercontent.com/kacpergumieniuk/mimicwatch-near/0906683760d32ae0438f6ab0348b4724f23dc6c5/data/scans/2026-11-01/accounts.json"
+  },
+  "counts": {
+    "known_good": 46,
+    "known_good_existing": 46,
+    "suspicious": 30,
+    "suspicious_existing": 26,
+    "suspicious_named_by_third_party": 26,
+    "lookalike_candidate": 445
+  },
+  "suspicious_by_source_type": {
+    "victim_report": 5,
+    "security_writeup": 16,
+    "project_incident_report": 2,
+    "researcher_dataset": 3,
+    "onchain_campaign_link": 4
+  },
+  "suspicious_by_category": {
+    "theft_receiver": 2,
+    "exploiter": 11,
+    "exploit_fake_token": 4,
+    "phishing_receiver": 3,
+    "fake_airdrop_token": 7,
+    "exploit_staging": 3
+  },
+  "known_good_by_category": {
+    "stablecoin": 4,
+    "token": 17,
+    "dex": 3,
+    "evm": 1,
+    "farming": 1,
+    "lending": 1,
+    "donations": 1,
+    "bridge": 3,
+    "intents": 1,
+    "liquid_staking": 4,
+    "launchpad": 1,
+    "wallet_infra": 1,
+    "compute": 1,
+    "staking_factory": 1,
+    "oracle": 1,
+    "nft_marketplace": 1,
+    "social": 1,
+    "chain_signatures": 1,
+    "governance": 2
+  },
+  "lookalike_sweep": {
+    "generated": 3745,
+    "existing": 448,
+    "missing": 3297,
+    "unchecked": 0,
+    "by_rule_existing": {
+      "homoglyph": 27,
+      "typo_deletion": 116,
+      "affix": 171,
+      "exact_stem": 17,
+      "exact_stem_tg": 9,
+      "typo_duplication": 31,
+      "typo_transposition": 26,
+      "separator": 35,
+      "separator_dot": 1,
+      "flattened_subaccount": 15
+    }
+  },
+  "lookalike_by_rule": {
+    "homoglyph": 27,
+    "typo_deletion": 116,
+    "affix": 169,
+    "exact_stem": 17,
+    "exact_stem_tg": 9,
+    "typo_duplication": 31,
+    "typo_transposition": 26,
+    "separator": 34,
+    "separator_dot": 1,
+    "flattened_subaccount": 15
+  },
+  "lookalike_flags": {
+    "created_by_brand": 2,
+    "predates_brand": 145,
+    "mimicwatch_overlap": 176,
+    "created_in_30_days_before_snapshot": 9,
+    "enrichment_error": 0
+  },
+  "block_height_range": [
+    224151709,
+    224153995
+  ],
+  "checked_at_window": [
+    "2026-11-12T02:32:19Z",
+    "2026-11-12T02:54:12Z"
+  ],
+  "cache": {
+    "file": ".cache/live-2026-11-12.json",
+    "refresh": false,
+    "accounts_from_cache": 3301,
+    "accounts_read_live": 517
+  },
+  "requests": {
+    "requests": 616,
+    "retries": 11,
+    "rateLimited": 11,
+    "archival": 0
+  }
+}

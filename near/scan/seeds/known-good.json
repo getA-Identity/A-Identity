@@ -1,0 +1,812 @@
+{
+  "about": "known_good seeds for the A-Identity NEAR real-data dataset. Each account is tied to at least one public source; quotes are exact substrings of the source as fetched on the date given (whitespace collapsed, non-ASCII characters dropped). stems are the brand words the lookalike generator imitates (see scan/lookalikes.mjs).",
+  "network": "mainnet",
+  "accounts": [
+    {
+      "account_id": "wrap.near",
+      "category": "token",
+      "stems": [
+        "wrap"
+      ],
+      "notes": "wNEAR, the NEP-141 wrapper of native NEAR.",
+      "evidence": [
+        {
+          "url": "https://github.com/ref-finance/ref-ui/blob/1938efcf29ad484735603008706ca748248d5dbc/src/services/config.ts",
+          "date": "2026-11-12",
+          "quote": "WRAP_NEAR_CONTRACT_ID: process.env.WRAP_NEAR_CONTRACT_ID || 'wrap.near',"
+        },
+        {
+          "url": "https://1click.chaindefuser.com/v0/tokens",
+          "date": "2026-11-12",
+          "quote": "{\"assetId\":\"nep141:wrap.near\",\"decimals\":24,\"blockchain\":\"near\",\"symbol\":\"wNEAR\""
+        }
+      ]
+    },
+    {
+      "account_id": "usdt.tether-token.near",
+      "category": "stablecoin",
+      "stems": [
+        "tether-token",
+        "tether"
+      ],
+      "notes": "Native USDt issued by Tether on NEAR.",
+      "evidence": [
+        {
+          "url": "https://tether.to/en/supported-protocols/",
+          "date": "2026-11-12",
+          "quote": "To integrate Tether's USD Token on the Near Blockchain use the contract address: usdt.tether-token.near"
+        },
+        {
+          "url": "https://github.com/ref-finance/ref-ui/blob/1938efcf29ad484735603008706ca748248d5dbc/src/services/config.ts",
+          "date": "2026-11-12",
+          "quote": "USDT_TOKEN_ID: 'usdt.tether-token.near',"
+        }
+      ]
+    },
+    {
+      "account_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+      "category": "stablecoin",
+      "stems": [
+        "usdc"
+      ],
+      "notes": "Native USDC issued by Circle on NEAR (an implicit account id).",
+      "evidence": [
+        {
+          "url": "https://developers.circle.com/stablecoins/usdc-contract-addresses.md",
+          "date": "2026-11-12",
+          "quote": "| NEAR | [`17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1`]"
+        },
+        {
+          "url": "https://1click.chaindefuser.com/v0/tokens",
+          "date": "2026-11-12",
+          "quote": "{\"assetId\":\"nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1\",\"decimals\":6,\"blockchain\":\"near\",\"symbol\":\"USDC\""
+        }
+      ]
+    },
+    {
+      "account_id": "v2.ref-finance.near",
+      "category": "dex",
+      "stems": [
+        "ref-finance"
+      ],
+      "notes": "Rhea (ex Ref Finance) classic and stable AMM.",
+      "evidence": [
+        {
+          "url": "https://github.com/ref-finance/ref-ui/blob/1938efcf29ad484735603008706ca748248d5dbc/src/services/config.ts",
+          "date": "2026-11-12",
+          "quote": "REF_FI_CONTRACT_ID: process.env.REF_FI_CONTRACT_ID || 'v2.ref-finance.near',"
+        },
+        {
+          "url": "https://docs.near.org/primitives/dex.md",
+          "date": "2026-11-12",
+          "quote": "near view v2.ref-finance.near get_whitelisted_tokens"
+        }
+      ]
+    },
+    {
+      "account_id": "dclv2.ref-labs.near",
+      "category": "dex",
+      "stems": [
+        "ref-labs"
+      ],
+      "notes": "Rhea concentrated-liquidity (DCL v2) swap contract.",
+      "evidence": [
+        {
+          "url": "https://github.com/ref-finance/ref-ui/blob/1938efcf29ad484735603008706ca748248d5dbc/src/services/config.ts",
+          "date": "2026-11-12",
+          "quote": "REF_UNI_V3_SWAP_CONTRACT_ID: process.env.REF_UNI_V3_SWAP_CONTRACT_ID || 'dclv2.ref-labs.near',"
+        }
+      ]
+    },
+    {
+      "account_id": "boostfarm.ref-labs.near",
+      "category": "farming",
+      "stems": [
+        "ref-labs"
+      ],
+      "notes": "Rhea boost farming contract.",
+      "evidence": [
+        {
+          "url": "https://github.com/ref-finance/ref-ui/blob/1938efcf29ad484735603008706ca748248d5dbc/src/services/config.ts",
+          "date": "2026-11-12",
+          "quote": "REF_FARM_BOOST_CONTRACT_ID: process.env.REF_FARM_BOOST_CONTRACT_ID || 'boostfarm.ref-labs.near',"
+        }
+      ]
+    },
+    {
+      "account_id": "token.v2.ref-finance.near",
+      "category": "token",
+      "stems": [
+        "ref-finance"
+      ],
+      "notes": "REF token (legacy, folded into RHEA).",
+      "evidence": [
+        {
+          "url": "https://github.com/ref-finance/ref-ui/blob/1938efcf29ad484735603008706ca748248d5dbc/src/services/config.ts",
+          "date": "2026-11-12",
+          "quote": "REF_TOKEN_ID: 'token.v2.ref-finance.near',"
+        },
+        {
+          "url": "https://github.com/INTEARnear/price-indexer/blob/a583f92827e1cbcb8230d903b88b69bd3cfd06b0/src/token.rs",
+          "date": "2026-11-12",
+          "quote": "| \"token.v2.ref-finance.near\""
+        }
+      ]
+    },
+    {
+      "account_id": "xtoken.ref-finance.near",
+      "category": "token",
+      "stems": [
+        "ref-finance"
+      ],
+      "notes": "xREF staking token (legacy).",
+      "evidence": [
+        {
+          "url": "https://github.com/ref-finance/ref-ui/blob/1938efcf29ad484735603008706ca748248d5dbc/src/services/config.ts",
+          "date": "2026-11-12",
+          "quote": "XREF_TOKEN_ID: 'xtoken.ref-finance.near',"
+        },
+        {
+          "url": "https://github.com/INTEARnear/price-indexer/blob/a583f92827e1cbcb8230d903b88b69bd3cfd06b0/src/token.rs",
+          "date": "2026-11-12",
+          "quote": "| \"xtoken.ref-finance.near\""
+        }
+      ]
+    },
+    {
+      "account_id": "token.rhealab.near",
+      "category": "token",
+      "stems": [
+        "rhealab",
+        "rhea"
+      ],
+      "notes": "RHEA token.",
+      "evidence": [
+        {
+          "url": "https://guide.rhea.finance/getting-started/buy-rhea-token",
+          "date": "2026-11-12",
+          "quote": "NEAR Protocol: token.rhealab.near"
+        },
+        {
+          "url": "https://1click.chaindefuser.com/v0/tokens",
+          "date": "2026-11-12",
+          "quote": "{\"assetId\":\"nep141:token.rhealab.near\",\"decimals\":18,\"blockchain\":\"near\",\"symbol\":\"RHEA\""
+        }
+      ]
+    },
+    {
+      "account_id": "lst.rhealab.near",
+      "category": "liquid_staking",
+      "stems": [
+        "rhealab"
+      ],
+      "notes": "rNEAR liquid staking token (Rhea).",
+      "evidence": [
+        {
+          "url": "https://github.com/Meteor-Wallet/rNear-vault-public/blob/3267548126411b700ce2b5e623312950d81395d4/common/near.ts",
+          "date": "2026-11-12",
+          "quote": "RNEAR: \"lst.rhealab.near\","
+        },
+        {
+          "url": "https://github.com/INTEARnear/price-indexer/blob/a583f92827e1cbcb8230d903b88b69bd3cfd06b0/src/token.rs",
+          "date": "2026-11-12",
+          "quote": "| \"lst.rhealab.near\""
+        }
+      ]
+    },
+    {
+      "account_id": "contract.main.burrow.near",
+      "category": "lending",
+      "stems": [
+        "burrow"
+      ],
+      "notes": "Burrow lending contract, now operated as Rhea Lending.",
+      "evidence": [
+        {
+          "url": "https://github.com/ref-finance/ref-ui/blob/1938efcf29ad484735603008706ca748248d5dbc/src/services/config.ts",
+          "date": "2026-11-12",
+          "quote": "BURROW_CONTRACT_ID: 'contract.main.burrow.near',"
+        },
+        {
+          "url": "https://github.com/Meteor-Wallet/rNear-vault-public/blob/3267548126411b700ce2b5e623312950d81395d4/common/near.ts",
+          "date": "2026-11-12",
+          "quote": "BURROW: \"contract.main.burrow.near\","
+        }
+      ]
+    },
+    {
+      "account_id": "token.burrow.near",
+      "category": "token",
+      "stems": [
+        "burrow"
+      ],
+      "notes": "BRRR token (legacy).",
+      "evidence": [
+        {
+          "url": "https://github.com/ref-finance/ref-ui/blob/1938efcf29ad484735603008706ca748248d5dbc/src/services/config.ts",
+          "date": "2026-11-12",
+          "quote": "BRRR_TOKEN_ID: 'token.burrow.near',"
+        },
+        {
+          "url": "https://github.com/INTEARnear/price-indexer/blob/a583f92827e1cbcb8230d903b88b69bd3cfd06b0/src/token.rs",
+          "date": "2026-11-12",
+          "quote": "| \"token.burrow.near\""
+        }
+      ]
+    },
+    {
+      "account_id": "intents.near",
+      "category": "intents",
+      "stems": [
+        "intents",
+        "near-intents"
+      ],
+      "notes": "NEAR Intents verifier contract (holds intents balances).",
+      "evidence": [
+        {
+          "url": "https://docs.near-intents.org/integration/verifier-contract/introduction.md",
+          "date": "2026-11-12",
+          "quote": "The Verifier Smart Contract (`intents.near`) is the on-chain settlement layer for NEAR Intents."
+        },
+        {
+          "url": "https://github.com/hot-dao/omni-sdk/blob/ead5c13236a03a911f77a6c7b383482872b88ce7/src/env.ts",
+          "date": "2026-11-12",
+          "quote": "let _intentsContract = \"intents.near\";"
+        }
+      ]
+    },
+    {
+      "account_id": "linear-protocol.near",
+      "category": "liquid_staking",
+      "stems": [
+        "linear-protocol"
+      ],
+      "notes": "LiNEAR staking contract and LINEAR token.",
+      "evidence": [
+        {
+          "url": "https://github.com/linear-protocol/LiNEAR/blob/63cd09aabbc3c28ca39ca4266647c24315ae3975/README.md",
+          "date": "2026-11-12",
+          "quote": "- mainnet: [`linear-protocol.near`](https://explorer.near.org/accounts/linear-protocol.near)"
+        },
+        {
+          "url": "https://github.com/ref-finance/ref-ui/blob/1938efcf29ad484735603008706ca748248d5dbc/src/services/config.ts",
+          "date": "2026-11-12",
+          "quote": "LINEARIDS: ['linear-protocol.near', 'wrap.near'],"
+        }
+      ]
+    },
+    {
+      "account_id": "meta-pool.near",
+      "category": "liquid_staking",
+      "stems": [
+        "meta-pool",
+        "metapool"
+      ],
+      "notes": "Meta Pool liquid staking contract and stNEAR token.",
+      "evidence": [
+        {
+          "url": "https://docs.metapool.app/master/for-developers/meta-pool-contracts/near-network",
+          "date": "2026-11-12",
+          "quote": "meta-pool.near"
+        },
+        {
+          "url": "https://github.com/ref-finance/ref-ui/blob/1938efcf29ad484735603008706ca748248d5dbc/src/services/config.ts",
+          "date": "2026-11-12",
+          "quote": "STNEARIDS: ['meta-pool.near', 'wrap.near'],"
+        },
+        {
+          "url": "https://1click.chaindefuser.com/v0/tokens",
+          "date": "2026-11-12",
+          "quote": "{\"assetId\":\"nep141:meta-pool.near\",\"decimals\":24,\"blockchain\":\"near\",\"symbol\":\"stNEAR\""
+        }
+      ]
+    },
+    {
+      "account_id": "mpdao-token.near",
+      "category": "token",
+      "stems": [
+        "mpdao-token",
+        "mpdao"
+      ],
+      "notes": "mpDAO governance token (Meta Pool).",
+      "evidence": [
+        {
+          "url": "https://docs.metapool.app/master/for-developers/meta-pool-contracts/near-network",
+          "date": "2026-11-12",
+          "quote": "mainnet: mpdao-token.near"
+        },
+        {
+          "url": "https://1click.chaindefuser.com/v0/tokens",
+          "date": "2026-11-12",
+          "quote": "{\"assetId\":\"nep141:mpdao-token.near\",\"decimals\":6,\"blockchain\":\"near\",\"symbol\":\"mpDAO\""
+        }
+      ]
+    },
+    {
+      "account_id": "aurora",
+      "category": "evm",
+      "stems": [
+        "aurora"
+      ],
+      "notes": "Aurora Engine (EVM on NEAR), chain id 1313161554.",
+      "evidence": [
+        {
+          "url": "https://github.com/aurora-is-near/aurora-engine/blob/f296f06ab618468dff58cbef81732b1d0ee1782e/README.md",
+          "date": "2026-11-12",
+          "quote": "| Mainnet | [`aurora`][Mainnet] | 1313161554 |"
+        }
+      ]
+    },
+    {
+      "account_id": "aaaaaa20d9e0e2461697782ef11675f668207961.factory.bridge.near",
+      "category": "token",
+      "stems": [],
+      "notes": "AURORA token bridged from Ethereum.",
+      "evidence": [
+        {
+          "url": "https://1click.chaindefuser.com/v0/tokens",
+          "date": "2026-11-12",
+          "quote": "{\"assetId\":\"nep141:aaaaaa20d9e0e2461697782ef11675f668207961.factory.bridge.near\",\"decimals\":18,\"blockchain\":\"near\",\"symbol\":\"AURORA\""
+        },
+        {
+          "url": "https://github.com/INTEARnear/price-indexer/blob/a583f92827e1cbcb8230d903b88b69bd3cfd06b0/src/token.rs",
+          "date": "2026-11-12",
+          "quote": "| \"aaaaaa20d9e0e2461697782ef11675f668207961.factory.bridge.near\""
+        }
+      ]
+    },
+    {
+      "account_id": "omni.bridge.near",
+      "category": "bridge",
+      "stems": [
+        "omni-bridge",
+        "bridge"
+      ],
+      "notes": "Omni Bridge locker contract.",
+      "evidence": [
+        {
+          "url": "https://github.com/Near-One/omni-bridge/blob/af6d95bb4c6a9e31aba0cd9d6f0fe5f7c8cd2dc9/README.md",
+          "date": "2026-11-12",
+          "quote": "- NEAR: [`omni.bridge.near`](https://nearblocks.io/address/omni.bridge.near)"
+        }
+      ]
+    },
+    {
+      "account_id": "factory.bridge.near",
+      "category": "bridge",
+      "stems": [
+        "bridge"
+      ],
+      "notes": "Bridged ERC-20 token factory.",
+      "evidence": [
+        {
+          "url": "https://github.com/Near-One/omni-bridge/blob/af6d95bb4c6a9e31aba0cd9d6f0fe5f7c8cd2dc9/README.md",
+          "date": "2026-11-12",
+          "quote": "- [`factory.bridge.near`](https://nearblocks.io/address/factory.bridge.near)"
+        }
+      ]
+    },
+    {
+      "account_id": "nbtc.bridge.near",
+      "category": "token",
+      "stems": [
+        "nbtc",
+        "bridge"
+      ],
+      "notes": "nBTC (bridged Bitcoin).",
+      "evidence": [
+        {
+          "url": "https://1click.chaindefuser.com/v0/tokens",
+          "date": "2026-11-12",
+          "quote": "{\"assetId\":\"nep141:nbtc.bridge.near\",\"decimals\":8,\"blockchain\":\"near\",\"symbol\":\"BTC\""
+        },
+        {
+          "url": "https://github.com/INTEARnear/price-indexer/blob/a583f92827e1cbcb8230d903b88b69bd3cfd06b0/src/token.rs",
+          "date": "2026-11-12",
+          "quote": "| \"nbtc.bridge.near\""
+        }
+      ]
+    },
+    {
+      "account_id": "eth.bridge.near",
+      "category": "token",
+      "stems": [
+        "bridge"
+      ],
+      "notes": "Bridged ETH (NEP-141).",
+      "evidence": [
+        {
+          "url": "https://1click.chaindefuser.com/v0/tokens",
+          "date": "2026-11-12",
+          "quote": "{\"assetId\":\"nep141:eth.bridge.near\",\"decimals\":18,\"blockchain\":\"near\",\"symbol\":\"ETH\""
+        }
+      ]
+    },
+    {
+      "account_id": "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.factory.bridge.near",
+      "category": "stablecoin",
+      "stems": [],
+      "notes": "USDC.e (Rainbow-bridged USDC, legacy).",
+      "evidence": [
+        {
+          "url": "https://github.com/ref-finance/ref-ui/blob/1938efcf29ad484735603008706ca748248d5dbc/src/services/config.ts",
+          "date": "2026-11-12",
+          "quote": "USDCe_TOKEN_ID: 'a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.factory.bridge.near',"
+        }
+      ]
+    },
+    {
+      "account_id": "dac17f958d2ee523a2206206994597c13d831ec7.factory.bridge.near",
+      "category": "stablecoin",
+      "stems": [],
+      "notes": "USDT.e (Rainbow-bridged USDT, legacy).",
+      "evidence": [
+        {
+          "url": "https://github.com/ref-finance/ref-ui/blob/1938efcf29ad484735603008706ca748248d5dbc/src/services/config.ts",
+          "date": "2026-11-12",
+          "quote": "USDTe_TOKEN_ID: 'dac17f958d2ee523a2206206994597c13d831ec7.factory.bridge.near',"
+        }
+      ]
+    },
+    {
+      "account_id": "token.sweat",
+      "category": "token",
+      "stems": [
+        "sweat"
+      ],
+      "notes": "SWEAT token (Sweat Economy).",
+      "evidence": [
+        {
+          "url": "https://1click.chaindefuser.com/v0/tokens",
+          "date": "2026-11-12",
+          "quote": "{\"assetId\":\"nep141:token.sweat\",\"decimals\":18,\"blockchain\":\"near\",\"symbol\":\"SWEAT\""
+        },
+        {
+          "url": "https://github.com/INTEARnear/price-indexer/blob/a583f92827e1cbcb8230d903b88b69bd3cfd06b0/src/token.rs",
+          "date": "2026-11-12",
+          "quote": "| \"token.sweat\""
+        }
+      ]
+    },
+    {
+      "account_id": "v2_1.omni.hot.tg",
+      "category": "bridge",
+      "stems": [
+        "hot",
+        "hot-wallet"
+      ],
+      "notes": "HOT Bridge (HOT Omni) token contract, NEP-245.",
+      "evidence": [
+        {
+          "url": "https://github.com/hot-dao/omni-sdk/blob/ead5c13236a03a911f77a6c7b383482872b88ce7/src/env.ts",
+          "date": "2026-11-12",
+          "quote": "let _omniHotContract = \"v2_1.omni.hot.tg\";"
+        }
+      ]
+    },
+    {
+      "account_id": "mpc.hot.tg",
+      "category": "wallet_infra",
+      "stems": [
+        "hot"
+      ],
+      "notes": "HOT Wallet MPC contract.",
+      "evidence": [
+        {
+          "url": "https://github.com/hot-dao/hot-validation-sdk/blob/76bfc3734110e16a16933a6b426f6d7a30137cc4/core/src/lib.rs",
+          "date": "2026-11-12",
+          "quote": "pub const MPC_HOT_WALLET_CONTRACT: &str = \"mpc.hot.tg\";"
+        }
+      ]
+    },
+    {
+      "account_id": "storage.herewallet.near",
+      "category": "liquid_staking",
+      "stems": [
+        "herewallet"
+      ],
+      "notes": "HERE Wallet hNEAR storage staking contract.",
+      "evidence": [
+        {
+          "url": "https://docs.herewallet.app/llms-full.txt",
+          "date": "2026-11-12",
+          "quote": "NEAR_ENV=mainnet near view storage.herewallet.near get_user"
+        }
+      ]
+    },
+    {
+      "account_id": "token.paras.near",
+      "category": "token",
+      "stems": [
+        "paras"
+      ],
+      "notes": "PARAS token.",
+      "evidence": [
+        {
+          "url": "https://github.com/ParasHQ/paras-landing/blob/b90e20fcb8cb30bf265e123b91474dad75026bf3/pages/token.js",
+          "date": "2026-11-12",
+          "quote": "'token.paras.near': parasPriceInDecimal,"
+        },
+        {
+          "url": "https://docs.near.org/primitives/dex.md",
+          "date": "2026-11-12",
+          "quote": "'token.paras.near',"
+        }
+      ]
+    },
+    {
+      "account_id": "simple.market.mintbase1.near",
+      "category": "nft_marketplace",
+      "stems": [
+        "mintbase"
+      ],
+      "notes": "Mintbase marketplace contract (parent mintbase1.near is an open store factory).",
+      "evidence": [
+        {
+          "url": "https://github.com/Mintbase/templates/blob/f8dd13268fa64700cf174d298f572784e207a345/marketplace/src/config/constants.ts",
+          "date": "2026-11-12",
+          "quote": "market: 'simple.market.mintbase1.near',"
+        }
+      ]
+    },
+    {
+      "account_id": "donate.potlock.near",
+      "category": "donations",
+      "stems": [
+        "potlock"
+      ],
+      "notes": "POTLOCK donation contract.",
+      "evidence": [
+        {
+          "url": "https://github.com/PotLock/bos-app/blob/7172699e7061d981819132e43b1fee62cf538d5f/apps/potlock/widget/constants.jsx",
+          "date": "2026-11-12",
+          "quote": "DONATION_CONTRACT_ID: \"donate.potlock.near\","
+        }
+      ]
+    },
+    {
+      "account_id": "social.near",
+      "category": "social",
+      "stems": [
+        "near-social",
+        "social"
+      ],
+      "notes": "NEAR Social SocialDB contract.",
+      "evidence": [
+        {
+          "url": "https://github.com/NearSocial/social-db/blob/b4a023d234d0f24a2cf0d4b7998ea485f90f576e/README.md",
+          "date": "2026-11-12",
+          "quote": "Deployed at `social.near`"
+        }
+      ]
+    },
+    {
+      "account_id": "asset-manager.orderly-network.near",
+      "category": "dex",
+      "stems": [
+        "orderly-network",
+        "orderly"
+      ],
+      "notes": "Orderly Network asset manager (vault) on NEAR.",
+      "evidence": [
+        {
+          "url": "https://github.com/OrderlyNetwork/orderly-sdk-js/blob/2d450b4f33a84d86b62d4d9e584e688f94c7d7a4/src/smart-contract/enviroment.ts",
+          "date": "2026-11-12",
+          "quote": "contractName: 'asset-manager.orderly-network.near',"
+        }
+      ]
+    },
+    {
+      "account_id": "outlayer.near",
+      "category": "compute",
+      "stems": [
+        "outlayer"
+      ],
+      "notes": "OutLayer verifiable off-chain compute contract.",
+      "evidence": [
+        {
+          "url": "https://outlayer.fastnear.com/docs/near-integration",
+          "date": "2026-11-12",
+          "quote": "Call outlayer.testnet (testnet) or outlayer.near (mainnet)"
+        }
+      ]
+    },
+    {
+      "account_id": "blackdragon.tkn.near",
+      "category": "token",
+      "stems": [
+        "blackdragon",
+        "black-dragon"
+      ],
+      "notes": "BLACKDRAGON token (parent tkn.near is an open token factory).",
+      "evidence": [
+        {
+          "url": "https://1click.chaindefuser.com/v0/tokens",
+          "date": "2026-11-12",
+          "quote": "{\"assetId\":\"nep141:blackdragon.tkn.near\",\"decimals\":24,\"blockchain\":\"near\",\"symbol\":\"BLACKDRAGON\""
+        },
+        {
+          "url": "https://github.com/INTEARnear/price-indexer/blob/a583f92827e1cbcb8230d903b88b69bd3cfd06b0/src/token.rs",
+          "date": "2026-11-12",
+          "quote": "| \"blackdragon.tkn.near\""
+        }
+      ]
+    },
+    {
+      "account_id": "token.0xshitzu.near",
+      "category": "token",
+      "stems": [
+        "0xshitzu",
+        "shitzu"
+      ],
+      "notes": "SHITZU token.",
+      "evidence": [
+        {
+          "url": "https://1click.chaindefuser.com/v0/tokens",
+          "date": "2026-11-12",
+          "quote": "{\"assetId\":\"nep141:token.0xshitzu.near\",\"decimals\":18,\"blockchain\":\"near\",\"symbol\":\"SHITZU\""
+        },
+        {
+          "url": "https://github.com/INTEARnear/price-indexer/blob/a583f92827e1cbcb8230d903b88b69bd3cfd06b0/src/token.rs",
+          "date": "2026-11-12",
+          "quote": "| \"token.0xshitzu.near\""
+        }
+      ]
+    },
+    {
+      "account_id": "ftv2.nekotoken.near",
+      "category": "token",
+      "stems": [
+        "nekotoken",
+        "neko"
+      ],
+      "notes": "NEKO token (v2).",
+      "evidence": [
+        {
+          "url": "https://github.com/INTEARnear/price-indexer/blob/a583f92827e1cbcb8230d903b88b69bd3cfd06b0/src/token.rs",
+          "date": "2026-11-12",
+          "quote": "| \"ftv2.nekotoken.near\""
+        }
+      ]
+    },
+    {
+      "account_id": "npro.nearmobile.near",
+      "category": "token",
+      "stems": [
+        "nearmobile",
+        "near-mobile"
+      ],
+      "notes": "NPRO token (NEAR Mobile).",
+      "evidence": [
+        {
+          "url": "https://1click.chaindefuser.com/v0/tokens",
+          "date": "2026-11-12",
+          "quote": "{\"assetId\":\"nep141:npro.nearmobile.near\",\"decimals\":24,\"blockchain\":\"near\",\"symbol\":\"NPRO\""
+        },
+        {
+          "url": "https://github.com/INTEARnear/price-indexer/blob/a583f92827e1cbcb8230d903b88b69bd3cfd06b0/src/token.rs",
+          "date": "2026-11-12",
+          "quote": "| \"npro.nearmobile.near\""
+        }
+      ]
+    },
+    {
+      "account_id": "venear.dao",
+      "category": "governance",
+      "stems": [
+        "venear"
+      ],
+      "notes": "House of Stake veNEAR contract.",
+      "evidence": [
+        {
+          "url": "https://github.com/houseofstake/agora-near/blob/2f8e3a17ee89f2fba1d19b006a65f3d6289ee272/src/lib/contractConstants.ts",
+          "date": "2026-11-12",
+          "quote": "VENEAR_CONTRACT_ID: \"venear.dao\","
+        }
+      ]
+    },
+    {
+      "account_id": "vote.dao",
+      "category": "governance",
+      "stems": [],
+      "notes": "House of Stake voting contract.",
+      "evidence": [
+        {
+          "url": "https://github.com/houseofstake/agora-near/blob/2f8e3a17ee89f2fba1d19b006a65f3d6289ee272/src/lib/contractConstants.ts",
+          "date": "2026-11-12",
+          "quote": "VOTING_CONTRACT_ID: \"vote.dao\","
+        }
+      ]
+    },
+    {
+      "account_id": "meme-cooking.near",
+      "category": "launchpad",
+      "stems": [
+        "meme-cooking"
+      ],
+      "notes": "Meme.cooking launchpad contract (launched tokens live under it).",
+      "evidence": [
+        {
+          "url": "https://github.com/Shitzu-Apes/meme-cooking-docs/blob/89169f35cb6d6afd73aef75c7f884b2a968ae1c5/other/developers.md",
+          "date": "2026-11-12",
+          "quote": "| [meme-cooking.near](https://nearblocks.io/address/meme-cooking.near) |"
+        }
+      ]
+    },
+    {
+      "account_id": "v1.signer",
+      "category": "chain_signatures",
+      "stems": [],
+      "notes": "Chain Signatures MPC signer contract.",
+      "evidence": [
+        {
+          "url": "https://docs.near.org/chain-abstraction/chain-signatures.md",
+          "date": "2026-11-12",
+          "quote": "A deployed smart contract ([v1.signer](https://nearblocks.io/address/v1.signer)) is used to request signatures for transactions on other blockchains."
+        }
+      ]
+    },
+    {
+      "account_id": "priceoracle.near",
+      "category": "oracle",
+      "stems": [
+        "priceoracle",
+        "price-oracle"
+      ],
+      "notes": "Price oracle used by Burrow and LiNEAR.",
+      "evidence": [
+        {
+          "url": "https://github.com/linear-protocol/LiNEAR/blob/63cd09aabbc3c28ca39ca4266647c24315ae3975/README.md",
+          "date": "2026-11-12",
+          "quote": "- LINEAR / USD (price oracle): `NEAR_ENV=mainnet near view priceoracle.near get_price_data"
+        }
+      ]
+    },
+    {
+      "account_id": "pool.near",
+      "category": "staking_factory",
+      "stems": [],
+      "notes": "Staking-farm pool factory (validators deploy *.pool.near; open, not a brand root).",
+      "evidence": [
+        {
+          "url": "https://docs.near.org/tools/contracts-list.md",
+          "date": "2026-11-12",
+          "quote": "Factory contract deployed as `pool.near` that creates staking farm contracts"
+        }
+      ]
+    },
+    {
+      "account_id": "zec.omft.near",
+      "category": "token",
+      "stems": [],
+      "notes": "ZEC bridged into NEAR Intents (PoA token factory omft.near).",
+      "evidence": [
+        {
+          "url": "https://1click.chaindefuser.com/v0/tokens",
+          "date": "2026-11-12",
+          "quote": "{\"assetId\":\"nep141:zec.omft.near\",\"decimals\":8,\"blockchain\":\"zec\",\"symbol\":\"ZEC\""
+        },
+        {
+          "url": "https://github.com/INTEARnear/price-indexer/blob/a583f92827e1cbcb8230d903b88b69bd3cfd06b0/src/token.rs",
+          "date": "2026-11-12",
+          "quote": "| \"zec.omft.near\""
+        }
+      ]
+    },
+    {
+      "account_id": "token.lonkingnearbackto2024.near",
+      "category": "token",
+      "stems": [
+        "lonk"
+      ],
+      "notes": "LONK token.",
+      "evidence": [
+        {
+          "url": "https://github.com/INTEARnear/price-indexer/blob/a583f92827e1cbcb8230d903b88b69bd3cfd06b0/src/token.rs",
+          "date": "2026-11-12",
+          "quote": "\"token.lonkingnearbackto2024.near\""
+        }
+      ]
+    }
+  ]
+}

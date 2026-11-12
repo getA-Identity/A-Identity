@@ -1,0 +1,516 @@
+{
+  "about": "suspicious seeds for the A-Identity NEAR real-data dataset: accounts publicly reported as scam, phishing, fake-airdrop, drainer or exploit accounts, each with the report's URL, date and an exact quote (whitespace and non-ASCII normalized), plus accounts tied to a reported fake-airdrop campaign by on-chain facts under the documented campaign rule (source_type onchain_campaign_link). Risk signals, not accusations. source_type says how strong the evidence is; see README for the rules.",
+  "network": "mainnet",
+  "accounts": [
+    {
+      "account_id": "linear_protocol.near",
+      "category": "fake_airdrop_token",
+      "source_type": "researcher_dataset",
+      "incident": "fake-airdrop-rewards-tokens-2024",
+      "notes": "NEP-141 'rewards' token imitating LiNEAR, mass-airdropped, its name advertises a lookalike website. Created by burrowfinancedao.near. Fits the pattern NEAR Protocol warned about on 2022-10-09: unexpected airdropped tokens whose names carry links (see SOURCES.md).",
+      "evidence": [
+        {
+          "url": "https://github.com/kacpergumieniuk/mimicwatch-near/blob/0906683760d32ae0438f6ab0348b4724f23dc6c5/README.md",
+          "date": "2026-11-01",
+          "quote": "three NEP-141 tokens named after LiNEAR, Meta Pool and Burrow (`linear_protocol.near`, `metapools.near`, `burrowfinancedao.near`), each advertising a lookalike website in its token name"
+        },
+        {
+          "url": "https://github.com/kacpergumieniuk/mimicwatch-near/blob/0906683760d32ae0438f6ab0348b4724f23dc6c5/evidence/account/linear_protocol.near.json",
+          "date": "2026-11-01",
+          "quote": "Its token name advertises a website (https://linearprotocol.net): the fake-airdrop pattern"
+        }
+      ]
+    },
+    {
+      "account_id": "metapools.near",
+      "category": "fake_airdrop_token",
+      "source_type": "researcher_dataset",
+      "incident": "fake-airdrop-rewards-tokens-2024",
+      "notes": "NEP-141 'rewards' token imitating Meta Pool, mass-airdropped, its name advertises a lookalike website. Created by burrowfinancedao.near. Fits the pattern NEAR Protocol warned about on 2022-10-09: unexpected airdropped tokens whose names carry links (see SOURCES.md).",
+      "evidence": [
+        {
+          "url": "https://github.com/kacpergumieniuk/mimicwatch-near/blob/0906683760d32ae0438f6ab0348b4724f23dc6c5/README.md",
+          "date": "2026-11-01",
+          "quote": "three NEP-141 tokens named after LiNEAR, Meta Pool and Burrow (`linear_protocol.near`, `metapools.near`, `burrowfinancedao.near`), each advertising a lookalike website in its token name"
+        },
+        {
+          "url": "https://github.com/kacpergumieniuk/mimicwatch-near/blob/0906683760d32ae0438f6ab0348b4724f23dc6c5/evidence/account/metapools.near.json",
+          "date": "2026-11-01",
+          "quote": "Its token name advertises a website (https://metapools.org): the fake-airdrop pattern"
+        }
+      ]
+    },
+    {
+      "account_id": "burrowfinancedao.near",
+      "category": "fake_airdrop_token",
+      "source_type": "researcher_dataset",
+      "incident": "fake-airdrop-rewards-tokens-2024",
+      "notes": "NEP-141 'rewards' token imitating Burrow; it created linear_protocol.near, metapools.near, dragoneggsmeme.near and lonkrewards.near. Created by nearrewards.near. Fits the pattern NEAR Protocol warned about on 2022-10-09: unexpected airdropped tokens whose names carry links (see SOURCES.md).",
+      "evidence": [
+        {
+          "url": "https://github.com/kacpergumieniuk/mimicwatch-near/blob/0906683760d32ae0438f6ab0348b4724f23dc6c5/README.md",
+          "date": "2026-11-01",
+          "quote": "`burrowfinancedao.near` created the other two."
+        },
+        {
+          "url": "https://github.com/kacpergumieniuk/mimicwatch-near/blob/0906683760d32ae0438f6ab0348b4724f23dc6c5/evidence/account/burrowfinancedao.near.json",
+          "date": "2026-11-01",
+          "quote": "Its token name advertises a website (https://burrowfi.com): the fake-airdrop pattern"
+        }
+      ]
+    },
+    {
+      "account_id": "nearrewards.near",
+      "category": "fake_airdrop_token",
+      "source_type": "onchain_campaign_link",
+      "incident": "fake-airdrop-rewards-tokens-2024",
+      "notes": "Creator of burrowfinancedao.near (signed its create_account transaction on 2024-05-16; MimicWatch's evidence for burrowfinancedao.near names it as the creator) and itself a token whose on-chain name advertises a website. Still active. MimicWatch does not flag it itself: included by the documented campaign rule (see README). Fits the pattern NEAR Protocol warned about on 2022-10-09: unexpected airdropped tokens whose names carry links (see SOURCES.md).",
+      "evidence": [
+        {
+          "url": "https://nearblocks.io/txns/8wR3X8jAsTXg6jPAwmkmYBadFJkV1zP79jy1qCw8S4p8",
+          "date": "2024-05-16",
+          "quote": "signer nearrewards.near receiver near create_account {\"new_account_id\":\"burrowfinancedao.near\""
+        },
+        {
+          "url": "https://github.com/kacpergumieniuk/mimicwatch-near/blob/0906683760d32ae0438f6ab0348b4724f23dc6c5/evidence/account/burrowfinancedao.near.json",
+          "date": "2026-11-01",
+          "quote": "Created 2024-05-16 by nearrewards.near (899 days before the scan)."
+        },
+        {
+          "url": "https://nearblocks.io/address/nearrewards.near",
+          "date": "2026-11-12",
+          "quote": "\"name\":\"$NEAR rewards at https://nearrewards.com\""
+        }
+      ]
+    },
+    {
+      "account_id": "nearreward.near",
+      "category": "fake_airdrop_token",
+      "source_type": "onchain_campaign_link",
+      "incident": "fake-airdrop-rewards-tokens-2024",
+      "notes": "Created by nearrewards.near on 2024-09-11; its token name advertises a website written with U+2024 (one dot leader) instead of a period, a trick that dodges link filters. Not named in a third-party report: included by the documented campaign rule (see README). Fits the pattern NEAR Protocol warned about on 2022-10-09: unexpected airdropped tokens whose names carry links (see SOURCES.md).",
+      "evidence": [
+        {
+          "url": "https://nearblocks.io/txns/8XVfU6PGmFzAEEaghLFZ2ws5nD3wsC8Gon1d8PAFp9L2",
+          "date": "2024-09-11",
+          "quote": "signer nearrewards.near receiver near create_account {\"new_account_id\":\"nearreward.near\""
+        },
+        {
+          "url": "https://nearblocks.io/address/nearreward.near",
+          "date": "2026-11-12",
+          "quote": "\"name\":\"$NEAR rewards at https://nearrewards"
+        }
+      ]
+    },
+    {
+      "account_id": "dragoneggsmeme.near",
+      "category": "fake_airdrop_token",
+      "source_type": "onchain_campaign_link",
+      "incident": "fake-airdrop-rewards-tokens-2024",
+      "notes": "Created by burrowfinancedao.near on 2024-05-19; a 'rewards' token whose name advertises a website. Not named in a third-party report: included by the documented campaign rule (see README). Fits the pattern NEAR Protocol warned about on 2022-10-09: unexpected airdropped tokens whose names carry links (see SOURCES.md).",
+      "evidence": [
+        {
+          "url": "https://nearblocks.io/txns/6G8KfH3gUqy6dm1pSVwwfLyebYAaG8DQPwRHbCgoDJXa",
+          "date": "2024-05-19",
+          "quote": "signer burrowfinancedao.near receiver near create_account {\"new_account_id\":\"dragoneggsmeme.near\""
+        },
+        {
+          "url": "https://nearblocks.io/address/dragoneggsmeme.near",
+          "date": "2026-11-12",
+          "quote": "\"name\":\"$Dragon Egg Rewards (https://dragoneggs.xyz)\""
+        }
+      ]
+    },
+    {
+      "account_id": "lonkrewards.near",
+      "category": "fake_airdrop_token",
+      "source_type": "onchain_campaign_link",
+      "incident": "fake-airdrop-rewards-tokens-2024",
+      "notes": "Created by burrowfinancedao.near on 2024-05-18; a 'rewards' token imitating the LONK memecoin whose name advertises a website. Not named in a third-party report: included by the documented campaign rule (see README). Fits the pattern NEAR Protocol warned about on 2022-10-09: unexpected airdropped tokens whose names carry links (see SOURCES.md).",
+      "evidence": [
+        {
+          "url": "https://nearblocks.io/txns/FHa8Kiwn3jJDur3amYi8C2ZLvrdvBAU53v2j3dPUfaF4",
+          "date": "2024-05-18",
+          "quote": "signer burrowfinancedao.near receiver near create_account {\"new_account_id\":\"lonkrewards.near\""
+        },
+        {
+          "url": "https://nearblocks.io/address/lonkrewards.near",
+          "date": "2026-11-12",
+          "quote": "\"name\":\"$Lonk Meme Rewards (https://lonkmeme.com)\""
+        }
+      ]
+    },
+    {
+      "account_id": "31ac7a2705a0686ff427b1a52d3ffd1fcfaa4b1f3cb3e83a0f767494e724a540",
+      "category": "exploiter",
+      "source_type": "security_writeup",
+      "incident": "rhea-lend-exploit-2026-04",
+      "notes": "Rhea Lend exploit (about 18.4M USD, 2026-04-16): attacker wallet and collector account.",
+      "evidence": [
+        {
+          "url": "https://rekt.news/rhea-finance-rekt",
+          "date": "2026-04-21",
+          "quote": "Attacker NEAR wallet: 31ac7a2705a0686ff427b1a52d3ffd1fcfaa4b1f3cb3e83a0f767494e724a540"
+        },
+        {
+          "url": "https://rekt.news/rhea-finance-rekt",
+          "date": "2026-04-21",
+          "quote": "Collector account: 31ac7a2705a0686ff427b1a52d3ffd1fcfaa4b1f3cb3e83a0f767494e724a540"
+        }
+      ]
+    },
+    {
+      "account_id": "72633832db9d039b97906320169a8411bc2fa0f78303a4ecb1d35de71af621c5",
+      "category": "exploiter",
+      "source_type": "security_writeup",
+      "incident": "rhea-lend-exploit-2026-04",
+      "notes": "Rhea Lend exploit: master account that consolidated the proceeds.",
+      "evidence": [
+        {
+          "url": "https://rekt.news/rhea-finance-rekt",
+          "date": "2026-04-21",
+          "quote": "Master account: 72633832db9d039b97906320169a8411bc2fa0f78303a4ecb1d35de71af621c5"
+        }
+      ]
+    },
+    {
+      "account_id": "d4e8e706f5a59610d85924af858f0562031930d14eb7add9a433edea50cf0b03",
+      "category": "exploiter",
+      "source_type": "security_writeup",
+      "incident": "rhea-lend-exploit-2026-04",
+      "notes": "Rhea Lend exploit: worker account (opened the poisoned margin positions).",
+      "evidence": [
+        {
+          "url": "https://rekt.news/rhea-finance-rekt",
+          "date": "2026-04-21",
+          "quote": "Worker accounts: d4e8e706f5a59610d85924af858f0562031930d14eb7add9a433edea50cf0b03 d39fd6da5eda882fe5f6716212552356cde2613054c670ffd6b49b3b25aef473 839810a1aef8ed1adb03e795b2a9785d783d4e2f415ab80c8b6fb30483e160f2 9053223460198e5e1e54dc15c18295ff0e98dca41ecd6c3872da1ff634d99616 5a7695e3626aeae7c0d340b6e58f813c71455d1be490eeb44e90bd9682343040"
+        }
+      ]
+    },
+    {
+      "account_id": "d39fd6da5eda882fe5f6716212552356cde2613054c670ffd6b49b3b25aef473",
+      "category": "exploiter",
+      "source_type": "security_writeup",
+      "incident": "rhea-lend-exploit-2026-04",
+      "notes": "Rhea Lend exploit: worker account (opened the poisoned margin positions).",
+      "evidence": [
+        {
+          "url": "https://rekt.news/rhea-finance-rekt",
+          "date": "2026-04-21",
+          "quote": "Worker accounts: d4e8e706f5a59610d85924af858f0562031930d14eb7add9a433edea50cf0b03 d39fd6da5eda882fe5f6716212552356cde2613054c670ffd6b49b3b25aef473 839810a1aef8ed1adb03e795b2a9785d783d4e2f415ab80c8b6fb30483e160f2 9053223460198e5e1e54dc15c18295ff0e98dca41ecd6c3872da1ff634d99616 5a7695e3626aeae7c0d340b6e58f813c71455d1be490eeb44e90bd9682343040"
+        }
+      ]
+    },
+    {
+      "account_id": "839810a1aef8ed1adb03e795b2a9785d783d4e2f415ab80c8b6fb30483e160f2",
+      "category": "exploiter",
+      "source_type": "security_writeup",
+      "incident": "rhea-lend-exploit-2026-04",
+      "notes": "Rhea Lend exploit: worker account (opened the poisoned margin positions).",
+      "evidence": [
+        {
+          "url": "https://rekt.news/rhea-finance-rekt",
+          "date": "2026-04-21",
+          "quote": "Worker accounts: d4e8e706f5a59610d85924af858f0562031930d14eb7add9a433edea50cf0b03 d39fd6da5eda882fe5f6716212552356cde2613054c670ffd6b49b3b25aef473 839810a1aef8ed1adb03e795b2a9785d783d4e2f415ab80c8b6fb30483e160f2 9053223460198e5e1e54dc15c18295ff0e98dca41ecd6c3872da1ff634d99616 5a7695e3626aeae7c0d340b6e58f813c71455d1be490eeb44e90bd9682343040"
+        }
+      ]
+    },
+    {
+      "account_id": "9053223460198e5e1e54dc15c18295ff0e98dca41ecd6c3872da1ff634d99616",
+      "category": "exploiter",
+      "source_type": "security_writeup",
+      "incident": "rhea-lend-exploit-2026-04",
+      "notes": "Rhea Lend exploit: worker account (opened the poisoned margin positions).",
+      "evidence": [
+        {
+          "url": "https://rekt.news/rhea-finance-rekt",
+          "date": "2026-04-21",
+          "quote": "Worker accounts: d4e8e706f5a59610d85924af858f0562031930d14eb7add9a433edea50cf0b03 d39fd6da5eda882fe5f6716212552356cde2613054c670ffd6b49b3b25aef473 839810a1aef8ed1adb03e795b2a9785d783d4e2f415ab80c8b6fb30483e160f2 9053223460198e5e1e54dc15c18295ff0e98dca41ecd6c3872da1ff634d99616 5a7695e3626aeae7c0d340b6e58f813c71455d1be490eeb44e90bd9682343040"
+        }
+      ]
+    },
+    {
+      "account_id": "5a7695e3626aeae7c0d340b6e58f813c71455d1be490eeb44e90bd9682343040",
+      "category": "exploiter",
+      "source_type": "security_writeup",
+      "incident": "rhea-lend-exploit-2026-04",
+      "notes": "Rhea Lend exploit: worker account (opened the poisoned margin positions).",
+      "evidence": [
+        {
+          "url": "https://rekt.news/rhea-finance-rekt",
+          "date": "2026-04-21",
+          "quote": "Worker accounts: d4e8e706f5a59610d85924af858f0562031930d14eb7add9a433edea50cf0b03 d39fd6da5eda882fe5f6716212552356cde2613054c670ffd6b49b3b25aef473 839810a1aef8ed1adb03e795b2a9785d783d4e2f415ab80c8b6fb30483e160f2 9053223460198e5e1e54dc15c18295ff0e98dca41ecd6c3872da1ff634d99616 5a7695e3626aeae7c0d340b6e58f813c71455d1be490eeb44e90bd9682343040"
+        }
+      ]
+    },
+    {
+      "account_id": "c122aad2a188ed3abec0517f99c4dd03591d19e6bfcf7f015424351fbdd71163",
+      "category": "exploit_fake_token",
+      "source_type": "security_writeup",
+      "incident": "rhea-lend-exploit-2026-04",
+      "notes": "Rhea Lend exploit: attacker-deployed fake token contract used to build manipulated pools. rekt reports the shared code hash BBeoVgxZC5Ce1ef7nErevX98QonNsedBFfqzep5RV1Vu.",
+      "evidence": [
+        {
+          "url": "https://rekt.news/rhea-finance-rekt",
+          "date": "2026-04-21",
+          "quote": "c122aad2a188ed3abec0517f99c4dd03591d19e6bfcf7f015424351fbdd71163 7d06ad005e03aa875875481fb6a2bd1acf9e722100ab8747e4e97801ba340640 9c0df321dd5d9fc1138a09f405f523333fffe74de2ee10932ff756e27ae930ee 80f357d92e67f0ea53f299bb16d3af363ba0ef66e0211091edc2181cd323a705 Around those tokens, the attacker built a consecutive cluster of 25 liquidity pools on Ref Finance"
+        },
+        {
+          "url": "https://rekt.news/rhea-finance-rekt",
+          "date": "2026-04-21",
+          "quote": "All of the fake fungible-token contracts shared the same code hash: BBeoVgxZC5Ce1ef7nErevX98QonNsedBFfqzep5RV1Vu"
+        }
+      ]
+    },
+    {
+      "account_id": "7d06ad005e03aa875875481fb6a2bd1acf9e722100ab8747e4e97801ba340640",
+      "category": "exploit_fake_token",
+      "source_type": "security_writeup",
+      "incident": "rhea-lend-exploit-2026-04",
+      "notes": "Rhea Lend exploit: attacker-deployed fake token contract used to build manipulated pools. rekt reports the shared code hash BBeoVgxZC5Ce1ef7nErevX98QonNsedBFfqzep5RV1Vu.",
+      "evidence": [
+        {
+          "url": "https://rekt.news/rhea-finance-rekt",
+          "date": "2026-04-21",
+          "quote": "c122aad2a188ed3abec0517f99c4dd03591d19e6bfcf7f015424351fbdd71163 7d06ad005e03aa875875481fb6a2bd1acf9e722100ab8747e4e97801ba340640 9c0df321dd5d9fc1138a09f405f523333fffe74de2ee10932ff756e27ae930ee 80f357d92e67f0ea53f299bb16d3af363ba0ef66e0211091edc2181cd323a705 Around those tokens, the attacker built a consecutive cluster of 25 liquidity pools on Ref Finance"
+        },
+        {
+          "url": "https://rekt.news/rhea-finance-rekt",
+          "date": "2026-04-21",
+          "quote": "All of the fake fungible-token contracts shared the same code hash: BBeoVgxZC5Ce1ef7nErevX98QonNsedBFfqzep5RV1Vu"
+        }
+      ]
+    },
+    {
+      "account_id": "9c0df321dd5d9fc1138a09f405f523333fffe74de2ee10932ff756e27ae930ee",
+      "category": "exploit_fake_token",
+      "source_type": "security_writeup",
+      "incident": "rhea-lend-exploit-2026-04",
+      "notes": "Rhea Lend exploit: attacker-deployed fake token contract used to build manipulated pools. rekt reports the shared code hash BBeoVgxZC5Ce1ef7nErevX98QonNsedBFfqzep5RV1Vu.",
+      "evidence": [
+        {
+          "url": "https://rekt.news/rhea-finance-rekt",
+          "date": "2026-04-21",
+          "quote": "c122aad2a188ed3abec0517f99c4dd03591d19e6bfcf7f015424351fbdd71163 7d06ad005e03aa875875481fb6a2bd1acf9e722100ab8747e4e97801ba340640 9c0df321dd5d9fc1138a09f405f523333fffe74de2ee10932ff756e27ae930ee 80f357d92e67f0ea53f299bb16d3af363ba0ef66e0211091edc2181cd323a705 Around those tokens, the attacker built a consecutive cluster of 25 liquidity pools on Ref Finance"
+        },
+        {
+          "url": "https://rekt.news/rhea-finance-rekt",
+          "date": "2026-04-21",
+          "quote": "All of the fake fungible-token contracts shared the same code hash: BBeoVgxZC5Ce1ef7nErevX98QonNsedBFfqzep5RV1Vu"
+        }
+      ]
+    },
+    {
+      "account_id": "80f357d92e67f0ea53f299bb16d3af363ba0ef66e0211091edc2181cd323a705",
+      "category": "exploit_fake_token",
+      "source_type": "security_writeup",
+      "incident": "rhea-lend-exploit-2026-04",
+      "notes": "Rhea Lend exploit: attacker-deployed fake token contract used to build manipulated pools. rekt reports the shared code hash BBeoVgxZC5Ce1ef7nErevX98QonNsedBFfqzep5RV1Vu.",
+      "evidence": [
+        {
+          "url": "https://rekt.news/rhea-finance-rekt",
+          "date": "2026-04-21",
+          "quote": "c122aad2a188ed3abec0517f99c4dd03591d19e6bfcf7f015424351fbdd71163 7d06ad005e03aa875875481fb6a2bd1acf9e722100ab8747e4e97801ba340640 9c0df321dd5d9fc1138a09f405f523333fffe74de2ee10932ff756e27ae930ee 80f357d92e67f0ea53f299bb16d3af363ba0ef66e0211091edc2181cd323a705 Around those tokens, the attacker built a consecutive cluster of 25 liquidity pools on Ref Finance"
+        },
+        {
+          "url": "https://rekt.news/rhea-finance-rekt",
+          "date": "2026-04-21",
+          "quote": "All of the fake fungible-token contracts shared the same code hash: BBeoVgxZC5Ce1ef7nErevX98QonNsedBFfqzep5RV1Vu"
+        }
+      ]
+    },
+    {
+      "account_id": "rhea000453.multica.near",
+      "category": "exploit_staging",
+      "source_type": "security_writeup",
+      "incident": "rhea-lend-exploit-2026-04",
+      "notes": "Rhea Lend exploit: staging account inside Rhea's Multichain Account system that received funds traceable to the attacker.",
+      "evidence": [
+        {
+          "url": "https://rekt.news/rhea-finance-rekt",
+          "date": "2026-04-21",
+          "quote": "Multiple accounts within Rhea's own Multichain Account system - including rhea000453.multica.near, rhea000462.multica.near, and rhea000505.multica.near - became active, later receiving funds traceable to the subject wallet."
+        },
+        {
+          "url": "https://www.quillaudits.com/blog/hack-analysis/rhea-finance-hack",
+          "date": "2026-04-23",
+          "quote": "rhea000453.multica.near - MCA staging wallet"
+        }
+      ]
+    },
+    {
+      "account_id": "rhea000462.multica.near",
+      "category": "exploit_staging",
+      "source_type": "security_writeup",
+      "incident": "rhea-lend-exploit-2026-04",
+      "notes": "Rhea Lend exploit: staging account inside Rhea's Multichain Account system that received funds traceable to the attacker.",
+      "evidence": [
+        {
+          "url": "https://rekt.news/rhea-finance-rekt",
+          "date": "2026-04-21",
+          "quote": "Multiple accounts within Rhea's own Multichain Account system - including rhea000453.multica.near, rhea000462.multica.near, and rhea000505.multica.near - became active, later receiving funds traceable to the subject wallet."
+        },
+        {
+          "url": "https://www.quillaudits.com/blog/hack-analysis/rhea-finance-hack",
+          "date": "2026-04-23",
+          "quote": "rhea000462.multica.near - MCA staging wallet"
+        }
+      ]
+    },
+    {
+      "account_id": "rhea000505.multica.near",
+      "category": "exploit_staging",
+      "source_type": "security_writeup",
+      "incident": "rhea-lend-exploit-2026-04",
+      "notes": "Rhea Lend exploit: staging account inside Rhea's Multichain Account system that received funds traceable to the attacker.",
+      "evidence": [
+        {
+          "url": "https://rekt.news/rhea-finance-rekt",
+          "date": "2026-04-21",
+          "quote": "Multiple accounts within Rhea's own Multichain Account system - including rhea000453.multica.near, rhea000462.multica.near, and rhea000505.multica.near - became active, later receiving funds traceable to the subject wallet."
+        },
+        {
+          "url": "https://www.quillaudits.com/blog/hack-analysis/rhea-finance-hack",
+          "date": "2026-04-23",
+          "quote": "rhea000505.multica.near - MCA staging wallet"
+        }
+      ]
+    },
+    {
+      "account_id": "5ebc5ecca14a44175464d0e6a7d3b2a6890229cd5f19cfb29ce8b1651fd58d39",
+      "category": "exploiter",
+      "source_type": "security_writeup",
+      "incident": "skyward-finance-exploit-2022-11",
+      "notes": "Skyward Finance treasury drained (about 3M USD, 2022-11-02); the attack tx 92Gq7zeh... calls skyward.near with repeated wrap.near ids.",
+      "evidence": [
+        {
+          "url": "https://rekt.news/skyward-rekt/",
+          "date": "2022-11-03",
+          "quote": "Exploiter's address: 5ebc5ecca14a44175464d0e6a7d3b2a6890229cd5f19cfb29ce8b1651fd58d39"
+        }
+      ]
+    },
+    {
+      "account_id": "3be304b2151870b2be88b9de0b80acab921337ad152584138bd852fc6e9ae018",
+      "category": "exploiter",
+      "source_type": "security_writeup",
+      "incident": "sweat-token-exploit-2026-04",
+      "notes": "SWEAT token exploit (13.71B SWEAT, 2026-04-29), flagged in real time by Blockaid; the largest exploit tx DvrSMfY8... is signed by this account and drains hodl-lockup.sweat through its own drainer contract.",
+      "evidence": [
+        {
+          "url": "https://ourcryptotalk.com/news/sweat-economy-exploit-near-protocol",
+          "date": "2026-04-29",
+          "quote": "Community Alert: Ongoing exploit on @SweatEconomy on @NEARProtocol. Exploiter: 3be304b2151870b2be88b9de0b80acab921337ad152584138bd852fc6e9ae018 Largest exploit tx: DvrSMfY85Anc6AuLUmoEDkDdab7qX5NUZLu76HN8NoPn"
+        },
+        {
+          "url": "https://www.tekedia.com/sweat-economy-on-near-protocol-exploited-draining-13-71b-sweat-tokens/",
+          "date": "2026-05-01",
+          "quote": "Blockaid, a blockchain security firm detected and publicly flagged the exploit in real time, including the exploiter address and a key transaction."
+        }
+      ]
+    },
+    {
+      "account_id": "gregoshes.near",
+      "category": "exploiter",
+      "source_type": "project_incident_report",
+      "incident": "stader-nearx-exploit-2022-08",
+      "notes": "Stader NearX minting exploit (about 165k NEAR, 2022-08-16), named by Stader's own incident report.",
+      "evidence": [
+        {
+          "url": "https://staderlabs.com/blog/stader-near-incident-report-08-16-2022",
+          "date": "2022-08-16",
+          "quote": "The attacker (\"gregoshes.near\") exploited this and minted 20 Mn $NearX by transferring $NearX to his/her own address in a loop without any corresponding $NEAR staked against it."
+        }
+      ]
+    },
+    {
+      "account_id": "9c2a08cf1d06716bb03c662ed67096ea92cedacf058d50e1dea60ff442cf6180",
+      "category": "exploiter",
+      "source_type": "project_incident_report",
+      "incident": "kangaroo-coin-flip-exploit-2022-07",
+      "notes": "Kangaroo Coin Flip house funds stolen (about 2,473 NEAR, July 2022), named in the project's post-mortem on the NEAR forum.",
+      "evidence": [
+        {
+          "url": "https://gov.near.org/t/report-kangaroo-coin-flip-exploit-post-mortem/25445/1",
+          "date": "2022-07-21",
+          "quote": "Link to the NEAR address of the attacker https://explorer.near.org/accounts/9c2a08cf1d06716bb03c662ed67096ea92cedacf058d50e1dea60ff442cf6180"
+        }
+      ]
+    },
+    {
+      "account_id": "bigbank101.near",
+      "category": "phishing_receiver",
+      "source_type": "victim_report",
+      "incident": "fake-near-wallet-app-2021-12",
+      "notes": "Received funds stolen through a fake NEAR Wallet app on Google Play; reported by a community lead and confirmed by the victim.",
+      "evidence": [
+        {
+          "url": "https://gov.near.org/t/alert-fake-near-wallet-is-hacking-accounts/11112/1",
+          "date": "2021-12-18",
+          "quote": "This fake wallet request for pass phrase and after transfer funds to an account called bigbank101.near"
+        },
+        {
+          "url": "https://gov.near.org/t/alert-fake-near-wallet-is-hacking-accounts/11112/5",
+          "date": "2021-12-18",
+          "quote": "bigbank101.near this is that wallet used to stole the tokens from platohedro.near"
+        }
+      ]
+    },
+    {
+      "account_id": "dolbabob.near",
+      "category": "phishing_receiver",
+      "source_type": "victim_report",
+      "incident": "fake-nearcrowd-site-2021-12",
+      "notes": "Receiver of 9 NEAR lost to a phishing site (nearcrowd.org copying the wallet UI) that a forum moderator had flagged the day before (https://gov.near.org/t/alert-fake-near-wallet-is-hacking-accounts/11112/12). Single victim report.",
+      "evidence": [
+        {
+          "url": "https://gov.near.org/t/alert-fake-near-wallet-is-hacking-accounts/11112/13",
+          "date": "2021-12-20",
+          "quote": "I just lose 9 NEAR there (In nearcrowd.org ), this is the receiver account: https://explorer.mainnet.near.org/accounts/dolbabob.near"
+        }
+      ]
+    },
+    {
+      "account_id": "9ebef819489ae5e6641cc5573740dadc751c35c3ae37c110e4fad8101494e418",
+      "category": "phishing_receiver",
+      "source_type": "victim_report",
+      "incident": "fake-near-wallet-site-2022-04",
+      "notes": "Received the funds of a victim who entered a seed phrase on a fake NEAR wallet website found through a search ad. Single victim report.",
+      "evidence": [
+        {
+          "url": "https://gov.near.org/t/emergency-scam-stolen-near-tokens-from-my-near-wallet-via-fake-website-near-wallet-seed-phrases/18659/1",
+          "date": "2022-04-10",
+          "quote": "He has accumulated all coins from my account on this wallet adess: 9ebef819489ae5e6641cc5573740dadc751c35c3ae37c110e4fad8101494e418."
+        }
+      ]
+    },
+    {
+      "account_id": "087184b14c3cad5de72090c4a48816d46e53f39454df13b957e14350793b18e7",
+      "category": "theft_receiver",
+      "source_type": "victim_report",
+      "incident": "telegram-scam-theft-2022-05",
+      "notes": "First hop of funds and NFTs stolen from geminirising.near; its first transaction was signed with the victim's compromised key. Later hops in the same post look like exchange wallets and are deliberately not listed. Single victim report.",
+      "evidence": [
+        {
+          "url": "https://gov.near.org/t/beware-of-scammers-in-near-protocol-chat-on-telegram/21725/1",
+          "date": "2022-05-28",
+          "quote": "the thief put my funds to this address (my nfts are still there): @087184b14c3cad5de72090c4a48816d46e53f39454df13b957e14350793b18e7"
+        }
+      ]
+    },
+    {
+      "account_id": "wisdom1.near",
+      "category": "theft_receiver",
+      "source_type": "victim_report",
+      "incident": "compromised-wallet-theft-2022-02",
+      "notes": "Received 130 NEAR taken from a guild treasury wallet; on chain it was created in January 2022 and holds about 130 NEAR, as the victim describes. Single victim report.",
+      "evidence": [
+        {
+          "url": "https://gov.near.org/t/alert-near-wallet-log-out-button-request/14521/16",
+          "date": "2022-02-18",
+          "quote": "the same attacker transferred all the funds in my wallet last night. all the funds are 130 NEAR he transferred it to wisdom1.near"
+        }
+      ]
+    }
+  ]
+}

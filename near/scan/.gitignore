@@ -1,0 +1,2 @@
+# Per-day answer cache of build-dataset.mjs (re-derivable; resumes an interrupted sweep).
+.cache/
