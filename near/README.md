@@ -34,8 +34,8 @@ node near/judge/judge.mjs               # online: views from NEAR testnet RPC, e
 node near/judge/judge.mjs --offline     # no network: replays the raw RPC answers committed in near/evidence/
 ```
 
-Expected last lines: `JUDGE: 43 PASS, 0 FAIL, 0 SKIP (mode=online, <seconds> s)` online, and
-`JUDGE: 43 PASS, 0 FAIL, 0 SKIP (mode=offline, <seconds> s)` offline.
+Expected last lines: `JUDGE: 48 PASS, 0 FAIL, 0 SKIP (mode=online, <seconds> s)` online, and
+`JUDGE: 48 PASS, 0 FAIL, 0 SKIP (mode=offline, <seconds> s)` offline.
 
 - One line per claim: `PASS|FAIL|SKIP <id> <claim> (<evidence or reason>; <seconds> s)`. The claim
   is the sentence in [Claims the judge checks](#claims-the-judge-checks), word for word.
@@ -63,7 +63,7 @@ Time each command took on 2026-11-12, from the repository root:
 | Command | Time | Notes |
 | --- | --- | --- |
 | `node near/judge/judge.mjs --offline` | 0.2 to 0.5 s (four runs) | no network |
-| `node near/judge/judge.mjs` | 13.8 s, 16.9 s and 93.4 s (three runs) | 11, 9 and 0 of the 43 claims replayed evidence; the 93.4 s run waited out its HTTP 429 retries instead |
+| `node near/judge/judge.mjs` | 13.8 s, 16.9 s and 93.4 s (three runs) | 11, 9 and 0 of the 43 testnet claims (measured before the 5 mainnet claims were added) replayed evidence; the 93.4 s run waited out its HTTP 429 retries instead |
 | `node near/judge/judge.mjs --verify-evidence` | 132.5 s (one run) | 37 PASS, 6 SKIP: 4 on HTTP 429, and 2 local checks with nothing recorded to verify |
 | `node near/judge/judge.mjs --step full-unit-tests,full-judge-tests,full-sdk-tests` | 36.4 s on a warm build cache (one run) | needs the tools in [Reproduce from source](#reproduce-from-source) |
 | `node near/judge/judge.mjs --full` | not timed end to end | adds the sandbox suite (one local node per test) and the Docker reproducible build; CI's `contracts` job (format, clippy, unit and sandbox tests, negative controls) took 20 minutes |
@@ -205,6 +205,32 @@ The record is [deployments/testnet.json](deployments/testnet.json) (`"status": "
   The judge reads RPC only, and every transaction from archival RPC, which keeps old transactions
   after regular nodes have dropped them.
 
+## Deployed on NEAR mainnet
+
+The same source, built reproducibly in CI (`cargo near build reproducible-wasm` in the pinned
+`sourcescan/cargo-near:0.22.0-rust-1.99.1` image, workflow `.github/workflows/near.yml`, run on the
+tagged commit `f266e4d2`, where the sandbox suite ran against these exact bytes), deployed on
+2026-11-12 by the owner's own wallet. Each contract was created, funded, deployed and initialized in
+one batch with no access key added. The bytes are committed in `deployments/wasm-mainnet/` with the
+CI's `hashes.json`.
+
+| Role | Account | Code hash (base58 of the wasm's sha256) | Deploy transaction |
+| --- | --- | --- | --- |
+| Risk registry | [registry.a-identity.near](https://nearblocks.io/address/registry.a-identity.near) | `FiSTFw7TWdhgL5SUVTb6L6J9uYp9fkSkBcrd4rV8V2jG` (178,383 bytes) | [3dAQFimSz7XSoMhGhGUCFb6MWRFzRKJuAhmoxSVwKyKp](https://nearblocks.io/txns/3dAQFimSz7XSoMhGhGUCFb6MWRFzRKJuAhmoxSVwKyKp), block 224268230 |
+| Spend vault | [vault.a-identity.near](https://nearblocks.io/address/vault.a-identity.near) | `N5JUw1STCok4nmsRvJfHeeAnbYgZrVHLcyfWK8tE8DN` (283,224 bytes) | [EPF293WdqsGgSN1tVpGdz64oiV2SHeuBpEqT1rRv3rJ8](https://nearblocks.io/txns/EPF293WdqsGgSN1tVpGdz64oiV2SHeuBpEqT1rRv3rJ8), block 224268256 |
+| Owner of both | [a-identity.near](https://nearblocks.io/address/a-identity.near) | no contract | signed both batches |
+
+- Policy at init: owner `a-identity.near`, Circle's mainnet USDC
+  (`17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1`), registry
+  `registry.a-identity.near`, 5 USDC daily cap, 2 USDC per payment, unknown payees held.
+- `contract_source_metadata` on both returns version 0.2.0, the repository link at commit
+  `f266e4d2` and `build_info` with the image digest and `source_code_snapshot`, so a NEP-330
+  verifier can rebuild the same bytes.
+- What is not there yet, stated: no agent key, no `oracle.a-identity.near` account (the registry
+  names it as its only oracle, so no verdict can be written until it exists with a function-call
+  key), and no USDC. With no verdicts, the vault would hold every payee for the owner.
+- Check it: `node near/judge/judge.mjs --step mainnet-registry-code,mainnet-vault-code,mainnet-registry-keys,mainnet-vault-keys,mainnet-vault-config`.
+
 ## Claims the judge checks
 
 Every row is one line the judge prints. A claim whose deploy fields are still `null` prints
@@ -232,6 +258,11 @@ Every row is one line the judge prints. A claim whose deploy fields are still `n
 | `vault-config` | The vault's on-chain policy is the one stated: owner aid-demo-owner.testnet, Circle testnet USDC, registry registry.a-identity.testnet, not frozen, unknown payees held, and the daily cap and per-payment ceiling recorded in deployments/testnet.json. | testnet | call_function view |
 | `registry-oracles` | Only oracle.a-identity.testnet may write verdicts: the registry's oracles() is exactly [oracle.a-identity.testnet]. | testnet | call_function view |
 | `registry-owner` | The registry's owner is a-identity.testnet, whose key stays offline. | testnet | call_function view |
+| `mainnet-registry-code` | registry.a-identity.near on NEAR mainnet runs the CI reproducible build: its code_hash is base58(sha256) of deployments/wasm-mainnet/a_identity_registry.wasm. | mainnet | view_account code_hash vs base58(sha256) of the committed wasm |
+| `mainnet-vault-code` | vault.a-identity.near on NEAR mainnet runs the CI reproducible build: its code_hash is base58(sha256) of deployments/wasm-mainnet/agent_spend_policy.wasm. | mainnet | view_account code_hash vs base58(sha256) of the committed wasm |
+| `mainnet-registry-keys` | registry.a-identity.near holds no access key at all, so nobody can redeploy or delete it. | mainnet | view_access_key_list |
+| `mainnet-vault-keys` | vault.a-identity.near holds no full-access key, and no function-call key until its owner adds an agent key with add_agent_key. | mainnet | view_access_key_list |
+| `mainnet-vault-config` | The mainnet vault's policy is owner a-identity.near, Circle's mainnet USDC, registry registry.a-identity.near, not frozen, unknown payees held, a 5 USDC daily cap and a 2 USDC per-payment ceiling. | mainnet | call_function view |
 | `verdict-lookalike` | The registry's verdict for the lookalike aid-demo-merchamt.testnet, read at the block recorded in deployments/testnet.json, is DENY with reason codes, written by the oracle, and its evidence names the snapshot, block and engine it was computed from. | testnet | call_function view |
 | `tx-setup-request` | The merchant's first payment waited for the owner: the agent's request_payment to aid-demo-merchant.testnet emitted payment_held, and no receipt reached the USDC contract. | testnet | EXPERIMENTAL_tx_status, archival RPC |
 | `tx-setup-owner-pay` | The owner approved that first payment once, with one owner_pay (1 yoctoNEAR): payment_sent with by_owner true, and a nep141 ft_transfer moved the USDC from the vault to aid-demo-merchant.testnet. | testnet | EXPERIMENTAL_tx_status, archival RPC |
@@ -599,7 +630,7 @@ tests to turn red (`near/contracts/audit/run-negative-controls.mjs`, claim
 | Oracle watcher (`near/scripts/oracle.ts`, `npm run oracle`) | a script run by A-Identity, not a hosted service. It signs with the oracle's function-call key and writes ALLOW for 24 hours when the engine allows a name that does not imitate a known payee. The recorded demo runs its oracle step in-process in phase c. Running during judging: no, it is not left running as a service; it ran in-process in the recorded demo runs. A judge cannot create a held payment to watch it; `npm run oracle:once -- --dry-run` shows what it would write now |
 | Owner console, `/app/vault/near` | live from main since 2026-11-12; browser only, not checked by the judge |
 | `GET /api/near/check` and NEAR testnet targets in the trust tools | live from main since 2026-11-12; the fourth `curl` in [Do X, see Y](#do-x-see-y) checks the hosted check |
-| Mainnet deployment of a reproducible build of the same source, signed by the owner's own wallet (planned accounts under `a-identity.near`: `registry.`, `oracle.`, `vault.`; `scripts/deploy.ts --network mainnet` prints the commands and signs nothing) | planned, not deployed |
+| Mainnet deployment of the CI reproducible build of the same source, signed by the owner's own wallet | deployed 2026-11-12: `registry.a-identity.near` and `vault.a-identity.near`, no access key on either, NEP-330 `build_info` pointing at commit `f266e4d2` and the pinned sourcescan image (claims `mainnet-*`). No agent key, no oracle account and no USDC on it yet, so no payment has run on mainnet |
 | x402 payments on `near:testnet` | planned, not built |
 | Unknown payees resolved live with yield and resume | planned, not built |
 | Audit | none; unaudited |

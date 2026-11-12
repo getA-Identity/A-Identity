@@ -1,0 +1,14 @@
+[
+  {
+    "file": "agent_spend_policy.wasm",
+    "bytes": 283224,
+    "sha256_hex": "05660f83e525fd4b00e9933f726857a88635bd84ee9885085f3d938a2f6dbf61",
+    "sha256_base58": "N5JUw1STCok4nmsRvJfHeeAnbYgZrVHLcyfWK8tE8DN"
+  },
+  {
+    "file": "a_identity_registry.wasm",
+    "bytes": 178383,
+    "sha256_hex": "daa135a97e35ba271c7d43d4aced2585f11145736ff11ce324453dbefc2067c7",
+    "sha256_base58": "FiSTFw7TWdhgL5SUVTb6L6J9uYp9fkSkBcrd4rV8V2jG"
+  }
+]

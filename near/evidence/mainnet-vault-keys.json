@@ -1,0 +1,85 @@
+{
+  "schema": "a-identity-near-evidence/1",
+  "claim_id": "mainnet-vault-keys",
+  "claim": "vault.a-identity.near holds no full-access key, and no function-call key until its owner adds an agent key with add_agent_key.",
+  "check": "access_keys",
+  "network": "mainnet",
+  "captured_at": "2026-11-12T21:22:40.503Z",
+  "captured_with": {
+    "tool": "judge/capture.mjs",
+    "node": "v24.21.0",
+    "claims_sha256": "c967c7776cf3d81934cb3d43a062ec05724d6cb50cb33985007b41c76ee0dfe6",
+    "deployments_sha256": "ca1e2c26bbaee279e4a58c46233c2703fac6af167d4cf35ea775d80ffb67a538"
+  },
+  "result": {
+    "status": "PASS",
+    "detail": "view_access_key_list at block 224268538: 0 full-access, 0 function-call"
+  },
+  "notes": [
+    "Raw JSON-RPC requests and responses. Views were read at finality \"final\"; block_height and block_hash say which block answered.",
+    "Transactions were read from archival RPC. A 64-byte ed25519 value (a signature) is stored as ed25519-signature-sha256:<sha256 of its bytes>.",
+    "Replay: node judge/judge.mjs --offline. Re-check against the chain: node judge/judge.mjs --verify-evidence."
+  ],
+  "calls": [
+    {
+      "network": "mainnet",
+      "kind": "state",
+      "rpc_url": "https://rpc.mainnet.fastnear.com",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": "judge",
+        "method": "query",
+        "params": {
+          "request_type": "view_access_key_list",
+          "finality": "final",
+          "account_id": "vault.a-identity.near"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "result": {
+          "block_hash": "CsbBxe7sXHN1QeLMavfDo69gZ5DvXpN6kfzaHRSPg2va",
+          "block_height": 224268538,
+          "keys": []
+        },
+        "id": "judge"
+      },
+      "fetched_at": "2026-11-12T21:22:40.207Z",
+      "ms": 86,
+      "block_height": 224268538,
+      "block_hash": "CsbBxe7sXHN1QeLMavfDo69gZ5DvXpN6kfzaHRSPg2va"
+    },
+    {
+      "network": "mainnet",
+      "kind": "archival",
+      "rpc_url": "https://archival-rpc.mainnet.fastnear.com",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": "judge",
+        "method": "query",
+        "params": {
+          "request_type": "view_account",
+          "block_id": "CsbBxe7sXHN1QeLMavfDo69gZ5DvXpN6kfzaHRSPg2va",
+          "account_id": "vault.a-identity.near"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "result": {
+          "amount": "3938750000000000000000000",
+          "block_hash": "CsbBxe7sXHN1QeLMavfDo69gZ5DvXpN6kfzaHRSPg2va",
+          "block_height": 224268538,
+          "code_hash": "N5JUw1STCok4nmsRvJfHeeAnbYgZrVHLcyfWK8tE8DN",
+          "locked": "0",
+          "storage_paid_at": 0,
+          "storage_usage": 283655
+        },
+        "id": "judge"
+      },
+      "fetched_at": "2026-11-12T21:22:40.405Z",
+      "ms": 97,
+      "block_height": 224268538,
+      "block_hash": "CsbBxe7sXHN1QeLMavfDo69gZ5DvXpN6kfzaHRSPg2va"
+    }
+  ]
+}

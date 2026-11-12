@@ -106,6 +106,11 @@ regexes = [
   # generic-api-key rule reads "KEY" beside a high-entropy word as a credential. Added
   # 2026-11-02, the exact name only.
   '''^X402_3009_BUYER_KEY$''',
+  # Circle's native USDC contract on NEAR mainnet, a 64-hex implicit account id published at
+  # developers.circle.com and read from ft_metadata on chain. The generic-api-key rule reads
+  # "token_id" beside 64 hex characters as a credential; it is the public contract the mainnet
+  # vault's get_config returns, quoted in near/judge/claims.json. Added 2026-11-12, exact value only.
+  '''17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1''',
 ]
 
 # The Stellar transaction archive. Each file's decoded section carries `authDigestHex`: the

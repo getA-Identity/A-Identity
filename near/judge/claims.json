@@ -310,6 +310,80 @@
       "evidence": "evidence/registry-owner.json"
     },
     {
+      "id": "mainnet-registry-code",
+      "claim": "registry.a-identity.near on NEAR mainnet runs the CI reproducible build: its code_hash is base58(sha256) of deployments/wasm-mainnet/a_identity_registry.wasm.",
+      "check": "code_hash_matches_committed_wasm",
+      "network": "mainnet",
+      "params": {
+        "account_id": "registry.a-identity.near",
+        "wasm_path": "deployments/wasm-mainnet/a_identity_registry.wasm",
+        "sha256_hex": "daa135a97e35ba271c7d43d4aced2585f11145736ff11ce324453dbefc2067c7",
+        "sha256_base58": "FiSTFw7TWdhgL5SUVTb6L6J9uYp9fkSkBcrd4rV8V2jG",
+        "recorded_code_hash": "FiSTFw7TWdhgL5SUVTb6L6J9uYp9fkSkBcrd4rV8V2jG"
+      },
+      "evidence": "evidence/mainnet-registry-code.json"
+    },
+    {
+      "id": "mainnet-vault-code",
+      "claim": "vault.a-identity.near on NEAR mainnet runs the CI reproducible build: its code_hash is base58(sha256) of deployments/wasm-mainnet/agent_spend_policy.wasm.",
+      "check": "code_hash_matches_committed_wasm",
+      "network": "mainnet",
+      "params": {
+        "account_id": "vault.a-identity.near",
+        "wasm_path": "deployments/wasm-mainnet/agent_spend_policy.wasm",
+        "sha256_hex": "05660f83e525fd4b00e9933f726857a88635bd84ee9885085f3d938a2f6dbf61",
+        "sha256_base58": "N5JUw1STCok4nmsRvJfHeeAnbYgZrVHLcyfWK8tE8DN",
+        "recorded_code_hash": "N5JUw1STCok4nmsRvJfHeeAnbYgZrVHLcyfWK8tE8DN"
+      },
+      "evidence": "evidence/mainnet-vault-code.json"
+    },
+    {
+      "id": "mainnet-registry-keys",
+      "claim": "registry.a-identity.near holds no access key at all, so nobody can redeploy or delete it.",
+      "check": "access_keys",
+      "network": "mainnet",
+      "params": {
+        "account_id": "registry.a-identity.near",
+        "full_access_count": 0,
+        "max_function_call_keys": 0
+      },
+      "evidence": "evidence/mainnet-registry-keys.json"
+    },
+    {
+      "id": "mainnet-vault-keys",
+      "claim": "vault.a-identity.near holds no full-access key, and no function-call key until its owner adds an agent key with add_agent_key.",
+      "check": "access_keys",
+      "network": "mainnet",
+      "params": {
+        "account_id": "vault.a-identity.near",
+        "full_access_count": 0,
+        "max_function_call_keys": 0
+      },
+      "evidence": "evidence/mainnet-vault-keys.json"
+    },
+    {
+      "id": "mainnet-vault-config",
+      "claim": "The mainnet vault's policy is owner a-identity.near, Circle's mainnet USDC, registry registry.a-identity.near, not frozen, unknown payees held, a 5 USDC daily cap and a 2 USDC per-payment ceiling.",
+      "check": "view_equals",
+      "network": "mainnet",
+      "params": {
+        "account_id": "vault.a-identity.near",
+        "method": "get_config",
+        "args": {},
+        "expect": {
+          "owner_id": "a-identity.near",
+          "token_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+          "registry_id": "registry.a-identity.near",
+          "frozen": false,
+          "hold_unknown": true,
+          "allowlist_enabled": false,
+          "daily_cap": "5000000",
+          "auto_approve_max": "2000000"
+        }
+      },
+      "evidence": "evidence/mainnet-vault-config.json"
+    },
+    {
       "id": "verdict-lookalike",
       "claim": "The registry's verdict for the lookalike aid-demo-merchamt.testnet, read at the block recorded in deployments/testnet.json, is DENY with reason codes, written by the oracle, and its evidence names the snapshot, block and engine it was computed from.",
       "check": "view_equals",

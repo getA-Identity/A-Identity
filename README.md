@@ -14,6 +14,8 @@
 > it reads A-Identity's risk registry on chain, refuses a flagged payee and holds a payee nobody has
 > judged until the owner approves it or A-Identity's oracle judges it. Only the NEAR integration
 > built in the window is submitted; A-Identity predates 2026-10-19 and is baseline (rule Q-002).
+> The same source also runs on NEAR mainnet from the CI reproducible build (`registry.a-identity.near`,
+> `vault.a-identity.near`, no access keys; not funded yet).
 > Start at [near/README.md](near/README.md#evaluate-in-2-minutes); check its claims with no keys:
 > `node near/judge/judge.mjs` (or `--offline`); the diff:
 > [pre-hackathon...hackathon-submission](https://github.com/getA-Identity/A-Identity/compare/pre-hackathon...hackathon-submission).

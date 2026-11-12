@@ -1,0 +1,57 @@
+{
+  "schema": "a-identity-near-evidence/1",
+  "claim_id": "mainnet-vault-code",
+  "claim": "vault.a-identity.near on NEAR mainnet runs the CI reproducible build: its code_hash is base58(sha256) of deployments/wasm-mainnet/agent_spend_policy.wasm.",
+  "check": "code_hash_matches_committed_wasm",
+  "network": "mainnet",
+  "captured_at": "2026-11-12T21:22:39.947Z",
+  "captured_with": {
+    "tool": "judge/capture.mjs",
+    "node": "v24.21.0",
+    "claims_sha256": "c967c7776cf3d81934cb3d43a062ec05724d6cb50cb33985007b41c76ee0dfe6",
+    "deployments_sha256": "ca1e2c26bbaee279e4a58c46233c2703fac6af167d4cf35ea775d80ffb67a538"
+  },
+  "result": {
+    "status": "PASS",
+    "detail": "code_hash N5JUw1STCok4nmsRvJfHeeAnbYgZrVHLcyfWK8tE8DN at block 224268538 = base58(sha256(deployments/wasm-mainnet/agent_spend_policy.wasm)), 283224 bytes, sha256 05660f83e525fd4b00e9933f726857a88635bd84ee9885085f3d938a2f6dbf61"
+  },
+  "notes": [
+    "Raw JSON-RPC requests and responses. Views were read at finality \"final\"; block_height and block_hash say which block answered.",
+    "Transactions were read from archival RPC. A 64-byte ed25519 value (a signature) is stored as ed25519-signature-sha256:<sha256 of its bytes>.",
+    "Replay: node judge/judge.mjs --offline. Re-check against the chain: node judge/judge.mjs --verify-evidence."
+  ],
+  "calls": [
+    {
+      "network": "mainnet",
+      "kind": "state",
+      "rpc_url": "https://rpc.mainnet.fastnear.com",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": "judge",
+        "method": "query",
+        "params": {
+          "request_type": "view_account",
+          "finality": "final",
+          "account_id": "vault.a-identity.near"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "result": {
+          "amount": "3938750000000000000000000",
+          "block_hash": "CsbBxe7sXHN1QeLMavfDo69gZ5DvXpN6kfzaHRSPg2va",
+          "block_height": 224268538,
+          "code_hash": "N5JUw1STCok4nmsRvJfHeeAnbYgZrVHLcyfWK8tE8DN",
+          "locked": "0",
+          "storage_paid_at": 0,
+          "storage_usage": 283655
+        },
+        "id": "judge"
+      },
+      "fetched_at": "2026-11-12T21:22:39.861Z",
+      "ms": 86,
+      "block_height": 224268538,
+      "block_hash": "CsbBxe7sXHN1QeLMavfDo69gZ5DvXpN6kfzaHRSPg2va"
+    }
+  ]
+}
