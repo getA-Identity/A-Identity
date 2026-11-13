@@ -1,19 +1,19 @@
 {
   "schema": "a-identity-near-evidence/1",
   "claim_id": "mainnet-vault-keys",
-  "claim": "vault.a-identity.near holds no full-access key, and no function-call key until its owner adds an agent key with add_agent_key.",
+  "claim": "vault.a-identity.near holds no full-access key: its only key is the agent's function-call key for exactly pay, request_payment and record_refusal on the vault, with a finite NEAR allowance.",
   "check": "access_keys",
   "network": "mainnet",
-  "captured_at": "2026-11-12T21:22:40.503Z",
+  "captured_at": "2026-11-12T22:14:45.600Z",
   "captured_with": {
     "tool": "judge/capture.mjs",
     "node": "v24.21.0",
-    "claims_sha256": "c967c7776cf3d81934cb3d43a062ec05724d6cb50cb33985007b41c76ee0dfe6",
+    "claims_sha256": "13d6168b1cff5d5fc4673ba1bf5f86a893cba6db9a63cc9e3a94b104048cf1f8",
     "deployments_sha256": "ca1e2c26bbaee279e4a58c46233c2703fac6af167d4cf35ea775d80ffb67a538"
   },
   "result": {
     "status": "PASS",
-    "detail": "view_access_key_list at block 224268538: 0 full-access, 0 function-call"
+    "detail": "view_access_key_list at block 224274009: 0 full-access, 1 function-call (ed25519:9wHaVjSEfCvugBoRfiDM1RRxqeW8p8UTb1Ls7hoEszdU FunctionCall vault.a-identity.near [pay,request_payment,record_refusal] allowance 0.2475 NEAR)"
   },
   "notes": [
     "Raw JSON-RPC requests and responses. Views were read at finality \"final\"; block_height and block_hash say which block answered.",
@@ -38,48 +38,34 @@
       "response": {
         "jsonrpc": "2.0",
         "result": {
-          "block_hash": "CsbBxe7sXHN1QeLMavfDo69gZ5DvXpN6kfzaHRSPg2va",
-          "block_height": 224268538,
-          "keys": []
+          "block_hash": "DVwqx67vNcvVTFjXwKNRQ2D62mefujWg51iuAhEozZbx",
+          "block_height": 224274009,
+          "keys": [
+            {
+              "access_key": {
+                "nonce": 224272799000004,
+                "permission": {
+                  "FunctionCall": {
+                    "allowance": "247543213813686200000000",
+                    "method_names": [
+                      "pay",
+                      "request_payment",
+                      "record_refusal"
+                    ],
+                    "receiver_id": "vault.a-identity.near"
+                  }
+                }
+              },
+              "public_key": "ed25519:9wHaVjSEfCvugBoRfiDM1RRxqeW8p8UTb1Ls7hoEszdU"
+            }
+          ]
         },
         "id": "judge"
       },
-      "fetched_at": "2026-11-12T21:22:40.207Z",
-      "ms": 86,
-      "block_height": 224268538,
-      "block_hash": "CsbBxe7sXHN1QeLMavfDo69gZ5DvXpN6kfzaHRSPg2va"
-    },
-    {
-      "network": "mainnet",
-      "kind": "archival",
-      "rpc_url": "https://archival-rpc.mainnet.fastnear.com",
-      "request": {
-        "jsonrpc": "2.0",
-        "id": "judge",
-        "method": "query",
-        "params": {
-          "request_type": "view_account",
-          "block_id": "CsbBxe7sXHN1QeLMavfDo69gZ5DvXpN6kfzaHRSPg2va",
-          "account_id": "vault.a-identity.near"
-        }
-      },
-      "response": {
-        "jsonrpc": "2.0",
-        "result": {
-          "amount": "3938750000000000000000000",
-          "block_hash": "CsbBxe7sXHN1QeLMavfDo69gZ5DvXpN6kfzaHRSPg2va",
-          "block_height": 224268538,
-          "code_hash": "N5JUw1STCok4nmsRvJfHeeAnbYgZrVHLcyfWK8tE8DN",
-          "locked": "0",
-          "storage_paid_at": 0,
-          "storage_usage": 283655
-        },
-        "id": "judge"
-      },
-      "fetched_at": "2026-11-12T21:22:40.405Z",
-      "ms": 97,
-      "block_height": 224268538,
-      "block_hash": "CsbBxe7sXHN1QeLMavfDo69gZ5DvXpN6kfzaHRSPg2va"
+      "fetched_at": "2026-11-12T22:14:45.495Z",
+      "ms": 103,
+      "block_height": 224274009,
+      "block_hash": "DVwqx67vNcvVTFjXwKNRQ2D62mefujWg51iuAhEozZbx"
     }
   ]
 }

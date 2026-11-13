@@ -34,8 +34,8 @@ node near/judge/judge.mjs               # online: views from NEAR testnet RPC, e
 node near/judge/judge.mjs --offline     # no network: replays the raw RPC answers committed in near/evidence/
 ```
 
-Expected last lines: `JUDGE: 48 PASS, 0 FAIL, 0 SKIP (mode=online, <seconds> s)` online, and
-`JUDGE: 48 PASS, 0 FAIL, 0 SKIP (mode=offline, <seconds> s)` offline.
+Expected last lines: `JUDGE: 54 PASS, 0 FAIL, 0 SKIP (mode=online, <seconds> s)` online, and
+`JUDGE: 54 PASS, 0 FAIL, 0 SKIP (mode=offline, <seconds> s)` offline.
 
 - One line per claim: `PASS|FAIL|SKIP <id> <claim> (<evidence or reason>; <seconds> s)`. The claim
   is the sentence in [Claims the judge checks](#claims-the-judge-checks), word for word.
@@ -81,8 +81,7 @@ The demo post asks for this. Each of these counts as a break:
 - `node near/judge/judge.mjs` prints FAIL, or a claim passes while its evidence says otherwise.
 
 Ask the hosted check about any NEAR testnet account:
-`curl --max-time 120 "https://a-identity-backend.onrender.com/api/near/check?account=<id>"` (it runs
-on an instance that sleeps when idle, so the first answer can take about a minute). Report a break
+`curl --max-time 120 "https://a-identity-backend.onrender.com/api/near/check?account=<id>"`. Report a break
 as a GitHub issue, or privately as [SECURITY.md](../SECURITY.md) describes.
 
 ## What it does, and what to look for
@@ -214,22 +213,39 @@ tagged commit `f266e4d2`, where the sandbox suite ran against these exact bytes)
 one batch with no access key added. The bytes are committed in `deployments/wasm-mainnet/` with the
 CI's `hashes.json`.
 
-| Role | Account | Code hash (base58 of the wasm's sha256) | Deploy transaction |
+| Role | Account | Code hash or key | Transaction |
 | --- | --- | --- | --- |
-| Risk registry | [registry.a-identity.near](https://nearblocks.io/address/registry.a-identity.near) | `FiSTFw7TWdhgL5SUVTb6L6J9uYp9fkSkBcrd4rV8V2jG` (178,383 bytes) | [3dAQFimSz7XSoMhGhGUCFb6MWRFzRKJuAhmoxSVwKyKp](https://nearblocks.io/txns/3dAQFimSz7XSoMhGhGUCFb6MWRFzRKJuAhmoxSVwKyKp), block 224268230 |
-| Spend vault | [vault.a-identity.near](https://nearblocks.io/address/vault.a-identity.near) | `N5JUw1STCok4nmsRvJfHeeAnbYgZrVHLcyfWK8tE8DN` (283,224 bytes) | [EPF293WdqsGgSN1tVpGdz64oiV2SHeuBpEqT1rRv3rJ8](https://nearblocks.io/txns/EPF293WdqsGgSN1tVpGdz64oiV2SHeuBpEqT1rRv3rJ8), block 224268256 |
-| Owner of both | [a-identity.near](https://nearblocks.io/address/a-identity.near) | no contract | signed both batches |
+| Risk registry | [registry.a-identity.near](https://nearblocks.io/address/registry.a-identity.near) | `FiSTFw7TWdhgL5SUVTb6L6J9uYp9fkSkBcrd4rV8V2jG` (178,383 bytes); no access key | deploy [3dAQFimSz7XSoMhGhGUCFb6MWRFzRKJuAhmoxSVwKyKp](https://nearblocks.io/txns/3dAQFimSz7XSoMhGhGUCFb6MWRFzRKJuAhmoxSVwKyKp) |
+| Spend vault | [vault.a-identity.near](https://nearblocks.io/address/vault.a-identity.near) | `N5JUw1STCok4nmsRvJfHeeAnbYgZrVHLcyfWK8tE8DN` (283,224 bytes); only key: the agent's function-call key `ed25519:9wHaVjSEfCvugBoRfiDM1RRxqeW8p8UTb1Ls7hoEszdU` (pay, request_payment, record_refusal; 0.25 NEAR allowance; expires 2026-12-12) | deploy [EPF293WdqsGgSN1tVpGdz64oiV2SHeuBpEqT1rRv3rJ8](https://nearblocks.io/txns/EPF293WdqsGgSN1tVpGdz64oiV2SHeuBpEqT1rRv3rJ8); agent key [GSHrf1BBq3Ma19qC4xdWThPWM2fZHb7mLgYH5DvbRKnA](https://nearblocks.io/txns/GSHrf1BBq3Ma19qC4xdWThPWM2fZHb7mLgYH5DvbRKnA) |
+| Oracle | [oracle.a-identity.near](https://nearblocks.io/address/oracle.a-identity.near) | no contract; only key: a function-call key on the registry's verdict methods, `ed25519:2eqV2YcQs836yXx8Y9NZ3u9oMh53ymtKFmFZtdBK3Mig`; it never had a full-access key | created with that key in one batch [CD4aMbdiE6TaegZRjHJVEJ7pNZs5JkHomC7wrn4Pojjb](https://nearblocks.io/txns/CD4aMbdiE6TaegZRjHJVEJ7pNZs5JkHomC7wrn4Pojjb) |
+| Owner of all three | [a-identity.near](https://nearblocks.io/address/a-identity.near) | no contract | signed every transaction above |
 
 - Policy at init: owner `a-identity.near`, Circle's mainnet USDC
   (`17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1`), registry
   `registry.a-identity.near`, 5 USDC daily cap, 2 USDC per payment, unknown payees held.
-- `contract_source_metadata` on both returns version 0.2.0, the repository link at commit
+- `contract_source_metadata` on both contracts returns version 0.2.0, the repository link at commit
   `f266e4d2` and `build_info` with the image digest and `source_code_snapshot`, so a NEP-330
   verifier can rebuild the same bytes.
-- What is not there yet, stated: no agent key, no `oracle.a-identity.near` account (the registry
-  names it as its only oracle, so no verdict can be written until it exists with a function-call
-  key), and no USDC. With no verdicts, the vault would hold every payee for the owner.
-- Check it: `node near/judge/judge.mjs --step mainnet-registry-code,mainnet-vault-code,mainnet-registry-keys,mainnet-vault-keys,mainnet-vault-config`.
+
+### The vault refusing and holding on mainnet
+
+`demo/mainnet-run.ts` (log `demo/logs/mainnet/20261112T220918Z-mainnet.txt`) drives the mainnet
+vault with its agent key and the oracle's function-call key. It refuses to start if the vault holds
+any USDC, and the vault holds none, so every outcome is a hold or a refusal and no token can move.
+
+| Step | Transaction | What the chain did |
+| --- | --- | --- |
+| The agent pays `linear-protoco1.near` (one character off LiNEAR's token account; it does not exist) | [AQf6d11pTUjkW7AbWyTuJTdZXyNnRjaWRyQuXMz4UefJ](https://nearblocks.io/txns/AQf6d11pTUjkW7AbWyTuJTdZXyNnRjaWRyQuXMz4UefJ) | held, `unknown_payee`: nobody had judged it |
+| The agent pays `linear_protocol.near` (a cited fake-airdrop account, `scan/dataset.json`) | [HgYUEU7KAx1N2gidU5t4RvUB1XWFtNFjnioTLPiFSref](https://nearblocks.io/txns/HgYUEU7KAx1N2gidU5t4RvUB1XWFtNFjnioTLPiFSref) | held, `unknown_payee` |
+| The oracle judges `linear-protoco1.near` from mainnet data | [H3aeCuM9bsr5Zm4hf6krcaBTPNUUyiXzpjtpdv5kVPRv](https://nearblocks.io/txns/H3aeCuM9bsr5Zm4hf6krcaBTPNUUyiXzpjtpdv5kVPRv) | DENY [account_not_found, lookalike_new_account], snapshot `b246fe6f...c935` |
+| The oracle judges `linear_protocol.near` | [BaG8AY6E516MND2iU1yDLgKNZrjGiHUE1rx4EHheyN3k](https://nearblocks.io/txns/BaG8AY6E516MND2iU1yDLgKNZrjGiHUE1rx4EHheyN3k) | WARN [third_party_flag, lookalike_known]: another team's public registry flags it |
+| The agent pays `linear-protoco1.near` again | [G9q2HkSAnsSv1JL9KZgeRAqBa2v3cT6WDBeMpwTz8qFM](https://nearblocks.io/txns/G9q2HkSAnsSv1JL9KZgeRAqBa2v3cT6WDBeMpwTz8qFM) | refused on chain, `RegistryDeny` |
+| The agent pays `linear_protocol.near` again | [3PkqJJmgmYJSsdwtw6oTK7exPZ3D1jcXarajXMEU4oLh](https://nearblocks.io/txns/3PkqJJmgmYJSsdwtw6oTK7exPZ3D1jcXarajXMEU4oLh) | held for the owner, `registry_warn` |
+
+- Recompute either verdict: `npm run verdict -- --offline demo/logs/mainnet/oracle/snapshots/<sha256>.json`.
+- What is not there, stated: no USDC in the vault, so no payment has been sent on mainnet, and the
+  oracle is not a running service; it ran once in this script.
+- Check it: `node near/judge/judge.mjs --step mainnet-registry-code,mainnet-vault-code,mainnet-registry-keys,mainnet-vault-keys,mainnet-oracle-keys,mainnet-vault-config,mainnet-registry-oracles,mainnet-tx-oracle-deny,mainnet-tx-pay-deny,mainnet-tx-oracle-warn,mainnet-tx-pay-warn-held`.
 
 ## Claims the judge checks
 
@@ -261,8 +277,14 @@ Every row is one line the judge prints. A claim whose deploy fields are still `n
 | `mainnet-registry-code` | registry.a-identity.near on NEAR mainnet runs the CI reproducible build: its code_hash is base58(sha256) of deployments/wasm-mainnet/a_identity_registry.wasm. | mainnet | view_account code_hash vs base58(sha256) of the committed wasm |
 | `mainnet-vault-code` | vault.a-identity.near on NEAR mainnet runs the CI reproducible build: its code_hash is base58(sha256) of deployments/wasm-mainnet/agent_spend_policy.wasm. | mainnet | view_account code_hash vs base58(sha256) of the committed wasm |
 | `mainnet-registry-keys` | registry.a-identity.near holds no access key at all, so nobody can redeploy or delete it. | mainnet | view_access_key_list |
-| `mainnet-vault-keys` | vault.a-identity.near holds no full-access key, and no function-call key until its owner adds an agent key with add_agent_key. | mainnet | view_access_key_list |
+| `mainnet-vault-keys` | vault.a-identity.near holds no full-access key: its only key is the agent's function-call key for exactly pay, request_payment and record_refusal on the vault, with a finite NEAR allowance. | mainnet | view_access_key_list |
 | `mainnet-vault-config` | The mainnet vault's policy is owner a-identity.near, Circle's mainnet USDC, registry registry.a-identity.near, not frozen, unknown payees held, a 5 USDC daily cap and a 2 USDC per-payment ceiling. | mainnet | call_function view |
+| `mainnet-oracle-keys` | oracle.a-identity.near holds no full-access key: it writes verdicts only with a function-call key on registry.a-identity.near limited to set_verdict, set_verdicts, clear_verdict and clear_reports. | mainnet | view_access_key_list |
+| `mainnet-registry-oracles` | Only oracle.a-identity.near may write verdicts on mainnet: the registry's oracles() is exactly [oracle.a-identity.near]. | mainnet | call_function view |
+| `mainnet-tx-oracle-deny` | On mainnet the oracle judged linear-protoco1.near, a name one character off LiNEAR's token that does not exist, DENY from public chain data and wrote it with its function-call key: verdict_set with verdict DENY. | mainnet | EXPERIMENTAL_tx_status on archival RPC |
+| `mainnet-tx-pay-deny` | On mainnet the agent's payment to linear-protoco1.near after the oracle's DENY was refused by the vault contract: payment_refused with reason RegistryDeny and source registry, and no receipt reached the USDC contract. | mainnet | EXPERIMENTAL_tx_status on archival RPC |
+| `mainnet-tx-oracle-warn` | On mainnet the oracle judged linear_protocol.near, a cited fake-airdrop account that another team's public registry flags, WARN and wrote it: verdict_set with verdict WARN. | mainnet | EXPERIMENTAL_tx_status on archival RPC |
+| `mainnet-tx-pay-warn-held` | On mainnet the agent's payment to linear_protocol.near after the oracle's WARN was held by the vault for its owner: payment_held with kind registry_warn, and no receipt reached the USDC contract. | mainnet | EXPERIMENTAL_tx_status on archival RPC |
 | `verdict-lookalike` | The registry's verdict for the lookalike aid-demo-merchamt.testnet, read at the block recorded in deployments/testnet.json, is DENY with reason codes, written by the oracle, and its evidence names the snapshot, block and engine it was computed from. | testnet | call_function view |
 | `tx-setup-request` | The merchant's first payment waited for the owner: the agent's request_payment to aid-demo-merchant.testnet emitted payment_held, and no receipt reached the USDC contract. | testnet | EXPERIMENTAL_tx_status, archival RPC |
 | `tx-setup-owner-pay` | The owner approved that first payment once, with one owner_pay (1 yoctoNEAR): payment_sent with by_owner true, and a nep141 ft_transfer moved the USDC from the vault to aid-demo-merchant.testnet. | testnet | EXPERIMENTAL_tx_status, archival RPC |
@@ -630,7 +652,7 @@ tests to turn red (`near/contracts/audit/run-negative-controls.mjs`, claim
 | Oracle watcher (`near/scripts/oracle.ts`, `npm run oracle`) | a script run by A-Identity, not a hosted service. It signs with the oracle's function-call key and writes ALLOW for 24 hours when the engine allows a name that does not imitate a known payee. The recorded demo runs its oracle step in-process in phase c. Running during judging: no, it is not left running as a service; it ran in-process in the recorded demo runs. A judge cannot create a held payment to watch it; `npm run oracle:once -- --dry-run` shows what it would write now |
 | Owner console, `/app/vault/near` | live from main since 2026-11-12; browser only, not checked by the judge |
 | `GET /api/near/check` and NEAR testnet targets in the trust tools | live from main since 2026-11-12; the fourth `curl` in [Do X, see Y](#do-x-see-y) checks the hosted check |
-| Mainnet deployment of the CI reproducible build of the same source, signed by the owner's own wallet | deployed 2026-11-12: `registry.a-identity.near` and `vault.a-identity.near`, no access key on either, NEP-330 `build_info` pointing at commit `f266e4d2` and the pinned sourcescan image (claims `mainnet-*`). No agent key, no oracle account and no USDC on it yet, so no payment has run on mainnet |
+| Mainnet deployment of the CI reproducible build of the same source, signed by the owner's own wallet | deployed 2026-11-12: `registry.a-identity.near`, `vault.a-identity.near` and `oracle.a-identity.near`, no full-access key on any of them (claims `mainnet-*`). The vault has refused (`RegistryDeny`) and held (`registry_warn`) agent payments on mainnet; it holds no USDC, so no payment has been sent on mainnet |
 | x402 payments on `near:testnet` | planned, not built |
 | Unknown payees resolved live with yield and resume | planned, not built |
 | Audit | none; unaudited |

@@ -351,13 +351,26 @@
     },
     {
       "id": "mainnet-vault-keys",
-      "claim": "vault.a-identity.near holds no full-access key, and no function-call key until its owner adds an agent key with add_agent_key.",
+      "claim": "vault.a-identity.near holds no full-access key: its only key is the agent's function-call key for exactly pay, request_payment and record_refusal on the vault, with a finite NEAR allowance.",
       "check": "access_keys",
       "network": "mainnet",
       "params": {
         "account_id": "vault.a-identity.near",
         "full_access_count": 0,
-        "max_function_call_keys": 0
+        "function_call": {
+          "receiver_id": "vault.a-identity.near",
+          "method_names": [
+            "pay",
+            "request_payment",
+            "record_refusal"
+          ],
+          "allowance": "finite"
+        },
+        "min_function_call_keys": 1,
+        "max_function_call_keys": 5,
+        "must_include": [
+          "ed25519:9wHaVjSEfCvugBoRfiDM1RRxqeW8p8UTb1Ls7hoEszdU"
+        ]
       },
       "evidence": "evidence/mainnet-vault-keys.json"
     },
@@ -382,6 +395,207 @@
         }
       },
       "evidence": "evidence/mainnet-vault-config.json"
+    },
+    {
+      "id": "mainnet-oracle-keys",
+      "claim": "oracle.a-identity.near holds no full-access key: it writes verdicts only with a function-call key on registry.a-identity.near limited to set_verdict, set_verdicts, clear_verdict and clear_reports.",
+      "check": "access_keys",
+      "network": "mainnet",
+      "params": {
+        "account_id": "oracle.a-identity.near",
+        "full_access_count": 0,
+        "function_call": {
+          "receiver_id": "registry.a-identity.near",
+          "method_names": [
+            "set_verdict",
+            "set_verdicts",
+            "clear_verdict",
+            "clear_reports"
+          ]
+        },
+        "min_function_call_keys": 1,
+        "must_include": [
+          "ed25519:2eqV2YcQs836yXx8Y9NZ3u9oMh53ymtKFmFZtdBK3Mig"
+        ]
+      },
+      "evidence": "evidence/mainnet-oracle-keys.json"
+    },
+    {
+      "id": "mainnet-registry-oracles",
+      "claim": "Only oracle.a-identity.near may write verdicts on mainnet: the registry's oracles() is exactly [oracle.a-identity.near].",
+      "check": "view_equals",
+      "network": "mainnet",
+      "params": {
+        "account_id": "registry.a-identity.near",
+        "method": "oracles",
+        "args": {},
+        "expect": [
+          "oracle.a-identity.near"
+        ]
+      },
+      "evidence": "evidence/mainnet-registry-oracles.json"
+    },
+    {
+      "id": "mainnet-tx-oracle-deny",
+      "claim": "On mainnet the oracle judged linear-protoco1.near, a name one character off LiNEAR's token that does not exist, DENY from public chain data and wrote it with its function-call key: verdict_set with verdict DENY.",
+      "check": "tx_outcome",
+      "network": "mainnet",
+      "params": {
+        "tx_hash": "H3aeCuM9bsr5Zm4hf6krcaBTPNUUyiXzpjtpdv5kVPRv",
+        "sender_account_id": "oracle.a-identity.near",
+        "expect": {
+          "signer_id": "oracle.a-identity.near",
+          "public_key": "ed25519:2eqV2YcQs836yXx8Y9NZ3u9oMh53ymtKFmFZtdBK3Mig",
+          "receiver_id": "registry.a-identity.near",
+          "method_name": {
+            "$oneOf": [
+              "set_verdict",
+              "set_verdicts"
+            ]
+          },
+          "status": "success",
+          "no_failed_receipts": true,
+          "events": [
+            {
+              "standard": "a_identity_registry",
+              "event": "verdict_set",
+              "executor_id": "registry.a-identity.near",
+              "data": {
+                "account_id": "linear-protoco1.near",
+                "verdict": "DENY",
+                "by": "oracle.a-identity.near"
+              },
+              "count": 1
+            }
+          ]
+        }
+      },
+      "evidence": "evidence/mainnet-tx-oracle-deny.json"
+    },
+    {
+      "id": "mainnet-tx-pay-deny",
+      "claim": "On mainnet the agent's payment to linear-protoco1.near after the oracle's DENY was refused by the vault contract: payment_refused with reason RegistryDeny and source registry, and no receipt reached the USDC contract.",
+      "check": "tx_outcome",
+      "network": "mainnet",
+      "params": {
+        "tx_hash": "G9q2HkSAnsSv1JL9KZgeRAqBa2v3cT6WDBeMpwTz8qFM",
+        "sender_account_id": "vault.a-identity.near",
+        "expect": {
+          "signer_id": "vault.a-identity.near",
+          "public_key": "ed25519:9wHaVjSEfCvugBoRfiDM1RRxqeW8p8UTb1Ls7hoEszdU",
+          "receiver_id": "vault.a-identity.near",
+          "method_name": "pay",
+          "status": "success",
+          "return": {
+            "status": "refused",
+            "reason": "RegistryDeny"
+          },
+          "no_failed_receipts": true,
+          "events": [
+            {
+              "standard": "a_identity_vault",
+              "event": "payment_refused",
+              "executor_id": "vault.a-identity.near",
+              "data": {
+                "payee": "linear-protoco1.near",
+                "reason": "RegistryDeny",
+                "source": "registry"
+              },
+              "count": 1
+            }
+          ],
+          "absent_events": [
+            {
+              "standard": "a_identity_vault",
+              "event": "payment_sent"
+            }
+          ],
+          "no_receipts_executed_by": [
+            "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1"
+          ]
+        }
+      },
+      "evidence": "evidence/mainnet-tx-pay-deny.json"
+    },
+    {
+      "id": "mainnet-tx-oracle-warn",
+      "claim": "On mainnet the oracle judged linear_protocol.near, a cited fake-airdrop account that another team's public registry flags, WARN and wrote it: verdict_set with verdict WARN.",
+      "check": "tx_outcome",
+      "network": "mainnet",
+      "params": {
+        "tx_hash": "BaG8AY6E516MND2iU1yDLgKNZrjGiHUE1rx4EHheyN3k",
+        "sender_account_id": "oracle.a-identity.near",
+        "expect": {
+          "signer_id": "oracle.a-identity.near",
+          "public_key": "ed25519:2eqV2YcQs836yXx8Y9NZ3u9oMh53ymtKFmFZtdBK3Mig",
+          "receiver_id": "registry.a-identity.near",
+          "method_name": {
+            "$oneOf": [
+              "set_verdict",
+              "set_verdicts"
+            ]
+          },
+          "status": "success",
+          "no_failed_receipts": true,
+          "events": [
+            {
+              "standard": "a_identity_registry",
+              "event": "verdict_set",
+              "executor_id": "registry.a-identity.near",
+              "data": {
+                "account_id": "linear_protocol.near",
+                "verdict": "WARN",
+                "by": "oracle.a-identity.near"
+              },
+              "count": 1
+            }
+          ]
+        }
+      },
+      "evidence": "evidence/mainnet-tx-oracle-warn.json"
+    },
+    {
+      "id": "mainnet-tx-pay-warn-held",
+      "claim": "On mainnet the agent's payment to linear_protocol.near after the oracle's WARN was held by the vault for its owner: payment_held with kind registry_warn, and no receipt reached the USDC contract.",
+      "check": "tx_outcome",
+      "network": "mainnet",
+      "params": {
+        "tx_hash": "3PkqJJmgmYJSsdwtw6oTK7exPZ3D1jcXarajXMEU4oLh",
+        "sender_account_id": "vault.a-identity.near",
+        "expect": {
+          "signer_id": "vault.a-identity.near",
+          "public_key": "ed25519:9wHaVjSEfCvugBoRfiDM1RRxqeW8p8UTb1Ls7hoEszdU",
+          "receiver_id": "vault.a-identity.near",
+          "method_name": "pay",
+          "status": "success",
+          "return": {
+            "status": "held"
+          },
+          "no_failed_receipts": true,
+          "events": [
+            {
+              "standard": "a_identity_vault",
+              "event": "payment_held",
+              "executor_id": "vault.a-identity.near",
+              "data": {
+                "payee": "linear_protocol.near",
+                "kind": "registry_warn"
+              },
+              "count": 1
+            }
+          ],
+          "absent_events": [
+            {
+              "standard": "a_identity_vault",
+              "event": "payment_sent"
+            }
+          ],
+          "no_receipts_executed_by": [
+            "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1"
+          ]
+        }
+      },
+      "evidence": "evidence/mainnet-tx-pay-warn-held.json"
     },
     {
       "id": "verdict-lookalike",
