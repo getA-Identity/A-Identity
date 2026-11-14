@@ -2,7 +2,7 @@
   "schema": "a-identity-near-deployments/1",
   "network": "testnet",
   "status": "deployed",
-  "updated_at": "2026-11-12T18:54:18Z",
+  "updated_at": "2026-11-12T22:46:56Z",
   "notes": [
     "Written by the deploy and demo steps, read by judge/judge.mjs. Every null is something that has not happened yet.",
     "A claim in judge/claims.json that needs a null field is printed as SKIP (pending), never PASS.",
@@ -364,5 +364,35 @@
       }
     },
     "log_note": "demo.log is the attack demo run log demo/logs/<run-id>.json that holds these transactions and the rejections below; commit the run you cite."
+  },
+  "x402": {
+    "description": "x402 exact on near:testnet (mcp/src/near-x402/, GET /api/near/x402/check): the buyer signs a NEP-366 SignedDelegate holding one ft_transfer with 1 yoctoNEAR, A-Identity's relayer puts it on chain, and the answer is served only after the token's own ft_transfer receipt proves the payment. Recorded here: the setup and the one settlement the judge reads.",
+    "network": "near:testnet",
+    "route": "/api/near/x402/check",
+    "pay_to": "a-identity.testnet",
+    "price": {
+      "amount": "10000",
+      "usd": "0.01"
+    },
+    "relayer": {
+      "account_id": "x402-relayer.a-identity.testnet",
+      "public_key": "ed25519:6njRwRtwBdZtsqLaLuB7Uuxt5yT62s6pXT8aMjFSRs8X",
+      "created_tx": "EPtmgPKxKMp5JFojnSCi2s47AUedGrRfNw8bxAVew8rk",
+      "funded_yocto": "2000000000000000000000000",
+      "role": "Pays the gas and the 1 yoctoNEAR of each payment it relays. Created by a-identity.testnet with one full-access key generated for it; the server reads that key from NEAR_X402_RELAYER_KEY, and it is never in this repository."
+    },
+    "pay_to_storage_tx": "CZponfLYL63L7q8QjWbu7Mffr9Lbd7jRTrrcZvTfr9SZ",
+    "buyer": {
+      "account_id": "aid-demo-agent.testnet",
+      "public_key": "ed25519:2CHL4RuYp4a84rh2bVZo6iVZci99SUkQzCpbG3HgVryf",
+      "role": "The buyer of the recorded settlement, with its one full-access key: a function-call key cannot attach the yoctoNEAR an ft_transfer needs. Not the vault's agent, and it signs no vault transaction."
+    },
+    "settlement": {
+      "tx_hash": "72D6D4QcgQndkHrJeckLiv3CyoPcE8xLAAL9ziaBfmtb",
+      "block_height": 277425039,
+      "ft_transfer_receipt": "4kueksoK7w49HXQAjyXFRjhwjpfxGSwMaw6BZxQg9urX",
+      "checked_account": "aid-demo-merchant.testnet",
+      "ran": "2026-11-12 22:32 UTC, near/scripts/x402-buy.ts against a local node mcp/dist/http.js started with only the relayer env, not against the hosted deployment"
+    }
   }
 }

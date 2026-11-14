@@ -1324,6 +1324,47 @@
       "evidence": "evidence/recompute-lookalike.json"
     },
     {
+      "id": "tx-x402-settlement",
+      "claim": "An x402 payment settled on NEAR testnet through A-Identity's own relayer: x402-relayer.a-identity.testnet signed one Delegate action from aid-demo-agent.testnet holding exactly one ft_transfer with 1 yoctoNEAR, and the USDC contract executed a nep141 ft_transfer of exactly 10000 (0.01 USDC) from aid-demo-agent.testnet to a-identity.testnet, with no failed receipt.",
+      "check": "tx_outcome",
+      "network": "testnet",
+      "params": {
+        "tx_hash": "${x402.settlement.tx_hash}",
+        "sender_account_id": "${x402.relayer.account_id}",
+        "expect": {
+          "signer_id": "${x402.relayer.account_id}",
+          "public_key": "${x402.relayer.public_key}",
+          "receiver_id": "${x402.buyer.account_id}",
+          "status": "success",
+          "no_failed_receipts": true,
+          "delegate": {
+            "sender_id": "${x402.buyer.account_id}",
+            "receiver_id": "${token.account_id}",
+            "public_key": "${x402.buyer.public_key}",
+            "action_count": 1,
+            "method_name": "ft_transfer",
+            "deposit": "1",
+            "args": {
+              "receiver_id": "${x402.pay_to}",
+              "amount": "${x402.price.amount}"
+            }
+          },
+          "ft_transfers": [
+            {
+              "token_id": "${token.account_id}",
+              "from": "${x402.buyer.account_id}",
+              "to": "${x402.pay_to}",
+              "amount": "${x402.price.amount}",
+              "present": true,
+              "symbol": "USDC",
+              "decimals": 6
+            }
+          ]
+        }
+      },
+      "evidence": "evidence/tx-x402-settlement.json"
+    },
+    {
       "id": "no-secrets",
       "claim": "No NEAR secret key, private_key field or PEM private key is committed under near/.",
       "check": "repo_secret_scan",

@@ -3,9 +3,11 @@ import assert from 'node:assert/strict'
 import {
   NEAR_EMPTY_CODE_HASH,
   NearRpcUnreachable,
+  nearFinalBlock,
   nearRpc,
   nearRpcUrls,
   nearStatus,
+  nearViewAccessKey,
   nearViewAccount,
   nearViewFunction,
 } from './client.js'
@@ -230,4 +232,38 @@ test('the proof live check reads NEAR by its own protocol: status, then view_acc
   assert.match(down.reachable ? '' : down.reason, /no NEAR RPC host answered/)
   const mainnet = await nearLiveCheck(NEAR, { contracts }, {}, 'now', stub(() => status('mainnet')).deps)
   assert.equal(mainnet.reachable, false)
+})
+
+test('the final block gives the height a delegate window is measured from and a 32-byte hash, and an answer without both is an error, never a guess', async () => {
+  const hash = '9ZsGBhopmq9KH88uEGXfDqVE6NCiK2aaGhNnYPwdvmjo'
+  const s = stub(() => ok({ header: { height: 277421928, hash } }))
+  assert.deepEqual(await nearFinalBlock(NEAR, {}, s.deps), { height: 277421928, hash, host: PRIMARY })
+  assert.deepEqual(s.calls.map((c) => [c.method, c.params]), [['block', { finality: 'final' }]])
+  await assert.rejects(nearFinalBlock(NEAR, {}, stub(() => ok({ header: { height: 277421928 } })).deps), /no final height or hash/)
+  await assert.rejects(nearFinalBlock(NEAR, {}, stub(() => ok({ header: { height: 0, hash } })).deps), /no final height or hash/)
+})
+
+test('view_access_key reads a key\'s nonce and permission at final, and a missing key or account is a decided absence', async () => {
+  const PK = 'ed25519:2CHL4RuYp4a84rh2bVZo6iVZci99SUkQzCpbG3HgVryf'
+  const full = stub(() => ok({ block_hash: 'x', block_height: 277421928, nonce: 277284573000001, permission: 'FullAccess' }))
+  assert.deepEqual(await nearViewAccessKey(NEAR, 'aid-demo-agent.testnet', PK, {}, full.deps), {
+    exists: true,
+    nonce: 277284573000001n,
+    permission: 'FullAccess',
+    blockHeight: 277421928,
+    host: PRIMARY,
+  })
+  assert.deepEqual(full.calls[0].params, { request_type: 'view_access_key', finality: 'final', account_id: 'aid-demo-agent.testnet', public_key: PK })
+  const fc = stub(() => ok({ nonce: 5, permission: { FunctionCall: { allowance: '1', receiver_id: 'v.testnet', method_names: ['pay'] } }, block_height: 1 }))
+  assert.equal((await nearViewAccessKey(NEAR, 'v.testnet', PK, {}, fc.deps)).exists && 'FunctionCall', 'FunctionCall')
+  // Current nearcore says "does not exist" inside the result (read live 2026-11-12 UTC): decided, one request.
+  const missing = stub(() => ok({ block_hash: 'x', block_height: 1, error: `access key ${PK} does not exist while viewing`, logs: [] }))
+  assert.deepEqual(await nearViewAccessKey(NEAR, 'aid-demo-agent.testnet', PK, {}, missing.deps), { exists: false, host: PRIMARY })
+  assert.equal(missing.calls.length, 1)
+  for (const cause of ['UNKNOWN_ACCESS_KEY', 'UNKNOWN_ACCOUNT']) {
+    const s = stub(() => handlerError(cause))
+    assert.deepEqual(await nearViewAccessKey(NEAR, 'gone.testnet', PK, {}, s.deps), { exists: false, host: PRIMARY })
+    assert.equal(s.calls.length, 1, `${cause} was asked of another host`)
+  }
+  await assert.rejects(nearViewAccessKey(NEAR, 'aid-demo-agent.testnet', 'not-a-key', {}, full.deps), /not a NEAR public key/)
 })

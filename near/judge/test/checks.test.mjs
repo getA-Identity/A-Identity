@@ -302,6 +302,88 @@ test('tx_outcome (synthetic): a refusal that still touched the token, a wrong ke
   assert.match(early.detail, /not FINAL/);
 });
 
+// ------------------------------------------------------------------ tx_outcome (synthetic relayed x402 payment)
+
+const X402 = { relayer: 'x402-relayer.a-identity.testnet', payer: 'aid-demo-agent.testnet', payTo: 'a-identity.testnet' };
+
+/** SYNTHETIC: a relayed (NEP-366) x402 payment as EXPERIMENTAL_tx_status returns one: the relayer
+ *  signs, the payer receives, the only action is the payer's Delegate holding one ft_transfer. */
+function syntheticRelayed({ amount = '10000', deposit = '1', method = 'ft_transfer', outerExtra = [], innerExtra = [], tokenStatus = { SuccessValue: '' }, salt = '' } = {}) {
+  const base = syntheticPay({ payee: IDS.merchant, outcome: 'sent', verdict: 'ALLOW', salt: `x402-${amount}-${deposit}-${method}-${outerExtra.length}-${innerExtra.length}-${JSON.stringify(tokenStatus)}-${salt}` });
+  const r = base.result;
+  const call = { FunctionCall: { method_name: method, args: Buffer.from(JSON.stringify({ receiver_id: X402.payTo, amount })).toString('base64'), gas: 30000000000000, deposit } };
+  r.status = { SuccessValue: '' };
+  r.transaction = {
+    ...r.transaction,
+    signer_id: X402.relayer,
+    public_key: 'ed25519:6njRwRtwBdZtsqLaLuB7Uuxt5yT62s6pXT8aMjFSRs8X',
+    receiver_id: X402.payer,
+    actions: [
+      {
+        Delegate: {
+          delegate_action: {
+            sender_id: X402.payer,
+            receiver_id: IDS.usdc,
+            actions: [call, ...innerExtra],
+            nonce: 277284573000002,
+            max_block_height: 277425147,
+            public_key: 'ed25519:2CHL4RuYp4a84rh2bVZo6iVZci99SUkQzCpbG3HgVryf',
+          },
+          signature: 'ed25519-signature-sha256:00',
+        },
+      },
+      ...outerExtra,
+    ],
+  };
+  r.transaction_outcome.outcome.executor_id = X402.relayer;
+  const event = `EVENT_JSON:${JSON.stringify({ standard: 'nep141', version: '1.0.0', event: 'ft_transfer', data: [{ old_owner_id: X402.payer, new_owner_id: X402.payTo, amount }] })}`;
+  r.receipts_outcome = [
+    { id: 'D1', block_hash: base.block_hash, outcome: { executor_id: X402.payer, logs: [], receipt_ids: [], status: { SuccessValue: '' } } },
+    // nearcore keeps a failed call's logs, so the event line is there whatever the status.
+    { id: 'T1', block_hash: base.block_hash, outcome: { executor_id: IDS.usdc, logs: [event], receipt_ids: [], status: tokenStatus } },
+    { id: 'R1', block_hash: base.block_hash, outcome: { executor_id: X402.relayer, logs: [], receipt_ids: [], status: { SuccessValue: '' } } },
+  ];
+  return base;
+}
+
+const relayedClaim = (delegate = {}) => ({
+  signer_id: X402.relayer,
+  receiver_id: X402.payer,
+  status: 'success',
+  no_failed_receipts: true,
+  delegate: { sender_id: X402.payer, receiver_id: IDS.usdc, action_count: 1, method_name: 'ft_transfer', deposit: '1', args: { receiver_id: X402.payTo, amount: '10000' }, ...delegate },
+  ft_transfers: [{ token_id: IDS.usdc, from: X402.payer, to: X402.payTo, amount: '10000', present: true, symbol: 'USDC', decimals: 6 }],
+});
+
+test('tx_outcome (synthetic): a relayed x402 payment passes as one Delegate holding one ft_transfer, and every other shape FAILS', async () => {
+  const good = syntheticRelayed();
+  const paid = await run('tx_outcome', { tx_hash: good.tx_hash, sender_account_id: X402.relayer, expect: relayedClaim() }, syntheticTxCalls(good, X402.relayer));
+  assert.equal(paid.status, 'PASS', paid.detail);
+  assert.match(paid.detail, /x402-relayer\.a-identity\.testnet signed a Delegate from aid-demo-agent\.testnet \(ft_transfer on 3e2210e1\.\.\.cb8af\) on aid-demo-agent\.testnet/);
+  assert.match(paid.detail, /ft_transfer 0\.01 USDC from aid-demo-agent\.testnet to a-identity\.testnet executed by 3e2210e1/);
+  assert.deepEqual(paid.observed.delegate.actions, [{ type: 'FunctionCall', method_name: 'ft_transfer', args: { receiver_id: X402.payTo, amount: '10000' }, deposit: '1', gas: '30000000000000' }]);
+
+  const cases = [
+    ['one unit short', syntheticRelayed({ amount: '9999' }), relayedClaim(), /delegated arguments/],
+    ['no yoctoNEAR', syntheticRelayed({ deposit: '0' }), relayedClaim(), /attaches 0 yoctoNEAR, the claim says 1/],
+    ['ft_transfer_call', syntheticRelayed({ method: 'ft_transfer_call' }), relayedClaim(), /the delegate calls ft_transfer_call, the claim says ft_transfer/],
+    ['a second outer action', syntheticRelayed({ outerExtra: [{ Transfer: { deposit: '1' } }] }), relayedClaim(), /carries 2 action\(s\), the claim says exactly one Delegate/],
+    ['a second delegated action', syntheticRelayed({ innerExtra: [{ Transfer: { deposit: '1' } }] }), relayedClaim(), /the delegate holds 2 action\(s\), the claim says 1/],
+    ['the token receipt failed, its event logged anyway', syntheticRelayed({ tokenStatus: { Failure: { ActionError: { index: 0 } } } }), relayedClaim(), /receipt\(s\) failed.*no successful nep141 ft_transfer/],
+    ['someone else signed the delegate', syntheticRelayed(), relayedClaim({ sender_id: 'other.testnet' }), /delegate sender_id aid-demo-agent\.testnet/],
+  ];
+  for (const [name, tx, claim, why] of cases) {
+    const result = await run('tx_outcome', { tx_hash: tx.tx_hash, sender_account_id: X402.relayer, expect: claim }, syntheticTxCalls(tx, X402.relayer));
+    assert.equal(result.status, 'FAIL', `${name}: ${result.detail}`);
+    assert.match(result.detail, why, name);
+  }
+  // A plain function call is not a relayed payment.
+  const direct = syntheticPay({ payee: IDS.merchant, outcome: 'sent', verdict: 'ALLOW', salt: 'direct' });
+  const notRelayed = await run('tx_outcome', { tx_hash: direct.tx_hash, sender_account_id: IDS.vault, expect: { delegate: { sender_id: X402.payer } } }, syntheticTxCalls(direct));
+  assert.equal(notRelayed.status, 'FAIL');
+  assert.match(notRelayed.detail, /carries 1 action\(s\) and no Delegate/);
+});
+
 // ------------------------------------------------------------------ protocol_rejection
 
 const signed = fixture('near-api-js-signed.json');

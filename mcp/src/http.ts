@@ -40,6 +40,7 @@ import { handleX402AlgorandRoutes } from './http/x402-algorand-routes.js'
 import { handleAlgorandCheckRoutes } from './http/algorand-check-routes.js'
 import { handleEvmPayCheckRoutes } from './http/evm-pay-check-routes.js'
 import { handleNearCheckRoutes } from './http/near-check-routes.js'
+import { handleNearX402Routes } from './http/near-x402-routes.js'
 import { handleX402GatewayRoutes, requestOrigin } from './http/x402-gateway-routes.js'
 import { handleVerifyThenPayRoutes, verifyThenPayMcpHooks } from './http/verify-then-pay-routes.js'
 import { handleCctpRoutes } from './http/cctp-routes.js'
@@ -250,6 +251,9 @@ const server = http.createServer(async (req, res) => {
     if (await handleEvmPayCheckRoutes(ctx)) return
     // The free NEAR testnet verdict: one GET under its own prefix, the same engine as the NEAR SDK.
     if (await handleNearCheckRoutes(ctx)) return
+    // The same verdict sold over x402 exact on near:testnet: one GET, 503 with no challenge until
+    // its relayer is configured (near-x402/).
+    if (await handleNearX402Routes(ctx)) return
     // verify-then-pay sits under the Gateway rail's prefix, so it is asked first; it answers
     // only its own three paths.
     if (await handleVerifyThenPayRoutes(ctx)) return
@@ -406,6 +410,7 @@ server.listen(PORT, () => {
   console.error(`  GET  /api/facilitator/proof      settlements, with the proven signing domain`)
   console.error(`  GET  /api/x402/tools/:name       price + calling contract; POST to pay and call`)
   console.error(`  GET  /api/near/check?account=   A-Identity's verdict on a NEAR testnet account, the NEAR SDK's engine, block-pinned (free, read-only)`)
+  console.error(`  GET  /api/near/x402/check?account=   the same verdict, paid over x402 exact on near:testnet in Circle test USDC (503 until the relayer is configured)`)
   console.error(`  GET  /api/x402/stellar/status    the Soroban rail: config, broadcaster, readiness`)
   console.error(`  GET  /api/x402/stellar/proof     Stellar settlements, with who broadcast each one`)
   console.error(`  GET  /api/x402/stellar/facilitator/supported   what this facilitator settles on Stellar`)

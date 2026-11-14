@@ -14,8 +14,9 @@ export const VTP_BUDGET = { bucket: 'vtp', max: 30, windowMs: 60_000 } as const
 export const VTP_RECEIPT_BUDGET = { bucket: 'vtp-receipt', max: 30, windowMs: 60_000 } as const
 
 /** The NEAR testnet verdict's bucket, named once: GET /api/near/check is charged to it, and so is
- *  every free trust tool call on a NEAR testnet account (freeToolTargetBudget), because both can
- *  start the same block-pinned collection. One per-IP NEAR budget, whichever door a call uses. */
+ *  every free trust tool call on a NEAR testnet account (freeToolTargetBudget) and the paid
+ *  GET /api/near/x402/check, because all three can start the same block-pinned collection. One
+ *  per-IP NEAR budget, whichever door a call uses. */
 export const NEAR_CHECK_BUDGET = { bucket: 'near-check', max: 20, windowMs: 60_000 } as const
 
 /** Per-path rate budget, or null when the path isn't limited. */
@@ -32,8 +33,12 @@ export function rateBudget(method: string, pathname: string): { bucket: string; 
   // JSON-RPC reads (archival ones among them) and two indexer queries against public hosts we do
   // not own. The 60 s answer per account and vault absorbs repeats, and at most four collections
   // run at once server-wide (near-check/check.ts); this bounds one client walking through names.
-  // The free trust_preview on a NEAR target is charged to the same bucket (freeToolTargetBudget).
-  if (method === 'GET' && pathname === '/api/near/check') return { ...NEAR_CHECK_BUDGET }
+  // The free trust_preview on a NEAR target is charged to the same bucket (freeToolTargetBudget),
+  // and so is the paid copy of the check, GET /api/near/x402/check (near-x402/): a paid call runs
+  // the same collection, and its unpaid 402 round trip costs a token too, so one client has one
+  // NEAR budget whichever door it uses. That also bounds what a payer whose payment fails after
+  // verify can cost the relayer in gas.
+  if (method === 'GET' && (pathname === '/api/near/check' || pathname === '/api/near/x402/check')) return { ...NEAR_CHECK_BUDGET }
   // The console's live vault panel. Open on purpose (a vault's limits are public ledger state)
   // and it accepts ANY contract id, so each uncached read is a ledger-entry read plus a dozen
   // simulations against a public RPC we do not own. Sized for a panel that refreshes every

@@ -34,8 +34,10 @@ node near/judge/judge.mjs               # online: views from NEAR testnet RPC, e
 node near/judge/judge.mjs --offline     # no network: replays the raw RPC answers committed in near/evidence/
 ```
 
-Expected last lines: `JUDGE: 54 PASS, 0 FAIL, 0 SKIP (mode=online, <seconds> s)` online, and
-`JUDGE: 54 PASS, 0 FAIL, 0 SKIP (mode=offline, <seconds> s)` offline.
+Expected last lines at `hackathon-submission`: `JUDGE: 54 PASS, 0 FAIL, 0 SKIP (mode=online, <seconds> s)`
+online, and `JUDGE: 54 PASS, 0 FAIL, 0 SKIP (mode=offline, <seconds> s)` offline. On `main`, which
+adds one claim after the submitted tag (`tx-x402-settlement`, an x402 payment settled on NEAR
+testnet), both runs end `JUDGE: 55 PASS, 0 FAIL, 0 SKIP`.
 
 - One line per claim: `PASS|FAIL|SKIP <id> <claim> (<evidence or reason>; <seconds> s)`. The claim
   is the sentence in [Claims the judge checks](#claims-the-judge-checks), word for word.
@@ -147,8 +149,14 @@ Hackathon rules Q-001 to Q-005. The window runs from 2026-10-19 to 2026-11-14 23
 | `.gitleaks.toml` | a CI rule that catches NEAR ed25519 secret keys |
 | generated, not written by hand | `prerendered/` (the site snapshot), `src/lib/chains.ts`, `mcp/src/chains/near/sdk.generated/` (a copy of `near/sdk/src`) |
 
+Built in the window but added to `main` after the `hackathon-submission` tag, so not part of the
+submitted state: x402 exact on `near:testnet` (`mcp/src/near-x402/`, `mcp/src/http/near-x402-routes.ts`),
+its buyer `near/scripts/x402-buy.ts`, the `x402` block of `deployments/testnet.json`, the claim
+`tx-x402-settlement` with `evidence/tx-x402-settlement.json`, and the at-age replay of the benchmark
+(`near/scan/benchmark/at-age/`).
+
 Baseline, not submitted and not judged: everything else in this repository, including
-A-Identity's engine, its MCP server, its x402 rails, `trust-guard` and the vaults on Arc, Stellar
+A-Identity's engine, its MCP server, its x402 rails on other chains, `trust-guard` and the vaults on Arc, Stellar
 and Algorand. Two pre-hackathon designs of our own are reused: the vault's gate order and the
 meaning of a zero limit come from the AgentSpendPolicy vault
 ([Solidity](../mcp/contracts/AgentSpendPolicy.sol),
@@ -173,7 +181,7 @@ The record is [deployments/testnet.json](deployments/testnet.json) (`"status": "
 | Payee: a new vendor | [aid-demo-printshop.testnet](https://testnet.nearblocks.io/address/aid-demo-printshop.testnet) | nobody had judged or paid it |
 | Payees of the two later runs (not judged) | [aid-demo-rnerchant.testnet](https://testnet.nearblocks.io/address/aid-demo-rnerchant.testnet), [aid-demo-merchent.testnet](https://testnet.nearblocks.io/address/aid-demo-merchent.testnet), [aid-demo-copyshop.testnet](https://testnet.nearblocks.io/address/aid-demo-copyshop.testnet) | the lookalikes of the run with a model and of the attempt before it, both received 0 USDC; the new vendor of the run with a model, paid 0.75 USDC after the owner's approval |
 | Not a payee | [aid-demo-attacker.testnet](https://testnet.nearblocks.io/address/aid-demo-attacker.testnet) | created during setup; never a demo role or payee (a payee named "attacker" proves nothing about a classifier). Its one transaction created `aid-demo-rnerchant.testnet`, the lookalike of the run with a model, with 1 NEAR (`4SKBCnLzDch9nzcJeCreekLb3TfyjkJiEThTh4pPT9zi`); no verdict reads who created or funded an account |
-| Not the agent | [aid-demo-agent.testnet](https://testnet.nearblocks.io/address/aid-demo-agent.testnet) | predates this vault design; one full-access key; signs no demo transaction |
+| Not the agent | [aid-demo-agent.testnet](https://testnet.nearblocks.io/address/aid-demo-agent.testnet) | predates this vault design; one full-access key; signs no demo transaction; on main it is the buyer of the recorded x402 settlement (claim `tx-x402-settlement`), signing one Delegate with its full-access key, never a vault call |
 
 - The agent's key on the vault: `ed25519:AyrM3caas16rWjMky2fPdQKPgQptdRrHRvPJaP7YFbeA`, receiver
   `vault.aid-demo-owner.testnet`, methods `pay`, `request_payment`, `record_refusal`, allowance
@@ -306,6 +314,7 @@ Every row is one line the judge prints. A claim whose deploy fields are still `n
 | `reject-add-key` | The agent key cannot give itself more power: the protocol rejected adding a full-access key to the vault account (RequiresFullAccess), before execution. | testnet | signed bytes in the demo log + view_access_key at that block |
 | `reject-send-near` | The agent key cannot move the vault's NEAR: the protocol rejected a 1 yoctoNEAR transfer out of the vault (RequiresFullAccess), before execution. | testnet | signed bytes in the demo log + view_access_key at that block |
 | `recompute-lookalike` | Anyone can recompute the lookalike's verdict: the SDK's offline verdict on the snapshot the oracle saved gives the registry's DENY at the recorded block, with the same reasons and evidence string, and every block-pinned chain read in that snapshot is what archival RPC returns. | testnet | SDK offline verdict + archival re-read of the snapshot |
+| `tx-x402-settlement` | An x402 payment settled on NEAR testnet through A-Identity's own relayer: x402-relayer.a-identity.testnet signed one Delegate action from aid-demo-agent.testnet holding exactly one ft_transfer with 1 yoctoNEAR, and the USDC contract executed a nep141 ft_transfer of exactly 10000 (0.01 USDC) from aid-demo-agent.testnet to a-identity.testnet, with no failed receipt. | testnet | EXPERIMENTAL_tx_status, archival RPC; on main only, added after `hackathon-submission` |
 | `no-secrets` | No NEAR secret key, private_key field or PEM private key is committed under near/. | repo | files git tracks under near/ |
 | `built-in-window` | Everything under near/ was committed inside the hackathon window (2026-10-19 to 2026-11-14 UTC), and nothing under near/ exists at the pre-hackathon tag. | repo | git log and the pre-hackathon tag |
 | `full-unit-tests` | The registry and vault unit tests pass: cargo test -p a-identity-registry -p agent-spend-policy --locked. | build | --full: a time-boxed test or build command |
@@ -316,11 +325,18 @@ Every row is one line the judge prints. A claim whose deploy fields are still `n
 | `full-judge-tests` | The judge's own tests pass: node --test judge/test/. | build | --full: a time-boxed test or build command |
 | `full-negative-controls` | Every vault guard is load-bearing: contracts/audit/run-negative-controls.mjs deletes each guard in a temporary copy and the tests turn red. | build | --full: a time-boxed test or build command |
 
-Two rows to read with care:
+Three rows to read with care:
 
 - `registry-owner`: the judge checks only that `owner()` returns `a-identity.testnet`. That its
   key stays offline is not checked by anything, and that key did sign the registry's deploy batch
-  on 2026-11-12 (`5F38SuVmnzrAjWjVwAmheVzyU1PZ2Sb2pSzW4JcgqumL`).
+  on 2026-11-12 (`5F38SuVmnzrAjWjVwAmheVzyU1PZ2Sb2pSzW4JcgqumL`) and, for the x402 rail on main,
+  two setup transactions the same day: USDC storage for `a-identity.testnet`
+  (`CZponfLYL63L7q8QjWbu7Mffr9Lbd7jRTrrcZvTfr9SZ`) and the creation of
+  `x402-relayer.a-identity.testnet` (`EPtmgPKxKMp5JFojnSCi2s47AUedGrRfNw8bxAVew8rk`).
+- `tx-x402-settlement` (main only): the judge checks the relayed transaction and the token's
+  transfer on chain. That it answered an HTTP 402 from A-Identity's server is not on chain and is
+  not checked; the recorded run was `near/scripts/x402-buy.ts` against a local `mcp/dist/http.js`,
+  not the hosted deployment (`x402.settlement.ran` in `deployments/testnet.json`).
 - `full-wasm-vault`, `full-wasm-registry`: they need `build.reproducible_command` in
   `deployments/testnet.json`, which is `null` for this deploy (a host build, see
   [Deployed on NEAR testnet](#deployed-on-near-testnet)), so they print `SKIP pending` and cannot
@@ -491,9 +507,10 @@ From [scan/benchmark/RESULTS.md](scan/benchmark/RESULTS.md), "Summary for quotin
 > that list. All 24 misses are older than 30 days with 5 or more transactions at the block, and
 > 19 of the 26 suspicious rows named in a report were named within 15 days of
 > their creation (for the 4 deleted ones, of a surviving account of the same exploit):
-> this benchmark observes them months to years after the incident, not at payment time. The engine
-> was not given the labels (`labels_used: false`); its known list is the top 25 NEP-141 tokens
-> by on-chain market cap on NearBlocks, 15 of which are also `known_good` rows.
+> this benchmark observes them months to years after the incident, not at payment time.
+> Replayed instead at each account's own age (pre-registered in `at-age/PREREGISTRATION.md`: the first block 1 day and 7 days after its creation block, with the 4 deleted worker accounts, gone by then, counted as misses), strict precision and recall are 100.0% (2 of 2) and 6.7% (2 of 30) at 1 day and n/a (no DENY issued) and 0.0% (0 of 30) at 7 days, and cautious precision and recall are 36.1% (26 of 72) and 86.7% (26 of 30) at 1 day, where every account that exists is held as new whatever its class, and 26.8% (11 of 41) and 36.7% (11 of 30) at 7 days. The engine was not given the labels (`labels_used: false`); its known list is the
+> top 25 NEP-141 tokens by on-chain market cap on NearBlocks, 15 of which are
+> also `known_good` rows.
 
 What it means for the design:
 
@@ -626,7 +643,9 @@ tests to turn red (`near/contracts/audit/run-negative-controls.mjs`, claim
   build; a reproducible build records its image digest there.
 - NEP-366 relayed actions: refused on purpose. The protocol does not charge a function-call key's
   allowance for a delegate action someone else relays, so the vault accepts an agent call only
-  when the vault account itself signed the transaction (`NotAgent` otherwise).
+  when the vault account itself signed the transaction (`NotAgent` otherwise). The x402 rail on
+  main uses NEP-366 the other way round: the buyer signs a SignedDelegate holding one ft_transfer and
+  A-Identity's relayer submits it (claim `tx-x402-settlement`).
 - Sub-accounts: deploy and `new` go in one batch from the parent or from the account itself, and
   `new` refuses any other caller (`InitNotAllowed`), so a deploy without its init cannot be
   claimed by a stranger.
@@ -653,7 +672,7 @@ tests to turn red (`near/contracts/audit/run-negative-controls.mjs`, claim
 | Owner console, `/app/vault/near` | live from main since 2026-11-12; browser only, not checked by the judge |
 | `GET /api/near/check` and NEAR testnet targets in the trust tools | live from main since 2026-11-12; the fourth `curl` in [Do X, see Y](#do-x-see-y) checks the hosted check |
 | Mainnet deployment of the CI reproducible build of the same source, signed by the owner's own wallet | deployed 2026-11-12: `registry.a-identity.near`, `vault.a-identity.near` and `oracle.a-identity.near`, no full-access key on any of them (claims `mainnet-*`). The vault has refused (`RegistryDeny`) and held (`registry_warn`) agent payments on mainnet; it holds no USDC, so no payment has been sent on mainnet |
-| x402 payments on `near:testnet` | planned, not built |
+| x402 payments on `near:testnet` | planned, not built, at `hackathon-submission`. On `main`, added after that tag and not part of the submitted state: `GET /api/near/x402/check` (`mcp/src/near-x402/`) answers 503 `rail off` with no challenge until `NEAR_X402_RELAYER_ACCOUNT` and `NEAR_X402_RELAYER_KEY` are set on the server; one settlement on testnet on 2026-11-12 22:32 UTC, made by `near/scripts/x402-buy.ts` against a local server, not the hosted deployment (claim `tx-x402-settlement`) |
 | Unknown payees resolved live with yield and resume | planned, not built |
 | Audit | none; unaudited |
 

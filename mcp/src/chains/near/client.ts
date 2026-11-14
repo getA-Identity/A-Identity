@@ -2,10 +2,12 @@
  * The NEAR side of the chain layer: JSON-RPC READS against the descriptor's hosts, and
  * nothing that signs or sends.
  *
- * Three reads, because they are what anything here needs today: `status` (which network a
- * host is on, and how far it has got), `view_account` (does an account exist, and does it
- * carry contract code) and a `call_function` view (a contract's read-only method, such as a
- * NEP-141 token's ft_metadata). Plain fetch, no SDK: NEAR's JSON-RPC is small enough that a
+ * The reads anything here needs today: `status` (which network a host is on, and how far it
+ * has got), `view_account` (does an account exist, and does it carry contract code), a
+ * `call_function` view (a contract's read-only method, such as a NEP-141 token's ft_metadata),
+ * and, for the NEAR x402 rail (near-x402/), the final `block` (the height a delegate's window
+ * is measured from, and the hash a transaction references) and `view_access_key` (a key's
+ * nonce and permission). Plain fetch, no SDK: NEAR's JSON-RPC is small enough that a
  * dependency would be most of the code, and this file has to stay testable with a stub.
  *
  * The discipline is chains/stellar/client.ts's, applied to a different protocol:
@@ -37,7 +39,7 @@
 import type { ChainDescriptor } from '../types.js'
 import { parseCaip2 } from '../caip.js'
 import { resolveRpcUrls } from '../evm/client.js'
-import { isNearAccountId } from './ids.js'
+import { isNearAccountId, isNearTxHash } from './ids.js'
 
 /** The seams the unit tests use. Production passes nothing and gets the global fetch. */
 export type NearReadDeps = {
@@ -66,6 +68,10 @@ const DECIDED_CAUSES = new Set([
   'PARSE_ERROR',
   'NO_CONTRACT_CODE',
   'CONTRACT_EXECUTION_ERROR',
+  // A key the account does not hold. Current nearcore answers that inside the result instead
+  // (an `error` string, read live 2026-11-12 UTC, see nearViewAccessKey), so this covers the
+  // HANDLER_ERROR form of the same answer.
+  'UNKNOWN_ACCESS_KEY',
 ])
 
 /** The code_hash of an account with no contract: base58 of 32 zero bytes. */
@@ -281,4 +287,71 @@ export async function nearViewFunction(
     throw new Error(`${contractId}.${methodName} returned bytes that are not JSON`)
   }
   return { ok: true, value, logs: Array.isArray(r.logs) ? r.logs.map(String) : [], blockHeight: Number(r.block_height ?? 0), host: answer.host }
+}
+
+/** A final block: the height a delegate action's window is measured from (x402 exact on NEAR
+ *  measures it at FINAL), and the hash a new transaction references. */
+export type NearFinalBlock = { height: number; hash: string; host: string }
+
+/** `block` at final finality. A host that answers with no height or no 32-byte hash fails over. */
+export async function nearFinalBlock(chain: ChainDescriptor, env: NodeJS.ProcessEnv = process.env, deps: NearReadDeps = {}): Promise<NearFinalBlock> {
+  const answer = await nearRpc<{ header?: { height?: number; hash?: string } }>(chain, 'block', { finality: 'final' }, env, deps)
+  if (answer.kind === 'decided') throw new Error(`${answer.host} refused block: ${answer.cause}`)
+  const height = Number(answer.result?.header?.height)
+  const hash = String(answer.result?.header?.hash ?? '')
+  // A block hash is a 32-byte CryptoHash in base58, the same shape as a transaction hash.
+  if (!Number.isSafeInteger(height) || height <= 0 || !isNearTxHash(hash)) throw new Error(`${answer.host} answered block with no final height or hash`)
+  return { height, hash, host: answer.host }
+}
+
+/** What a key may do, as view_access_key reports it. Anything that is neither a full-access key
+ *  nor a plain function-call key is Unknown, so a caller can fail closed on a kind it has never seen. */
+export type NearKeyPermission = 'FullAccess' | 'FunctionCall' | 'Unknown'
+
+export type NearAccessKeyView =
+  | { exists: true; nonce: bigint; permission: NearKeyPermission; blockHeight: number; host: string }
+  | { exists: false; host: string }
+
+const NEAR_PUBLIC_KEY_RE = /^(ed25519|secp256k1):[1-9A-HJ-NP-Za-km-z]{32,90}$/
+
+/**
+ * `view_access_key` at final finality: one key's nonce and permission. A key the account does not
+ * hold, or an account that does not exist, is a decided `exists: false`. Current nearcore says the
+ * first inside the result, as an `error` string ("access key ... does not exist while viewing",
+ * read live on rpc.testnet.fastnear.com and near-testnet.drpc.org on 2026-11-12 UTC), not as an RPC
+ * error, so both forms are read.
+ */
+export async function nearViewAccessKey(
+  chain: ChainDescriptor,
+  accountId: string,
+  publicKey: string,
+  env: NodeJS.ProcessEnv = process.env,
+  deps: NearReadDeps = {},
+): Promise<NearAccessKeyView> {
+  if (!isNearAccountId(accountId)) throw new Error(`"${accountId}" is not a NEAR account id`)
+  if (!NEAR_PUBLIC_KEY_RE.test(publicKey)) throw new Error('not a NEAR public key (ed25519:<base58> or secp256k1:<base58>)')
+  const answer = await nearRpc<{ nonce?: number | string; permission?: unknown; block_height?: number; error?: string }>(
+    chain,
+    'query',
+    { request_type: 'view_access_key', finality: 'final', account_id: accountId, public_key: publicKey },
+    env,
+    deps,
+  )
+  if (answer.kind === 'decided') {
+    if (answer.cause === 'UNKNOWN_ACCOUNT' || answer.cause === 'UNKNOWN_ACCESS_KEY') return { exists: false, host: answer.host }
+    throw new Error(`${answer.host} refused view_access_key on ${accountId}: ${answer.cause}`)
+  }
+  const r = answer.result ?? {}
+  if (typeof r.error === 'string') {
+    if (/does not exist/i.test(r.error)) return { exists: false, host: answer.host }
+    throw new Error(`${answer.host} answered view_access_key on ${accountId} with an error: ${r.error}`)
+  }
+  const rawNonce = r.nonce
+  if ((typeof rawNonce !== 'number' && typeof rawNonce !== 'string') || !/^\d+$/.test(String(rawNonce))) {
+    throw new Error(`${answer.host} answered view_access_key on ${accountId} with no nonce`)
+  }
+  const p = r.permission
+  const permission: NearKeyPermission =
+    p === 'FullAccess' ? 'FullAccess' : p && typeof p === 'object' && 'FunctionCall' in (p as Record<string, unknown>) ? 'FunctionCall' : 'Unknown'
+  return { exists: true, nonce: BigInt(String(rawNonce)), permission, blockHeight: Number(r.block_height ?? 0), host: answer.host }
 }

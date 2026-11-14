@@ -305,7 +305,11 @@ export interface ChainDescriptor {
   settlementTokens?: SettlementToken[]
   /** Dollars an issuer documents on this chain that our rail does NOT settle in. The pay check
    *  recognizes them as real instead of calling them "another token", and names them when a
-   *  lookalike copies them. Nothing settles in them, so they never enter a 402 challenge. */
+   *  lookalike copies them. Nothing settles in them, so they never enter a 402 challenge, with
+   *  one exception, stated rather than implied: the NEAR testnet x402 rail (near-x402/, off
+   *  unless its relayer is configured) settles in Circle's testnet USDC on near:testnet and
+   *  reads its account from here, so the registry stays the one place that address is written.
+   *  It is a NEP-141 token relayed as a NEP-366 delegate, not a SettlementToken kind. */
   documentedTokens?: DocumentedToken[]
 
   /**

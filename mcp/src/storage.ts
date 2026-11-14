@@ -180,7 +180,9 @@ export async function flushStateDurably(
 // Two rails share this one table, and they never collide because their keys live in
 // disjoint namespaces by construction: the Arc rail writes a 66-character tx hash
 // (0x + 64 hex), while the EIP-3009 rail writes a structured key that starts with its
-// CAIP-2 chain id ("eip155:4663/erc20:0x.../3009/0x.../0x..."). Namespacing was chosen
+// CAIP-2 chain id ("eip155:4663/erc20:0x.../3009/0x.../0x..."). The NEAR x402 rail writes the
+// same way under its own CAIP-2 id ("near:testnet/nep141:<token>/nep366/<payer>/<key hex>/<nonce>",
+// near-x402/rail.ts nearPaymentKey), already lower case. Namespacing was chosen
 // over adding a `network` column deliberately: this table gates replay protection, and a
 // schema migration on it is the one failure mode we cannot accept, since a half-applied
 // migration fails OPEN. See x402-3009/engine.ts paymentKey().

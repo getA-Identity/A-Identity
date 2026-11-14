@@ -234,6 +234,37 @@ function eventMatches(event, want) {
   return true;
 }
 
+/** The first Delegate action (NEP-366) of a transaction view, if any. */
+function firstDelegate(transaction) {
+  for (const action of transaction?.actions ?? []) {
+    if (action && typeof action === 'object' && action.Delegate) return action.Delegate;
+  }
+  return null;
+}
+
+/** What a Delegate carries, for the report: no signature, the decoded arguments of each call. */
+function delegateSummary(delegate) {
+  const da = delegate.delegate_action ?? {};
+  return {
+    sender_id: da.sender_id ?? null,
+    receiver_id: da.receiver_id ?? null,
+    public_key: da.public_key ?? null,
+    nonce: da.nonce ?? null,
+    max_block_height: da.max_block_height ?? null,
+    actions: (da.actions ?? []).map((a) => {
+      const fnCall = a?.FunctionCall;
+      if (!fnCall) return { type: Object.keys(a ?? {})[0] ?? 'unknown' };
+      let args = null;
+      try {
+        args = JSON.parse(Buffer.from(String(fnCall.args ?? ''), 'base64').toString('utf8'));
+      } catch {
+        args = String(fnCall.args ?? '');
+      }
+      return { type: 'FunctionCall', method_name: fnCall.method_name, args, deposit: String(fnCall.deposit), gas: String(fnCall.gas) };
+    }),
+  };
+}
+
 function describeEvent(event) {
   const data = event.data && typeof event.data === 'object' ? event.data : {};
   // `kind` is what a vault 0.2.0 hold says the vault saw; a held request's `reason` is the agent's own text.
@@ -272,6 +303,41 @@ async function txOutcome(p, ctx) {
     if (want[field] === undefined) continue;
     const mismatch = match(header[field], want[field]);
     if (mismatch.length) problems.push(`${field} ${short(header[field], 60)}, expected ${mismatch[0].expected}`);
+  }
+
+  // A relayed (NEP-366) transaction: the outer one is signed by a relayer and its ONLY action is the
+  // sender's Delegate, whose own actions are what the sender signed. `delegate` claims that shape:
+  // exactly one action and it is a Delegate, its sender and receiver, how many actions it holds,
+  // and its first action's method, deposit and (subset-matched) JSON arguments.
+  const delegate = firstDelegate(tx);
+  if (want.delegate) {
+    const wantD = want.delegate;
+    const count = Array.isArray(tx.actions) ? tx.actions.length : 0;
+    if (count !== 1 || !delegate) {
+      problems.push(`the transaction carries ${count} action(s)${delegate ? '' : ' and no Delegate'}, the claim says exactly one Delegate`);
+    } else {
+      const da = delegate.delegate_action ?? {};
+      for (const field of ['sender_id', 'receiver_id', 'public_key']) {
+        if (wantD[field] === undefined) continue;
+        const mismatch = match(da[field], wantD[field]);
+        if (mismatch.length) problems.push(`delegate ${field} ${short(da[field], 60)}, expected ${mismatch[0].expected}`);
+      }
+      const inner = Array.isArray(da.actions) ? da.actions : [];
+      if (wantD.action_count !== undefined && inner.length !== wantD.action_count) problems.push(`the delegate holds ${inner.length} action(s), the claim says ${wantD.action_count}`);
+      const fnCall = inner[0]?.FunctionCall;
+      if (wantD.method_name !== undefined && fnCall?.method_name !== wantD.method_name) problems.push(`the delegate calls ${fnCall?.method_name ?? 'no method'}, the claim says ${wantD.method_name}`);
+      if (wantD.deposit !== undefined && String(fnCall?.deposit) !== String(wantD.deposit)) problems.push(`the delegated call attaches ${String(fnCall?.deposit)} yoctoNEAR, the claim says ${wantD.deposit}`);
+      if (wantD.args !== undefined) {
+        let args;
+        try {
+          args = JSON.parse(Buffer.from(String(fnCall?.args ?? ''), 'base64').toString('utf8'));
+        } catch {
+          args = undefined;
+        }
+        const mismatches = match(args, wantD.args);
+        if (mismatches.length) problems.push(`delegated arguments ${describeMismatches(mismatches)}`);
+      }
+    }
   }
 
   const status = statusKind(r.status);
@@ -342,10 +408,16 @@ async function txOutcome(p, ctx) {
     public_key: tx.public_key,
     receiver_id: tx.receiver_id,
     method_name: fn?.method_name ?? null,
+    ...(delegate ? { delegate: delegateSummary(delegate) } : {}),
     return_value: decodeSuccessValue(r.status) ?? null,
     events: events.filter((e) => !e.malformed).map(({ standard, event, data, executor_id, success }) => ({ standard, event, executor_id, success, data })),
   };
-  const head = `tx ${p.tx_hash} ${r.final_execution_status}${included}: ${tx.signer_id} signed ${fn?.method_name ?? 'a non-call action'} on ${shortId(tx.receiver_id)}`;
+  const signed = fn?.method_name
+    ? fn.method_name
+    : delegate
+      ? `a Delegate from ${delegate.delegate_action?.sender_id} (${(delegate.delegate_action?.actions ?? []).map((a) => a?.FunctionCall?.method_name ?? Object.keys(a ?? {})[0]).join(', ')} on ${shortId(delegate.delegate_action?.receiver_id)})`
+      : 'a non-call action';
+  const head = `tx ${p.tx_hash} ${r.final_execution_status}${included}: ${tx.signer_id} signed ${signed} on ${shortId(tx.receiver_id)}`;
   if (problems.length) return FAIL(`${head}; ${problems.join('; ')}`, { observed, urls });
   const tail = [seen.length ? `events ${seen.join(', ')}` : '', ...moved].filter(Boolean).join('; ');
   return PASS(`${head}${tail ? `; ${tail}` : ''}`, { observed, urls });
