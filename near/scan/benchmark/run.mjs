@@ -256,7 +256,7 @@ export function snapshotFile(accountId) {
   return path.join(PATHS.snapshots, `${accountId}.json`);
 }
 
-function blockUtc(timestampNs) {
+export function blockUtc(timestampNs) {
   return new Date(Number(BigInt(timestampNs) / 1_000_000n)).toISOString();
 }
 
@@ -280,7 +280,7 @@ export async function loadSdk() {
 // ---------------------------------------------------------------------------------------------
 // Verdict files, derived from the saved snapshots only.
 
-const SIGNALS = [
+export const SIGNALS = [
   "account_state",
   "access_keys",
   "age_archival_probes",
@@ -291,7 +291,7 @@ const SIGNALS = [
   "erc8004",
   "lookalike_fixed_brands",
 ];
-const SIGNALS_OFF = {
+export const SIGNALS_OFF = {
   third_party_registries:
     "off (--no-third-party): MimicWatch's 2026-11-01 scan is the source of the three researcher_dataset suspicious rows, so its registry would leak labels; Tripwire, near-leash and Leash commons list testnet demo accounts",
   a_identity_registry: "off (--registry none): no A-Identity registry is deployed on mainnet, and none holding verdicts written from this dataset may be read",
@@ -299,7 +299,7 @@ const SIGNALS_OFF = {
   known_from_labels: "off: the known list is known-brands.json (top 25 NEP-141 tokens by on-chain market cap on NearBlocks), not the known_good rows",
 };
 
-function decidingCodes(decision) {
+export function decidingCodes(decision) {
   return [...new Set(decision.reasons.filter((r) => (r.severity === "deny" || r.severity === "warn") && !r.cleared_by).map((r) => r.code))];
 }
 
@@ -553,12 +553,14 @@ export function createPacer({ hosts = HOSTS, fetchImpl = globalThis.fetch, now =
  * One reader and one indexer client for the whole run, so pacing holds across accounts. Reads of
  * a block by height are memoized: a final block never changes, and with one pinned block every
  * account's probe search reads the same blocks. A decided answer (a skipped height) is kept too;
- * a read no endpoint answered is not.
+ * a read no endpoint answered is not. `rpc` replaces the SDK's regular hosts: the at-age replay
+ * (at-age/run.mjs) passes [] so that reads pinned to blocks months old go straight to the SDK's
+ * archival hosts, the only ones that keep them. It changes no recorded request or answer.
  */
-export function createSharedClients(sdk, pacer, env = process.env) {
+export function createSharedClients(sdk, pacer, env = process.env, { rpc } = {}) {
   const headersFor = sdk.rpc.headersFromEnv(env);
   const base = sdk.rpc.createReader({
-    rpc: sdk.networks.mainnet.rpc,
+    rpc: rpc ?? sdk.networks.mainnet.rpc,
     archival: sdk.networks.mainnet.archival,
     fetch: pacer.fetch,
     paceMs: 0,
@@ -590,7 +592,7 @@ export function createSharedClients(sdk, pacer, env = process.env) {
 }
 
 /** Per-account views of the shared clients, so each snapshot's meta lists its own endpoints. */
-function accountClients(shared) {
+export function accountClients(shared) {
   const used = new Set();
   const reader = {
     async call(method, params, opts) {

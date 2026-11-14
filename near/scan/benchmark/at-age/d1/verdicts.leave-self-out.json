@@ -1,0 +1,1028 @@
+{
+  "engine": "a-identity-near-engine/1.1.0 (policy near-default/1; collector a-identity-near-sdk/0.2.0); block: the first block at or after the account's creation + 1 day",
+  "signals": [
+    "account_state",
+    "access_keys",
+    "age_archival_probes",
+    "key_and_code_changes",
+    "activity_fastnear",
+    "nearblocks_fallback",
+    "usdc_blocklist",
+    "erc8004",
+    "lookalike_fixed_brands_minus_self"
+  ],
+  "signals_off": {
+    "third_party_registries": "off (--no-third-party): MimicWatch's 2026-11-01 scan is the source of the three researcher_dataset suspicious rows, so its registry would leak labels; Tripwire, near-leash and Leash commons list testnet demo accounts",
+    "a_identity_registry": "off (--registry none): no A-Identity registry is deployed on mainnet, and none holding verdicts written from this dataset may be read",
+    "vault": "off (no --vault): no prior payments, refusals or owner allowlist",
+    "known_from_labels": "off: the known list is known-brands.json (top 25 NEP-141 tokens by on-chain market cap on NearBlocks), not the known_good rows",
+    "known_payee_exemption": "off: a replay of verdicts.json in which every payee is compared with known-brands.json minus its own name (no network; the chain data is identical, so chain_sha256 is shared), computed exactly as ../verdicts.leave-self-out.json is"
+  },
+  "labels_used": false,
+  "derived_from": "verdicts.json",
+  "at_age": {
+    "days": 1,
+    "rule": "each account pinned to the first block at or after its own creation block's timestamp + days * 86400 s; the creation block is proven from the chain (plan.json)",
+    "preregistration": {
+      "file": "PREREGISTRATION.md",
+      "written_utc": "2026-11-12T16:01:04Z",
+      "bytes": 8297,
+      "sha256": "0e9dccfc1e8553b8ccdce51844a76fa09d48606755816dc3db59b1c786325af4"
+    },
+    "plan": "plan.json"
+  },
+  "run": {
+    "network": "mainnet",
+    "accounts": 72,
+    "excluded": 4,
+    "own_name_on_list": 15
+  },
+  "excluded": [
+    {
+      "account_id": "5a7695e3626aeae7c0d340b6e58f813c71455d1be490eeb44e90bd9682343040",
+      "reason": "absent_at_replay_block",
+      "detail": "view_account at the replay block #194368235 (2026-04-17T08:23:14.721Z) answered UNKNOWN_ACCOUNT; created #194226543 (2026-04-16T08:23:14.648Z); NearBlocks dates its deletion 2026-04-16T09:54:44.246Z"
+    },
+    {
+      "account_id": "839810a1aef8ed1adb03e795b2a9785d783d4e2f415ab80c8b6fb30483e160f2",
+      "reason": "absent_at_replay_block",
+      "detail": "view_account at the replay block #194368244 (2026-04-17T08:23:20.059Z) answered UNKNOWN_ACCOUNT; created #194226551 (2026-04-16T08:23:19.507Z); NearBlocks dates its deletion 2026-04-16T09:54:53.673Z"
+    },
+    {
+      "account_id": "9053223460198e5e1e54dc15c18295ff0e98dca41ecd6c3872da1ff634d99616",
+      "reason": "absent_at_replay_block",
+      "detail": "view_account at the replay block #194368249 (2026-04-17T08:23:22.909Z) answered UNKNOWN_ACCOUNT; created #194226556 (2026-04-16T08:23:22.553Z); NearBlocks dates its deletion 2026-04-16T09:54:59.161Z"
+    },
+    {
+      "account_id": "d4e8e706f5a59610d85924af858f0562031930d14eb7add9a433edea50cf0b03",
+      "reason": "absent_at_replay_block",
+      "detail": "view_account at the replay block #194368239 (2026-04-17T08:23:17.098Z) answered UNKNOWN_ACCOUNT; created #194226547 (2026-04-16T08:23:17.060Z); NearBlocks dates its deletion 2026-04-16T09:54:48.619Z"
+    }
+  ],
+  "verdicts": [
+    {
+      "account_id": "087184b14c3cad5de72090c4a48816d46e53f39454df13b957e14350793b18e7",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 400,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "ca874f2bba55a8b1dd35bf8d52f7017e120e8f8b051cb4128a446b22ecf97193"
+    },
+    {
+      "account_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+      "own_name_on_list": true,
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account"
+      ],
+      "lookalike": null,
+      "chain_sha256": "2ef400a2be10817e921900db9655a8e1ae988f125711b335c74a4b0ba8add4cd"
+    },
+    {
+      "account_id": "31ac7a2705a0686ff427b1a52d3ffd1fcfaa4b1f3cb3e83a0f767494e724a540",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account"
+      ],
+      "lookalike": null,
+      "chain_sha256": "289f354bdd913b60252948a1e72250c0c75975e153f3a5b9931c3cd873167784"
+    },
+    {
+      "account_id": "3be304b2151870b2be88b9de0b80acab921337ad152584138bd852fc6e9ae018",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 440,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account",
+        "low_activity"
+      ],
+      "lookalike": null,
+      "chain_sha256": "1ffc055188aa9be1a6b2c925ddf173a14192d93069a092cff5183df0335e5626"
+    },
+    {
+      "account_id": "5ebc5ecca14a44175464d0e6a7d3b2a6890229cd5f19cfb29ce8b1651fd58d39",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 400,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "8a78cafa34df37546044bd7868ebdf5456707f749cc29500eb53e86f664fe06c"
+    },
+    {
+      "account_id": "72633832db9d039b97906320169a8411bc2fa0f78303a4ecb1d35de71af621c5",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account"
+      ],
+      "lookalike": null,
+      "chain_sha256": "fa80d0476c8fd65827a6a038f709f9944b28887cd5be07d01a2e005151402a4e"
+    },
+    {
+      "account_id": "7d06ad005e03aa875875481fb6a2bd1acf9e722100ab8747e4e97801ba340640",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account"
+      ],
+      "lookalike": null,
+      "chain_sha256": "67f4eb654b59e1c4ce040fbbff4a60d4941379a6f7a395e20974d99168654246"
+    },
+    {
+      "account_id": "80f357d92e67f0ea53f299bb16d3af363ba0ef66e0211091edc2181cd323a705",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account"
+      ],
+      "lookalike": null,
+      "chain_sha256": "9a1f1003b02819c4fb1f47f06de91ceb3c03ab96c48a1a45f00b96759350c9b5"
+    },
+    {
+      "account_id": "9c0df321dd5d9fc1138a09f405f523333fffe74de2ee10932ff756e27ae930ee",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account"
+      ],
+      "lookalike": null,
+      "chain_sha256": "5b48f91a96dd28f07a7c3b2c03599f262c2ccffae1a0d09fd8e0716dfcc6b6c2"
+    },
+    {
+      "account_id": "9c2a08cf1d06716bb03c662ed67096ea92cedacf058d50e1dea60ff442cf6180",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 400,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "ac50103b20ad1ab63106e3564821e493c03b3feff72735615b4096684b09181a"
+    },
+    {
+      "account_id": "9ebef819489ae5e6641cc5573740dadc751c35c3ae37c110e4fad8101494e418",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 320,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "low_activity",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "49a603275e9bf76a294323cb41874a5936ba4884b8d596cfc76f8744b5fd3b78"
+    },
+    {
+      "account_id": "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.factory.bridge.near",
+      "own_name_on_list": true,
+      "verdict": "WARN",
+      "score": 320,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "low_activity",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "bb4a4795ecbc34d151f1eb31910d641989a6e7a90c40f0e9dd77de9dac7f4b27"
+    },
+    {
+      "account_id": "aaaaaa20d9e0e2461697782ef11675f668207961.factory.bridge.near",
+      "own_name_on_list": true,
+      "verdict": "WARN",
+      "score": 320,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "low_activity",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "9e2b8cb02b08bb3d84bfcecc4b2553d1c4dbfa8bcd3e9b87658e0795e0333d8b"
+    },
+    {
+      "account_id": "asset-manager.orderly-network.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 400,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "267bb5242dccf7452ce2af48f9b0eb9ed214cdb22a83c18c1f28b26e9ba29803"
+    },
+    {
+      "account_id": "aurora",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 320,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "low_activity",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "6eea3c40de76f16d646b9e77b3b69a0100d672a257e219bf6c62b8a1a2ac9e4d"
+    },
+    {
+      "account_id": "bigbank101.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 400,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "9df01ae9b2524d2ba99a93c61b5479fb041afa2c4a7c2dab236f5f149e23a43a"
+    },
+    {
+      "account_id": "blackdragon.tkn.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account"
+      ],
+      "lookalike": null,
+      "chain_sha256": "83419535b4c2e1a7b1c7080bd5690637fd456ab71efebd4a8ee71bd8b12d1b95"
+    },
+    {
+      "account_id": "boostfarm.ref-labs.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 400,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "976b76f9772aaf7f7ebc15279c1c75be1c4afa0189a643bdeed41bd619afd158"
+    },
+    {
+      "account_id": "burrowfinancedao.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account"
+      ],
+      "lookalike": null,
+      "chain_sha256": "529f721768324b05cb1d7ebc899a7f58d5edb7a5e1d90ad5af6d1ec028d27669"
+    },
+    {
+      "account_id": "c122aad2a188ed3abec0517f99c4dd03591d19e6bfcf7f015424351fbdd71163",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account"
+      ],
+      "lookalike": null,
+      "chain_sha256": "bb7fb65cc38477a4bc9a89e86359e340d11e4a4a00a9fc23d46ba42ebce878a5"
+    },
+    {
+      "account_id": "contract.main.burrow.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 400,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "9c896228992c3aecf325c6c107de8557176eb075323e37d356b03f24f53594ab"
+    },
+    {
+      "account_id": "d39fd6da5eda882fe5f6716212552356cde2613054c670ffd6b49b3b25aef473",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account"
+      ],
+      "lookalike": null,
+      "chain_sha256": "313d56e11bbdc3a828fc71cfb8739d422ce255b40e5015764197a5dd058713d6"
+    },
+    {
+      "account_id": "dac17f958d2ee523a2206206994597c13d831ec7.factory.bridge.near",
+      "own_name_on_list": true,
+      "verdict": "WARN",
+      "score": 320,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "low_activity",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "f6e99304159489d0323a4a7eae1521a0532414bf8e77df4c86900ae06f98888e"
+    },
+    {
+      "account_id": "dclv2.ref-labs.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account"
+      ],
+      "lookalike": null,
+      "chain_sha256": "ecd3d08fda9009fb599df5a5082bc9122f52a298c6804f2195a8e4ee7a821acd"
+    },
+    {
+      "account_id": "dolbabob.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 400,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "315f069b76372451b4c6591265acd7b290c8c58f50bc9dfa599e1dd657a2e7ca"
+    },
+    {
+      "account_id": "donate.potlock.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account"
+      ],
+      "lookalike": null,
+      "chain_sha256": "2680ccd969dc8fe1a93187d66acfbc6b5354bc9ca19ed011a4962176c556c14e"
+    },
+    {
+      "account_id": "dragoneggsmeme.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account"
+      ],
+      "lookalike": null,
+      "chain_sha256": "6f8fe689202a7657ba5ce7b057393e6ef8057527bf1a1c990ea5ef540489cbf8"
+    },
+    {
+      "account_id": "eth.bridge.near",
+      "own_name_on_list": true,
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account"
+      ],
+      "lookalike": null,
+      "chain_sha256": "e80b788c28429f49c9127931b269634c5c8f75d479a25c6d8898842d8d54ea04"
+    },
+    {
+      "account_id": "factory.bridge.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 400,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "9efe3dd893fe31ff7c323c6b7069032a942a1f9bce77090318874d92774d7c6b"
+    },
+    {
+      "account_id": "ftv2.nekotoken.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 400,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "a7485803aa61284e4095871a255f9b8edb98151ecaf60dd3cd91b0a1945a4a0c"
+    },
+    {
+      "account_id": "gregoshes.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 400,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "a6a7880770853122989b9c21b426249ed50f06cb77a4c2bc19b0055423d6661c"
+    },
+    {
+      "account_id": "intents.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 440,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account",
+        "low_activity"
+      ],
+      "lookalike": null,
+      "chain_sha256": "1194f915f721aafb09024b920e3f8d5082f71a353136424bef17539bc388e968"
+    },
+    {
+      "account_id": "linear-protocol.near",
+      "own_name_on_list": true,
+      "verdict": "WARN",
+      "score": 320,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "low_activity",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "985cf03d21c196c6a5f4d5cc34b50a3ea19afad4049a158e3c51747b9cab8299"
+    },
+    {
+      "account_id": "linear_protocol.near",
+      "own_name_on_list": false,
+      "verdict": "DENY",
+      "score": 120,
+      "warn_kind": null,
+      "deciding": [
+        "lookalike_new_account",
+        "new_account"
+      ],
+      "lookalike": {
+        "known": "linear-protocol.near",
+        "kind": "homoglyph",
+        "strong": true
+      },
+      "chain_sha256": "7e5d1ebe8957b6e10aa4b0f71a7ba34ebbc5b28fd50914ca52901a060c43d508"
+    },
+    {
+      "account_id": "lonkrewards.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account"
+      ],
+      "lookalike": null,
+      "chain_sha256": "eddc161f2547e02b200676510d636a9f65a60c4d790479d2e88250a3b7ccee55"
+    },
+    {
+      "account_id": "lst.rhealab.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account"
+      ],
+      "lookalike": null,
+      "chain_sha256": "057df2aa2c562bb0136465104c49fb10de5a04714b427193afe8dd075e2727b0"
+    },
+    {
+      "account_id": "meme-cooking.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 440,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account",
+        "low_activity"
+      ],
+      "lookalike": null,
+      "chain_sha256": "88267f45db11e3117859f4c663aa780fa7b54a2342743716b6b6f1d086a25446"
+    },
+    {
+      "account_id": "meta-pool.near",
+      "own_name_on_list": true,
+      "verdict": "WARN",
+      "score": 400,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "dcce940558e3d63961cd18a601f6107451525f809965932b9c2e657e63a6b821"
+    },
+    {
+      "account_id": "metapools.near",
+      "own_name_on_list": false,
+      "verdict": "DENY",
+      "score": 120,
+      "warn_kind": null,
+      "deciding": [
+        "lookalike_new_account",
+        "new_account"
+      ],
+      "lookalike": {
+        "known": "meta-pool.near",
+        "kind": "edit_distance",
+        "strong": true
+      },
+      "chain_sha256": "66ad5a88a77a46ecdf6321fcbe8b7255d1bf61cf529b60658360ba53e2c99da1"
+    },
+    {
+      "account_id": "mpc.hot.tg",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account"
+      ],
+      "lookalike": null,
+      "chain_sha256": "0e4be5e031fd963eda324681f049299f3513d31ae59f1721b0e85d4e5a74806e"
+    },
+    {
+      "account_id": "mpdao-token.near",
+      "own_name_on_list": true,
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account"
+      ],
+      "lookalike": null,
+      "chain_sha256": "0c12274151b8b9ffe2a7940db861dad894b293de5247d552f97d7730b8ce13bb"
+    },
+    {
+      "account_id": "nbtc.bridge.near",
+      "own_name_on_list": true,
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account"
+      ],
+      "lookalike": null,
+      "chain_sha256": "47ba2af7ef089f590f8354719e0ef5b9024af0677507f9a9750f55f869d6614b"
+    },
+    {
+      "account_id": "nearreward.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account"
+      ],
+      "lookalike": null,
+      "chain_sha256": "baced55b372174c739b488b27892273fe064d25ba382b1801f0d31ef6aeb0abe"
+    },
+    {
+      "account_id": "nearrewards.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account"
+      ],
+      "lookalike": null,
+      "chain_sha256": "59c5e91c8f7b4cd0d9e6333544eb3c0a6930aa66bebecd852f692d0555a42438"
+    },
+    {
+      "account_id": "npro.nearmobile.near",
+      "own_name_on_list": true,
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account"
+      ],
+      "lookalike": null,
+      "chain_sha256": "1c5a2b6b5573b4bf7d68b56323bd8d2ad3b52998cc6286b66e3e41530d37202a"
+    },
+    {
+      "account_id": "omni.bridge.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account"
+      ],
+      "lookalike": null,
+      "chain_sha256": "422d1f5c573d74b95223c0a41a211e470d72301d02290e46b17cffb1db6646d2"
+    },
+    {
+      "account_id": "outlayer.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 440,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account",
+        "low_activity"
+      ],
+      "lookalike": null,
+      "chain_sha256": "4de664e190333a20219d0f90c1edff24353891c7a8f07262e9c30cc0ab57e74e"
+    },
+    {
+      "account_id": "pool.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 320,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "low_activity",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "7e223f98b09e0b8b862f8653e00af033b3623ef622a76b7a1b9b7a57e74acd5c"
+    },
+    {
+      "account_id": "priceoracle.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 400,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "b4bfe82a06495a20f984f0317ba663d94147b98f31d54b49f7209fc559b3ace1"
+    },
+    {
+      "account_id": "rhea000453.multica.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 440,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account",
+        "low_activity"
+      ],
+      "lookalike": null,
+      "chain_sha256": "115f24416c0b2bf5ff0cf54cbcb1a604740f879a906181752a7a39ef2911c7a7"
+    },
+    {
+      "account_id": "rhea000462.multica.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 440,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account",
+        "low_activity"
+      ],
+      "lookalike": null,
+      "chain_sha256": "fe0e8cbd7306fa643d9a2b334dbb42c3e888ba0e10f758412af2ae427aaeb963"
+    },
+    {
+      "account_id": "rhea000505.multica.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account"
+      ],
+      "lookalike": null,
+      "chain_sha256": "c344eafe8b0d26d96865d82614b984fcbfa6f9295d5303ed9a9a00d8ae523c44"
+    },
+    {
+      "account_id": "simple.market.mintbase1.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 320,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "low_activity",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "c54b9f95498adff0d4c1c07b678d87e6f244754589f1811e2238e53a96ee337e"
+    },
+    {
+      "account_id": "social.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 320,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "low_activity",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "4b4bd251bf486d5aecfef835b6e28f1c0da23f2d53d3d512acc99cc28ca20b84"
+    },
+    {
+      "account_id": "storage.herewallet.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 400,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "9a003cedae4ea172dcfbf116fa651b0b38a778da08c4f0d6d4ce5214f8489a28"
+    },
+    {
+      "account_id": "token.0xshitzu.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 400,
+      "warn_kind": "hard",
+      "deciding": [
+        "lookalike_known",
+        "new_account"
+      ],
+      "lookalike": {
+        "known": "token.publicailab.near",
+        "kind": "parent_swap",
+        "strong": false
+      },
+      "chain_sha256": "395fa0d0e1c4be268b500ab0b839dea9a0de31aef7ce9901420ff95267d6896a"
+    },
+    {
+      "account_id": "token.burrow.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 280,
+      "warn_kind": "hard",
+      "deciding": [
+        "lookalike_known",
+        "new_account",
+        "blocklist_unreadable"
+      ],
+      "lookalike": {
+        "known": "token.publicailab.near",
+        "kind": "parent_swap",
+        "strong": false
+      },
+      "chain_sha256": "6238f80768ebb4fb6d4b28f84bffb70b4d9dc90e738f5f630ca6a6eac9345505"
+    },
+    {
+      "account_id": "token.lonkingnearbackto2024.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 400,
+      "warn_kind": "hard",
+      "deciding": [
+        "lookalike_known",
+        "new_account"
+      ],
+      "lookalike": {
+        "known": "token.publicailab.near",
+        "kind": "parent_swap",
+        "strong": false
+      },
+      "chain_sha256": "0453228a1c9ee145c3bef2ba94dabd3596701830993f182e8c27c35d237f40cb"
+    },
+    {
+      "account_id": "token.paras.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 280,
+      "warn_kind": "hard",
+      "deciding": [
+        "lookalike_known",
+        "new_account",
+        "blocklist_unreadable"
+      ],
+      "lookalike": {
+        "known": "token.publicailab.near",
+        "kind": "parent_swap",
+        "strong": false
+      },
+      "chain_sha256": "c2c69db5dd41e043b16c6a2d634c871d163c527f58675316f3214781f0bdf28d"
+    },
+    {
+      "account_id": "token.rhealab.near",
+      "own_name_on_list": true,
+      "verdict": "WARN",
+      "score": 320,
+      "warn_kind": "hard",
+      "deciding": [
+        "lookalike_known",
+        "new_account",
+        "low_activity"
+      ],
+      "lookalike": {
+        "known": "token.publicailab.near",
+        "kind": "parent_swap",
+        "strong": false
+      },
+      "chain_sha256": "cb925605bff1ece982f8aef80a009d838a71c4c058b7475005f6419d3f64dfcf"
+    },
+    {
+      "account_id": "token.sweat",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 200,
+      "warn_kind": "hard",
+      "deciding": [
+        "lookalike_known",
+        "new_account",
+        "low_activity",
+        "blocklist_unreadable"
+      ],
+      "lookalike": {
+        "known": "token.publicailab.near",
+        "kind": "parent_swap",
+        "strong": false
+      },
+      "chain_sha256": "e276e8395487842a981b337b4e46a3cf40f8d49848643a87a4a4662af043724b"
+    },
+    {
+      "account_id": "token.v2.ref-finance.near",
+      "own_name_on_list": true,
+      "verdict": "WARN",
+      "score": 280,
+      "warn_kind": "hard",
+      "deciding": [
+        "lookalike_known",
+        "new_account",
+        "blocklist_unreadable"
+      ],
+      "lookalike": {
+        "known": "token.publicailab.near",
+        "kind": "parent_swap",
+        "strong": false
+      },
+      "chain_sha256": "aff542249059186df08c173ee5e008c9d03ccc352512c2e3cab3f02edc19bf64"
+    },
+    {
+      "account_id": "usdt.tether-token.near",
+      "own_name_on_list": true,
+      "verdict": "WARN",
+      "score": 320,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "low_activity",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "b3230478c2b2e0836d5fec4bb9b4d0cb3ef89efa5a1710b037b4a7ae9ae3a5c0"
+    },
+    {
+      "account_id": "v1.signer",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 440,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account",
+        "low_activity"
+      ],
+      "lookalike": null,
+      "chain_sha256": "8a3b882b4bb9d92e23a30af39b8e0972d1da957b75c362de8a3b89c6d6d7631f"
+    },
+    {
+      "account_id": "v2.ref-finance.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 400,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "a4b48bd727d6bf1198f79d0d031c204cceb92bd32e5ecfcf884ea7a4bc59ac9d"
+    },
+    {
+      "account_id": "v2_1.omni.hot.tg",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account"
+      ],
+      "lookalike": null,
+      "chain_sha256": "1deaa0e4e90b55aac4006a16851ab6d8a1ae216bc5464abb405c1c1d89eaa956"
+    },
+    {
+      "account_id": "venear.dao",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account"
+      ],
+      "lookalike": null,
+      "chain_sha256": "f624a374c75d505106ca1115fa7675e3ac426a5ee341206ff03e367044f602df"
+    },
+    {
+      "account_id": "vote.dao",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 440,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account",
+        "low_activity"
+      ],
+      "lookalike": null,
+      "chain_sha256": "ad194c05e0b2f29bc3dcbffc49ad3dc63fa36eb42f5a90f23de88242a0817979"
+    },
+    {
+      "account_id": "wisdom1.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 320,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "low_activity",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "359f6b9a83d399b72beef698cb22f7056ce66352b486ce031a27ab241fc0e87a"
+    },
+    {
+      "account_id": "wrap.near",
+      "own_name_on_list": true,
+      "verdict": "WARN",
+      "score": 320,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "low_activity",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "d77d1cd2732def0ce3c05a89f024d051043f8e91d520690a7fdc777f5c7af9b2"
+    },
+    {
+      "account_id": "xtoken.ref-finance.near",
+      "own_name_on_list": false,
+      "verdict": "WARN",
+      "score": 400,
+      "warn_kind": "hard",
+      "deciding": [
+        "new_account",
+        "blocklist_unreadable"
+      ],
+      "lookalike": null,
+      "chain_sha256": "809c8f9c96cee8c3a3aaf06ceda962fc9eaee13a9e5b6b8631c04b80683dd522"
+    },
+    {
+      "account_id": "zec.omft.near",
+      "own_name_on_list": true,
+      "verdict": "WARN",
+      "score": 440,
+      "warn_kind": "soft",
+      "deciding": [
+        "new_account",
+        "low_activity"
+      ],
+      "lookalike": null,
+      "chain_sha256": "d4363a738f4a00c7dd8925a6aca6236a4670c02b08c78005d48561150837b864"
+    }
+  ]
+}

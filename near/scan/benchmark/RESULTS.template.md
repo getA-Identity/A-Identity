@@ -2,13 +2,16 @@
 
 The A-Identity NEAR verdict engine (`near/sdk`: engine @@ENGINE_SEMVER@@, policy `@@POLICY_ID@@`) run
 read-only on NEAR mainnet against the cited dataset in `scan/dataset.json`, and scored by
-`scan/score.mjs`. Every number here is as measured on @@BLOCK_DAY@@; nothing is estimated.
+`scan/score.mjs`. Every number in the main run is as measured at one block on @@BLOCK_DAY@@; the at-age
+snapshots were collected on the days "Run at age" gives. Nothing is estimated.
 
 `report.mjs` writes this file from `RESULTS.template.md` and the committed run files, and
 `benchmark.test.mjs` fails unless the committed file is exactly what they produce. The test also
 checks with its own code that each quoted scorer block is the scorer's whole output, and that the
 Result, confusion, recall and lookalike stratum tables, the WARN split and the leave-self-out
-numbers match the verdict files.
+numbers match the verdict files; for the at-age section, it checks every creation and replay block
+in `at-age/plan.json` against the age rule, the context of every at-age snapshot, and the at-age
+tables.
 
 ## Summary for quoting
 
@@ -23,9 +26,10 @@ existing at the block, and @@N_TP_LOOKALIKE@@ are fake airdrop tokens whose name
 that list. All @@N_FN@@ misses are older than 30 days with 5 or more transactions at the block, and
 @@N_NAMED_15@@ of the @@N_REPORTED@@ suspicious rows named in a report were named within 15 days of
 their creation (for the @@N_LAG_BORROWED@@ deleted ones, of a surviving account of the same exploit):
-this benchmark observes them months to years after the incident, not at payment time. The engine
-was not given the labels (`labels_used: false`); its known list is the top @@N_KNOWN@@ NEP-141 tokens
-by on-chain market cap on NearBlocks, @@KNOWN_IN_KG@@ of which are also `known_good` rows.
+this benchmark observes them months to years after the incident, not at payment time.
+@@AA_SUMMARY@@ The engine was not given the labels (`labels_used: false`); its known list is the
+top @@N_KNOWN@@ NEP-141 tokens by on-chain market cap on NearBlocks, @@KNOWN_IN_KG@@ of which are
+also `known_good` rows.
 
 ## Result
 
@@ -80,8 +84,8 @@ Creation is the row's `facts.created_at`, and the report date is the earliest `d
 `evidence`; "Every suspicious row" gives the number for each row. The @@N_LAG_BORROWED@@ deleted worker
 accounts have no creation date in the dataset, so they are counted from @@LAG_BORROWED_FROM@@, the
 creation of `@@LAG_BORROWED_BY@@`, the one account named in the same sentence of the same report that
-still exists. Replaying each account at a block near its incident would measure the engine where
-its rules aim; this run does not (Limits).
+still exists. "At payment age" below replays every scored account at the first block 1 day and
+7 days after its own creation block instead.
 
 ## Run
 
@@ -282,6 +286,134 @@ have 1 transaction each. The lookalike rule does not match any of them: `intents
 the brand list, and `wr4p` against `wrap` is a 4-character name, which matches only on an identical
 skeleton (`4` is not folded to `a`).
 
+## At payment age: the same accounts at 1 and 7 days old
+
+The run above reads every account at one block, on @@BLOCK_DAY@@, months to years after most of
+them were named in a report. This section replays the same engine with the same inputs on the
+same @@AA_N@@ scored accounts (all @@N_SUS@@ `suspicious` and @@N_KG@@ `known_good` rows; the
+lookalike rows are not run), each at blocks chosen by its own age: the first block at or after
+its creation block's timestamp plus 1 day, and plus 7 days. The rule was written in
+`at-age/PREREGISTRATION.md` at @@AA_PREREG_UTC@@, before any at-age read, and was not changed
+after the results were seen: its first @@AA_PREREG_BYTES@@ bytes hash to `@@AA_PREREG_SHA@@`,
+`at-age/run.mjs --offline --check` fails if they change, and @@AA_AMENDMENTS@@.
+
+- **Creation block, from the chain.** The first block at which archival `view_account` finds the
+  account, proven by two answers recorded in `at-age/plan.json`: the account at that block, and
+  `UNKNOWN_ACCOUNT` at its predecessor (the block its `prev_hash` names). The search starts at the
+  oldest transaction that touches the account in FastNEAR's transactions API. Proven for
+  @@AA_PROVEN@@ of the @@AA_N@@ accounts, the @@N_DELETED@@ deleted Rhea worker accounts included,
+  @@AA_METHOD_TEXT@@. Cross-checks, never used to choose a block: for the @@AA_DS_N@@ accounts with
+  a `facts.created_at` in the dataset, the creation block is @@AA_DS_RANGE@@ s after it
+  (@@AA_DS_OUT_TEXT@@), and the oldest transaction is the dataset's `creation_tx` for
+  @@AA_TX_MATCH@@ of them; NearBlocks v3 answered for @@AA_NB_N@@ accounts and names the same
+  creation transaction for @@AA_NB_SAME@@, @@AA_NB_RANGE@@ s before the creation block@@AA_NB_OTHER_TEXT@@.
+- **Replay block.** The first block whose timestamp is at or after the target, proven by its
+  predecessor, whose timestamp is before the target. The creation blocks run from
+  @@AA_CREATED_FIRST@@ to @@AA_CREATED_LAST@@, so the replay blocks span more than @@AA_CREATED_YEARS@@ years of mainnet.
+- **Engine inputs.** Exactly the run above's: the account id, mainnet, the replay block and the
+  @@N_KNOWN@@ names in `known-brands.json`, with no third-party registry, no A-Identity registry
+  and no vault. The engine is not given the dataset, the labels, the creation facts or the age.
+  Each snapshot records its age point, creation block, target time, replay block and that
+  block's predecessor in `meta.at_age`, outside both digests; `benchmark.test.mjs` checks every
+  one against the plan and the age rule, and checks the label-free context on every snapshot.
+- **Excluded, as pre-registered.** @@AA_N_EXCL@@ accounts at both age points: the deleted Rhea
+  worker accounts. Each was created on @@AA_DEL_DAY@@ and no longer existed 1 day later
+  (`view_account` at both replay blocks answers `UNKNOWN_ACCOUNT`; NearBlocks dates the deletions
+  @@AA_DEL_HOURS@@ hours after creation), so it has no snapshot and no verdict. score.mjs counts an
+  excluded row as `NONE`, so these @@AA_N_EXCL@@ count as missed suspicious rows in the first table
+  below, and its denominators stay @@N_SUS@@ and @@N_KG@@.
+
+### Result at age
+
+| Age | Operating point | Precision | Recall | TP | FP | FN |
+|---|---|---|---|---|---|---|
+@@AA_RESULT_ROWS@@
+
+@@AA_LSO_TEXT@@
+
+Over the accounts that have a verdict (the excluded ones left out of both classes):
+
+| Age | Accounts with a verdict | Strict precision | Strict recall | Cautious precision | Cautious recall |
+|---|---|---|---|---|---|
+@@AA_SCORED_ROWS@@
+
+| Age | Class | ALLOW | WARN | DENY | Excluded | Rows |
+|---|---|---|---|---|---|---|
+@@AA_CONFUSION_ROWS@@
+
+Suspicious rows flagged at age, by kind of evidence (cautious; an excluded row counts as missed):
+
+| Group | Rows | 1 day | 7 days |
+|---|---|---|---|
+@@AA_RECALL_ROWS@@
+
+@@AA_READING@@
+
+### What decided the verdicts
+
+Each row counts the verdicts whose deciding reasons include that reason, out of the accounts
+with a verdict; a verdict can have several.
+
+| Age | Deciding reason | Suspicious | known_good |
+|---|---|---|---|
+@@AA_REASON_ROWS@@
+
+Pre-registered split (i). Circle's USDC contract on NEAR (`17208628...36133a1`) was created at
+block @@AA_USDC_BLOCK@@ (@@AA_USDC_UTC@@, by the same creation method). At a replay block before
+it, the engine cannot read `is_blocklisted` and fails closed with `blocklist_unreadable`, a hard
+WARN, whatever the payee; every verdict at such a block carries it.
+
+| Age | Replay block | Suspicious flagged | known_good flagged | Cautious precision | Cautious recall |
+|---|---|---|---|---|---|
+@@AA_USDC_ROWS@@
+
+@@AA_USDC_AFTER_TEXT@@
+
+Pre-registered split (ii), the verdicts whose only deciding reasons are missing-data codes
+(`rpc_unavailable`, `indexer_unavailable`, `blocklist_unreadable`): @@AA_MISSING_ONLY_TEXT@@.
+
+### Every suspicious row at age
+
+Each age cell gives the verdict, the score and the deciding reasons (for an ALLOW, the positive
+signals). The last column is the verdict at block @@BLOCK@@, from the run above.
+
+| Account | Kind | Created (chain) | 1 day | 7 days | At block @@BLOCK@@ |
+|---|---|---|---|---|---|
+@@AA_SUS_ROWS@@
+
+### Every false positive at age
+
+Every `known_good` row flagged at either age point (@@AA_N_FP_ANY@@ of @@N_KG@@):
+
+| Account | Category | Created (chain) | 1 day | 7 days |
+|---|---|---|---|---|
+@@AA_FP_ROWS@@
+
+@@AA_KG_NEVER_TEXT@@
+
+### Exclusions
+
+| Account | Row | Age | Reason |
+|---|---|---|---|
+@@AA_EXCL_ROWS@@
+
+### Scorer output at age, verbatim
+
+```
+$ node scan/score.mjs scan/benchmark/at-age/d1/verdicts.json
+@@AA_SCORE_D1@@
+```
+
+```
+$ node scan/score.mjs scan/benchmark/at-age/d7/verdicts.json
+@@AA_SCORE_D7@@
+```
+
+`NONE` marks the @@AA_N_EXCL@@ excluded accounts, and all @@N_LOOK@@ lookalike rows, which are not
+run at age.
+
+@@AA_RUN@@
+
 ## Reproduce
 
 From `near/`, Node 22.22.2 or later. Offline, no network:
@@ -293,12 +425,19 @@ node scan/score.mjs scan/benchmark/verdicts.json
 node scan/score.mjs scan/benchmark/verdicts.leave-self-out.json
 node scan/score.mjs scan/benchmark/verdicts.no-known.json
 npm run verdict -- --offline scan/benchmark/snapshots/metapools.near.json
+node --experimental-strip-types --no-warnings=ExperimentalWarning scan/benchmark/at-age/run.mjs --offline --check
+node scan/score.mjs scan/benchmark/at-age/d1/verdicts.json
+node scan/score.mjs scan/benchmark/at-age/d7/verdicts.json
+npm run verdict -- --offline scan/benchmark/at-age/d1/snapshots/metapools.near.json
 node --experimental-strip-types --no-warnings=ExperimentalWarning --test scan/benchmark/benchmark.test.mjs
 ```
 
 The first command rebuilds the three verdict files from the @@N_TOTAL@@ snapshots and exits 1
 unless each matches the committed file byte for byte; without `--check` it writes them. The second
-does the same for this file, from `RESULTS.template.md`; without `--check` it writes it.
+does the same for this file, from `RESULTS.template.md`; without `--check` it writes it. The
+`at-age/run.mjs --offline --check` line does the same for the four at-age verdict files, from
+`at-age/plan.json` and the @@AA_N_SNAPSHOTS@@ at-age snapshots, and checks that
+`at-age/PREREGISTRATION.md` still begins with the text written before any at-age read.
 
 Online, one account at the same block (any account in `verdicts.json`):
 
@@ -311,6 +450,17 @@ This gives the same verdict, reasons, score and `chain_sha256` as the account's 
 `verdicts.json`. `snapshot_sha256` differs, because it also covers the indexer answers and the
 time they were fetched. Once regular nodes have pruned the block (about two days), the reads go
 to archival RPC.
+
+Online, one account at its own replay block, from `at-age/plan.json` (here `metapools.near` at
+1 day, block @@AA_REPRO_BLOCK@@):
+
+```
+npm run verdict -- metapools.near --network mainnet --at-block @@AA_REPRO_BLOCK@@ --no-third-party --registry none \
+  --known "$(node -p 'require("./scan/benchmark/known-brands.json").accounts.join(",")')" --json
+```
+
+This gives the verdict (@@AA_REPRO_VERDICT@@), reasons, score and `chain_sha256` of the account's
+entry in `at-age/d1/verdicts.json`.
 
 Online, the whole run:
 
@@ -337,8 +487,14 @@ saved snapshots).
   public reports or linked on chain to a reported lure campaign, created between
   @@SUS_FIRST_YEAR@@ and @@SUS_LAST_YEAR@@. At the block the @@N_EXIST@@ that exist are older than 30
   days with 5 or more transactions. The engine's rules target a payee that is new, changed in the
-  last 72 hours, or a fresh lookalike of a known name. Replaying each account at a block near its
-  incident (`--at-block`, archival RPC) would measure that design; this run does not.
+  last 72 hours, or a fresh lookalike of a known name. The at-age section replays the @@AA_N@@
+  scored accounts at the first block 1 day and 7 days after their own creation blocks
+  (pre-registered, archival RPC). It does not replay them at the time of each incident or of a
+  victim's payment, which the dataset does not date per account; it measures no other age, so
+  the @@AA_N_EXCL@@ deleted worker accounts, deleted @@AA_DEL_HOURS@@ hours after creation by
+  NearBlocks' dates, are seen at neither age point; it runs no lookalike row at age; and it
+  applies today's engine and today's brand list to blocks from @@AA_CREATED_FIRST@@ on, while the
+  USDC contract the engine reads exists only from @@AA_USDC_DAY@@ (split (i) there).
 - **Label-independent by design.** The signals that would carry what is publicly known about an
   account (an A-Identity registry DENY or open reports, another team's registry) are off,
   because on this dataset they would be filled from the same reports that make the labels. These
@@ -359,12 +515,15 @@ saved snapshots).
 - **One keyless run.** Rate limiting was absorbed by retries and failover and left no missing
   data. A read that stays unanswered would make a WARN, never an ALLOW; the runner collects such
   an account again, and the test fails if one was saved.
-- **Tied to engine @@ENGINE_SEMVER@@.** If the engine or its policy changes, `run.mjs --offline`
-  re-derives every verdict from the same snapshots, `report.mjs` rewrites this file from them, and
-  `benchmark.test.mjs` fails until both are committed.
+- **Tied to engine @@ENGINE_SEMVER@@.** If the engine or its policy changes, `run.mjs --offline` and
+  `at-age/run.mjs --offline` re-derive every verdict from the same snapshots, `report.mjs` rewrites
+  this file from them, and `benchmark.test.mjs` fails until all of them are committed.
 
 Files: `run.mjs` (runner), `report.mjs` (writes this file from `RESULTS.template.md`),
 `known-brands.json` (the fixed known list), `snapshots/` (one engine snapshot per account),
 `verdicts.json` (score.mjs format, `labels_used: false`), `verdicts.leave-self-out.json` (the
 replay without the exemption of listed payees), `verdicts.no-known.json` (the ablation),
-`benchmark.test.mjs` (offline checks).
+`benchmark.test.mjs` (offline checks). The at-age replay is in `at-age/`: `PREREGISTRATION.md`
+(the rule, written before any at-age read), `run.mjs` (its runner), `plan.json` (the creation
+and replay blocks, with the answers that prove them), and `d1/` and `d7/`, each with
+`snapshots/`, `verdicts.json` and `verdicts.leave-self-out.json`.

@@ -25,6 +25,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { parseVerdictsFile, score } from "../score.mjs";
 import { PATHS, loadKnown, loadSdk, readJson, selectAccounts } from "./run.mjs";
+import { AGE_DAYS, AT_AGE, PREREGISTRATION, atAgeHosts, preregistrationProblems, readPlan } from "./at-age/run.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const NEAR = path.resolve(HERE, "..", "..");
@@ -40,6 +41,8 @@ const daysBetween = (later, earlier) => Math.round((Date.parse(`${day(later)}T00
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const monthYear = (iso) => `${MONTHS[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}`;
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const blockUtcOf = (ns) => new Date(Number(BigInt(ns) / 1_000_000n)).toISOString();
+const hoursAfter = (laterNs, earlierNs) => (Number((BigInt(laterNs) - BigInt(earlierNs)) / 1_000_000n) / 3_600_000).toFixed(1);
 /** "a", "a and b", "a, b and c". */
 const listJoin = (items) => (items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`);
 
@@ -561,6 +564,378 @@ export async function buildReport() {
   fill.N_BULK = bulk.length;
   fill.BULK_CREATOR = short(bulkCreator);
   fill.BULK_DAYS = listJoin([...new Set(bulk.map((id) => day(row.get(id).facts.created_at)))].sort());
+
+  // ------------------------------------------------------------------ at age (at-age/)
+  // The same scored accounts, each pinned to the first block 1 and 7 days after its own creation
+  // block (at-age/PREREGISTRATION.md). Every fact below is read from at-age/plan.json and the
+  // at-age verdict files, and every sentence the template states about them is checked here.
+  const plan = readPlan();
+  must(plan !== null, "at-age/plan.json exists");
+  must(preregistrationProblems().length === 0, "PREREGISTRATION.md begins with the text written before any at-age read");
+  const P = new Map(plan.accounts.map((e) => [e.account_id, e]));
+  const scoredRows = [...sus, ...kg];
+  must(plan.accounts.length === scoredRows.length && scoredRows.every((r) => P.has(r.account_id)), "the plan covers exactly the scored rows");
+  fill.AA_N = scoredRows.length;
+  fill.AA_PREREG_UTC = PREREGISTRATION.written_utc;
+  fill.AA_PREREG_BYTES = PREREGISTRATION.bytes;
+  fill.AA_PREREG_SHA = PREREGISTRATION.sha256;
+  const preText = fs.readFileSync(AT_AGE.preregistration, "utf8");
+  const amendments = (preText.slice(PREREGISTRATION.bytes).match(/^### Amendment /gm) ?? []).length;
+  must(preText.length === PREREGISTRATION.bytes || amendments > 0, "anything after the pre-registered text is an amendment");
+  fill.AA_AMENDMENTS = amendments === 0 ? "no amendment was needed" : `${plural(amendments, "amendment")} ${amendments === 1 ? "is" : "are"} appended to it, each with its time and reason`;
+  // "Before any at-age read": every chain or indexer read recorded in the plan and the snapshots
+  // is dated after the time the pre-registration records.
+  const readTimes = plan.accounts.flatMap((e) => [e.planned_at, e.cross_checks.fastnear_fetched_at, e.cross_checks.nearblocks?.fetched_at].filter(Boolean));
+  must(readTimes.length > 0 && readTimes.every((t) => Date.parse(t) > Date.parse(PREREGISTRATION.written_utc)), "every plan read is dated after the pre-registration");
+
+  // Creation blocks and their cross-checks.
+  const proven = plan.accounts.filter((e) => e.creation.state === "proven");
+  const notProven = plan.accounts.filter((e) => e.creation.state !== "proven");
+  fill.AA_PROVEN = proven.length;
+  must(notProven.length === 0, `every creation block is proven (not: ${notProven.map((e) => e.account_id).join(", ")})`);
+  must(deleted.every((r) => P.get(r.account_id).creation.state === "proven"), "the deleted accounts' creation blocks are proven");
+  const byMethod = (m) => proven.filter((e) => e.creation.method === m).length;
+  must(byMethod("walk") + byMethod("bisection") === proven.length, "every creation block was found by walking or bisection");
+  const afterTx = proven.map((e) => e.creation.block.height - e.creation.located_by.tx_block_height);
+  must(afterTx.every((n) => n >= 1), "every creation block follows the block of the transaction that located it");
+  fill.AA_METHOD_TEXT =
+    byMethod("bisection") === 0
+      ? `each one ${Math.min(...afterTx)} to ${Math.max(...afterTx)} blocks after that transaction's block, found by reading every block forward from it`
+      : `${byMethod("walk")} by reading every block forward from that transaction and ${byMethod("bisection")} by bisection`;
+  const dsChecked = proven.filter((e) => e.cross_checks.dataset_created_at);
+  const dsSecs = dsChecked.map((e) => e.cross_checks.seconds_after_dataset_created_at);
+  must(dsChecked.length === scoredRows.filter((r) => r.facts.created_at).length, "every account with a dataset creation date is cross-checked");
+  const dsOut = dsChecked.filter((e) => !e.cross_checks.within_tolerance);
+  fill.AA_DS_N = dsChecked.length;
+  fill.AA_DS_RANGE = `${Math.min(...dsSecs).toFixed(1)} to ${Math.max(...dsSecs).toFixed(1)}`;
+  fill.AA_DS_OUT_TEXT = dsOut.length === 0 ? "all within the pre-registered 0 to 600 s" : `outside the pre-registered 0 to 600 s for ${listJoin(dsOut.map((e) => code(short(e.account_id))))}`;
+  const txMatch = dsChecked.filter((e) => e.creation.located_by.transaction_hash === e.cross_checks.dataset_creation_tx);
+  fill.AA_TX_MATCH = txMatch.length;
+  const nbAnswered = plan.accounts.filter((e) => e.cross_checks.nearblocks && !e.cross_checks.nearblocks.unavailable);
+  const nbSame = proven.filter((e) => e.cross_checks.nearblocks?.created_transaction_hash === e.creation.located_by.transaction_hash);
+  const nbSecs = nbSame.map((e) => e.cross_checks.seconds_after_nearblocks_created);
+  fill.AA_NB_N = nbAnswered.length;
+  fill.AA_NB_SAME = nbSame.length;
+  fill.AA_NB_RANGE = `${Math.min(...nbSecs).toFixed(1)} to ${Math.max(...nbSecs).toFixed(1)}`;
+  must(nbSecs.every((x) => x >= 0), "where NearBlocks names the same transaction, it is never after the creation block");
+  const nbOther = nbAnswered.filter((e) => !nbSame.includes(e)).sort((x, y) => cmp(x.account_id, y.account_id));
+  must(nbOther.every((e) => e.cross_checks.nearblocks.created_transaction_hash && e.cross_checks.seconds_after_nearblocks_created < 0), "where NearBlocks names another transaction, it is a later one");
+  // A disagreement is reported with both values (pre-registered); the chain's proof decides.
+  fill.AA_NB_OTHER_TEXT =
+    nbOther.length === 0
+      ? ""
+      : `; for the other ${nbOther.length} it names a later transaction as the creation, and the chain's proof stands: ${listJoin(
+          nbOther.map((e) => {
+            const nb = e.cross_checks.nearblocks;
+            return `${code(short(e.account_id))} (creation block ${e.creation.block.height} at ${e.creation.block.utc}; NearBlocks ${blockUtcOf(nb.created_block_timestamp_ns)}, ${hoursAfter(nb.created_block_timestamp_ns, e.creation.block.timestamp_ns)} h later, transaction ${code(`${nb.created_transaction_hash.slice(0, 8)}...`)})`;
+          }),
+        )}`;
+  const createdSorted = proven.map((e) => e.creation.block.utc).sort();
+  fill.AA_CREATED_FIRST = day(createdSorted[0]);
+  fill.AA_CREATED_LAST = day(createdSorted[createdSorted.length - 1]);
+  fill.AA_CREATED_YEARS = Math.floor(daysBetween(createdSorted[createdSorted.length - 1], createdSorted[0]) / 365.25);
+  const usdcId = sdk.networks.mainnet.usdc;
+  const U = P.get(usdcId);
+  must(U && U.creation.state === "proven", "the USDC contract's creation block is proven");
+  fill.AA_USDC_BLOCK = U.creation.block.height;
+  fill.AA_USDC_UTC = U.creation.block.utc;
+  fill.AA_USDC_DAY = day(U.creation.block.utc);
+
+  // The two age points.
+  const ageName = (d) => (d === 1 ? "1 day" : `${d} days`);
+  const AG = AGE_DAYS.map((d) => {
+    const doc = readJson(AT_AGE.verdicts(d));
+    const lso = readJson(AT_AGE.leaveSelfOut(d));
+    must(doc.labels_used === false && lso.labels_used === false && doc.at_age.days === d, `the ${d}-day files are label-free and of that age point`);
+    const map = new Map(doc.verdicts.map((e) => [e.account_id, e]));
+    const ex = new Map(doc.excluded.map((e) => [e.account_id, e]));
+    must(scoredRows.every((r) => map.has(r.account_id) !== ex.has(r.account_id)) && map.size + ex.size === scoredRows.length, `${d} d: every scored row has a verdict or an exclusion`);
+    for (const e of doc.verdicts) {
+      const a = P.get(e.account_id).ages[String(d)];
+      must(e.block.height === a.block.height && e.block.hash === a.block.hash && a.exists === true, `${d} d: ${e.account_id} is pinned to its planned replay block`);
+      must(e.transport_errors.length === 0, `${d} d: ${e.account_id} has no unanswered read`);
+    }
+    const parsed = parseVerdictsFile(doc).verdicts;
+    return {
+      d,
+      name: ageName(d),
+      doc,
+      lso,
+      map,
+      lmap: new Map(lso.verdicts.map((e) => [e.account_id, e])),
+      ex,
+      main: score(dataset, parsed),
+      self: score(dataset, parseVerdictsFile(lso).verdicts),
+      over: score(dataset.filter((r) => map.has(r.account_id)), parsed),
+    };
+  });
+  const [A1, A7] = AG;
+  must(AG.every((x) => x.doc.verdicts.every((e) => Date.parse(e.collected_at) > Date.parse(PREREGISTRATION.written_utc))), "every at-age snapshot was collected after the pre-registration");
+  fill.AA_RESULT_ROWS = AG.flatMap((x) =>
+    [
+      ["strict: DENY counts as flagged", x.main.strict, "no DENY issued"],
+      ["cautious: WARN or DENY counts as flagged", x.main.cautious, "nothing flagged"],
+      ["strict, listed payees not exempt (leave-self-out)", x.self.strict, "no DENY issued"],
+      ["cautious, listed payees not exempt (leave-self-out)", x.self.cautious, "nothing flagged"],
+    ].map(([n, p, none]) => `| ${x.name} | ${n} | ${precisionCell(p, none)} | ${recallCell(p)} | ${p.tp} | ${p.fp} | ${p.fn} |`),
+  ).join("\n");
+  fill.AA_SCORED_ROWS = AG.map(
+    (x) =>
+      `| ${x.name} | ${x.over.rows.suspicious} of ${fill.N_SUS} suspicious, ${x.over.rows.known_good} of ${fill.N_KG} known_good | ${precisionCell(x.over.strict, "no DENY issued")} | ${recallCell(x.over.strict)} | ${precisionCell(x.over.cautious, "nothing flagged")} | ${recallCell(x.over.cautious)} |`,
+  ).join("\n");
+  const mixAt = (x, rows) => {
+    const m = { ALLOW: 0, WARN: 0, DENY: 0, excluded: 0 };
+    for (const r of rows) {
+      const e = x.map.get(r.account_id);
+      if (e) m[e.verdict]++;
+      else m.excluded++;
+    }
+    return m;
+  };
+  fill.AA_CONFUSION_ROWS = AG.flatMap((x) =>
+    [
+      ["suspicious (positives)", sus],
+      ["known_good (negatives)", kg],
+    ].map(([n, rows]) => {
+      const m = mixAt(x, rows);
+      return `| ${x.name} | ${n} | ${m.ALLOW} | ${m.WARN} | ${m.DENY} | ${m.excluded} | ${rows.length} |`;
+    }),
+  ).join("\n");
+  for (const x of AG) must(x.main.unscored.length === x.ex.size, `${x.d} d: score.mjs counts exactly the excluded rows as NONE`);
+  // Leave-self-out at age: which verdicts the exemption of listed payees hides.
+  const lsoChanged = (x) => [...x.lmap.values()].filter((e) => e.verdict !== x.map.get(e.account_id).verdict).sort((p, q) => cmp(p.account_id, q.account_id));
+  for (const x of AG) {
+    must(x.lso.verdicts.length === x.doc.verdicts.length, `${x.d} d: the leave-self-out file replays every verdict`);
+    for (const e of lsoChanged(x)) must(e.own_name_on_list && row.get(e.account_id).label === "known_good" && e.lookalike, `${x.d} d: ${e.account_id} changes only because its own name is on the list`);
+  }
+  fill.AA_LSO_TEXT = `The leave-self-out rows replay the same snapshots with each payee compared with the known list minus its own name, as \`verdicts.leave-self-out.json\` does for the run above: ${AG.map((x) => {
+    const ch = lsoChanged(x);
+    return `at ${x.name} ${ch.length === 0 ? "no verdict changes" : `${plural(ch.length, "verdict")} change${ch.length === 1 ? "s" : ""} (${listJoin(ch.map((e) => `${code(e.account_id)}, ${x.map.get(e.account_id).verdict} to ${e.verdict} on a ${e.lookalike.strong ? "strong" : "weak"} ${code(e.lookalike.kind)} match with ${code(e.lookalike.known)}`))})`}`;
+  }).join(", and ")}.`;
+  // Recall by kind of evidence and by existence (scan/README.md, benchmark protocol, item 3).
+  const types = Object.entries(A1.main.suspicious_by_source_type)
+    .sort((p, q) => q[1].rows - p[1].rows || cmp(p[0], q[0]))
+    .map(([k]) => k);
+  fill.AA_RECALL_ROWS = [
+    ...types.map((k) => `| ${code(k)} | ${A1.main.suspicious_by_source_type[k].rows} | ${AG.map((x) => x.main.suspicious_by_source_type[k].caught_cautious).join(" | ")} |`),
+    `| exist today (dataset \`exists: true\`) | ${A1.main.suspicious_by_exists.exists.rows} | ${AG.map((x) => x.main.suspicious_by_exists.exists.caught_cautious).join(" | ")} |`,
+    `| deleted (\`exists: false\`), excluded at age | ${A1.main.suspicious_by_exists.deleted.rows} | ${AG.map((x) => x.main.suspicious_by_exists.deleted.caught_cautious).join(" | ")} |`,
+  ].join("\n");
+  must(AG.length === 2, "two age points, two columns");
+
+  // Exclusions.
+  const EXCLUDED = { absent_at_replay_block: "absent at the replay block", creation_not_proven: "creation not proven", technical: "technical" };
+  const exclIds = [...new Set(AG.flatMap((x) => [...x.ex.keys()]))].sort();
+  fill.AA_EXCL_ROWS = exclIds
+    .map((id) => {
+      const at = AG.filter((x) => x.ex.has(id));
+      const reasons = [...new Set(at.map((x) => x.ex.get(id).reason))];
+      const when = at.map((x) => x.name).join(" and ");
+      let detail;
+      if (reasons.length === 1 && reasons[0] === "absent_at_replay_block") {
+        const e = P.get(id);
+        const blocks = at.map((x) => `#${e.ages[String(x.d)].block.height} (${x.name})`).join(" and ");
+        const nb = e.cross_checks.nearblocks?.deleted_block_timestamp_ns;
+        detail = `absent at the replay block: \`view_account\` at ${blocks} answered \`UNKNOWN_ACCOUNT\`; created at block ${e.creation.block.height} (${e.creation.block.utc})${nb ? `, and NearBlocks dates its deletion ${blockUtcOf(nb)}, ${hoursAfter(nb, e.creation.block.timestamp_ns)} h later` : ""}`;
+      } else {
+        detail = at.map((x) => `${x.name}: ${EXCLUDED[x.ex.get(id).reason]}: ${x.ex.get(id).detail}`).join("; ");
+      }
+      return `| ${code(id)} | ${row.get(id).label} | ${when} | ${detail} |`;
+    })
+    .join("\n");
+  const exclAll = exclIds.filter((id) => AG.every((x) => x.ex.has(id)));
+  must(exclIds.every((id) => AG.every((x) => x.ex.get(id)?.reason === "absent_at_replay_block")), "every exclusion is an account absent at both replay blocks");
+  must(JSON.stringify(exclAll) === JSON.stringify(deleted.map((r) => r.account_id).sort()), "the excluded accounts are exactly the deleted Rhea worker accounts");
+  fill.AA_N_EXCL = exclAll.length;
+  const delHours = exclAll.map((id) => Number(hoursAfter(P.get(id).cross_checks.nearblocks.deleted_block_timestamp_ns, P.get(id).creation.block.timestamp_ns)));
+  fill.AA_DEL_HOURS = Math.min(...delHours).toFixed(1) === Math.max(...delHours).toFixed(1) ? `about ${Math.min(...delHours).toFixed(1)}` : `${Math.min(...delHours).toFixed(1)} to ${Math.max(...delHours).toFixed(1)}`;
+  fill.AA_DEL_DAY = listJoin([...new Set(exclAll.map((id) => day(P.get(id).creation.block.utc)))]);
+
+  // Cells of the per-row tables: the verdict, the score and the deciding reasons.
+  const cellAt = (x, id) => {
+    const e = x.map.get(id);
+    if (!e) return `excluded: ${EXCLUDED[x.ex.get(id).reason]}`;
+    if (e.verdict === "ALLOW") {
+      const pos = e.reasons.filter((r) => r.severity === "positive").map((r) => code(r.code));
+      return `ALLOW ${e.score}: ${pos.length ? pos.join(", ") : "no warning"}`;
+    }
+    return `${e.verdict} ${e.score}: ${e.deciding.map(code).join(", ")}`;
+  };
+  const createdOf = (id) => (P.get(id).creation.state === "proven" ? day(P.get(id).creation.block.utc) : "not proven");
+  fill.AA_SUS_ROWS = [...sus]
+    .sort((x, y) => CAT_ORDER.indexOf(x.category) - CAT_ORDER.indexOf(y.category) || cmp(x.account_id, y.account_id))
+    .map((r) => `| ${code(r.account_id)} | ${r.category}, ${r.facts.source_type} | ${createdOf(r.account_id)} | ${cellAt(A1, r.account_id)} | ${cellAt(A7, r.account_id)} | ${v.get(r.account_id).verdict} |`)
+    .join("\n");
+  const fpAny = kg.filter((r) => AG.some((x) => flagged(x.map.get(r.account_id)?.verdict))).sort((x, y) => cmp(x.account_id, y.account_id));
+  fill.AA_FP_ROWS = fpAny.map((r) => `| ${code(r.account_id)} | ${r.category} | ${createdOf(r.account_id)} | ${cellAt(A1, r.account_id)} | ${cellAt(A7, r.account_id)} |`).join("\n");
+  fill.AA_N_FP_ANY = fpAny.length;
+  const kgNever = kg.filter((r) => !fpAny.includes(r));
+  fill.AA_KG_NEVER_TEXT = kgNever.length === 0 ? `Every one of the ${kg.length} \`known_good\` rows is flagged at one age point or both.` : `The other ${kgNever.length} \`known_good\` rows are ALLOW at both age points: ${listJoin(kgNever.map((r) => code(r.account_id)))}.`;
+
+  // Which deciding reasons set the verdicts, per age point and class.
+  const RULE_ORDER = sdk.engine.RULES.map((r) => r.code);
+  fill.AA_REASON_ROWS = AG.flatMap((x) => {
+    const codes = [...new Set([...x.map.values()].flatMap((e) => e.deciding))].sort((p, q) => RULE_ORDER.indexOf(p) - RULE_ORDER.indexOf(q));
+    const count = (rows, c) => rows.filter((r) => x.map.get(r.account_id)?.deciding.includes(c)).length;
+    return codes.map((c) => `| ${x.name} | ${code(c)}${soft.has(c) ? " (soft)" : ""} | ${count(sus, c)} of ${x.over.rows.suspicious} | ${count(kg, c)} of ${x.over.rows.known_good} |`);
+  }).join("\n");
+
+  // Pre-registered split (i): replay blocks before and after Circle's USDC contract existed.
+  const usdcH = U.creation.block.height;
+  const ratio = (num, den) => (den === 0 ? "n/a" : `${pct(num / den)} (${num} of ${den})`);
+  fill.AA_USDC_ROWS = AG.flatMap((x) =>
+    [
+      [`before block ${usdcH}`, (e) => e.block.height < usdcH],
+      [`at or after block ${usdcH}`, (e) => e.block.height >= usdcH],
+    ].map(([n, test]) => {
+      const s = sus.filter((r) => x.map.has(r.account_id) && test(x.map.get(r.account_id)));
+      const k = kg.filter((r) => x.map.has(r.account_id) && test(x.map.get(r.account_id)));
+      const fs = s.filter((r) => flagged(x.map.get(r.account_id).verdict)).length;
+      const fk = k.filter((r) => flagged(x.map.get(r.account_id).verdict)).length;
+      return `| ${x.name} | ${n} | ${fs} of ${s.length} | ${fk} of ${k.length} | ${ratio(fs, fs + fk)} | ${ratio(fs, s.length)} |`;
+    }),
+  ).join("\n");
+  const lateUnreadable = [];
+  for (const x of AG) {
+    for (const e of x.map.values()) {
+      const unreadable = e.reasons.some((r) => r.code === "blocklist_unreadable");
+      if (e.block.height < usdcH) must(unreadable, `${x.d} d: ${e.account_id} is before USDC existed and carries blocklist_unreadable`);
+      else if (unreadable) lateUnreadable.push(`${code(short(e.account_id))} at ${x.name}`);
+    }
+  }
+  fill.AA_USDC_AFTER_TEXT = lateUnreadable.length === 0 ? "No verdict at or after that block carries it." : `At or after that block, ${plural(lateUnreadable.length, "verdict")} carry it too: ${listJoin(lateUnreadable)}.`;
+
+  // Pre-registered split (ii): verdicts decided by missing data alone.
+  const MISSING = new Set(["rpc_unavailable", "indexer_unavailable", "blocklist_unreadable"]);
+  const missingOnly = (x) => [...x.map.values()].filter((e) => e.deciding.length > 0 && e.deciding.every((c) => MISSING.has(c))).map((e) => e.account_id).sort();
+  fill.AA_MISSING_ONLY_TEXT = AG.map((x) => {
+    const ids = missingOnly(x);
+    if (ids.length === 0) return `at ${x.name}, none`;
+    const bySus = ids.filter((id) => row.get(id).label === "suspicious");
+    const byKg = ids.filter((id) => row.get(id).label === "known_good");
+    return `at ${x.name}, ${ids.length} (${bySus.length} \`suspicious\`: ${bySus.length ? listJoin(bySus.map((id) => code(short(id)))) : "none"}; ${byKg.length} \`known_good\`: ${byKg.length ? listJoin(byKg.map((id) => code(short(id)))) : "none"})`;
+  }).join("; ");
+
+  // Reading the numbers: each sentence below is checked against the verdict files.
+  const susWith = (x) => sus.filter((r) => x.map.has(r.account_id));
+  const kgWith = (x) => kg.filter((r) => x.map.has(r.account_id));
+  const withVerdict1 = [...A1.map.values()];
+  must(withVerdict1.every((e) => flagged(e.verdict)), "1 d: every account with a verdict is WARN or DENY");
+  must(withVerdict1.every((e) => e.deciding.includes("new_account")), "1 d: new_account decides every verdict");
+  const deny1 = withVerdict1.filter((e) => e.verdict === "DENY").map((e) => e.account_id).sort();
+  must(deny1.every((id) => row.get(id).label === "suspicious" && A1.map.get(id).deciding.includes("lookalike_new_account")), "1 d: every DENY is a suspicious row denied as a new lookalike");
+  must(JSON.stringify(deny1) === JSON.stringify(tpLookalike.map((r) => r.account_id).sort()), "1 d: the DENY verdicts are the two fake tokens caught as lookalikes in the run above");
+  const denyBrands = deny1.map((id) => matchOf(id).known);
+  must(A1.over.cautious.recall === 1 && A1.over.cautious.precision === susWith(A1).length / withVerdict1.length, "1 d: over the accounts with a verdict, cautious recall is 100% and precision is the share of suspicious rows");
+  const share1 = `${pct(susWith(A1).length / withVerdict1.length)} (${susWith(A1).length} of ${withVerdict1.length})`;
+  const reading = [
+    `- **1 day: every account that exists is held, of both classes.** All ${withVerdict1.length} accounts with a verdict get WARN or DENY, and \`new_account\` (under 72 hours old; a soft warning) decides every one of them. That is the rule as designed, and what \`at-age/PREREGISTRATION.md\` expected from the rules alone: a payee under 72 hours old waits for one owner tap, whoever it is. So at this age the cautious operating point does not tell the classes apart: over the accounts with a verdict, cautious recall is ${recallCell(A1.over.cautious)} and cautious precision is ${share1}, exactly the share of suspicious rows among them, because all ${kgWith(A1).length} \`known_good\` rows are held too. A WARN holds the payment for one tap; it does not refuse it.`,
+    `- **DENY at 1 day.** The engine refuses ${deny1.length} accounts, ${listJoin(deny1.map(code))}, the fake airdrop tokens whose names imitate ${listJoin(denyBrands.map((b) => `${code(b)} (rank ${rankOf.get(b)})`))} on the brand list, because they are strong lookalikes under 72 hours old (\`lookalike_new_account\`). No \`known_good\` row is denied: strict precision ${precisionCell(A1.main.strict, "no DENY issued")}, strict recall ${recallCell(A1.main.strict)}. At block ${fill.BLOCK} the same two were only WARN, being older than 72 hours there.`,
+  ];
+  must(A1.main.strict.fp === 0 && deny1.every((id) => v.get(id).verdict === "WARN"), "1 d: no known_good row is denied, and the two denied were WARN at the run block");
+
+  // 7 days: what still decides a verdict once the 72-hour newness rule no longer applies.
+  const RULE_ORDER7 = sdk.engine.RULES.map((r) => r.code);
+  const nameList = (ids) => (ids.length <= 8 ? listJoin([...ids].sort().map((id) => code(short(id)))) : `${ids.length} accounts`);
+  const byCode7 = (rows) => {
+    const m = new Map();
+    for (const r of rows) {
+      for (const c of A7.map.get(r.account_id).deciding) {
+        if (!m.has(c)) m.set(c, []);
+        m.get(c).push(r.account_id);
+      }
+    }
+    return [...m.entries()].sort((p, q) => RULE_ORDER7.indexOf(p[0]) - RULE_ORDER7.indexOf(q[0]));
+  };
+  const reasonText7 = (rows) => byCode7(rows).map(([c, ids]) => `${code(c)}${soft.has(c) ? " (soft)" : ""} on ${ids.length === rows.length ? `all ${ids.length}` : ids.length}${ids.length <= 8 ? ` (${nameList(ids)})` : ""}`).join("; ");
+  function readingAt7() {
+    const w7 = [...A7.map.values()];
+    must(w7.every((e) => !e.deciding.includes("new_account")), "7 d: new_account decides no verdict");
+    const s7 = susWith(A7);
+    const k7 = kgWith(A7);
+    const held = (r) => flagged(A7.map.get(r.account_id).verdict);
+    const sH = s7.filter(held);
+    const kH = k7.filter(held);
+    const sA = s7.filter((r) => !held(r));
+    const kA = k7.filter((r) => !held(r));
+    const deny7 = w7.filter((e) => e.verdict === "DENY");
+    const plain = (r) => {
+      const e = A7.map.get(r.account_id);
+      return e.verdict === "ALLOW" && e.score === 600 && !e.reasons.some((x) => x.severity === "positive" || x.severity === "warn" || x.severity === "deny");
+    };
+    must([...sA, ...kA].every(plain), "7 d: every ALLOW is at the base score 600, with no warning and no positive");
+    const base7 = s7.length / w7.length;
+    const p7 = A7.over.cautious.precision;
+    // Split (i) at 7 days, in words: what is held because the USDC contract did not exist yet.
+    const pre = (r) => A7.map.get(r.account_id).block.height < usdcH;
+    const heldPre = [...sH, ...kH].filter(pre);
+    must(heldPre.every((r) => A7.map.get(r.account_id).deciding.includes("blocklist_unreadable")), "7 d: every account held before USDC existed carries blocklist_unreadable");
+    const sAfter = s7.filter((r) => !pre(r));
+    const kAfter = k7.filter((r) => !pre(r));
+    const sHa = sAfter.filter(held);
+    const kHa = kAfter.filter(held);
+    const missingBullet = `- **Missing data, not the payee.** ${heldPre.length} of the ${sH.length + kH.length} accounts held at 7 days have a replay block before Circle's USDC contract existed, where every verdict carries \`blocklist_unreadable\` whatever the payee (split (i) below). At or after that block the engine holds ${sHa.length} of ${sAfter.length} \`suspicious\` and ${kHa.length} of ${kAfter.length} \`known_good\` accounts: cautious recall ${ratio(sHa.length, sAfter.length)} and cautious precision ${ratio(sHa.length, sHa.length + kHa.length)} there.`;
+    return [
+      `- **7 days: the 72-hour rule no longer applies.** \`new_account\` decides no verdict at 7 days. Of the ${w7.length} accounts with a verdict, ${sH.length + kH.length} are still held: ${sH.length} of the ${s7.length} \`suspicious\` and ${kH.length} of the ${k7.length} \`known_good\`${deny7.length === 0 ? ", and none is refused (no DENY)" : `, and ${deny7.length} refused`}. Over the accounts with a verdict, cautious recall is ${recallCell(A7.over.cautious)} and cautious precision ${precisionCell(A7.over.cautious, "nothing flagged")}, ${p7 === null ? "" : p7 > base7 ? "above" : p7 < base7 ? "below" : "equal to"} the ${pct(base7)} share of suspicious rows among them.`,
+      `- **Suspicious rows at 7 days.** Held: ${sH.length ? reasonText7(sH) : "none"}. ALLOW: ${sA.length ? `${sA.length} (${nameList(sA.map((r) => r.account_id))})` : "none"}${sA.length ? ", each at the base score 600: 5 or more transactions by day 7, no key or code change between day 4 and day 7, no lookalike match, and too young for `long_history` (30 days)" : ""}.`,
+      `- **\`known_good\` rows at 7 days.** Held: ${kH.length ? reasonText7(kH) : "none"}. ALLOW: ${kA.length ? `${kA.length}${kA.length <= 8 ? ` (${nameList(kA.map((r) => r.account_id))})` : ""}, each at the base score 600` : "none"}.`,
+      missingBullet,
+    ];
+  }
+  fill.AA_READING = [...reading, ...readingAt7()].join("\n");
+  // The one sentence the summary adds: the headline numbers of both age points, as score.mjs counts them.
+  fill.AA_SUMMARY = `Replayed instead at each account's own age (pre-registered in \`at-age/PREREGISTRATION.md\`: the first block 1 day and 7 days after its creation block, with the ${fill.AA_N_EXCL} deleted worker accounts, gone by then, counted as misses), strict precision and recall are ${precisionCell(A1.main.strict, "no DENY issued")} and ${recallCell(A1.main.strict)} at 1 day and ${precisionCell(A7.main.strict, "no DENY issued")} and ${recallCell(A7.main.strict)} at 7 days, and cautious precision and recall are ${precisionCell(A1.main.cautious, "nothing flagged")} and ${recallCell(A1.main.cautious)} at 1 day, where every account that exists is held as new whatever its class, and ${precisionCell(A7.main.cautious, "nothing flagged")} and ${recallCell(A7.main.cautious)} at 7 days.`;
+
+  // The run: dates from the files, sizes from the disk (both fixed once committed).
+  const planned = plan.accounts.map((e) => e.planned_at).sort();
+  const snapshotFiles = (dir) => fs.readdirSync(dir).filter((f) => f.endsWith(".json") && !f.endsWith(".failed.json"));
+  const bytesIn = (dir) => snapshotFiles(dir).reduce((n, f) => n + fs.statSync(path.join(dir, f)).size, 0);
+  const snapBytes = AG.map((x) => bytesIn(AT_AGE.snapshots(x.d)));
+  const planBytes = fs.statSync(AT_AGE.plan).size;
+  const verdictBytes = AG.reduce((n, x) => n + fs.statSync(AT_AGE.verdicts(x.d)).size + fs.statSync(AT_AGE.leaveSelfOut(x.d)).size, 0);
+  fill.AA_N_SNAPSHOTS = AG.reduce((n, x) => n + x.map.size, 0);
+  for (const x of AG) must(snapshotFiles(AT_AGE.snapshots(x.d)).length === x.map.size && fs.readdirSync(AT_AGE.snapshots(x.d)).every((f) => !f.endsWith(".failed.json")), `${x.d} d: one snapshot file per verdict, and no failed collection`);
+  const mb = (n) => `${(n / 1_000_000).toFixed(1)} MB`;
+  for (const x of AG) {
+    for (const e of x.map.values()) {
+      must(e.transport_errors.length === 0 && !e.missing_data.includes("rpc_unavailable") && !e.missing_data.includes("indexer_unavailable"), `${x.d} d: ${e.account_id} has no unanswered read and no transient missing data`);
+      for (const c of e.missing_data) must(c === "blocklist_unreadable" || c === "erc8004_unreadable", `${x.d} d: ${e.account_id}: missing data ${c}`);
+    }
+  }
+  const decidedMissing = (c) => AG.map((x) => `${[...x.map.values()].filter((e) => e.missing_data.includes(c)).length} at ${x.name}`).join(" and ");
+  const usdcRpc = AG.flatMap((x) =>
+    [...x.map.values()]
+      .filter((e) => e.missing_data.includes("blocklist_unreadable"))
+      .map((e) => readJson(path.join(HERE, "at-age", e.snapshot)).rpc.find((r) => r.label === "usdc.is_blocklisted")?.error?.cause),
+  );
+  const ercRpc = AG.flatMap((x) =>
+    [...x.map.values()]
+      .filter((e) => e.missing_data.includes("erc8004_unreadable"))
+      .map((e) => readJson(path.join(HERE, "at-age", e.snapshot)).rpc.find((r) => r.label === "erc8004.nft_tokens_for_owner")?.error?.cause),
+  );
+  must(usdcRpc.every((c) => c === "UNKNOWN_ACCOUNT"), "every blocklist_unreadable at age is the USDC contract not existing yet at the block");
+  must(ercRpc.every((c) => c === "UNKNOWN_ACCOUNT"), "every erc8004_unreadable at age is the ERC-8004 registry not existing yet at the block");
+  fill.AA_RUN = [
+    "### Run at age",
+    "",
+    "| | |",
+    "|---|---|",
+    `| Plan | \`at-age/plan.json\`, each account planned between ${planned[0].slice(0, 19).replace("T", " ")} and ${planned[planned.length - 1].slice(0, 19).replace("T", " ")} (UTC) |`,
+    ...AG.map((x) => `| ${x.name} | ${x.map.size} snapshots in \`at-age/d${x.d}/snapshots/\`, collected from ${x.doc.run.collected_first.slice(0, 19).replace("T", " ")} to ${x.doc.run.collected_last.slice(0, 19).replace("T", " ")} (UTC) |`),
+    `| Size | the at-age snapshots take ${mb(snapBytes[0] + snapBytes[1])} (${AG.map((x, i) => `${x.name}: ${mb(snapBytes[i])}`).join(", ")}), \`plan.json\` ${mb(planBytes)} and the four verdict files ${mb(verdictBytes)} |`,
+    `| Missing data | no at-age verdict has an unanswered read or an indexer failure. Two contracts the engine reads did not exist yet at many replay blocks, and their decided \`UNKNOWN_ACCOUNT\` answers are kept as the engine reads them: Circle's USDC contract (${code("blocklist_unreadable")}, a hard warning; ${decidedMissing("blocklist_unreadable")}) and Arras's ERC-8004 identity registry (${code("erc8004_unreadable")}, info, never deciding; ${decidedMissing("erc8004_unreadable")}) |`,
+    `| Reads | keyless and read-only, through \`run.mjs\`'s per-host pacer. The archival hosts, where nearly every at-age read goes, get a longer gap (\`--archival-gap-ms\`, ${(atAgeHosts()["archival-rpc.mainnet.fastnear.com"].gapMs / 1000).toFixed(1)} s by default on FastNEAR's and at least ${(atAgeHosts(100)["archival-rpc.mainnet.near.org"].gapMs / 1000).toFixed(1)} s on near.org's). Request counts per host are not given: the runner prints them to its console only, and that output was not kept for every sitting |`,
+    `| Engine | \`${A1.doc.engine.split("; block:")[0]}\` |`,
+  ].join("\n");
+  must(AG.every((x) => x.doc.engine.startsWith(V.engine)), "the at-age engine is the run's engine");
+
+  const repro = A1.map.get("metapools.near");
+  must(repro && repro.block.height === P.get("metapools.near").ages["1"].block.height, "metapools.near has a 1-day verdict at its planned block");
+  fill.AA_REPRO_BLOCK = repro.block.height;
+  fill.AA_REPRO_VERDICT = repro.verdict;
+
+  fill.AA_SCORE_D1 = scorerOutput(path.join("at-age", "d1", "verdicts.json"));
+  fill.AA_SCORE_D7 = scorerOutput(path.join("at-age", "d7", "verdicts.json"));
 
   // ------------------------------------------------------------------ limits
   const c = main.cautious;

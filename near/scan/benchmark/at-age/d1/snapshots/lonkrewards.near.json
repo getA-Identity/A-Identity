@@ -1,0 +1,438 @@
+{
+  "schema": "a-identity.near.snapshot/1",
+  "network": "mainnet",
+  "subject": "lonkrewards.near",
+  "block": {
+    "height": 119281117,
+    "hash": "3bi13jP1SCAgBCpKoPv1Z63WXd1ptcP9iQaYkY3wtZ8p",
+    "timestamp_ns": "1716134888883824933"
+  },
+  "context": {
+    "known": ["17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1","a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.factory.bridge.near","aaaaaa20d9e0e2461697782ef11675f668207961.factory.bridge.near","btc.omft.near","dac17f958d2ee523a2206206994597c13d831ec7.factory.bridge.near","eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near","eth-0xdac17f958d2ee523a2206206994597c13d831ec7.omft.near","eth.bridge.near","eth.omft.near","far-token.fewandfar-protocol.near","linear-protocol.near","meta-pool.near","meta-token.near","mpdao-token.near","nbtc.bridge.near","near20.margaritafinance.near","npro.nearmobile.near","token.publicailab.near","token.rhealab.near","token.v2.ref-finance.near","usdt.tether-token.near","usn","walc.near","wrap.near","zec.omft.near"],
+    "vault_id": null,
+    "registry_id": null,
+    "usdc_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+    "third_party": [],
+    "erc8004": {
+      "identity": "identity-registry.erc-8004.near",
+      "reputation": "reputation-registry.erc-8004.near"
+    },
+    "probes": {
+      "recent_s": 259200,
+      "long_s": 2592000
+    },
+    "activity_window": 5
+  },
+  "rpc": [
+    {
+      "label": "account",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "view_account",
+        "account_id": "lonkrewards.near",
+        "block_id": 119281117
+      },
+      "result": {
+        "amount": "98685906562280550399999999",
+        "block_hash": "3bi13jP1SCAgBCpKoPv1Z63WXd1ptcP9iQaYkY3wtZ8p",
+        "block_height": 119281117,
+        "code_hash": "G7cb7FBWP1F9ncqyt1RFCMvnYGMDBMX7YhxMENtvpygd",
+        "locked": "0",
+        "storage_paid_at": 0,
+        "storage_usage": 1894959
+      }
+    },
+    {
+      "label": "block",
+      "network": "mainnet",
+      "archival": false,
+      "method": "block",
+      "params": {
+        "block_id": 119281117
+      },
+      "result": {
+        "header": {
+          "height": 119281117,
+          "hash": "3bi13jP1SCAgBCpKoPv1Z63WXd1ptcP9iQaYkY3wtZ8p",
+          "prev_hash": "7RX6JLixK3tVBoNX4mfdbeKUiEZ9dv23JBfrX6E5EKGJ",
+          "timestamp_nanosec": "1716134888883824933"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "erc8004.nft_tokens_for_owner",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "identity-registry.erc-8004.near",
+        "method_name": "nft_tokens_for_owner",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibG9ua3Jld2FyZHMubmVhciIsImZyb21faW5kZXgiOm51bGwsImxpbWl0Ijo1fQ==",
+        "block_id": 119281117
+      },
+      "error": {
+        "name": "HANDLER_ERROR",
+        "cause": "UNKNOWN_ACCOUNT",
+        "message": "account identity-registry.erc-8004.near does not exist while viewing"
+      }
+    },
+    {
+      "label": "keys#0",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "view_access_key_list",
+        "account_id": "lonkrewards.near",
+        "block_id": 119281117,
+        "limit": 100
+      },
+      "result": {
+        "block_hash": "3bi13jP1SCAgBCpKoPv1Z63WXd1ptcP9iQaYkY3wtZ8p",
+        "block_height": 119281117,
+        "keys": [
+          {
+            "access_key": {
+              "nonce": 119206326000142,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:3X74RsE2KF7aMp131hUU6CGWPfznym9mfYQUKzd7kFCi"
+          },
+          {
+            "access_key": {
+              "nonce": 119237780000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "lonkrewards.near"
+                }
+              }
+            },
+            "public_key": "ed25519:5VaGFmgD71LcN4YFLTWaW5DJ3QrS9f8zkiEbMKAG9TVs"
+          },
+          {
+            "access_key": {
+              "nonce": 119206341000001,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:GPMCkruBZbpAMCsqotvhXQ5n9s6QTPi3ihKG5F7WoXHy"
+          }
+        ]
+      }
+    },
+    {
+      "label": "probe.recent.account",
+      "network": "mainnet",
+      "archival": true,
+      "method": "query",
+      "params": {
+        "request_type": "view_account",
+        "account_id": "lonkrewards.near",
+        "block_id": 119055920
+      },
+      "error": {
+        "name": "HANDLER_ERROR",
+        "cause": "UNKNOWN_ACCOUNT",
+        "message": "account lonkrewards.near does not exist while viewing"
+      }
+    },
+    {
+      "label": "probe.recent.block",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 119055920
+      },
+      "result": {
+        "header": {
+          "height": 119055920,
+          "hash": "ENSyu9tMtLQeAkuJ1N4LXunvqqxaqKb8rmYyNL33VPSw",
+          "prev_hash": "EkQadTS5cPGB2fk4dY8R3dd842d7VmE5UUaPpeBc1Hsr",
+          "timestamp_nanosec": "1715875317243251296"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "probe.recent.search#0",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 118848617
+      },
+      "result": {
+        "header": {
+          "height": 118848617,
+          "hash": "CzskE2wxFhmTH3w3pQ39PEUYmq2RzuAo6oGxWfaCgR2w",
+          "prev_hash": "6QB6z8fn2Mzo3x1zQZaiRcYJNYKjrL9jY2UgKaTShr6i",
+          "timestamp_nanosec": "1715619272563726451"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "probe.recent.search#1",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 119063447
+      },
+      "result": {
+        "header": {
+          "height": 119063447,
+          "hash": "ELc8hU9J2Y1SuavRvocjHiee84uZQxhDpfgPWHriV4tT",
+          "prev_hash": "F693GURbrZ7x4g6NztUweYEz94FG6zvSPVD8vVj1rLYS",
+          "timestamp_nanosec": "1715884063076442201"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "usdc.is_blocklisted",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+        "method_name": "is_blocklisted",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibG9ua3Jld2FyZHMubmVhciJ9",
+        "block_id": 119281117
+      },
+      "result": {
+        "block_hash": "3bi13jP1SCAgBCpKoPv1Z63WXd1ptcP9iQaYkY3wtZ8p",
+        "block_height": 119281117,
+        "logs": [],
+        "result": [102,97,108,115,101]
+      }
+    },
+    {
+      "label": "usdc.storage_balance_of",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+        "method_name": "storage_balance_of",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibG9ua3Jld2FyZHMubmVhciJ9",
+        "block_id": 119281117
+      },
+      "result": {
+        "block_hash": "3bi13jP1SCAgBCpKoPv1Z63WXd1ptcP9iQaYkY3wtZ8p",
+        "block_height": 119281117,
+        "logs": [],
+        "result": [110,117,108,108]
+      }
+    }
+  ],
+  "http": [
+    {
+      "label": "fastnear.newest",
+      "source": "fastnear",
+      "method": "POST",
+      "url": "https://tx.main.fastnear.com/v0/account",
+      "status": 200,
+      "json": {
+        "account_txs": [
+          {
+            "account_id": "lonkrewards.near",
+            "transaction_hash": "AuDfZeS1hotfLrXa1KH6Mxiv2G3rVdczgeNJtMcpb2VY",
+            "tx_block_height": 219943251,
+            "tx_block_timestamp": "1791987658623245457",
+            "tx_index": 0,
+            "is_signer": false,
+            "is_delegated_signer": false,
+            "is_real_signer": false,
+            "is_any_signer": false,
+            "is_predecessor": false,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": true,
+            "is_action_arg": false,
+            "is_event_log": false,
+            "is_success": true
+          }
+        ],
+        "resume_token": "944649070020919296",
+        "txs_count": 1182
+      },
+      "fetched_at": "2026-11-12T21:58:37.540Z",
+      "body": {
+        "account_id": "lonkrewards.near",
+        "limit": 1,
+        "desc": true
+      }
+    },
+    {
+      "label": "fastnear.oldest",
+      "source": "fastnear",
+      "method": "POST",
+      "url": "https://tx.main.fastnear.com/v0/account",
+      "status": 200,
+      "json": {
+        "account_txs": [
+          {
+            "account_id": "lonkrewards.near",
+            "transaction_hash": "FHa8Kiwn3jJDur3amYi8C2ZLvrdvBAU53v2j3dPUfaF4",
+            "tx_block_height": 119206325,
+            "tx_block_timestamp": "1716048485950369750",
+            "tx_index": 38,
+            "is_signer": false,
+            "is_delegated_signer": false,
+            "is_real_signer": false,
+            "is_any_signer": false,
+            "is_predecessor": false,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": false,
+            "is_action_arg": true,
+            "is_event_log": false,
+            "is_success": true
+          },
+          {
+            "account_id": "lonkrewards.near",
+            "transaction_hash": "B6hPy9Fgm7vKpmYo5SCg7WbPNhCicVrRQEqpedvgpPkq",
+            "tx_block_height": 119206342,
+            "tx_block_timestamp": "1716048507032780234",
+            "tx_index": 66,
+            "is_signer": true,
+            "is_delegated_signer": false,
+            "is_real_signer": true,
+            "is_any_signer": true,
+            "is_predecessor": true,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": false,
+            "is_action_arg": false,
+            "is_event_log": false,
+            "is_success": true
+          },
+          {
+            "account_id": "lonkrewards.near",
+            "transaction_hash": "8Bh2cciC94iRL5MVDmEHdFEc4b7WBMJz729PmArZ1Cx6",
+            "tx_block_height": 119230162,
+            "tx_block_timestamp": "1716076044293874561",
+            "tx_index": 27,
+            "is_signer": false,
+            "is_delegated_signer": false,
+            "is_real_signer": false,
+            "is_any_signer": false,
+            "is_predecessor": false,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": false,
+            "is_action_arg": false,
+            "is_event_log": false,
+            "is_success": true
+          },
+          {
+            "account_id": "lonkrewards.near",
+            "transaction_hash": "Cy6U32ccogBaQRSgep9437Jt26zsfyQaWVWKZ1qGXPPA",
+            "tx_block_height": 119232021,
+            "tx_block_timestamp": "1716078171304570990",
+            "tx_index": 31,
+            "is_signer": true,
+            "is_delegated_signer": false,
+            "is_real_signer": true,
+            "is_any_signer": true,
+            "is_predecessor": true,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": false,
+            "is_action_arg": false,
+            "is_event_log": false,
+            "is_success": true
+          },
+          {
+            "account_id": "lonkrewards.near",
+            "transaction_hash": "9XqtJ2tvvSoB7eDkgkAU2ywJiRgnesYETLmYJvj85Qjq",
+            "tx_block_height": 119233084,
+            "tx_block_timestamp": "1716079386874717046",
+            "tx_index": 33,
+            "is_signer": true,
+            "is_delegated_signer": false,
+            "is_real_signer": true,
+            "is_any_signer": true,
+            "is_predecessor": true,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": true,
+            "is_action_arg": true,
+            "is_event_log": true,
+            "is_success": true
+          }
+        ],
+        "resume_token": "512102196381220897",
+        "txs_count": 1182
+      },
+      "fetched_at": "2026-11-12T21:58:37.359Z",
+      "body": {
+        "account_id": "lonkrewards.near",
+        "limit": 5,
+        "desc": false
+      }
+    },
+    {
+      "label": "nearblocks.deployments",
+      "source": "nearblocks",
+      "method": "GET",
+      "url": "https://api.nearblocks.io/v3/accounts/lonkrewards.near/contract/deployments",
+      "status": 200,
+      "json": {
+        "data": [
+          {
+            "block": {
+              "block_hash": "EMx9kUFpCjs1T9cMKMJXeAAXBrhPB6mfwUeyXk7Ljv91",
+              "block_height": "119232021",
+              "block_timestamp": "1716078171304570990"
+            },
+            "predecessor_account_id": "lonkrewards.near",
+            "transaction_hash": "Cy6U32ccogBaQRSgep9437Jt26zsfyQaWVWKZ1qGXPPA"
+          }
+        ]
+      },
+      "fetched_at": "2026-11-12T21:58:38.311Z"
+    }
+  ],
+  "meta": {
+    "collected_at": "2026-11-12T21:59:34.958Z",
+    "collector": "a-identity-near-sdk/0.2.0",
+    "endpoints": ["api.nearblocks.io","archival-rpc.mainnet.fastnear.com","tx.main.fastnear.com"],
+    "notes": ["Some data: Powered by Nearblocks.io APIs (https://nearblocks.io).","Pinned by age (scan/benchmark/at-age): the first block at or after the account's creation block #119206327 + 1 day(s)."],
+    "at_age": {
+      "rule": "the first block at or after the creation block's timestamp + days * 86400 s (scan/benchmark/at-age/PREREGISTRATION.md)",
+      "days": 1,
+      "creation": {
+        "height": 119206327,
+        "hash": "AnW12JyJ9xCtZVRt1LpxPBqLeQFP8M5W8Ah9tBtUNNwD",
+        "timestamp_ns": "1716048488331039344"
+      },
+      "target_timestamp_ns": "1716134888331039344",
+      "block": {
+        "height": 119281117,
+        "hash": "3bi13jP1SCAgBCpKoPv1Z63WXd1ptcP9iQaYkY3wtZ8p",
+        "timestamp_ns": "1716134888883824933"
+      },
+      "predecessor": {
+        "height": 119281116,
+        "hash": "7RX6JLixK3tVBoNX4mfdbeKUiEZ9dv23JBfrX6E5EKGJ",
+        "timestamp_ns": "1716134887516452830"
+      }
+    }
+  }
+}

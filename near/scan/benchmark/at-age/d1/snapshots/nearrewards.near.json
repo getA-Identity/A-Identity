@@ -1,0 +1,506 @@
+{
+  "schema": "a-identity.near.snapshot/1",
+  "network": "mainnet",
+  "subject": "nearrewards.near",
+  "block": {
+    "height": 118677268,
+    "hash": "BUfNpmhC6AkjhRvMZsb3nz9fAEzU2dA9fzyApxRJV1bN",
+    "timestamp_ns": "1715392170286948528"
+  },
+  "context": {
+    "known": ["17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1","a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.factory.bridge.near","aaaaaa20d9e0e2461697782ef11675f668207961.factory.bridge.near","btc.omft.near","dac17f958d2ee523a2206206994597c13d831ec7.factory.bridge.near","eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near","eth-0xdac17f958d2ee523a2206206994597c13d831ec7.omft.near","eth.bridge.near","eth.omft.near","far-token.fewandfar-protocol.near","linear-protocol.near","meta-pool.near","meta-token.near","mpdao-token.near","nbtc.bridge.near","near20.margaritafinance.near","npro.nearmobile.near","token.publicailab.near","token.rhealab.near","token.v2.ref-finance.near","usdt.tether-token.near","usn","walc.near","wrap.near","zec.omft.near"],
+    "vault_id": null,
+    "registry_id": null,
+    "usdc_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+    "third_party": [],
+    "erc8004": {
+      "identity": "identity-registry.erc-8004.near",
+      "reputation": "reputation-registry.erc-8004.near"
+    },
+    "probes": {
+      "recent_s": 259200,
+      "long_s": 2592000
+    },
+    "activity_window": 5
+  },
+  "rpc": [
+    {
+      "label": "account",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "view_account",
+        "account_id": "nearrewards.near",
+        "block_id": 118677268
+      },
+      "result": {
+        "amount": "73789339221381681471164506",
+        "block_hash": "BUfNpmhC6AkjhRvMZsb3nz9fAEzU2dA9fzyApxRJV1bN",
+        "block_height": 118677268,
+        "code_hash": "72Cvq9oEeNTJASujBw8p9MbVa1brC2VN2hcohuHBKeh",
+        "locked": "0",
+        "storage_paid_at": 0,
+        "storage_usage": 1650085
+      }
+    },
+    {
+      "label": "block",
+      "network": "mainnet",
+      "archival": false,
+      "method": "block",
+      "params": {
+        "block_id": 118677268
+      },
+      "result": {
+        "header": {
+          "height": 118677268,
+          "hash": "BUfNpmhC6AkjhRvMZsb3nz9fAEzU2dA9fzyApxRJV1bN",
+          "prev_hash": "2pQKHejwdVytWC3XsbXmhvSQPgoQEjxZfcUHpivkbJyV",
+          "timestamp_nanosec": "1715392170286948528"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "erc8004.nft_tokens_for_owner",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "identity-registry.erc-8004.near",
+        "method_name": "nft_tokens_for_owner",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibmVhcnJld2FyZHMubmVhciIsImZyb21faW5kZXgiOm51bGwsImxpbWl0Ijo1fQ==",
+        "block_id": 118677268
+      },
+      "error": {
+        "name": "HANDLER_ERROR",
+        "cause": "UNKNOWN_ACCOUNT",
+        "message": "account identity-registry.erc-8004.near does not exist while viewing"
+      }
+    },
+    {
+      "label": "keys#0",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "view_access_key_list",
+        "account_id": "nearrewards.near",
+        "block_id": 118677268,
+        "limit": 100
+      },
+      "result": {
+        "block_hash": "BUfNpmhC6AkjhRvMZsb3nz9fAEzU2dA9fzyApxRJV1bN",
+        "block_height": 118677268,
+        "keys": [
+          {
+            "access_key": {
+              "nonce": 118674880000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "claimreward.near"
+                }
+              }
+            },
+            "public_key": "ed25519:yVhvAQHcioUVq8UgkvC78c9yEbGsFeLzmnJrSDbYsb9"
+          },
+          {
+            "access_key": {
+              "nonce": 118615273000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "asset-manager.orderly-network.near"
+                }
+              }
+            },
+            "public_key": "ed25519:5ZXjZxY38FEZtJPupckjRxzNLDk91A3LHE5sXESXE4sW"
+          },
+          {
+            "access_key": {
+              "nonce": 118610806000005,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:8a4iYGmoDZUFHPSXB4T6776FTbufwqdWC7S3qMTCMtxU"
+          },
+          {
+            "access_key": {
+              "nonce": 118646116000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "nearrewards.near"
+                }
+              }
+            },
+            "public_key": "ed25519:8pC3qpSsPxwHsAeH9297HyZ9FScrSYkJLCFzg6cBdvSn"
+          },
+          {
+            "access_key": {
+              "nonce": 118623974000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "claimreward.near"
+                }
+              }
+            },
+            "public_key": "ed25519:DL8rVh2rARhEMR9y3ThCrM2Xp2Y8zhC3P5UWdEN8Q7FJ"
+          },
+          {
+            "access_key": {
+              "nonce": 118610798000058,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:DqqLQKgXNcYnCRaC4Zsn4yCbVvjP3ZJqB9qXueWZY2X5"
+          },
+          {
+            "access_key": {
+              "nonce": 118630050000000,
+              "permission": {
+                "FunctionCall": {
+                  "allowance": null,
+                  "method_names": [],
+                  "receiver_id": "bulksender.near"
+                }
+              }
+            },
+            "public_key": "ed25519:FuDaKbG2fgLKcMnTP4PtqY1AoDEYKtMW9G25xm9GzSMf"
+          },
+          {
+            "access_key": {
+              "nonce": 118645742000000,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:HcC65hX4x6B16q1StrzASLkSe7c2NtiXLw7HfQ5rwToY"
+          }
+        ]
+      }
+    },
+    {
+      "label": "probe.recent.account",
+      "network": "mainnet",
+      "archival": true,
+      "method": "query",
+      "params": {
+        "request_type": "view_account",
+        "account_id": "nearrewards.near",
+        "block_id": 118473597
+      },
+      "error": {
+        "name": "HANDLER_ERROR",
+        "cause": "UNKNOWN_ACCOUNT",
+        "message": "account nearrewards.near does not exist while viewing"
+      }
+    },
+    {
+      "label": "probe.recent.block",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 118473597
+      },
+      "result": {
+        "header": {
+          "height": 118473597,
+          "hash": "3vRc1S47UoQiSMacKPhVnzm8qhEEQEu8jYdqiNMBSCWi",
+          "prev_hash": "2CZnHFZEMSgCTmBZe379LvWsdd4ceFS3bFReWX7fA7aH",
+          "timestamp_nanosec": "1715132575835247639"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "probe.recent.search#0",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 118244768
+      },
+      "result": {
+        "header": {
+          "height": 118244768,
+          "hash": "64HQV5MseiM3cPPb8WakwW8pnFymuLHoWZoCcCfRxVSc",
+          "prev_hash": "JCWmBvnvQxEFQZ9nq7osZGAdB9kZU8Zifnvkv1ym4zwc",
+          "timestamp_nanosec": "1714847543864678944"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "probe.recent.search#1",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 118471193
+      },
+      "result": {
+        "header": {
+          "height": 118471193,
+          "hash": "AgcpoNmcc7C73jYTTzFVyYMv8QNke9GD9vNqvKHS2Ls1",
+          "prev_hash": "6TyZpDYEe2GrZ8kDjp8M8mhY9UwrDZpU4dKTtKpKy5NN",
+          "timestamp_nanosec": "1715129606962046873"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "usdc.is_blocklisted",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+        "method_name": "is_blocklisted",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibmVhcnJld2FyZHMubmVhciJ9",
+        "block_id": 118677268
+      },
+      "result": {
+        "block_hash": "BUfNpmhC6AkjhRvMZsb3nz9fAEzU2dA9fzyApxRJV1bN",
+        "block_height": 118677268,
+        "logs": [],
+        "result": [102,97,108,115,101]
+      }
+    },
+    {
+      "label": "usdc.storage_balance_of",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+        "method_name": "storage_balance_of",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibmVhcnJld2FyZHMubmVhciJ9",
+        "block_id": 118677268
+      },
+      "result": {
+        "block_hash": "BUfNpmhC6AkjhRvMZsb3nz9fAEzU2dA9fzyApxRJV1bN",
+        "block_height": 118677268,
+        "logs": [],
+        "result": [110,117,108,108]
+      }
+    }
+  ],
+  "http": [
+    {
+      "label": "fastnear.newest",
+      "source": "fastnear",
+      "method": "POST",
+      "url": "https://tx.main.fastnear.com/v0/account",
+      "status": 200,
+      "json": {
+        "account_txs": [
+          {
+            "account_id": "nearrewards.near",
+            "transaction_hash": "Dy5kV6KWBJ45V5Qe5xSxuJucxSaRXcQgT5iaVrsJgcrC",
+            "tx_block_height": 222961085,
+            "tx_block_timestamp": "1793761010024031871",
+            "tx_index": 0,
+            "is_signer": false,
+            "is_delegated_signer": false,
+            "is_real_signer": false,
+            "is_any_signer": false,
+            "is_predecessor": true,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": true,
+            "is_action_arg": false,
+            "is_event_log": false,
+            "is_success": true
+          }
+        ],
+        "resume_token": "957610568355676160",
+        "txs_count": 11719
+      },
+      "fetched_at": "2026-11-12T22:02:08.742Z",
+      "body": {
+        "account_id": "nearrewards.near",
+        "limit": 1,
+        "desc": true
+      }
+    },
+    {
+      "label": "fastnear.oldest",
+      "source": "fastnear",
+      "method": "POST",
+      "url": "https://tx.main.fastnear.com/v0/account",
+      "status": 200,
+      "json": {
+        "account_txs": [
+          {
+            "account_id": "nearrewards.near",
+            "transaction_hash": "3vz4jjQrXM6pWJaJM8rdQRyieyuJH2KnTbhQP8nZns6c",
+            "tx_block_height": 118610797,
+            "tx_block_timestamp": "1715305766969573128",
+            "tx_index": 11,
+            "is_signer": false,
+            "is_delegated_signer": false,
+            "is_real_signer": false,
+            "is_any_signer": false,
+            "is_predecessor": false,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": false,
+            "is_action_arg": true,
+            "is_event_log": false,
+            "is_success": true
+          },
+          {
+            "account_id": "nearrewards.near",
+            "transaction_hash": "8eypVknssHiVqkuYjWgEUs67YKBR2YDAwoLgkdPuskAJ",
+            "tx_block_height": 118610807,
+            "tx_block_timestamp": "1715305780632037394",
+            "tx_index": 61,
+            "is_signer": true,
+            "is_delegated_signer": false,
+            "is_real_signer": true,
+            "is_any_signer": true,
+            "is_predecessor": true,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": false,
+            "is_action_arg": false,
+            "is_event_log": false,
+            "is_success": true
+          },
+          {
+            "account_id": "nearrewards.near",
+            "transaction_hash": "EFb1SxPL6hpTVco54iY2MPxZ1QxiUvQ2xDV9TKFfeMcf",
+            "tx_block_height": 118611894,
+            "tx_block_timestamp": "1715307213021429884",
+            "tx_index": 10,
+            "is_signer": false,
+            "is_delegated_signer": false,
+            "is_real_signer": false,
+            "is_any_signer": false,
+            "is_predecessor": false,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": false,
+            "is_action_arg": false,
+            "is_event_log": false,
+            "is_success": true
+          },
+          {
+            "account_id": "nearrewards.near",
+            "transaction_hash": "GwFqPPENsPFCrrdfP3LaGFCWSMqgULQBoDsXtzckk6KQ",
+            "tx_block_height": 118614983,
+            "tx_block_timestamp": "1715311206015187682",
+            "tx_index": 83,
+            "is_signer": true,
+            "is_delegated_signer": false,
+            "is_real_signer": true,
+            "is_any_signer": true,
+            "is_predecessor": true,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": false,
+            "is_action_arg": false,
+            "is_event_log": false,
+            "is_success": true
+          },
+          {
+            "account_id": "nearrewards.near",
+            "transaction_hash": "C6qb1JFCxk5BAmXHXe3wc2XMfku3dLKa1UoYWBG6PVaX",
+            "tx_block_height": 118615119,
+            "tx_block_timestamp": "1715311380235368817",
+            "tx_index": 35,
+            "is_signer": true,
+            "is_delegated_signer": false,
+            "is_real_signer": true,
+            "is_any_signer": true,
+            "is_predecessor": true,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": true,
+            "is_action_arg": true,
+            "is_event_log": true,
+            "is_success": true
+          }
+        ],
+        "resume_token": "509448056916148259",
+        "txs_count": 11719
+      },
+      "fetched_at": "2026-11-12T22:02:08.572Z",
+      "body": {
+        "account_id": "nearrewards.near",
+        "limit": 5,
+        "desc": false
+      }
+    },
+    {
+      "label": "nearblocks.deployments",
+      "source": "nearblocks",
+      "method": "GET",
+      "url": "https://api.nearblocks.io/v3/accounts/nearrewards.near/contract/deployments",
+      "status": 200,
+      "json": {
+        "data": [
+          {
+            "block": {
+              "block_hash": "5B4CftuQctYvUBxWV6b1FiDyAMQhUScSj6YJsYqN9NAV",
+              "block_height": "118614983",
+              "block_timestamp": "1715311206015187682"
+            },
+            "predecessor_account_id": "nearrewards.near",
+            "transaction_hash": "GwFqPPENsPFCrrdfP3LaGFCWSMqgULQBoDsXtzckk6KQ"
+          },
+          {
+            "block": {
+              "block_hash": "34xb6hr71Btohg91QNbC3SquvY9yKDE1pQcGxHFPv5te",
+              "block_height": "120720831",
+              "block_timestamp": "1717863939176820812"
+            },
+            "predecessor_account_id": "nearrewards.near",
+            "transaction_hash": "GFtjYPHwHbd8893G1dpcTsnxNqH12j1aeYxmKjvaHjPm"
+          }
+        ]
+      },
+      "fetched_at": "2026-11-12T22:02:09.494Z"
+    }
+  ],
+  "meta": {
+    "collected_at": "2026-11-12T22:03:06.078Z",
+    "collector": "a-identity-near-sdk/0.2.0",
+    "endpoints": ["api.nearblocks.io","archival-rpc.mainnet.fastnear.com","tx.main.fastnear.com"],
+    "notes": ["Some data: Powered by Nearblocks.io APIs (https://nearblocks.io).","Pinned by age (scan/benchmark/at-age): the first block at or after the account's creation block #118610799 + 1 day(s)."],
+    "at_age": {
+      "rule": "the first block at or after the creation block's timestamp + days * 86400 s (scan/benchmark/at-age/PREREGISTRATION.md)",
+      "days": 1,
+      "creation": {
+        "height": 118610799,
+        "hash": "4F83pdn4jvNSXAoUJZSrnh51veknQbM1G5EeqFseRYrj",
+        "timestamp_ns": "1715305769636035651"
+      },
+      "target_timestamp_ns": "1715392169636035651",
+      "block": {
+        "height": 118677268,
+        "hash": "BUfNpmhC6AkjhRvMZsb3nz9fAEzU2dA9fzyApxRJV1bN",
+        "timestamp_ns": "1715392170286948528"
+      },
+      "predecessor": {
+        "height": 118677267,
+        "hash": "2pQKHejwdVytWC3XsbXmhvSQPgoQEjxZfcUHpivkbJyV",
+        "timestamp_ns": "1715392168904518846"
+      }
+    }
+  }
+}

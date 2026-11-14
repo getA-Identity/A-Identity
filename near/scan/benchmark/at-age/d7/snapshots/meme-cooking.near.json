@@ -1,0 +1,514 @@
+{
+  "schema": "a-identity.near.snapshot/1",
+  "network": "mainnet",
+  "subject": "meme-cooking.near",
+  "block": {
+    "height": 124525848,
+    "hash": "82k5MZCfzqL9TwxPBC4pePz5d8xTuv23dDVgBVmA52sD",
+    "timestamp_ns": "1722250762900929508"
+  },
+  "context": {
+    "known": ["17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1","a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.factory.bridge.near","aaaaaa20d9e0e2461697782ef11675f668207961.factory.bridge.near","btc.omft.near","dac17f958d2ee523a2206206994597c13d831ec7.factory.bridge.near","eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near","eth-0xdac17f958d2ee523a2206206994597c13d831ec7.omft.near","eth.bridge.near","eth.omft.near","far-token.fewandfar-protocol.near","linear-protocol.near","meta-pool.near","meta-token.near","mpdao-token.near","nbtc.bridge.near","near20.margaritafinance.near","npro.nearmobile.near","token.publicailab.near","token.rhealab.near","token.v2.ref-finance.near","usdt.tether-token.near","usn","walc.near","wrap.near","zec.omft.near"],
+    "vault_id": null,
+    "registry_id": null,
+    "usdc_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+    "third_party": [],
+    "erc8004": {
+      "identity": "identity-registry.erc-8004.near",
+      "reputation": "reputation-registry.erc-8004.near"
+    },
+    "probes": {
+      "recent_s": 259200,
+      "long_s": 2592000
+    },
+    "activity_window": 5
+  },
+  "rpc": [
+    {
+      "label": "account",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "view_account",
+        "account_id": "meme-cooking.near",
+        "block_id": 124525848
+      },
+      "result": {
+        "amount": "0",
+        "block_hash": "82k5MZCfzqL9TwxPBC4pePz5d8xTuv23dDVgBVmA52sD",
+        "block_height": 124525848,
+        "code_hash": "11111111111111111111111111111111",
+        "locked": "0",
+        "storage_paid_at": 0,
+        "storage_usage": 182
+      }
+    },
+    {
+      "label": "block",
+      "network": "mainnet",
+      "archival": false,
+      "method": "block",
+      "params": {
+        "block_id": 124525848
+      },
+      "result": {
+        "header": {
+          "height": 124525848,
+          "hash": "82k5MZCfzqL9TwxPBC4pePz5d8xTuv23dDVgBVmA52sD",
+          "prev_hash": "CSuzxEpsohAcLqQzBjfwt6gMt3zkw4yPiVrP8i4FRizg",
+          "timestamp_nanosec": "1722250762900929508"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "erc8004.nft_tokens_for_owner",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "identity-registry.erc-8004.near",
+        "method_name": "nft_tokens_for_owner",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibWVtZS1jb29raW5nLm5lYXIiLCJmcm9tX2luZGV4IjpudWxsLCJsaW1pdCI6NX0=",
+        "block_id": 124525848
+      },
+      "error": {
+        "name": "HANDLER_ERROR",
+        "cause": "UNKNOWN_ACCOUNT",
+        "message": "account identity-registry.erc-8004.near does not exist while viewing"
+      }
+    },
+    {
+      "label": "keys#0",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "view_access_key_list",
+        "account_id": "meme-cooking.near",
+        "block_id": 124525848,
+        "limit": 100
+      },
+      "result": {
+        "block_hash": "82k5MZCfzqL9TwxPBC4pePz5d8xTuv23dDVgBVmA52sD",
+        "block_height": 124525848,
+        "keys": [
+          {
+            "access_key": {
+              "nonce": 123989402000000,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:bouNCo6AEdBY4wBKzzrUqkigbidLEqxLXmHMMiJH3WZ"
+          }
+        ]
+      }
+    },
+    {
+      "label": "probe.long.account",
+      "network": "mainnet",
+      "archival": true,
+      "method": "query",
+      "params": {
+        "request_type": "view_account",
+        "account_id": "meme-cooking.near",
+        "block_id": 122242607
+      },
+      "error": {
+        "name": "HANDLER_ERROR",
+        "cause": "UNKNOWN_ACCOUNT",
+        "message": "account meme-cooking.near does not exist while viewing"
+      }
+    },
+    {
+      "label": "probe.long.block",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 122242607
+      },
+      "result": {
+        "header": {
+          "height": 122242607,
+          "hash": "53M13Nu5pPX7jzNwGxDCKn51BqLGDBkn1kkK7q9JaTyi",
+          "prev_hash": "yovpqtSmCXnnVXan1BX2hLbVmbxbL2jaxdkh6NWW4jj",
+          "timestamp_nanosec": "1719658618026775109"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "probe.long.search#0",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 120205348
+      },
+      "result": {
+        "header": {
+          "height": 120205348,
+          "hash": "B2e9YQeZ8Jz8QEFEKx6yTtXDX9smvpWcsGgkHeiEjLHj",
+          "prev_hash": "6qtpfEAGajhBno4TZkKKern6h9MeWgSB2Dd2u5vSiKoy",
+          "timestamp_nanosec": "1717246545485855523"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "probe.long.search#1",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 122287729
+      },
+      "result": {
+        "header": {
+          "height": 122287729,
+          "hash": "HCWiMf5hNEbiCGW4HbZXwcNfN4b9L8NPDFvwaqENoZyL",
+          "prev_hash": "HKqreWa3yYoCb4L4oinRg3jCcDM3zpeVdJfMLSA77M5R",
+          "timestamp_nanosec": "1719712076593959143"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "probe.long.search#2",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 122240463
+      },
+      "result": {
+        "header": {
+          "height": 122240463,
+          "hash": "2M7h45aoBaQKNjv45gkWjeppJGMR8H7vnPjxbpgfRJvz",
+          "prev_hash": "F9qVj9vUv8V7wtXqHK2jwgXyomo6pS1jQNV8Bxd4nmSK",
+          "timestamp_nanosec": "1719656028190654165"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "probe.recent.account",
+      "network": "mainnet",
+      "archival": true,
+      "method": "query",
+      "params": {
+        "request_type": "view_account",
+        "account_id": "meme-cooking.near",
+        "block_id": 124292784
+      },
+      "result": {
+        "amount": "0",
+        "block_hash": "2zNqcJwhf2L9AjiXoPk89x1zWvBy5kqruWAfQYxG8CG6",
+        "block_height": 124292784,
+        "code_hash": "11111111111111111111111111111111",
+        "locked": "0",
+        "storage_paid_at": 0,
+        "storage_usage": 182
+      }
+    },
+    {
+      "label": "probe.recent.block",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 124292784
+      },
+      "result": {
+        "header": {
+          "height": 124292784,
+          "hash": "2zNqcJwhf2L9AjiXoPk89x1zWvBy5kqruWAfQYxG8CG6",
+          "prev_hash": "CmfXvyLwsUYwAM1cKWx95ThMxZEnYAAhF1biznx7Mgbi",
+          "timestamp_nanosec": "1721991275326377192"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "probe.recent.keys#0",
+      "network": "mainnet",
+      "archival": true,
+      "method": "query",
+      "params": {
+        "request_type": "view_access_key_list",
+        "account_id": "meme-cooking.near",
+        "block_id": 124292784,
+        "limit": 100
+      },
+      "result": {
+        "block_hash": "2zNqcJwhf2L9AjiXoPk89x1zWvBy5kqruWAfQYxG8CG6",
+        "block_height": 124292784,
+        "keys": [
+          {
+            "access_key": {
+              "nonce": 123989402000000,
+              "permission": "FullAccess"
+            },
+            "public_key": "ed25519:bouNCo6AEdBY4wBKzzrUqkigbidLEqxLXmHMMiJH3WZ"
+          }
+        ]
+      }
+    },
+    {
+      "label": "probe.recent.search#0",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 124093348
+      },
+      "result": {
+        "header": {
+          "height": 124093348,
+          "hash": "GU4RGReuJrUmbCuZ4rBjh3gFRXwyi3xsChTJ2goFp2te",
+          "prev_hash": "F8sbKXAsfiFFzJCVgkZ1Uv9FkM7E2AL89M5mfJvdVzLQ",
+          "timestamp_nanosec": "1721763349978193907"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "probe.recent.search#1",
+      "network": "mainnet",
+      "archival": true,
+      "method": "block",
+      "params": {
+        "block_id": 124295583
+      },
+      "result": {
+        "header": {
+          "height": 124295583,
+          "hash": "E1cctgKB9WqadkHmwt4uW2BskVYA6dgYqyHR8BMpJvKC",
+          "prev_hash": "7RZvYuCZ9cbVJyKUnA8vR6g2oNShp9UKDpGr8T5vvsVg",
+          "timestamp_nanosec": "1721994379973713205"
+        }
+      },
+      "projection": "header.height,header.hash,header.prev_hash,header.timestamp_nanosec"
+    },
+    {
+      "label": "usdc.is_blocklisted",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+        "method_name": "is_blocklisted",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibWVtZS1jb29raW5nLm5lYXIifQ==",
+        "block_id": 124525848
+      },
+      "result": {
+        "block_hash": "82k5MZCfzqL9TwxPBC4pePz5d8xTuv23dDVgBVmA52sD",
+        "block_height": 124525848,
+        "logs": [],
+        "result": [102,97,108,115,101]
+      }
+    },
+    {
+      "label": "usdc.storage_balance_of",
+      "network": "mainnet",
+      "archival": false,
+      "method": "query",
+      "params": {
+        "request_type": "call_function",
+        "account_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+        "method_name": "storage_balance_of",
+        "args_base64": "eyJhY2NvdW50X2lkIjoibWVtZS1jb29raW5nLm5lYXIifQ==",
+        "block_id": 124525848
+      },
+      "result": {
+        "block_hash": "82k5MZCfzqL9TwxPBC4pePz5d8xTuv23dDVgBVmA52sD",
+        "block_height": 124525848,
+        "logs": [],
+        "result": [110,117,108,108]
+      }
+    }
+  ],
+  "http": [
+    {
+      "label": "fastnear.newest",
+      "source": "fastnear",
+      "method": "POST",
+      "url": "https://tx.main.fastnear.com/v0/account",
+      "status": 200,
+      "json": {
+        "account_txs": [
+          {
+            "account_id": "meme-cooking.near",
+            "transaction_hash": "FAPE5QaSShdrANz9XhqkrRVyV8Qxtk7QXSHiYtdE2utG",
+            "tx_block_height": 224208399,
+            "tx_block_timestamp": "1794483016016894949",
+            "tx_index": 0,
+            "is_signer": false,
+            "is_delegated_signer": false,
+            "is_real_signer": false,
+            "is_any_signer": false,
+            "is_predecessor": false,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": true,
+            "is_action_arg": true,
+            "is_event_log": false,
+            "is_success": true
+          }
+        ],
+        "resume_token": "962967741193519104",
+        "txs_count": 44863
+      },
+      "fetched_at": "2026-11-12T23:16:40.800Z",
+      "body": {
+        "account_id": "meme-cooking.near",
+        "limit": 1,
+        "desc": true
+      }
+    },
+    {
+      "label": "fastnear.oldest",
+      "source": "fastnear",
+      "method": "POST",
+      "url": "https://tx.main.fastnear.com/v0/account",
+      "status": 200,
+      "json": {
+        "account_txs": [
+          {
+            "account_id": "meme-cooking.near",
+            "transaction_hash": "3mT9EnUPaRxiLzrkp3yZSPiRfgay3apMU3UoezNrtWuC",
+            "tx_block_height": 123989401,
+            "tx_block_timestamp": "1721645960495451983",
+            "tx_index": 43,
+            "is_signer": false,
+            "is_delegated_signer": false,
+            "is_real_signer": false,
+            "is_any_signer": false,
+            "is_predecessor": false,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": false,
+            "is_action_arg": true,
+            "is_event_log": false,
+            "is_success": true
+          },
+          {
+            "account_id": "meme-cooking.near",
+            "transaction_hash": "3M4Rji7X7fZWp5Shp3g33tqkWkUpii5NoUSW7gJiNhXP",
+            "tx_block_height": 128940138,
+            "tx_block_timestamp": "1727356918706518100",
+            "tx_index": 129,
+            "is_signer": false,
+            "is_delegated_signer": false,
+            "is_real_signer": false,
+            "is_any_signer": false,
+            "is_predecessor": false,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": false,
+            "is_action_arg": false,
+            "is_event_log": false,
+            "is_success": true
+          },
+          {
+            "account_id": "meme-cooking.near",
+            "transaction_hash": "8LydWoP3fPQW3dzyokuA3sgDm5ywj7TVKHcsJ4J17j2R",
+            "tx_block_height": 128940154,
+            "tx_block_timestamp": "1727356939292176133",
+            "tx_index": 52,
+            "is_signer": true,
+            "is_delegated_signer": false,
+            "is_real_signer": true,
+            "is_any_signer": true,
+            "is_predecessor": true,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": true,
+            "is_action_arg": false,
+            "is_event_log": false,
+            "is_success": true
+          },
+          {
+            "account_id": "meme-cooking.near",
+            "transaction_hash": "AC5K5JfKtP1GeoBnuzdYAVSoZexQHMjk45VmajmsEYdG",
+            "tx_block_height": 128940161,
+            "tx_block_timestamp": "1727356948475243355",
+            "tx_index": 28,
+            "is_signer": false,
+            "is_delegated_signer": false,
+            "is_real_signer": false,
+            "is_any_signer": false,
+            "is_predecessor": false,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": true,
+            "is_action_arg": false,
+            "is_event_log": false,
+            "is_success": true
+          },
+          {
+            "account_id": "meme-cooking.near",
+            "transaction_hash": "BaPjgMaVgzTDUhGSakUf42cmnqae3BZnuANJe239fss5",
+            "tx_block_height": 128940177,
+            "tx_block_timestamp": "1727356969559372164",
+            "tx_index": 24,
+            "is_signer": true,
+            "is_delegated_signer": false,
+            "is_real_signer": true,
+            "is_any_signer": true,
+            "is_predecessor": true,
+            "is_explicit_refund_to": false,
+            "is_receiver": true,
+            "is_real_receiver": true,
+            "is_function_call": false,
+            "is_action_arg": false,
+            "is_event_log": false,
+            "is_success": true
+          }
+        ],
+        "resume_token": "553793843355451416",
+        "txs_count": 44863
+      },
+      "fetched_at": "2026-11-12T23:16:40.634Z",
+      "body": {
+        "account_id": "meme-cooking.near",
+        "limit": 5,
+        "desc": false
+      }
+    }
+  ],
+  "meta": {
+    "collected_at": "2026-11-12T23:19:05.152Z",
+    "collector": "a-identity-near-sdk/0.2.0",
+    "endpoints": ["archival-rpc.mainnet.fastnear.com","archival-rpc.mainnet.near.org","tx.main.fastnear.com"],
+    "notes": ["Pinned by age (scan/benchmark/at-age): the first block at or after the account's creation block #123989403 + 7 day(s)."],
+    "at_age": {
+      "rule": "the first block at or after the creation block's timestamp + days * 86400 s (scan/benchmark/at-age/PREREGISTRATION.md)",
+      "days": 7,
+      "creation": {
+        "height": 123989403,
+        "hash": "2P7V7f9tq6L9WAeejH545hGNchmSvLjyfkAdq7SuwTnG",
+        "timestamp_ns": "1721645962463504160"
+      },
+      "target_timestamp_ns": "1722250762463504160",
+      "block": {
+        "height": 124525848,
+        "hash": "82k5MZCfzqL9TwxPBC4pePz5d8xTuv23dDVgBVmA52sD",
+        "timestamp_ns": "1722250762900929508"
+      },
+      "predecessor": {
+        "height": 124525847,
+        "hash": "CSuzxEpsohAcLqQzBjfwt6gMt3zkw4yPiVrP8i4FRizg",
+        "timestamp_ns": "1722250761770250194"
+      }
+    }
+  }
+}

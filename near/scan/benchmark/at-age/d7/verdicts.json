@@ -1,0 +1,4249 @@
+{
+  "engine": "a-identity-near-engine/1.1.0 (policy near-default/1; collector a-identity-near-sdk/0.2.0); block: the first block at or after the account's creation + 7 days",
+  "signals": [
+    "account_state",
+    "access_keys",
+    "age_archival_probes",
+    "key_and_code_changes",
+    "activity_fastnear",
+    "nearblocks_fallback",
+    "usdc_blocklist",
+    "erc8004",
+    "lookalike_fixed_brands"
+  ],
+  "signals_off": {
+    "third_party_registries": "off (--no-third-party): MimicWatch's 2026-11-01 scan is the source of the three researcher_dataset suspicious rows, so its registry would leak labels; Tripwire, near-leash and Leash commons list testnet demo accounts",
+    "a_identity_registry": "off (--registry none): no A-Identity registry is deployed on mainnet, and none holding verdicts written from this dataset may be read",
+    "vault": "off (no --vault): no prior payments, refusals or owner allowlist",
+    "known_from_labels": "off: the known list is known-brands.json (top 25 NEP-141 tokens by on-chain market cap on NearBlocks), not the known_good rows"
+  },
+  "labels_used": false,
+  "known": {
+    "file": "known-brands.json",
+    "rule": "The first 25 tokens of NearBlocks public token list ordered by on-chain market cap, descending, as returned by one GET on 2026-11-12. The rule was fixed before the list was fetched and before any benchmark verdict was computed. The list was not edited after fetching. The rule does not read scan/dataset.json, its labels, its seed files, its cited sources, or the brands the suspicious rows imitate.",
+    "source": "https://api.nearblocks.io/v1/fts?page=1&per_page=25&sort=onchain_market_cap&order=desc",
+    "fetched_at": "2026-11-12T08:38:33Z",
+    "count": 25,
+    "accounts": [
+      "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+      "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.factory.bridge.near",
+      "aaaaaa20d9e0e2461697782ef11675f668207961.factory.bridge.near",
+      "btc.omft.near",
+      "dac17f958d2ee523a2206206994597c13d831ec7.factory.bridge.near",
+      "eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near",
+      "eth-0xdac17f958d2ee523a2206206994597c13d831ec7.omft.near",
+      "eth.bridge.near",
+      "eth.omft.near",
+      "far-token.fewandfar-protocol.near",
+      "linear-protocol.near",
+      "meta-pool.near",
+      "meta-token.near",
+      "mpdao-token.near",
+      "nbtc.bridge.near",
+      "near20.margaritafinance.near",
+      "npro.nearmobile.near",
+      "token.publicailab.near",
+      "token.rhealab.near",
+      "token.v2.ref-finance.near",
+      "usdt.tether-token.near",
+      "usn",
+      "walc.near",
+      "wrap.near",
+      "zec.omft.near"
+    ]
+  },
+  "at_age": {
+    "days": 7,
+    "rule": "each account pinned to the first block at or after its own creation block's timestamp + days * 86400 s; the creation block is proven from the chain (plan.json)",
+    "preregistration": {
+      "file": "PREREGISTRATION.md",
+      "written_utc": "2026-11-12T16:01:04Z",
+      "bytes": 8297,
+      "sha256": "0e9dccfc1e8553b8ccdce51844a76fa09d48606755816dc3db59b1c786325af4"
+    },
+    "plan": "plan.json"
+  },
+  "run": {
+    "network": "mainnet",
+    "selection": "every suspicious and known_good row of scan/dataset.json (76 accounts); lookalike_candidate rows are not run",
+    "accounts": 72,
+    "excluded": 4,
+    "collected_first": "2026-11-12T22:18:38.717Z",
+    "collected_last": "2026-11-14T02:50:09.967Z",
+    "endpoints": [
+      "api.nearblocks.io",
+      "archival-rpc.mainnet.fastnear.com",
+      "archival-rpc.mainnet.near.org",
+      "tx.main.fastnear.com"
+    ],
+    "generated_by": "scan/benchmark/at-age/run.mjs (verdicts derived from plan.json and the snapshots; --offline rebuilds this file)"
+  },
+  "excluded": [
+    {
+      "account_id": "5a7695e3626aeae7c0d340b6e58f813c71455d1be490eeb44e90bd9682343040",
+      "reason": "absent_at_replay_block",
+      "detail": "view_account at the replay block #195224506 (2026-04-23T08:23:15.208Z) answered UNKNOWN_ACCOUNT; created #194226543 (2026-04-16T08:23:14.648Z); NearBlocks dates its deletion 2026-04-16T09:54:44.246Z"
+    },
+    {
+      "account_id": "839810a1aef8ed1adb03e795b2a9785d783d4e2f415ab80c8b6fb30483e160f2",
+      "reason": "absent_at_replay_block",
+      "detail": "view_account at the replay block #195224513 (2026-04-23T08:23:19.528Z) answered UNKNOWN_ACCOUNT; created #194226551 (2026-04-16T08:23:19.507Z); NearBlocks dates its deletion 2026-04-16T09:54:53.673Z"
+    },
+    {
+      "account_id": "9053223460198e5e1e54dc15c18295ff0e98dca41ecd6c3872da1ff634d99616",
+      "reason": "absent_at_replay_block",
+      "detail": "view_account at the replay block #195224519 (2026-04-23T08:23:22.896Z) answered UNKNOWN_ACCOUNT; created #194226556 (2026-04-16T08:23:22.553Z); NearBlocks dates its deletion 2026-04-16T09:54:59.161Z"
+    },
+    {
+      "account_id": "d4e8e706f5a59610d85924af858f0562031930d14eb7add9a433edea50cf0b03",
+      "reason": "absent_at_replay_block",
+      "detail": "view_account at the replay block #195224510 (2026-04-23T08:23:17.625Z) answered UNKNOWN_ACCOUNT; created #194226547 (2026-04-16T08:23:17.060Z); NearBlocks dates its deletion 2026-04-16T09:54:48.619Z"
+    }
+  ],
+  "verdicts": [
+    {
+      "account_id": "087184b14c3cad5de72090c4a48816d46e53f39454df13b957e14350793b18e7",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@66904660"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@66904660"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 66904660,
+        "hash": "8neahzKwR7DGc7Pr6QxXyXC8hu4sxiPTdksMzrFX16MA",
+        "timestamp_ns": "1654203894344034059"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 66433033,
+        "hash": "LvQoCZtKGgwTocEZ3BySXqxzPfT8uyaqzmT9qywL384",
+        "timestamp_ns": "1653599093391055427"
+      },
+      "target_timestamp_ns": "1654203893391055427",
+      "snapshot": "d7/snapshots/087184b14c3cad5de72090c4a48816d46e53f39454df13b957e14350793b18e7.json",
+      "snapshot_sha256": "80dcaf9d85f129742e85255ae85f5f866935540800171a0001cf169a7eaf2361",
+      "chain_sha256": "c296b681b523abf9b8ae28e68d6a8bd6395b86afd9c1dca0a01e72e5d49e545a",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:18:48.318Z",
+      "endpoints": [
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "known_payee",
+          "severity": "info",
+          "detail": "in the known payee set (caller list, vault allowlist or registry ALLOW)",
+          "source": "context"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 8ddSSVjejL88JP2KitD667ZqELBrFQMeyiE7Leburjsx",
+          "source": "rpc view_account@79552628"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@79552628"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 79552628,
+        "hash": "3789vNY8qFmSSv4PS2idM5Jzt2kRLmDaAFyBPd516cSg",
+        "timestamp_ns": "1669756219921662396"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 79039277,
+        "hash": "BYWdv9jwwFUES717VUgn1AjyNaf6RYjATZBwF2Lpi56Z",
+        "timestamp_ns": "1669151419824186112"
+      },
+      "target_timestamp_ns": "1669756219824186112",
+      "snapshot": "d7/snapshots/17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.json",
+      "snapshot_sha256": "f4da25fb22a95aa339392524c5d3aa4dc338bafd2efb13a019879c42996ec91f",
+      "chain_sha256": "2fa2a80c38ec90f828e4a54909cc23a47c5a9243554e6826996a3db6df107873",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:18:50.717Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "31ac7a2705a0686ff427b1a52d3ffd1fcfaa4b1f3cb3e83a0f767494e724a540",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@195074497"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 195074497,
+        "hash": "BhEy3CbiZMNSL9NAVfj29sgQZ8rKvTqerJJM4fLMoF7P",
+        "timestamp_ns": "1776840785620390407"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 194074445,
+        "hash": "CrAP3Boj6oFjzMLWNfxaW4YdXtWG7dDaPqG7WbKfogUo",
+        "timestamp_ns": "1776235985107928632"
+      },
+      "target_timestamp_ns": "1776840785107928632",
+      "snapshot": "d7/snapshots/31ac7a2705a0686ff427b1a52d3ffd1fcfaa4b1f3cb3e83a0f767494e724a540.json",
+      "snapshot_sha256": "d68d7cdaccab83c9ec59fd14a57c9be00a2272ecf48697b486134f7bebe02413",
+      "chain_sha256": "bb0a9d786dede62d5ff71f7f7d2cd6200434de9b14db25f85ad84df47f1f078c",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:18:38.717Z",
+      "endpoints": [
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "3be304b2151870b2be88b9de0b80acab921337ad152584138bd852fc6e9ae018",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 972coiUB7REhH5yQQqQhbr9Ge4YLfKbH3NVLhxtViLXC",
+          "source": "rpc view_account@196898453"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@196898453 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@196898453"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 196898453,
+        "hash": "7gRzni2M8WQY3MdTpuatH7RiokhGGbsxsq9sdWFcLHDZ",
+        "timestamp_ns": "1777926723001164659"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 195879001,
+        "hash": "7i56ffpTkd9bTR4KcmxkJDHQRJjDjqFYx2gt4WpyVAum",
+        "timestamp_ns": "1777321922866147239"
+      },
+      "target_timestamp_ns": "1777926722866147239",
+      "snapshot": "d7/snapshots/3be304b2151870b2be88b9de0b80acab921337ad152584138bd852fc6e9ae018.json",
+      "snapshot_sha256": "7018dedd9cd6da0d037a79f999cc726e2cb4fcd15107d9eed52dc624f6b19a17",
+      "chain_sha256": "7696e60eb389f32cc755ccab3c9de82698d49be39cc54719ced833418a8d7980",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:20:12.417Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "5ebc5ecca14a44175464d0e6a7d3b2a6890229cd5f19cfb29ce8b1651fd58d39",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@77994368"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@77994368"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 77994368,
+        "hash": "591JveHimqVXRLzpqXhBCxtHJ34Y3T68yfMBMMPDTCfR",
+        "timestamp_ns": "1667916710379235683"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 77498889,
+        "hash": "EJVjWCi2PHCrx7J4gG5eoRxVsrrmfP8kW2LtcQcoVuwJ",
+        "timestamp_ns": "1667311909891818762"
+      },
+      "target_timestamp_ns": "1667916709891818762",
+      "snapshot": "d7/snapshots/5ebc5ecca14a44175464d0e6a7d3b2a6890229cd5f19cfb29ce8b1651fd58d39.json",
+      "snapshot_sha256": "1d65de4a3f4c74b85274cc7485c1b0a3a21343142b80b8eeae2f109127d6ad0e",
+      "chain_sha256": "3056333abe8ecb1d547eb32a605a951c337dafa34dc36b6f0e6f951dd7838760",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:20:48.330Z",
+      "endpoints": [
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "72633832db9d039b97906320169a8411bc2fa0f78303a4ecb1d35de71af621c5",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code BbQTHv9y5pJcAVbcZVRgMkZib9v2bfydRtBL9msUR4Wi",
+          "source": "rpc view_account@195224439"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@195224439"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 195224439,
+        "hash": "6m3yhVQaqAUNTwzavkXeueYMRNjUxJB6p5oz3CjHNBtT",
+        "timestamp_ns": "1776932549695119834"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 194226466,
+        "hash": "Bm6UkXHrvDk2cRJaSrXE86YCBRNrnqhS6KzUaGkqF5RF",
+        "timestamp_ns": "1776327749454480552"
+      },
+      "target_timestamp_ns": "1776932549454480552",
+      "snapshot": "d7/snapshots/72633832db9d039b97906320169a8411bc2fa0f78303a4ecb1d35de71af621c5.json",
+      "snapshot_sha256": "5e3c137f83edaf2be6051107938d0653317c0b49fb192c24f51af7b357f824cb",
+      "chain_sha256": "76510cf3c2dc722fe1fcdbf9611e097c7683363b5bbd6b3245d8133852b1e274",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:20:24.419Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "7d06ad005e03aa875875481fb6a2bd1acf9e722100ab8747e4e97801ba340640",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code BBeoVgxZC5Ce1ef7nErevX98QonNsedBFfqzep5RV1Vu",
+          "source": "rpc view_account@195224738"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@195224738 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@195224738"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 195224738,
+        "hash": "GE3d4Lfb89piut45Fgh895fbQFVRW5PTNjTQUfh3ZUSh",
+        "timestamp_ns": "1776932749019523860"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 194226804,
+        "hash": "9ZcFUNjTdXJEuL3vrY9wWXWX9esXvyruQTt7mJyWYkVE",
+        "timestamp_ns": "1776327948893562216"
+      },
+      "target_timestamp_ns": "1776932748893562216",
+      "snapshot": "d7/snapshots/7d06ad005e03aa875875481fb6a2bd1acf9e722100ab8747e4e97801ba340640.json",
+      "snapshot_sha256": "6f994de0d6e353241bbfc5b7b0cb07873b87badf080fda0e8fd39e75fb6fa923",
+      "chain_sha256": "9dfd30bdc6ef01f3ef58decfb2b018596f33b84940617c5755e67355727d0749",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:21:41.138Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "80f357d92e67f0ea53f299bb16d3af363ba0ef66e0211091edc2181cd323a705",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code BBeoVgxZC5Ce1ef7nErevX98QonNsedBFfqzep5RV1Vu",
+          "source": "rpc view_account@195224763"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@195224763 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@195224763"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 195224763,
+        "hash": "Ghc3toKSBuK5Kgaf9pUBVvW6h5hqRkaq9aQojjtt8dHH",
+        "timestamp_ns": "1776932766689137500"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 194226834,
+        "hash": "3HpvCpQJXkMLAU7NSpGerW2XD4J9S9e1WsbXoyfc4eLw",
+        "timestamp_ns": "1776327966217933374"
+      },
+      "target_timestamp_ns": "1776932766217933374",
+      "snapshot": "d7/snapshots/80f357d92e67f0ea53f299bb16d3af363ba0ef66e0211091edc2181cd323a705.json",
+      "snapshot_sha256": "49ec34468b578dbcabd1a77704dd50bd13f72b92260256dad865bbccdc14c5be",
+      "chain_sha256": "767ef0c44f1bcc34e4565ffa0dbba1f285b514d0c717ce7411379e74e28978ee",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:21:57.950Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "9c0df321dd5d9fc1138a09f405f523333fffe74de2ee10932ff756e27ae930ee",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code BBeoVgxZC5Ce1ef7nErevX98QonNsedBFfqzep5RV1Vu",
+          "source": "rpc view_account@195224755"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@195224755 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@195224755"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 195224755,
+        "hash": "2cY6Je1LHTAgcvaKCKiASF7Srfs9RKTqfsSfPpkWHTy6",
+        "timestamp_ns": "1776932760548426844"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 194226824,
+        "hash": "76kCcgdBM9Hr7UwyWVfJWx7STJqZ1Hckrg6PR6WS11uD",
+        "timestamp_ns": "1776327960405894509"
+      },
+      "target_timestamp_ns": "1776932760405894509",
+      "snapshot": "d7/snapshots/9c0df321dd5d9fc1138a09f405f523333fffe74de2ee10932ff756e27ae930ee.json",
+      "snapshot_sha256": "50210a0f578d4731c7e03c53481f2270992fbbfd02c0a348af93a2ecc84ba318",
+      "chain_sha256": "339189240f0236dc0defa68613b7ced0c7486455623dcf1aa7503fb58a141d99",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:22:21.939Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "9c2a08cf1d06716bb03c662ed67096ea92cedacf058d50e1dea60ff442cf6180",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@70119457"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@70119457"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 70119457,
+        "hash": "8wmAjCX2dfRyeYndboqmZJ1ExZTpb4CEnbgNT8daonha",
+        "timestamp_ns": "1658154095559851780"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 69610197,
+        "hash": "G33U6uK5SYrrw2vAYhSgizApDVY3g6oA2gWk1kWHxB5f",
+        "timestamp_ns": "1657549294953609058"
+      },
+      "target_timestamp_ns": "1658154094953609058",
+      "snapshot": "d7/snapshots/9c2a08cf1d06716bb03c662ed67096ea92cedacf058d50e1dea60ff442cf6180.json",
+      "snapshot_sha256": "09f0f696b7ac56e18430c8ea04b2d36a3cca6a7da0b688628c631cc4a1790302",
+      "chain_sha256": "b24139cadd3d6172e901ca0708a7726f4cf276cf7aa2560c1393efb971767096",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:23:41.128Z",
+      "endpoints": [
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "9ebef819489ae5e6641cc5573740dadc751c35c3ae37c110e4fad8101494e418",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@62693529"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@62693529"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 62693529,
+        "hash": "4f7ZjCQzH5NgBX3Ge4LdKwd54Ks5d2jaDjDTtc8hVFbs",
+        "timestamp_ns": "1648914530146661064"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 62212987,
+        "hash": "ZyVeeeFz87qku2j4a4toydWesc2bDecZrd3LmZ2iVn6",
+        "timestamp_ns": "1648309729137729258"
+      },
+      "target_timestamp_ns": "1648914529137729258",
+      "snapshot": "d7/snapshots/9ebef819489ae5e6641cc5573740dadc751c35c3ae37c110e4fad8101494e418.json",
+      "snapshot_sha256": "cb1ddc07d3098c1be39b3ae41bd609deec004689e2dafb1977d0dd83fde4c275",
+      "chain_sha256": "76359724a10b2a44c992f192d70bb6add3de6a9a28fec2345bb3d2bd7e506cdf",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:23:53.136Z",
+      "endpoints": [
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.factory.bridge.near",
+      "verdict": "WARN",
+      "score": 400,
+      "warn_kind": "hard",
+      "deciding": [
+        "low_activity",
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "low_activity",
+          "severity": "warn",
+          "detail": "4 transaction(s) at or before the block (threshold 5)",
+          "source": "indexer fastnear"
+        },
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@32808891"
+        },
+        {
+          "code": "known_payee",
+          "severity": "info",
+          "detail": "in the known payee set (caller list, vault allowlist or registry ALLOW)",
+          "source": "context"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 4FU4y8Ntt9jwoFQMJ4MwexhyrDBDwoBtR7NUfCutkY7N",
+          "source": "rpc view_account@32808891"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@32808891"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 32808891,
+        "hash": "GcvSmdErBtzTgUQm2v2kvMeTRbw2SndzxanX3WiY8qLs",
+        "timestamp_ns": "1616445756369018159"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 32226553,
+        "hash": "Bx2YoVDrvLdpoX9FurfZqMRgna3Q6XhWvhBvKH1rYstf",
+        "timestamp_ns": "1615840955973540780"
+      },
+      "target_timestamp_ns": "1616445755973540780",
+      "snapshot": "d7/snapshots/a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.factory.bridge.near.json",
+      "snapshot_sha256": "8bc1f4fcc0f3867aee3fa5c48af5657e3f2019ea644ab09ca9b0f3e85213ca43",
+      "chain_sha256": "2506e34d1897dddfc3ef013c7994082efb8f86da6781c0aa6187f63d46f59a03",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:24:29.140Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "aaaaaa20d9e0e2461697782ef11675f668207961.factory.bridge.near",
+      "verdict": "WARN",
+      "score": 400,
+      "warn_kind": "hard",
+      "deciding": [
+        "low_activity",
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "low_activity",
+          "severity": "warn",
+          "detail": "2 transaction(s) at or before the block (threshold 5)",
+          "source": "indexer fastnear"
+        },
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@50160470"
+        },
+        {
+          "code": "known_payee",
+          "severity": "info",
+          "detail": "in the known payee set (caller list, vault allowlist or registry ALLOW)",
+          "source": "context"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 5LZGX5EKfWpGtvRRE7yqaeNr3J3znk2UFx4tcnR22HLh",
+          "source": "rpc view_account@50160470"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@50160470"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 50160470,
+        "hash": "EdfqhjZmDm6qXxmzdNWuJiLQwAVfsUkdXi5mXYbDYsHs",
+        "timestamp_ns": "1634212819397422991"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 49587794,
+        "hash": "DdKV7FwNLn5c5W7j9U5SsdbBGp5cwUVhzWuCqCf7RVF6",
+        "timestamp_ns": "1633608018809944519"
+      },
+      "target_timestamp_ns": "1634212818809944519",
+      "snapshot": "d7/snapshots/aaaaaa20d9e0e2461697782ef11675f668207961.factory.bridge.near.json",
+      "snapshot_sha256": "2420ecb086d15b1d54856fd6bbc7d3c21a9b473149cb5e64c771d06a83c8629c",
+      "chain_sha256": "202aaec9a6ee22f7bc3adffed9b8d72176daf2ca61ced7f6cd72a6cde238cd57",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:25:26.744Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "asset-manager.orderly-network.near",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@74191201"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code HB2P2FRQyyuk6w6gvc1vdbjPDpzZGM8Dh4fhSPoqk735",
+          "source": "rpc view_account@74191201"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@74191201"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 74191201,
+        "hash": "7xnJEbhdaN8JMf6suKoPtHdjJErhtQ94ghpzgTdB7zX3",
+        "timestamp_ns": "1663234735002843990"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 73727638,
+        "hash": "3xLxDyteY3HECKFNH2gbzQ1mjsXa2n6mFeWSdAe9wsij",
+        "timestamp_ns": "1662629934384659490"
+      },
+      "target_timestamp_ns": "1663234734384659490",
+      "snapshot": "d7/snapshots/asset-manager.orderly-network.near.json",
+      "snapshot_sha256": "7c2b29dc69cf6585fb19dc5db9376f5651b1f0a7561f4aea3d38b9b17f0a2c01",
+      "chain_sha256": "da616809771dc1a9ce8444a63bd1a8d83d63cdba5bea60533ee7481085f802d7",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:25:48.323Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "aurora",
+      "verdict": "WARN",
+      "score": 400,
+      "warn_kind": "hard",
+      "deciding": [
+        "low_activity",
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "low_activity",
+          "severity": "warn",
+          "detail": "2 transaction(s) at or before the block (threshold 5)",
+          "source": "indexer fastnear"
+        },
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@35434298"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@35434298"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 35434298,
+        "hash": "4QfKSr6T2tbEZ72QhYZkypaBUa8kfTKAsLxB2DdTCZT8",
+        "timestamp_ns": "1619085518980651444"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 34834053,
+        "hash": "3yU6bjWj12UwiuFBKSFzK4rFcpZvmAYj7taYe5C9wpS9",
+        "timestamp_ns": "1618480718567973046"
+      },
+      "target_timestamp_ns": "1619085518567973046",
+      "snapshot": "d7/snapshots/aurora.json",
+      "snapshot_sha256": "09ba62f9997537f17210c09d51b0efbf8ea231cc1b41c377bbec5ca8fcf6dbbc",
+      "chain_sha256": "76e864537a796b602d51dfe3f87f30e009efdfc179795166c75fa128471f5ec4",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:26:26.709Z",
+      "endpoints": [
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "bigbank101.near",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@55904443"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@55904443"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 55904443,
+        "hash": "Azkc1qgSHyRJmLrf5YWTGccdjKVw1WaW8vyeqd9DwX6E",
+        "timestamp_ns": "1640369866673399467"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 55389019,
+        "hash": "wH64xXTL3bPiQ3NyeWGpSfVHB5bZGZsutgKQS6cuDDE",
+        "timestamp_ns": "1639765065919493366"
+      },
+      "target_timestamp_ns": "1640369865919493366",
+      "snapshot": "d7/snapshots/bigbank101.near.json",
+      "snapshot_sha256": "3f41a4b9cbf0eb1830dc1c3e8c5418c191fafa109c852daa2a47bdf0702b6d3e",
+      "chain_sha256": "a4d64f884dceef6f829c963a0e539a473af2e65ae2afa186d862dd7bf22f1677",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:27:22.049Z",
+      "endpoints": [
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "blackdragon.tkn.near",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 4AVV1KUVgi17XoXkqxUPzyMhERXu15mGawriPQvWmBKD",
+          "source": "rpc view_account@108904299"
+        },
+        {
+          "code": "locked_contract",
+          "severity": "info",
+          "detail": "no full-access key: only the contract's own logic can change it",
+          "source": "rpc view_access_key_list@108904299"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@108904299 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@108904299"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 108904299,
+        "hash": "B9X1g5Dm4PB4sgAhZCg5jW4k4kPpCZugHYiYHnLm9oef",
+        "timestamp_ns": "1703650898735993994"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 108378379,
+        "hash": "F8gSwRaJbpkcA1LsqxxUTczTgPhpFvKCbTzETq6sDBSr",
+        "timestamp_ns": "1703046097725824454"
+      },
+      "target_timestamp_ns": "1703650897725824454",
+      "snapshot": "d7/snapshots/blackdragon.tkn.near.json",
+      "snapshot_sha256": "ecf861895924084df0720653501c062ab5c7264bcb02335cccbbc91870db1504",
+      "chain_sha256": "2a75d84575564f776083c6e4762e4741713dbb658864e7c66f3507cdd18b0835",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:27:43.705Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "boostfarm.ref-labs.near",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@71141320"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code Dy67vDoLMEKbKrD8byTHU5bMzbur2ogXCN7bucMqAFEM",
+          "source": "rpc view_account@71141320"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@71141320"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 71141320,
+        "hash": "9ip5CXD4kKUtBFN4MpQp2w5vkJg5ei8VkzDbP4swHb9A",
+        "timestamp_ns": "1659411433573877280"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 70658004,
+        "hash": "ABHT2KCwMiw7euaYgTdiQtfjVXCrvdCWJKGgiUgYoA5t",
+        "timestamp_ns": "1658806632939006587"
+      },
+      "target_timestamp_ns": "1659411432939006587",
+      "snapshot": "d7/snapshots/boostfarm.ref-labs.near.json",
+      "snapshot_sha256": "524746ec26a6f5e019b039e263bc2fb59f1eef2d485b828ef260a7ed65d764e4",
+      "chain_sha256": "b0e12f51683ad78ae8211b9c3f674773c7bdd17bec65a139ef4aa548ca2b8316",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:28:22.016Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "burrowfinancedao.near",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 12p7js1vHix1YrMhL7XKunpcxGNuFij2pmfuRSz7kocn",
+          "source": "rpc view_account@119558156"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@119558156 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@119558156"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 119558156,
+        "hash": "Ezas6qbH2RWF3e538fmivftcoy6ofzs8eKj5wVqSYM1z",
+        "timestamp_ns": "1716461610564801102"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 119040293,
+        "hash": "FCYBPKYggxag2tszPcrfyhAt8R8tBKXpNZovL6u9DobG",
+        "timestamp_ns": "1715856809791632236"
+      },
+      "target_timestamp_ns": "1716461609791632236",
+      "snapshot": "d7/snapshots/burrowfinancedao.near.json",
+      "snapshot_sha256": "fcde671f1cdfbd1c67e0d546c3901e5d1202702e63469eac31c119e2650b102f",
+      "chain_sha256": "8cd0cb280a160c3638de80a4a152b6119b0ecaabeda106094170599aabc73a93",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:29:17.143Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "c122aad2a188ed3abec0517f99c4dd03591d19e6bfcf7f015424351fbdd71163",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code BBeoVgxZC5Ce1ef7nErevX98QonNsedBFfqzep5RV1Vu",
+          "source": "rpc view_account@195224735"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@195224735 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@195224735"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 195224735,
+        "hash": "6N38q5A5T7tLTBL7yYCzmLfQ87acnwaHMmca3R4h7p9E",
+        "timestamp_ns": "1776932747394025642"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 194226800,
+        "hash": "85c8Brm2x3ro3H58kXYUu67Rii4aduqMwALMRCZnkC9q",
+        "timestamp_ns": "1776327946460926434"
+      },
+      "target_timestamp_ns": "1776932746460926434",
+      "snapshot": "d7/snapshots/c122aad2a188ed3abec0517f99c4dd03591d19e6bfcf7f015424351fbdd71163.json",
+      "snapshot_sha256": "32dd591263887f5038989c928385ff8982dbb3880345aa699201cf3aef5dd55b",
+      "chain_sha256": "a0043832f18f7693365be3eed9e4e9e14c369f87b9c8c25f1463ce15497f4a15",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:29:14.759Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "contract.main.burrow.near",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@62778392"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 7frYf2bxiJTFngVwjAaxMP13famoNEfsTVRqSxzzoyqB",
+          "source": "rpc view_account@62778392"
+        },
+        {
+          "code": "locked_contract",
+          "severity": "info",
+          "detail": "no full-access key: only the contract's own logic can change it",
+          "source": "rpc view_access_key_list@62778392"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@62778392"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 62778392,
+        "hash": "8MvDrXbFkdXqKXBzxnN3rAhyHni7rd5XcKguctQLF6YP",
+        "timestamp_ns": "1649026136288532485"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 62303111,
+        "hash": "CQrvtfszAYRCDdJMWAb7kT4C3QgUptB38HsU5cdFyzHK",
+        "timestamp_ns": "1648421334949002493"
+      },
+      "target_timestamp_ns": "1649026134949002493",
+      "snapshot": "d7/snapshots/contract.main.burrow.near.json",
+      "snapshot_sha256": "ce31077c8b174d5cb4485d44ba550f551a870a0da921d19259faa0925d6e0f3a",
+      "chain_sha256": "8c7d7628579a408a41349cb06bf9d97674957e5e22ef32bcdba95df760569f28",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:30:12.340Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "d39fd6da5eda882fe5f6716212552356cde2613054c670ffd6b49b3b25aef473",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@195224523"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 195224523,
+        "hash": "6AAmvuoGgizURyZBYQpPH9xxQDxK7qYGiXatKkWugXRa",
+        "timestamp_ns": "1776932606064056053"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 194226561,
+        "hash": "4qNn7swgrSyUsa6sNETsw2BuzfiSBC8ge4NfVu85TAeN",
+        "timestamp_ns": "1776327805372190510"
+      },
+      "target_timestamp_ns": "1776932605372190510",
+      "snapshot": "d7/snapshots/d39fd6da5eda882fe5f6716212552356cde2613054c670ffd6b49b3b25aef473.json",
+      "snapshot_sha256": "0daa0e205845b6e2054762c8de3c6749538a827237a065e279cde98cf831f5a2",
+      "chain_sha256": "6f15e11b097fc49334555399c690d636933dca9181ab721bad60d992cb1927c0",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:30:43.646Z",
+      "endpoints": [
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "dac17f958d2ee523a2206206994597c13d831ec7.factory.bridge.near",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@32808864"
+        },
+        {
+          "code": "known_payee",
+          "severity": "info",
+          "detail": "in the known payee set (caller list, vault allowlist or registry ALLOW)",
+          "source": "context"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 4FU4y8Ntt9jwoFQMJ4MwexhyrDBDwoBtR7NUfCutkY7N",
+          "source": "rpc view_account@32808864"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@32808864"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 32808864,
+        "hash": "A46VpXBAK7eD1LYs2nkcZjdeuU46wu57rmodGQzsivUS",
+        "timestamp_ns": "1616445729917700625"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 32226530,
+        "hash": "32iRetvqRqKMLCve2Ai6dMma4tDB1R7ZyBCALCSJjzuT",
+        "timestamp_ns": "1615840929385531036"
+      },
+      "target_timestamp_ns": "1616445729385531036",
+      "snapshot": "d7/snapshots/dac17f958d2ee523a2206206994597c13d831ec7.factory.bridge.near.json",
+      "snapshot_sha256": "1108754959ac05c8c7677b50ecc494437d5fa6fb391d7b635f2227fbf5deecf6",
+      "chain_sha256": "5673d9f6a50a8a835c4f439dc542e366e55352a232fc233a91f7bace39b1341a",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:31:26.722Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "dclv2.ref-labs.near",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code NVLa9zF9BFVqhXujjBiS8EwsgaPUGZEVsBK21fuZAoj",
+          "source": "rpc view_account@84315501"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@84315501"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 84315501,
+        "hash": "3stD98Tt4qTic47BJV9DJr49MQnUpBYamRLxcZwgBF3h",
+        "timestamp_ns": "1675297211315019734"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 83798330,
+        "hash": "C3CMwExWEz7cS3M6n2i1eCcPDr4oRpG6zCqkcGthjuKe",
+        "timestamp_ns": "1674692411128467783"
+      },
+      "target_timestamp_ns": "1675297211128467783",
+      "snapshot": "d7/snapshots/dclv2.ref-labs.near.json",
+      "snapshot_sha256": "e5a3cc7ef1e5badf83e663f0b57d02a4a3546afa1700dd07bf040c1ed1ea7a83",
+      "chain_sha256": "243bbc4f75410171a4269bf8b078e04d398eb2b77553f16b3c2990012ca864d7",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:32:07.583Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "dolbabob.near",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@53927882"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@53927882"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 53927882,
+        "hash": "DJDJcpFnoLSHddUpqwJBWXUBXfAwppGUudKd5vjmBsiN",
+        "timestamp_ns": "1638246298406223019"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 53342313,
+        "hash": "7hPAsGF2VZrFk1DArEFg2FQY2z7iDqvZeahhUvgaFdXz",
+        "timestamp_ns": "1637641497887505989"
+      },
+      "target_timestamp_ns": "1638246297887505989",
+      "snapshot": "d7/snapshots/dolbabob.near.json",
+      "snapshot_sha256": "c98fe20b7cade4bcaff6e8f727d100aa5cb11cb63a5fd4001dac51d9fc54dc20",
+      "chain_sha256": "b0489bf5e5bf26e4e074e7853c2925cdf137ad0018e5a6f9780735d98e26167f",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:32:29.198Z",
+      "endpoints": [
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "donate.potlock.near",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code FVN6kWfTB8troGQXSEUgJKnS3ZhkkQexWVVAgsCMzMWa",
+          "source": "rpc view_account@105392090"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@105392090 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@105392090"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 105392090,
+        "hash": "FbPZErJDpcfFZ1DjphzUfFMYZouvzfgrdLgQFCETMA3T",
+        "timestamp_ns": "1699640320566719801"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 104858100,
+        "hash": "FxiG3SUPgfot2MH9pf9Y9cGUxtyRqm8qDbhB7jNmJVz2",
+        "timestamp_ns": "1699035519842020901"
+      },
+      "target_timestamp_ns": "1699640319842020901",
+      "snapshot": "d7/snapshots/donate.potlock.near.json",
+      "snapshot_sha256": "b25ad9473f7fead2bca0f06bada59077d854c0aa2bc7a0e4ad5e8d586ad0b4e7",
+      "chain_sha256": "df61cce75bfc8b800c99708237eb4d7f96204f8154c46f3ffc153c692775553d",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:33:14.737Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "dragoneggsmeme.near",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 6nQW3rzQnyEjB3VuFxPADxnPkpFMeh7Sdz62ebW6kh4g",
+          "source": "rpc view_account@119753131"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@119753131 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@119753131"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 119753131,
+        "hash": "7xqyB3sfEeqsgdW2LmkUJ9D4WLm4prrgnUZQuHbqhT2c",
+        "timestamp_ns": "1716693985797528100"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 119241762,
+        "hash": "9ivndnqsWcX1eYK2x437N9UboHJTwNJAnELEK4Tf4syw",
+        "timestamp_ns": "1716089185396591888"
+      },
+      "target_timestamp_ns": "1716693985396591888",
+      "snapshot": "d7/snapshots/dragoneggsmeme.near.json",
+      "snapshot_sha256": "badf82d90cea729af0bd3c8683c77e989f08c1355d4b410162a20093c3b92eb4",
+      "chain_sha256": "9a6fb7097a19a101b92677f37e3f7591261b441c273b54794a139b5690e350a5",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:34:05.258Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "eth.bridge.near",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "known_payee",
+          "severity": "info",
+          "detail": "in the known payee set (caller list, vault allowlist or registry ALLOW)",
+          "source": "context"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code BAXeraU3Qrr35pYzABPk5ufdMMuLAuFj64sSvYAPajWT",
+          "source": "rpc view_account@144228211"
+        },
+        {
+          "code": "locked_contract",
+          "severity": "info",
+          "detail": "no full-access key: only the contract's own logic can change it",
+          "source": "rpc view_access_key_list@144228211"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@144228211 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@144228211"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 144228211,
+        "hash": "GJypm4pv9f68PfakPgLz44st1CwCL1KeLDTubpwvM2az",
+        "timestamp_ns": "1744660958214911161"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 143688217,
+        "hash": "HtSKskzTXH2XPwhtwkPjWrPSet2dDXMHzJrGTWYYK8J2",
+        "timestamp_ns": "1744056157087437464"
+      },
+      "target_timestamp_ns": "1744660957087437464",
+      "snapshot": "d7/snapshots/eth.bridge.near.json",
+      "snapshot_sha256": "f16418a6bc93c517006e6c0ac24cacb8c91e6357887990be2837a5dc9ea16814",
+      "chain_sha256": "6b398c243213e63364dde3af25d1d5f1dc1814f2e744c5034696bf5fac231afc",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:34:24.319Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "factory.bridge.near",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@32796003"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 5iSona4yMVDTEJ9qjfFf3jFVLsxya2rWL5zXhFfbfB2f",
+          "source": "rpc view_account@32796003"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@32796003"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 32796003,
+        "hash": "HMwzJvZShVNv8zuqKBvm3Zd4ZbTdBS7mom3wD2w6fzBW",
+        "timestamp_ns": "1616432288793810070"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 32213001,
+        "hash": "HHd4ssnxdJv3VHWVPTEiSibbJCaAvtPtydLUmRNGVJVZ",
+        "timestamp_ns": "1615827488019076224"
+      },
+      "target_timestamp_ns": "1616432288019076224",
+      "snapshot": "d7/snapshots/factory.bridge.near.json",
+      "snapshot_sha256": "087fb5da13302dc41f7e3f050c1486f8d92e689c3e5d5e1cce632f70cb215b17",
+      "chain_sha256": "f5d5f17ff4ed7f5b1541fbd3670eb76ecb700326a3c736946ab4e7dfc7f79936",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T22:47:10.410Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "ftv2.nekotoken.near",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@70422242"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 7mUNp2su2TZiknras9BQ6PRmccUVroDRmiKprCWEicvN",
+          "source": "rpc view_account@70422242"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@70422242"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 70422242,
+        "hash": "9EQr9s8XnWDpDZaHSDEPWSPN7VaU46mxg8rExfJCQ7YQ",
+        "timestamp_ns": "1658521286828157319"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 69920045,
+        "hash": "6WBYg7S2AyWB6Va8vGX2Sy5LvJbW5tTS1ArgBzrD3aXK",
+        "timestamp_ns": "1657916485898922784"
+      },
+      "target_timestamp_ns": "1658521285898922784",
+      "snapshot": "d7/snapshots/ftv2.nekotoken.near.json",
+      "snapshot_sha256": "43d135e9addc344154643fc09cc408bc069c615a39dfcd0f4c319c3b1fd9803f",
+      "chain_sha256": "830466dc57d9ba79f1fdd2cd97123921822d9a17cf4f6a9d430f889990a39c51",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T23:02:46.348Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "archival-rpc.mainnet.near.org",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "gregoshes.near",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@72619256"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@72619256"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 72619256,
+        "hash": "7uhdT6TdbwaBoxFckhAoTgJJDiDKAm4ais6bwwNuFxaD",
+        "timestamp_ns": "1661259711225175595"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 72131877,
+        "hash": "Cz4yeuELHEPFXS9a5i6yeCYjKq9FFqxjgzy8Amj2ihh6",
+        "timestamp_ns": "1660654910776881757"
+      },
+      "target_timestamp_ns": "1661259710776881757",
+      "snapshot": "d7/snapshots/gregoshes.near.json",
+      "snapshot_sha256": "28a184608dbf13541a7f52916a5d7e312d030193ef4861097c2e8b0ffdf81451",
+      "chain_sha256": "6f74a61a5c7be9bf1879cbecfc56eb2f1843f2af0fe2bded46b9f2ec9e04667f",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T23:03:09.062Z",
+      "endpoints": [
+        "archival-rpc.mainnet.fastnear.com",
+        "archival-rpc.mainnet.near.org",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "intents.near",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "code_changed_recently"
+      ],
+      "reasons": [
+        {
+          "code": "code_changed_recently",
+          "severity": "warn",
+          "detail": "code hash HcCyTjgBM4GP73PXTWoce1LGH9TbFAPMqWUBdwhgmipR at block #132042856 became 9waR3Q6fSdERYEPApFihf7cjaiXeRRanFNhoR24xrDCz within 72 h",
+          "source": "rpc archival view_account@132042856"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 9waR3Q6fSdERYEPApFihf7cjaiXeRRanFNhoR24xrDCz",
+          "source": "rpc view_account@132255511"
+        },
+        {
+          "code": "locked_contract",
+          "severity": "info",
+          "detail": "no full-access key: only the contract's own logic can change it",
+          "source": "rpc view_access_key_list@132255511"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@132255511"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 132255511,
+        "hash": "3Tq1JnnpA5tfdWaBrLcrsubsLUnndZ9vKTvSL1AMv9Zb",
+        "timestamp_ns": "1731100130605527888"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 131734076,
+        "hash": "Cph1j4DsyjQ5a9P3aXN9e1b6ACqCeGA99vXzJTMX4JEb",
+        "timestamp_ns": "1730495329787870579"
+      },
+      "target_timestamp_ns": "1731100129787870579",
+      "snapshot": "d7/snapshots/intents.near.json",
+      "snapshot_sha256": "e106a804e5690bdaa98bbfedb5fcf83f37bb17798c48975b3228114e66f58b33",
+      "chain_sha256": "08e430b9bdafa870dd0f8a5a1e0fd4785913d8134c6ba2e38b660bb36b963c7f",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T23:11:11.723Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "archival-rpc.mainnet.near.org",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "linear-protocol.near",
+      "verdict": "WARN",
+      "score": 400,
+      "warn_kind": "hard",
+      "deciding": [
+        "low_activity",
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "low_activity",
+          "severity": "warn",
+          "detail": "2 transaction(s) at or before the block (threshold 5)",
+          "source": "indexer fastnear"
+        },
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@61615985"
+        },
+        {
+          "code": "known_payee",
+          "severity": "info",
+          "detail": "in the known payee set (caller list, vault allowlist or registry ALLOW)",
+          "source": "context"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@61615985"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 61615985,
+        "hash": "2REMDpUxyrH3WpuFi2Xr5TopZZaDdpxDdCoLgrpmDTVL",
+        "timestamp_ns": "1647524321934633472"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 61147685,
+        "hash": "vzxbUmrzUZMieBj9D49QqQfChpyRxN2X6GQ6U32Zzg2",
+        "timestamp_ns": "1646919521894760014"
+      },
+      "target_timestamp_ns": "1647524321894760014",
+      "snapshot": "d7/snapshots/linear-protocol.near.json",
+      "snapshot_sha256": "bffb8b0a3980415e8408b9fd41ce4b6cd2359a497a395701e4ad7160ce317cc3",
+      "chain_sha256": "d1d0be1f3d76081a836fd47bc29fa45a52351ff79a531f535b951308cf38ccb3",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T23:16:26.640Z",
+      "endpoints": [
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "linear_protocol.near",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "lookalike_known"
+      ],
+      "reasons": [
+        {
+          "code": "lookalike_known",
+          "severity": "warn",
+          "detail": "homoglyph: reads the same as linear-protocol.near once look-alike characters and separators are folded (\"llnearprotocol\") (not new, so a human decides)",
+          "source": "engine lookalike"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 12p7js1vHix1YrMhL7XKunpcxGNuFij2pmfuRSz7kocn",
+          "source": "rpc view_account@119691325"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@119691325 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@119691325"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 119691325,
+        "hash": "GdN8YscamJcLooPRP17qNjZtwquN8R2gAnMVxzWD9Y62",
+        "timestamp_ns": "1716621065524707850"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 119178119,
+        "hash": "7dUe1QQzZNLkqqoCEx24KxsJLwth9QCBbDnPaJxyno3u",
+        "timestamp_ns": "1716016264104466136"
+      },
+      "target_timestamp_ns": "1716621064104466136",
+      "snapshot": "d7/snapshots/linear_protocol.near.json",
+      "snapshot_sha256": "f0a6452b607770234d1f012cdc9353b98cff6166719fd5852616baf10e0b6156",
+      "chain_sha256": "a189803e721cefda1e83856fa22d9ab34b1f205805cb5ddbf6ecd331c4e73234",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T23:16:52.436Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "archival-rpc.mainnet.near.org",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "lonkrewards.near",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code G7cb7FBWP1F9ncqyt1RFCMvnYGMDBMX7YhxMENtvpygd",
+          "source": "rpc view_account@119718502"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@119718502 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@119718502"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 119718502,
+        "hash": "8yw58dYQxJnnvfFk8kdy9zA13kuPZfzzx2Jaf29iPbN3",
+        "timestamp_ns": "1716653288679848990"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 119206327,
+        "hash": "AnW12JyJ9xCtZVRt1LpxPBqLeQFP8M5W8Ah9tBtUNNwD",
+        "timestamp_ns": "1716048488331039344"
+      },
+      "target_timestamp_ns": "1716653288331039344",
+      "snapshot": "d7/snapshots/lonkrewards.near.json",
+      "snapshot_sha256": "e139a9bc1cebd6c96d007f67a8106c629e68af44c7d1029fbdf87b4bf9c90d0a",
+      "chain_sha256": "0abee5348f93300dac064512ea8b0573b1dca1f21079b83c7825722ed7f18d90",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T23:16:30.256Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "archival-rpc.mainnet.near.org",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "lst.rhealab.near",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 7hMoiiMNhA9DxmUf2zWXbAXusYvqrepkjaumxLyn6E7V",
+          "source": "rpc view_account@158822890"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@158822890 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@158822890"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 158822890,
+        "hash": "5CjidenjDvv3BQAnFzRLhDDRq241gn6vEbMEyh8ArPys",
+        "timestamp_ns": "1754701076238049778"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 157830580,
+        "hash": "CXFWpJqaP1epdJnixV5qPMpDu7xXHFkKe4MZXHkaSeo3",
+        "timestamp_ns": "1754096275958379944"
+      },
+      "target_timestamp_ns": "1754701075958379944",
+      "snapshot": "d7/snapshots/lst.rhealab.near.json",
+      "snapshot_sha256": "8a95a3d641fd2c6b5558d02f859237db65bf78a884bcaa67812022ac274caf72",
+      "chain_sha256": "e772585c884e142f8a2593c5b9b7cc792fba660caa5e2aae56bb4784b584e786",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T23:13:38.685Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "meme-cooking.near",
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "low_activity"
+      ],
+      "reasons": [
+        {
+          "code": "low_activity",
+          "severity": "warn",
+          "detail": "1 transaction(s) at or before the block (threshold 5)",
+          "source": "indexer fastnear"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@124525848 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@124525848"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 124525848,
+        "hash": "82k5MZCfzqL9TwxPBC4pePz5d8xTuv23dDVgBVmA52sD",
+        "timestamp_ns": "1722250762900929508"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 123989403,
+        "hash": "2P7V7f9tq6L9WAeejH545hGNchmSvLjyfkAdq7SuwTnG",
+        "timestamp_ns": "1721645962463504160"
+      },
+      "target_timestamp_ns": "1722250762463504160",
+      "snapshot": "d7/snapshots/meme-cooking.near.json",
+      "snapshot_sha256": "098d53a365917f848d8e34210a4ecf7fc4a347c365f7bc030d2009e23a4fec58",
+      "chain_sha256": "2dec6143b7a4d7f3204098f82fda6f9adea1ec1f8b4ad453a06ff85ad017e468",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T23:19:05.152Z",
+      "endpoints": [
+        "archival-rpc.mainnet.fastnear.com",
+        "archival-rpc.mainnet.near.org",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "meta-pool.near",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@46386381"
+        },
+        {
+          "code": "known_payee",
+          "severity": "info",
+          "detail": "in the known payee set (caller list, vault allowlist or registry ALLOW)",
+          "source": "context"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 936mr1dRmP1UmfV2VzNzMnvbUu8vjxvXJGhYpJba84jH",
+          "source": "rpc view_account@46386381"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@46386381"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 46386381,
+        "hash": "EzyrNc6mcW2afdbbEGWAQrZeeqJ2t4U5NP1LDhVEsEVV",
+        "timestamp_ns": "1630167686183987529"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 45803834,
+        "hash": "9bCQZacX2RUNjrDWVvJGo7BqnRHAe3Bgb34WL1ZuUgys",
+        "timestamp_ns": "1629562885667388638"
+      },
+      "target_timestamp_ns": "1630167685667388638",
+      "snapshot": "d7/snapshots/meta-pool.near.json",
+      "snapshot_sha256": "9a67eb0b586a7d61bec1b94b7ce4fbefd871b3cebb0eae21c4849e3707eb2bd5",
+      "chain_sha256": "992ed4ba2895bd76b08037fa99dcc41fc8e865c270cf4bd4b371898beb7c589b",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T23:18:33.028Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "archival-rpc.mainnet.near.org",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "metapools.near",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "lookalike_known"
+      ],
+      "reasons": [
+        {
+          "code": "lookalike_known",
+          "severity": "warn",
+          "detail": "edit_distance: 1 edit from meta-pool.near (allowed 2 for a 9-character name) (not new, so a human decides)",
+          "source": "engine lookalike"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 12p7js1vHix1YrMhL7XKunpcxGNuFij2pmfuRSz7kocn",
+          "source": "rpc view_account@119699440"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@119699440 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@119699440"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 119699440,
+        "hash": "Eyd7EdcXsjA9ZGn78VwSE7r1sXoLQteW7Ch7KJLKp2X5",
+        "timestamp_ns": "1716631034146167445"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 119186870,
+        "hash": "AyZ2FiqQYfmT4T4CDEn7dHfn6MeMT2m1BexkCYsuSGoT",
+        "timestamp_ns": "1716026233717281896"
+      },
+      "target_timestamp_ns": "1716631033717281896",
+      "snapshot": "d7/snapshots/metapools.near.json",
+      "snapshot_sha256": "753d3e29e6e15eca945e5319cbf11ebd2b3c81161f6726e6262d2c1db985016b",
+      "chain_sha256": "311e5c46613ca42f070bb6bd3592556d3afb4c25b3a9044c2adc97237623f321",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T23:18:24.496Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "mpc.hot.tg",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 9ULRNHS62cJ4hHTnbc1nFjrDfkxgBNW4m64iaKMr2EFj",
+          "source": "rpc view_account@119826212"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@119826212 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@119826212"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 119826212,
+        "hash": "6iA2vPVcofVUSg3EDPptFvs41vmCi5TzJDnGTRTc5BvX",
+        "timestamp_ns": "1716780917087660824"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 119316840,
+        "hash": "9Nn2fiJLgMxpgxYULveABYCvXS63RTQzxXEyXw8UZFa2",
+        "timestamp_ns": "1716176115989543436"
+      },
+      "target_timestamp_ns": "1716780915989543436",
+      "snapshot": "d7/snapshots/mpc.hot.tg.json",
+      "snapshot_sha256": "72d6903445f4db8f255cd109d4d6c7eaab8283ded43c4a37e800ee7c8c1bba05",
+      "chain_sha256": "dee68525b4c436bef57e8ff37d2a06b20d14fe513333fecd15a895665559116a",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T23:19:03.104Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "archival-rpc.mainnet.near.org",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "mpdao-token.near",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "known_payee",
+          "severity": "info",
+          "detail": "in the known payee set (caller list, vault allowlist or registry ALLOW)",
+          "source": "context"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 8nisUXWZA9nwu7Fkq2TKhM3q52xHogmwfBHiDHeum3ED",
+          "source": "rpc view_account@117057077"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@117057077 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@117057077"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 117057077,
+        "hash": "HN4EtwSvPa9S1TdCWvbACT5673cszvgEi3XNS8TYZQ54",
+        "timestamp_ns": "1713383009837808460"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 116561659,
+        "hash": "ACmT7osGNH3c2mMTxdhMKc6k3XgnbNi3DcgbqD4aD26V",
+        "timestamp_ns": "1712778209427931663"
+      },
+      "target_timestamp_ns": "1713383009427931663",
+      "snapshot": "d7/snapshots/mpdao-token.near.json",
+      "snapshot_sha256": "2464653e053ccc3fa060a923ffc38467ee9033c1b77e04e35c369272ec6f9f09",
+      "chain_sha256": "4e23311d11455bf3a94191036edfe239029c3e8b308f1e4c7fb88bcaf1f09732",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-13T14:38:17.921Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "nbtc.bridge.near",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "known_payee",
+          "severity": "info",
+          "detail": "in the known payee set (caller list, vault allowlist or registry ALLOW)",
+          "source": "context"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 7dFGMTbW5wN5u5f1CEtYsDdL3RdgPFBGf4NWiuFDiXX",
+          "source": "rpc view_account@138364956"
+        },
+        {
+          "code": "locked_contract",
+          "severity": "info",
+          "detail": "no full-access key: only the contract's own logic can change it",
+          "source": "rpc view_access_key_list@138364956"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@138364956 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@138364956"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 138364956,
+        "hash": "9tdYgWLUbyJbe4A2hFsXAXxQnDNV3Eba2AMyHWtfFi1R",
+        "timestamp_ns": "1738019786446973647"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 137831787,
+        "hash": "2xmgmNqfuAeSQoxGFdCEBvJ6tFbjKrDQ7WEGL85tXS31",
+        "timestamp_ns": "1737414986320296651"
+      },
+      "target_timestamp_ns": "1738019786320296651",
+      "snapshot": "d7/snapshots/nbtc.bridge.near.json",
+      "snapshot_sha256": "fe84860c5e0198f7052bda16cf5568e80197bed509c947ee9ecb6b340231bf5a",
+      "chain_sha256": "54770379858f82775275ae0b5c3239eb04d22265f2f5918ba6031f083ed49e13",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-12T23:19:07.171Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "nearreward.near",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code g5JyEK5mUJoAdKJ4tw5XwMF2RcEaHT27DMcAvfVAwom",
+          "source": "rpc view_account@128317381"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@128317381 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@128317381"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 128317381,
+        "hash": "7ThadYyyAP5bDtemn6RGHyJCGeC4mTYQiKDRHwDQDiyq",
+        "timestamp_ns": "1726640254581770153"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 127785068,
+        "hash": "H6wuAdmoTpXyRCZ12ZbP2cxmzThFqYRMq1QKuBLRGwsE",
+        "timestamp_ns": "1726035454348754898"
+      },
+      "target_timestamp_ns": "1726640254348754898",
+      "snapshot": "d7/snapshots/nearreward.near.json",
+      "snapshot_sha256": "013370c9621c4c6965873d4560b2760f7739e1a3ed188b0199f8e13014dc75d5",
+      "chain_sha256": "b017693b4b1c3b6d29f1990dbe53d73a6441fbcedda33057ca9ccc83c4c33432",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-13T14:38:20.258Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "nearrewards.near",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "code_changed_recently"
+      ],
+      "reasons": [
+        {
+          "code": "code_changed_recently",
+          "severity": "warn",
+          "detail": "code hash GetJKX6FPNLMUhXNKKivESecskQm8wKofmeSmo26oUM2 at block #118872654 became 8555L8sepuFSzQ1sydyDE2LczBFYuJtV5gjrRuM2pnKK within 72 h",
+          "source": "rpc archival view_account@118872654"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 8555L8sepuFSzQ1sydyDE2LczBFYuJtV5gjrRuM2pnKK",
+          "source": "rpc view_account@119086617"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@119086617"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 119086617,
+        "hash": "5uh4VYWdyyL3ZmpKdKhxgkrzUgpapnUzZq7t6RzwS1mF",
+        "timestamp_ns": "1715910570990519170"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 118610799,
+        "hash": "4F83pdn4jvNSXAoUJZSrnh51veknQbM1G5EeqFseRYrj",
+        "timestamp_ns": "1715305769636035651"
+      },
+      "target_timestamp_ns": "1715910569636035651",
+      "snapshot": "d7/snapshots/nearrewards.near.json",
+      "snapshot_sha256": "b7c0d4d24cf1f0e4efb4e641cfbcfb8fe9fbd386e48b12c7918e3dcf4ac0a13f",
+      "chain_sha256": "5328bc439615d5a62fa94508a501b278ca4ea50a12939a688c6e14e894cbfeb4",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-13T14:38:22.609Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "npro.nearmobile.near",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "known_payee",
+          "severity": "info",
+          "detail": "in the known payee set (caller list, vault allowlist or registry ALLOW)",
+          "source": "context"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 9tpkUuPKwzFwFqX2drUMPQXKNEqsLBBytEtT2CKzTV4W",
+          "source": "rpc view_account@176228307"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@176228307 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@176228307"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 176228307,
+        "hash": "AxLmznNv5WmqshGzGBPRN8XZwaWvknr1VgxP1Nnv8XwV",
+        "timestamp_ns": "1765365374491481470"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 175259250,
+        "hash": "CsmRbJUxf8emzX6QKVaLJF1jdMeKenMrR5U8P5BV2LTu",
+        "timestamp_ns": "1764760573940570179"
+      },
+      "target_timestamp_ns": "1765365373940570179",
+      "snapshot": "d7/snapshots/npro.nearmobile.near.json",
+      "snapshot_sha256": "96d90c79a9aedb89b17a59aec6a4df6347eba67f333fadd5eaf49d85bb9afb7c",
+      "chain_sha256": "07f8f5d40f8dd16be8cb5274ea0643373b39627e276359238ba40127bf9a4791",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:34:53.270Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "omni.bridge.near",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 6BHoTBms9N4p1M44VHhEUqr676Luj2XptKGAxihyBcN",
+          "source": "rpc view_account@137583506"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@137583506 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@137583506"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 137583506,
+        "hash": "BxpE8uV1dyskshp32GJiLfvS1vspTLFstyDZu2nyicKN",
+        "timestamp_ns": "1737137636717129926"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 137049937,
+        "hash": "F676o84j3Gk7i571z2Ejb8C39cuzKGcN9Mf7JT6aBswv",
+        "timestamp_ns": "1736532835613790638"
+      },
+      "target_timestamp_ns": "1737137635613790638",
+      "snapshot": "d7/snapshots/omni.bridge.near.json",
+      "snapshot_sha256": "88935dce3c41d31a39bc64f629c04e48901997a357e194ce43c34fdd6413d0f8",
+      "chain_sha256": "45a8a6ef772c79f8e073975524b7cafe842659dc003ca0e9447772fdaf36ac26",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:35:02.872Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "outlayer.near",
+      "verdict": "WARN",
+      "score": 499,
+      "warn_kind": "soft",
+      "deciding": [
+        "low_activity"
+      ],
+      "reasons": [
+        {
+          "code": "low_activity",
+          "severity": "warn",
+          "detail": "1 transaction(s) at or before the block (threshold 5)",
+          "source": "indexer fastnear"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@170195241 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@170195241"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 170195241,
+        "hash": "AQ2MupLxccpnkjfFFui8SPYb2ie71aYoxh2aQtAHgpfF",
+        "timestamp_ns": "1761637359704162158"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 169204749,
+        "hash": "C2iWgwtvqRtTCGqNsLMWf1sLXE4FHJRP3FDPkknean9K",
+        "timestamp_ns": "1761032559344870664"
+      },
+      "target_timestamp_ns": "1761637359344870664",
+      "snapshot": "d7/snapshots/outlayer.near.json",
+      "snapshot_sha256": "3fd6d6030899d0a9c566454147dde6bd6e0fbe6d84210ee3e932797a9e44cb99",
+      "chain_sha256": "c14c28d7e1ea1224ebfd09defc37bffcbae3958643a965f8d104ea92ec62c7e9",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:34:58.007Z",
+      "endpoints": [
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "pool.near",
+      "verdict": "WARN",
+      "score": 400,
+      "warn_kind": "hard",
+      "deciding": [
+        "low_activity",
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "low_activity",
+          "severity": "warn",
+          "detail": "2 transaction(s) at or before the block (threshold 5)",
+          "source": "indexer fastnear"
+        },
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@20011935"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@20011935"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 20011935,
+        "hash": "6aHSFsPDdUunSaUJdemKx3RaiC9D1uNhAb2i4JyTCm3d",
+        "timestamp_ns": "1603297682184805697"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 19225450,
+        "hash": "BkgLSWWNa59ezfGLGiiFwe9o1bfZF5tmvuCfQv46yW35",
+        "timestamp_ns": "1602692881947892763"
+      },
+      "target_timestamp_ns": "1603297681947892763",
+      "snapshot": "d7/snapshots/pool.near.json",
+      "snapshot_sha256": "8049f222dc9b6c4948babcc2669c769d2de6f892e6f2b0843f716fb0e63c6fc9",
+      "chain_sha256": "4acb35ec5c9aab31372664a0588cb53c9a0fdea14bb065953011a3ef150da840",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:36:41.162Z",
+      "endpoints": [
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "priceoracle.near",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@51392516"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 39UkxwEYfbEWgBa3jyjEYHBCJYGjpb4jyTTxYdreDbcR",
+          "source": "rpc view_account@51392516"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@51392516"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 51392516,
+        "hash": "4f8EECA1LpP2vKmLXxJJVfuVpXGqyV4ZkcRw8XwxLRge",
+        "timestamp_ns": "1635527505373197897"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 50837638,
+        "hash": "9eFevwevr43n4VcjJNF98Rk4Wnd8NGAdCcXBRNn245ii",
+        "timestamp_ns": "1634922704312575945"
+      },
+      "target_timestamp_ns": "1635527504312575945",
+      "snapshot": "d7/snapshots/priceoracle.near.json",
+      "snapshot_sha256": "84448cc3fa8f264d475c49dae5fd0771f147e42f78ac1788486d1f78dca5e9b3",
+      "chain_sha256": "bb83b65a1782e7c695104430c631edaa11762429f79118dd623a5b738413ad39",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:36:46.058Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "rhea000453.multica.near",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 11111111111111111111111111111111",
+          "source": "rpc view_account@191564619"
+        },
+        {
+          "code": "locked_contract",
+          "severity": "info",
+          "detail": "no full-access key: only the contract's own logic can change it",
+          "source": "rpc view_access_key_list@191564619"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@191564619"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 191564619,
+        "hash": "AFnXUHQkb3JZD3o6d3sPvSMSf6AtcdL5Fz6Sa5Kre9gH",
+        "timestamp_ns": "1774732453356521026"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 190558043,
+        "hash": "FHwLPk66NANecbZbcKAFY8hzFZZEmXMve1UGzDL4GMWw",
+        "timestamp_ns": "1774127652741953632"
+      },
+      "target_timestamp_ns": "1774732452741953632",
+      "snapshot": "d7/snapshots/rhea000453.multica.near.json",
+      "snapshot_sha256": "ae355836f753d0d51df53055ae13df4f595956456d043eb15943334e0f1e3c30",
+      "chain_sha256": "eb0ccaf7b580abb47867dc353c43ee29d5e2b0f7bfcc9854de63696e6909efc4",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:36:43.607Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "rhea000462.multica.near",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 11111111111111111111111111111111",
+          "source": "rpc view_account@192043457"
+        },
+        {
+          "code": "locked_contract",
+          "severity": "info",
+          "detail": "no full-access key: only the contract's own logic can change it",
+          "source": "rpc view_access_key_list@192043457"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@192043457"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 192043457,
+        "hash": "HZCESkKfQzRfQcpZgEUXZA9ixKpRX8zUrznsRmxV4319",
+        "timestamp_ns": "1775019183697296186"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 191036834,
+        "hash": "GfMZ8qLNdbEiDBbW2dNZwx2z6iEA2sg6MThH3FxgegNH",
+        "timestamp_ns": "1774414383352155178"
+      },
+      "target_timestamp_ns": "1775019183352155178",
+      "snapshot": "d7/snapshots/rhea000462.multica.near.json",
+      "snapshot_sha256": "e527dda8a544761d2ddf239bd4549bbcce44473296577d714c83162993491830",
+      "chain_sha256": "ba5d599e42311cc0bbb399bf055eb5014f4365c2f9fa915524e14eae33bfa47d",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:38:14.783Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "rhea000505.multica.near",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 11111111111111111111111111111111",
+          "source": "rpc view_account@194390323"
+        },
+        {
+          "code": "locked_contract",
+          "severity": "info",
+          "detail": "no full-access key: only the contract's own logic can change it",
+          "source": "rpc view_access_key_list@194390323"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@194390323"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 194390323,
+        "hash": "Gci7B4W4uwKQwVbu6LxnMTQ58ZzjtVyKLHibrnktAPud",
+        "timestamp_ns": "1776427239420529215"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 193387487,
+        "hash": "D84xdZNNKctYv8TYAN66avHWwyJEZVnUTJkLVkbKHbHL",
+        "timestamp_ns": "1775822439045228412"
+      },
+      "target_timestamp_ns": "1776427239045228412",
+      "snapshot": "d7/snapshots/rhea000505.multica.near.json",
+      "snapshot_sha256": "17e789d87a0c824a917217ce14fd13300947b671bcc68ef320b3f651a392fbfd",
+      "chain_sha256": "79a25835dc7c67b6db59e8055d42d50f860f49cf63faec7a4f75b002d564fe71",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:38:17.179Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "simple.market.mintbase1.near",
+      "verdict": "WARN",
+      "score": 400,
+      "warn_kind": "hard",
+      "deciding": [
+        "low_activity",
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "low_activity",
+          "severity": "warn",
+          "detail": "2 transaction(s) at or before the block (threshold 5)",
+          "source": "indexer fastnear"
+        },
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@71705783"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 8HLQaqjABJKEcNq1m9qg3DWcF7X8NctBZZuUtuKMbySp",
+          "source": "rpc view_account@71705783"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@71705783"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 71705783,
+        "hash": "GZyMRWiGNw56uGEBuDBZY1EFSnUJychHgowEKyPKud5K",
+        "timestamp_ns": "1660135839868805269"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 71234822,
+        "hash": "3e9owa4YyKEzuenoRyeDjYE4s4oMUkRUVtzmi33iFvuG",
+        "timestamp_ns": "1659531039489503566"
+      },
+      "target_timestamp_ns": "1660135839489503566",
+      "snapshot": "d7/snapshots/simple.market.mintbase1.near.json",
+      "snapshot_sha256": "f1d7ce345444a14e53c4df7bc2135ba956b1810fdda945d5ba60d8afe2287622",
+      "chain_sha256": "bb3647ec2ccd372b818ba00f024ca656aad9d502f9fb86ddbea8578d75866cdf",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:38:46.071Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "social.near",
+      "verdict": "WARN",
+      "score": 400,
+      "warn_kind": "hard",
+      "deciding": [
+        "low_activity",
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "low_activity",
+          "severity": "warn",
+          "detail": "4 transaction(s) at or before the block (threshold 5)",
+          "source": "indexer fastnear"
+        },
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@31167311"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@31167311"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 31167311,
+        "hash": "F3AckfBRqcC5oh2qreYFWRMu6zmKepiExqwciRyd2ajF",
+        "timestamp_ns": "1614707378815712594"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 30627211,
+        "hash": "FZVk9asDf2Ch2Uc1NJjTx28Weon9Gb8VoktFYN5S5XZz",
+        "timestamp_ns": "1614102577849509682"
+      },
+      "target_timestamp_ns": "1614707377849509682",
+      "snapshot": "d7/snapshots/social.near.json",
+      "snapshot_sha256": "71687e60d55a32a09aad62e7902b2b8f960602294ea436adeeb61757f0ded28e",
+      "chain_sha256": "0f2ae95ee956cd21176af4a8a656d5893436df68d61f86ecdf54f7a6f13e6178",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:39:55.653Z",
+      "endpoints": [
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "storage.herewallet.near",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@69863803"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code HfRDxdoADeoy8iB4oUS982x4t8Kuiz7HQyKjKRMPZdgP",
+          "source": "rpc view_account@69863803"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@69863803"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 69863803,
+        "hash": "DMecBJZsCZG38awoYmzbcB6LAQYurVoPtCBR2GDhTBNZ",
+        "timestamp_ns": "1657848943115786257"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 69353405,
+        "hash": "9iT8ahu9LfqaUr6R2zHgJEbTmsQD7VGo2FjAUuxvkgDg",
+        "timestamp_ns": "1657244142217542822"
+      },
+      "target_timestamp_ns": "1657848942217542822",
+      "snapshot": "d7/snapshots/storage.herewallet.near.json",
+      "snapshot_sha256": "cbe5c6d293776c26721539dc65e9233bf90c4f355e5859ad2ee8723977f83600",
+      "chain_sha256": "a7cda667bb54773b312cdfe4dc885e395a58ede44a0001827152214e0ab4c486",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:40:05.180Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "token.0xshitzu.near",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "lookalike_known"
+      ],
+      "reasons": [
+        {
+          "code": "lookalike_known",
+          "severity": "warn",
+          "detail": "parent_swap: first label \"token\" matches token.publicailab.near but the parent is \"0xshitzu.near\" instead of \"publicailab.near\"; \"token\" is a role label under publicailab.near, not its own name, and any account can create one under itself, so this only warns (a shared role label, so a human decides)",
+          "source": "engine lookalike"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code DNa1aq5rm1oVkGv9cpX28tmHtZ4bFwWBR2NwzNFuo88G",
+          "source": "rpc view_account@110226669"
+        },
+        {
+          "code": "locked_contract",
+          "severity": "info",
+          "detail": "no full-access key: only the contract's own logic can change it",
+          "source": "rpc view_access_key_list@110226669"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@110226669 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@110226669"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 110226669,
+        "hash": "P951qqCokv4K4D5JxL8xLehydDdkKx9a8XBWxu5WqgC",
+        "timestamp_ns": "1705065833101861731"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 109656165,
+        "hash": "CbjSa8nkwzQ4ZvJpY5ju5obGNeR2BtAgJ9nKjrubeMSQ",
+        "timestamp_ns": "1704461032236154025"
+      },
+      "target_timestamp_ns": "1705065832236154025",
+      "snapshot": "d7/snapshots/token.0xshitzu.near.json",
+      "snapshot_sha256": "c627c28db905f1e11622b47cde9fd225726b75864b1ebe671f39ca61510bf8f5",
+      "chain_sha256": "c939a4312f9767679920edba4d6b05949fd92fee91a32fe31e8e947fcd2d67ae",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:40:48.467Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "token.burrow.near",
+      "verdict": "WARN",
+      "score": 360,
+      "warn_kind": "hard",
+      "deciding": [
+        "lookalike_known",
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "lookalike_known",
+          "severity": "warn",
+          "detail": "parent_swap: first label \"token\" matches token.publicailab.near but the parent is \"burrow.near\" instead of \"publicailab.near\"; \"token\" is a role label under publicailab.near, not its own name, and any account can create one under itself, so this only warns (a shared role label, so a human decides)",
+          "source": "engine lookalike"
+        },
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@56776164"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 2dLsFG6E2feEcpk9HJxMQH6PMNqC5DvgCUkVDtP1XmZC",
+          "source": "rpc view_account@56776164"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@56776164"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 56776164,
+        "hash": "4YyLK3rYK5U4RXK79CkWiA65Qa1FLZCm95KdngPkemCJ",
+        "timestamp_ns": "1641419246118921445"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 56270456,
+        "hash": "HcEFSUSPaeZTExGwAG3Tqh9TzgDqYgrMzXUJyGwyhhPq",
+        "timestamp_ns": "1640814445651526045"
+      },
+      "target_timestamp_ns": "1641419245651526045",
+      "snapshot": "d7/snapshots/token.burrow.near.json",
+      "snapshot_sha256": "c176b3e3b8fcae1637764856e789f7c6b6fe4ad9697b2e481bc0c11271ecce4e",
+      "chain_sha256": "479da34dbd19d243ec5251c73ef3326ba5ceea9402422ef1af873ca40ef5be8a",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:41:57.973Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "token.lonkingnearbackto2024.near",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "lookalike_known"
+      ],
+      "reasons": [
+        {
+          "code": "lookalike_known",
+          "severity": "warn",
+          "detail": "parent_swap: first label \"token\" matches token.publicailab.near but the parent is \"lonkingnearbackto2024.near\" instead of \"publicailab.near\"; \"token\" is a role label under publicailab.near, not its own name, and any account can create one under itself, so this only warns (a shared role label, so a human decides)",
+          "source": "engine lookalike"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code GYNhTvepHDdviQQNG1MoWTCi6nBhLuQknMDkZ7P8WwJj",
+          "source": "rpc view_account@109409654"
+        },
+        {
+          "code": "locked_contract",
+          "severity": "info",
+          "detail": "no full-access key: only the contract's own logic can change it",
+          "source": "rpc view_access_key_list@109409654"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@109409654 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@109409654"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 109409654,
+        "hash": "9mpEZLbsrJkDstedLAUiw3phYkviHD4KoDzDigQDJQym",
+        "timestamp_ns": "1704204433940488134"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 108860577,
+        "hash": "Bbwa2Jg2txhhteXAtgVRqj7dSoV9A9i9T7kSKkdQLtNX",
+        "timestamp_ns": "1703599633040910385"
+      },
+      "target_timestamp_ns": "1704204433040910385",
+      "snapshot": "d7/snapshots/token.lonkingnearbackto2024.near.json",
+      "snapshot_sha256": "39de08dc579c52c04243a86f46861095f2aeae0d17eaad4a3907f471be331c44",
+      "chain_sha256": "50068f2d9e6e690b78738efc50ba76cab6193f90f7cc5001e0797c3f2c3580ae",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:42:00.373Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "token.paras.near",
+      "verdict": "WARN",
+      "score": 360,
+      "warn_kind": "hard",
+      "deciding": [
+        "lookalike_known",
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "lookalike_known",
+          "severity": "warn",
+          "detail": "parent_swap: first label \"token\" matches token.publicailab.near but the parent is \"paras.near\" instead of \"publicailab.near\"; \"token\" is a role label under publicailab.near, not its own name, and any account can create one under itself, so this only warns (a shared role label, so a human decides)",
+          "source": "engine lookalike"
+        },
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@48192721"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code ADLqTVjx39g74vzcuYYVkzzVEmRtFt9cBgQr47VM7wQh",
+          "source": "rpc view_account@48192721"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@48192721"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 48192721,
+        "hash": "HQcVknLmLbttqLCy6rqt7rHy5N7pWf269rtd2jm32BPy",
+        "timestamp_ns": "1632113514498815763"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 47631966,
+        "hash": "AWu8jVGuD2ncuV15s5xkSDqGZoF4Qz26xfDAG6R21Y7y",
+        "timestamp_ns": "1631508714330463935"
+      },
+      "target_timestamp_ns": "1632113514330463935",
+      "snapshot": "d7/snapshots/token.paras.near.json",
+      "snapshot_sha256": "ff5e6f001128d071c67a38b99434abe3e2d510cc858b0d5ecd84fb3e1bbb9967",
+      "chain_sha256": "04ce3f12aa154248dc284ad5c228b7830e90a7bba294b5792141375acda9e73d",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:42:41.285Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "token.rhealab.near",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "known_payee",
+          "severity": "info",
+          "detail": "in the known payee set (caller list, vault allowlist or registry ALLOW)",
+          "source": "context"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 3XbB1xkQTNFhtizVSCNW5xM9MyuF3AYhFKc8HAPc3pdx",
+          "source": "rpc view_account@146569654"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@146569654 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@146569654"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 146569654,
+        "hash": "BFKFuHC2NgiZbu6U9AhSLBExNdEsjiEbwoPFowNRi2fR",
+        "timestamp_ns": "1747137108752493989"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 145889997,
+        "hash": "FMHxY3sCTpjweeEZJnQWKoTrE1J11BqGxYDEcQsuTN3W",
+        "timestamp_ns": "1746532308333349819"
+      },
+      "target_timestamp_ns": "1747137108333349819",
+      "snapshot": "d7/snapshots/token.rhealab.near.json",
+      "snapshot_sha256": "b67b00b49c0928d077b4eda4e9be47950b4a79206a255af5abd7367df5836260",
+      "chain_sha256": "3f3c543000e7069332f0c224be11a4b217f9b32cb228c14a49806ee0925d446f",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:44:10.087Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "token.sweat",
+      "verdict": "WARN",
+      "score": 280,
+      "warn_kind": "hard",
+      "deciding": [
+        "lookalike_known",
+        "low_activity",
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "lookalike_known",
+          "severity": "warn",
+          "detail": "parent_swap: first label \"token\" matches token.publicailab.near but the parent is \"sweat\" instead of \"publicailab.near\"; \"token\" is a role label under publicailab.near, not its own name, and any account can create one under itself, so this only warns (a shared role label, so a human decides)",
+          "source": "engine lookalike"
+        },
+        {
+          "code": "low_activity",
+          "severity": "warn",
+          "detail": "1 transaction(s) at or before the block (threshold 5)",
+          "source": "indexer fastnear"
+        },
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@68255220"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@68255220"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 68255220,
+        "hash": "J3gAck2F1hnBvj2qspR1XUJLPCRLxWp1dbiPMmYW5Y9b",
+        "timestamp_ns": "1655883493627145400"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 67759802,
+        "hash": "HLWiadh7nj9iaM2Cz6RBHXWozcVbEEYTJg4ZNgedSQ4d",
+        "timestamp_ns": "1655278692739426283"
+      },
+      "target_timestamp_ns": "1655883492739426283",
+      "snapshot": "d7/snapshots/token.sweat.json",
+      "snapshot_sha256": "973a6490f86ac06834100dbc20eac76e9cd6adc6e500b9811936d381a379b711",
+      "chain_sha256": "720e196f95f84e5d70bdb09239a67d835de836396380235ca354ea746c8105cb",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:43:38.760Z",
+      "endpoints": [
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "token.v2.ref-finance.near",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@46648990"
+        },
+        {
+          "code": "known_payee",
+          "severity": "info",
+          "detail": "in the known payee set (caller list, vault allowlist or registry ALLOW)",
+          "source": "context"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code HagtKcVnSk6eJrg9e4X4Rpvw4ACCrpJjkrdWavLNtggZ",
+          "source": "rpc view_account@46648990"
+        },
+        {
+          "code": "locked_contract",
+          "severity": "info",
+          "detail": "no full-access key: only the contract's own logic can change it",
+          "source": "rpc view_access_key_list@46648990"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@46648990"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 46648990,
+        "hash": "FsXMA8hnPmPkJFNhN1rPM5q2L6Lfx4ErpygcNzNhnNW9",
+        "timestamp_ns": "1630445489433723804"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 46071239,
+        "hash": "5D1sc2exVnXipMEFBivXhGMYL3Ykx4bYG3mw832JuNGG",
+        "timestamp_ns": "1629840688751727211"
+      },
+      "target_timestamp_ns": "1630445488751727211",
+      "snapshot": "d7/snapshots/token.v2.ref-finance.near.json",
+      "snapshot_sha256": "850e38ff5dd449a0de8f25e3da47e096e0d78423f40b0adb70298ca0223ce0f4",
+      "chain_sha256": "a3dfaa8dfb86407e3b504828365999c60614e47c13fdd21d0453c314c6b29ec6",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:44:36.375Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "usdt.tether-token.near",
+      "verdict": "WARN",
+      "score": 360,
+      "warn_kind": "hard",
+      "deciding": [
+        "code_changed_recently",
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "code_changed_recently",
+          "severity": "warn",
+          "detail": "code hash 11111111111111111111111111111111 at block #73605978 became 6k1ui8sbLunHb934erC9FafzLBF3d6aJCahzHF7nhdc within 72 h",
+          "source": "rpc archival view_account@73605978"
+        },
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@73805890"
+        },
+        {
+          "code": "known_payee",
+          "severity": "info",
+          "detail": "in the known payee set (caller list, vault allowlist or registry ALLOW)",
+          "source": "context"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 6k1ui8sbLunHb934erC9FafzLBF3d6aJCahzHF7nhdc",
+          "source": "rpc view_account@73805890"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@73805890"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 73805890,
+        "hash": "3xy1BYawvzkkUMR3PAGwCcMy77QDJ2afkHD2p6cf3Wnd",
+        "timestamp_ns": "1662732925038940216"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 73324606,
+        "hash": "2gZ8EsBJashtVk8Ptn1aJUrc9Q1qLCPJDUTTJCpysG3h",
+        "timestamp_ns": "1662128124049816756"
+      },
+      "target_timestamp_ns": "1662732924049816756",
+      "snapshot": "d7/snapshots/usdt.tether-token.near.json",
+      "snapshot_sha256": "10912b0ba2eec08c39981cf17fd0aa7b2b48ee0ada51de2e69a2d407399669bc",
+      "chain_sha256": "78de5fb1869f2e40b11b40ce2a908ff646b240c4e03a43240f163f65e64798af",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:45:24.359Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "v1.signer",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code GHs7b8fAXaeAXM4xB2DDRzCn7GCjnGkzADWEkU92Anzb",
+          "source": "rpc view_account@125252526"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@125252526 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@125252526"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 125252526,
+        "hash": "5iNyWa7LnuBC6UBo9zDA1fBLLnJh3k6BTtN4ngtfXTWY",
+        "timestamp_ns": "1723062678462873524"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 124709486,
+        "hash": "GPTkFcRjuJaxaqNBzPXViz7upjuB8HuhuS7L5ix88H6y",
+        "timestamp_ns": "1722457878171562554"
+      },
+      "target_timestamp_ns": "1723062678171562554",
+      "snapshot": "d7/snapshots/v1.signer.json",
+      "snapshot_sha256": "9e8e0400bdf26a650348d34c4dbdf7251012e5427c601fe3a97f32c92c5e2425",
+      "chain_sha256": "4791efdc817be2d43d5558fa6a22c3f0d40c2091a769efa3ef6363d5b6a5ada7",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:46:07.676Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "v2.ref-finance.near",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@46335668"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code FrkxbL1wZdCfFPBDHVL3jqPZp2cWXcSC5qpNwKH9LM1H",
+          "source": "rpc view_account@46335668"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@46335668"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 46335668,
+        "hash": "CoWwdtKYsWNgfGKNSFhj7vMxQHvVEFbCgr1sHhsZ4Ky6",
+        "timestamp_ns": "1630115068008327055"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 45752814,
+        "hash": "3mej2pn1g7vMXD28RZBkQD3zF5Wwqa19ia8SuX4RWB6b",
+        "timestamp_ns": "1629510267352995788"
+      },
+      "target_timestamp_ns": "1630115067352995788",
+      "snapshot": "d7/snapshots/v2.ref-finance.near.json",
+      "snapshot_sha256": "6fd549c424b21b3ae09fe5961251f8af43c46caf652b3b5828ce99294e82446b",
+      "chain_sha256": "22ec7a39a35515398fa4d01ff3a64ad2638b8f41e5c13e8001f458964fbd7b4e",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:46:24.439Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "v2_1.omni.hot.tg",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "code_changed_recently"
+      ],
+      "reasons": [
+        {
+          "code": "code_changed_recently",
+          "severity": "warn",
+          "detail": "code hash 4D5K81VzEMgu8jRb6QqSnXXhgBDoU55nXUsSVuxicYvz at block #144305754 became 7C3kebhLRVpVjyHiax1sv1XgvQpFKQwTvKNZLchwdh4Z within 72 h",
+          "source": "rpc archival view_account@144305754"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 7C3kebhLRVpVjyHiax1sv1XgvQpFKQwTvKNZLchwdh4Z",
+          "source": "rpc view_account@144530697"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@144530697"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 144530697,
+        "hash": "BWxa5rnSYTjS4MpvP9gKq3asuhBm7n247pmD6sSxphGL",
+        "timestamp_ns": "1745014679984184989"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 144002646,
+        "hash": "ADm1KsBFVvwfp6CGQ5a8G9h2imEJVV2FgsPy5ftxPLxF",
+        "timestamp_ns": "1744409879173696307"
+      },
+      "target_timestamp_ns": "1745014679173696307",
+      "snapshot": "d7/snapshots/v2_1.omni.hot.tg.json",
+      "snapshot_sha256": "6d2cf02129a0351970c486ba8341f289be7f6f9f4f20318ec60c1d54790999b9",
+      "chain_sha256": "356d75293d6b1d0ce1f5533aef640d86e216aaca0cc78e8a4f2f87c0417631fa",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:47:00.465Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "venear.dao",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 3hGeRfDqDzPBpXyDrnCTMoBTdP2Ly4AypjemR6uebj3G",
+          "source": "rpc view_account@168660570"
+        },
+        {
+          "code": "locked_contract",
+          "severity": "info",
+          "detail": "no full-access key: only the contract's own logic can change it",
+          "source": "rpc view_access_key_list@168660570"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@168660570 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@168660570"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 168660570,
+        "hash": "ohrTX2BDAhfXzpcxugt8V1XsW81hUU7j8gKVmy1bzJe",
+        "timestamp_ns": "1760696228322768780"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 167674122,
+        "hash": "2WDgrZSfnMTeR1zeQg3SQapmmgJyzY3F9bxTc9jrC3Xc",
+        "timestamp_ns": "1760091428119812657"
+      },
+      "target_timestamp_ns": "1760696228119812657",
+      "snapshot": "d7/snapshots/venear.dao.json",
+      "snapshot_sha256": "d496f7781493e6331946e766d0944699bb9817cdc10cbf8ac1dd565f9e3f5703",
+      "chain_sha256": "c0dbbb4e38fcbaded37df4514ebb96bac76f689904f8f054638123630482d095",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:47:48.490Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "vote.dao",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 8AgTdvpLpJcYrGJK3jcS718adCwiTXYRRA5Qx4pT6xqd",
+          "source": "rpc view_account@168660636"
+        },
+        {
+          "code": "locked_contract",
+          "severity": "info",
+          "detail": "no full-access key: only the contract's own logic can change it",
+          "source": "rpc view_access_key_list@168660636"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@168660636 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@168660636"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 168660636,
+        "hash": "78rpi7iBUKqXBqEdSELWsEZcETmU9UbLF7LVH2xqPV1L",
+        "timestamp_ns": "1760696269191121587"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 167674190,
+        "hash": "CW2Rc9vYGizG3WJDyzqepKK2qa41xmzDWoDYasAi9VnT",
+        "timestamp_ns": "1760091469101697487"
+      },
+      "target_timestamp_ns": "1760696269101697487",
+      "snapshot": "d7/snapshots/vote.dao.json",
+      "snapshot_sha256": "ff1262250ee9871a71782911bde441a7cbc18175ddf242fc1b4d6766635c4598",
+      "chain_sha256": "40d2338732f2f11cc1e98318c1c7fc253ea7f7e3c6ab008c6c72748d9fca83c2",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:48:05.180Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "wisdom1.near",
+      "verdict": "WARN",
+      "score": 400,
+      "warn_kind": "hard",
+      "deciding": [
+        "low_activity",
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "low_activity",
+          "severity": "warn",
+          "detail": "1 transaction(s) at or before the block (threshold 5)",
+          "source": "indexer fastnear"
+        },
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@57878694"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@57878694"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 57878694,
+        "hash": "M2weHfU9qUXocD9uAL2oq6jmtcPSXhnUYUN4UMAgcN1",
+        "timestamp_ns": "1642824756572635673"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 57433474,
+        "hash": "31GmDYwcXcmMX81Ep8Y6K7mLWXYcnQrZnv5KrFx2ACzK",
+        "timestamp_ns": "1642219956497111191"
+      },
+      "target_timestamp_ns": "1642824756497111191",
+      "snapshot": "d7/snapshots/wisdom1.near.json",
+      "snapshot_sha256": "4fc80134ec1aa90ef037b898b9b67f111f582f1af8ad983f2b775f1f5044898c",
+      "chain_sha256": "48d5f06f9e33854f90afaa02823eaf4af1eb34949cf332e319b9ccfe90587055",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:49:12.479Z",
+      "endpoints": [
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "wrap.near",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@30537789"
+        },
+        {
+          "code": "known_payee",
+          "severity": "info",
+          "detail": "in the known payee set (caller list, vault allowlist or registry ALLOW)",
+          "source": "context"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 9kQaNiscuPh69vRs1GyzfnkEjpUPGLjJhT6RaJBQyG7p",
+          "source": "rpc view_account@30537789"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@30537789"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 30537789,
+        "hash": "CiGpMoYXmg5m2Moyyjr7333riQAojhEzGx4RSCeUFQs9",
+        "timestamp_ns": "1614003027027632260"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 29998009,
+        "hash": "D2PC4aQgfrKngxgHX1hsH9NH1ijvyv66CvidpYjUXW49",
+        "timestamp_ns": "1613398226650394541"
+      },
+      "target_timestamp_ns": "1614003026650394541",
+      "snapshot": "d7/snapshots/wrap.near.json",
+      "snapshot_sha256": "86ab9ed1916bfc5e4fdc2ed443f71b9748abc638f521e9df9c47906604c90655",
+      "chain_sha256": "94dfa1b3391683e8fa6819b24df7932205203bf14a0dd76f424a23066973ec97",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:49:31.643Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "xtoken.ref-finance.near",
+      "verdict": "WARN",
+      "score": 480,
+      "warn_kind": "hard",
+      "deciding": [
+        "blocklist_unreadable"
+      ],
+      "reasons": [
+        {
+          "code": "blocklist_unreadable",
+          "severity": "warn",
+          "detail": "USDC is_blocklisted could not be read (UNKNOWN_ACCOUNT: account 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 does not exist while viewing)",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@58010840"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code ErUzfYKkbsiZtKWf9JKV1UvztNZvXjoFpdzB6wvB8vjX",
+          "source": "rpc view_account@58010840"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@58010840"
+        }
+      ],
+      "missing_data": [
+        "blocklist_unreadable",
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 58010840,
+        "hash": "G4kaJT5Q4dyjk2bAn5B6hswAtNeJZGa8Sz6KZoHbfDY1",
+        "timestamp_ns": "1642989261739664889"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 57551692,
+        "hash": "75yW6MdhqjhsGzGvua4jhahfg7d7vManVqGcJooL7UQK",
+        "timestamp_ns": "1642384460730439577"
+      },
+      "target_timestamp_ns": "1642989260730439577",
+      "snapshot": "d7/snapshots/xtoken.ref-finance.near.json",
+      "snapshot_sha256": "4c936772526e99b518c7d766dc5d3abcb9f3d506bcc2c8367e66d05cd0adf5fa",
+      "chain_sha256": "c22c36287a09298f288b3a27cc1fb4cf194443e248635b8802a0800054c95022",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:49:53.165Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    },
+    {
+      "account_id": "zec.omft.near",
+      "verdict": "ALLOW",
+      "score": 600,
+      "warn_kind": null,
+      "deciding": [],
+      "reasons": [
+        {
+          "code": "known_payee",
+          "severity": "info",
+          "detail": "in the known payee set (caller list, vault allowlist or registry ALLOW)",
+          "source": "context"
+        },
+        {
+          "code": "contract_account",
+          "severity": "info",
+          "detail": "runs contract code 5ByHxr4a2GrvWNcs2o9AoaxBn3XV48FJM98y5Df8rX4W",
+          "source": "rpc view_account@138648332"
+        },
+        {
+          "code": "locked_contract",
+          "severity": "info",
+          "detail": "no full-access key: only the contract's own logic can change it",
+          "source": "rpc view_access_key_list@138648332"
+        },
+        {
+          "code": "usdc_unregistered",
+          "severity": "info",
+          "detail": "no USDC storage registration yet; the vault attaches the 0.00125 NEAR registration before paying",
+          "source": "rpc 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1.is_blocklisted@138648332 + storage_balance_of"
+        },
+        {
+          "code": "erc8004_unreadable",
+          "severity": "info",
+          "detail": "ERC-8004 registries not read (UNKNOWN_ACCOUNT: account identity-registry.erc-8004.near does not exist while viewing)",
+          "source": "rpc identity-registry.erc-8004.near.nft_tokens_for_owner@138648332"
+        }
+      ],
+      "missing_data": [
+        "erc8004_unreadable"
+      ],
+      "block": {
+        "height": 138648332,
+        "hash": "DkTznNhDRTSCwB2Kj7v8eHyXkhUDpdUcmABCkgT5oLLg",
+        "timestamp_ns": "1738340065129195704"
+      },
+      "age_days": 7,
+      "creation_block": {
+        "height": 138114517,
+        "hash": "FsFMd7Rg5nJcT8kXkKoSdTX4LmTTjw1hmQN64DGP7BLJ",
+        "timestamp_ns": "1737735264558459205"
+      },
+      "target_timestamp_ns": "1738340064558459205",
+      "snapshot": "d7/snapshots/zec.omft.near.json",
+      "snapshot_sha256": "5e9fca59a2ccff6695723072d44ef3f8a3c3bc6c6350c6d4be968698ccf606d4",
+      "chain_sha256": "2d245b71a41e9fc11951b66ed37b9d209a08804007fd80f7459c4ef7635b96f0",
+      "engine_version": "a-identity-near-engine/1.1.0",
+      "policy_id": "near-default/1",
+      "collected_at": "2026-11-14T02:50:09.967Z",
+      "endpoints": [
+        "api.nearblocks.io",
+        "archival-rpc.mainnet.fastnear.com",
+        "tx.main.fastnear.com"
+      ],
+      "transport_errors": []
+    }
+  ]
+}
