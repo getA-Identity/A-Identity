@@ -227,6 +227,18 @@ the first one is tracked as an open audit finding rather than a settled decision
   the vulnerable 6.6.1, and `uuid` would need a major bump that breaks `jayson`. None of it
   is on a path we call, because we run no Solana adapter; that bounds the exposure without
   removing it. Re-check whenever Circle ships a new app-kit.
+- **New advisories open on main, read from Dependabot on 2026-11-16.** The line above that
+  says both HIGH advisories are gone was true when written; it is not now. One critical and
+  four high are open, and each has a fix or a replacement:
+  - *critical,* `wee_alloc` in `near/contracts/Cargo.lock`: unmaintained, with known memory
+    leaks and no fixed release. Closes by moving the NEAR contracts to another allocator.
+  - *high,* `zod` in `package-lock.json`, `mcp/package-lock.json` and `trust-mcp/package.json`:
+    validating an oversized constrained collection can exhaust memory, a denial of service on
+    any route that validates untrusted input. Fixed in 4.6.6.
+  - *high,* `decode-uri-component` in `package-lock.json`: quadratic work on runs of
+    percent-encoded input, also a denial of service. Fixed in 0.5.1.
+  None of them touches a key or a payment path. They are named here so the list of what is
+  open stays true until the bumps land.
 - **Postgres TLS verifies the server certificate** as of 2026-08-27. It did not before:
   `storage.ts` set `rejectUnauthorized: false` unconditionally, which keeps the encryption
   and discards the identity check, leaving the connection open to an active
