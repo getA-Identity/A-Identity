@@ -27,6 +27,7 @@ import {
   type VaultAdmissionDeps,
 } from './arc-owner-vault-live.js'
 import { labelOwners } from './arc-season.js'
+import { RETIRED_COMPROMISED, retiredAddresses } from './chains/retired.js'
 import { AgentSpendPolicyAbi, AgentSpendPolicyBytecode } from './contracts/AgentSpendPolicy.js'
 import { rateBudget, rateLimited } from './rate-budget.js'
 import { findAdmittedArcVaultByTx, loadAdmittedArcVaults, persistAdmittedArcVault, type ArcAdmittedVaultRecord, type ArcVaultStoreIo } from './storage.js'
@@ -206,6 +207,36 @@ test('a vault owned by any of our keys is refused and never stored: committed li
   const read = await loadAdmittedArcVaults(io)
   assert.ok(read.ok)
   assert.deepEqual(read.rows, [])
+})
+
+test('a vault a retired address owns is refused for good and never stored, whatever any list says, and a stored one stops counting', async () => {
+  for (const r of RETIRED_COMPROMISED) {
+    const io = tmpIo()
+    // No list calls it ours, and one that tried could not: the refusal is its own.
+    const listed = collectOurAddresses({ ...liveOurAddressSources({} as NodeJS.ProcessEnv), gatewayInternalPayers: retiredAddresses(), keyEnvVars: ['SOME_KEY'], env: { SOME_KEY: FAKE_KEY } })
+    const refused = await admitVaultDeploy({ deployTx: TX }, routeDeps({ owner: r.checksum }, { io, ours: listed }))
+    assert.equal(refused.answer.status, 'refused')
+    if (refused.answer.status !== 'refused') continue
+    assert.equal(refused.answer.retryable, false)
+    assert.deepEqual(refused.answer.reasons.map((x) => x.id), ['owner-not-retired'])
+    assert.equal(refused.answer.reasons[0].reason, PLAIN_REFUSALS['owner-not-retired'])
+    const read = await loadAdmittedArcVaults(io)
+    assert.ok(read.ok)
+    assert.deepEqual(read.rows, [], 'a refused vault is never stored')
+
+    // A row stored before the retirement, in any case: refused for good on a second post, with no chain read, and not counted.
+    const stored = tmpIo()
+    const calls: string[] = []
+    const row = { v: 1, address: '0x' + '9e'.repeat(20), owner: r.address.toUpperCase().replace('0X', '0x'), ownerKind: 'unstated', deployTx: TX, deployBlock: '1', deployedAt: '2026-11-03', admittedAt: '2026-11-03T00:00:00Z', note: 'n' } as ArcAdmittedVaultRecord
+    const again = await admitVaultDeploy({ deployTx: TX }, { ...routeDeps({}, { io: stored, calls }), findByTx: async () => ({ ok: true as const, row }) })
+    assert.deepEqual(again.answer, { status: 'refused', vault: row.address, deployTx: TX, retryable: false, reasons: [{ id: 'owner-not-retired', reason: PLAIN_REFUSALS['owner-not-retired'] }] })
+    assert.deepEqual(calls, [])
+    writeFileSync(stored.file!, JSON.stringify([row]))
+    const skipped: { vault: string | null; reason: string }[] = []
+    assert.deepEqual(await admittedVaultsFromStore(ours(), (x) => skipped.push(x), stored), [])
+    assert.deepEqual(skipped.map((x) => x.reason), ['its owner is an address A-Identity retired as compromised'])
+  }
+  assert.match(PLAIN_REFUSALS['owner-not-retired'], /retired on 2026-11-11 because someone else holds its key/)
 })
 
 test('a server without our key env admits nothing, says that is about the server, and GET says so before anyone deploys', async (t) => {

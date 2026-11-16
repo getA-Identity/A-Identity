@@ -7,8 +7,14 @@ import { EASE_OUT_EXPO } from '../../lib/brand'
 
 /**
  * Every ERC-8004 identity we hold, as a slowly turning ring of poster cards:
- * one card per agent, eight agents across seven networks. Avalanche is absent
+ * one card per agent, counted from the list below. Avalanche is absent
  * because we hold no agent there, and the ring must never imply one.
+ *
+ * Only agents A-Identity holds today. Four agents A-Identity registered (Arc
+ * testnet #849980, Base #73232, Arbitrum One #1259 and Robinhood Chain testnet
+ * #0) are still held by the former operating wallet, an address A-Identity
+ * retired on 2026-11-11 because someone else holds its key, so they are not
+ * ours any more and have no card here; the proof pages list them as former agents.
  *
  * Each card is a real two-sided object. The front is the poster: the chain's
  * brand color as a flat ground (no gradients), the official mark on its
@@ -33,13 +39,12 @@ export type OnchainAgent = {
    * Which of OUR agents this registration belongs to, taken from what the registration
    * itself carries rather than from how we would like to group them.
    *
-   * Robinhood Chain, Arbitrum One, Base, Celo and the Robinhood Chain rehearsal all point
-   * their tokenURI at https://a-identity.xyz/.well-known/agent-card.json, so they are one
-   * identity registered in several places, and the two X Layer entries are that same
-   * oracle's OKX.AI listings. Arc #849980 points at its own inline Meridian metadata, so
-   * it is a different agent here even though the agent card lists it among the oracle's
-   * registrations; where the two disagree the token wins. Grouping on this field is what
-   * lets the vitrine name the networks an agent is on without inventing the claim.
+   * Arc Mainnet, Robinhood Chain and Celo all point their tokenURI at
+   * https://a-identity.xyz/.well-known/agent-card.json, so they are one identity
+   * registered in several places, and the two X Layer entries are that same oracle's
+   * OKX.AI listings. Where the agent card and a token disagree the token wins. Grouping
+   * on this field is what lets the vitrine name the networks an agent is on without
+   * inventing the claim.
    */
   identity: string
   owner: string
@@ -52,34 +57,22 @@ export type OnchainAgent = {
 /** The agent whose tokenURI is the A-Identity agent card: one identity, many registries. */
 const ORACLE = 'A-Identity Trust Oracle'
 
-const OWNER_EVM = '0xd305607510E0Db2c95807173c7A05BEA53c1ed36'
 const OWNER_OKX = '0x169ead25d35c146f3f3a7d2936ae37eab2e256d1'
 // The founder's own wallet, which a person holds: the rescue of 2026-11-10/11 moved Robinhood Chain #0, Celo #9759
-// and Arc Mainnet #0 here from server keys someone else also holds.
+// and Arc Mainnet #0 here from addresses A-Identity has since retired, because someone else holds their keys.
 const OWNER_FOUNDER = '0xCB8824ffAF30687E36374C08eC52298b62871bdf'
 
 export const OUR_AGENTS: OnchainAgent[] = [
   {
-    chain: 'arc',
-    tokenId: '849980',
-    identity: 'Meridian',
-    owner: OWNER_EVM,
-    tx: '0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54',
-    note: 'Meridian. KYA attested on-chain.',
-    mission:
-      'Meridian, the phase-1 showcase research agent: buys market data through the policy-gated wallet, KYA attested on-chain, and carrying the first reputation anchor our oracle ever wrote, 542/1000 on 2026-07-22. That anchor is a fixed record of that day; the live score is recency-weighted and has moved since.',
-    anchor: { score: 542, tx: '0x3f5429819347fb0f75e66ee1416fc2c9ad3dade8fb1bf8dac1b9d2606de92a8c' },
-  },
-  {
-    chain: 'base',
-    tokenId: '73232',
+    chain: 'arc-mainnet',
+    tokenId: '0',
     identity: ORACLE,
-    owner: OWNER_EVM,
-    tx: '0xb428bf8e79df3c44157c134df1858eb75fe3758b74868445c1dcd07948705bf0',
-    note: 'Reputation anchored by our oracle validator.',
+    owner: OWNER_FOUNDER,
+    tx: '0x1d9f57113cee71e6a0aa73d0905d02f88a08877489c05828e604db2a48412844',
+    note: "The registry's first mint, on the day Arc Mainnet opened.",
     mission:
-      'The identity behind our Base EIP-3009 rail, which settled native Circle USDC until 2026-11-11 and has been paused since, until the new key that broadcasts its settlements has gas on Base; Circle Gateway nanopayments still sell here. Its operating wallets were funded from Stellar pubnet USDC through a NEAR Intents swap; USDC now crosses between Stellar and EVM natively through Circle CCTP, proven both ways on testnet.',
-    anchor: { score: 60, tx: '0x4f0295d12dcdc356cc7ac12b8317f1ff07289e4584725895f9b482a2223b2aa6' },
+      'The identity behind the Arc Mainnet rails, where paid trust checks have settled in USDC through Circle Gateway nanopayments and our own EIP-3009 facilitator since the day Arc Mainnet opened, 2026-09-16. Token #0 is the first mint this registry recorded. It moved to the founder\'s wallet on 2026-11-11.',
+    anchor: { score: 60, tx: '0xbc70c4ce2ded14e17809d6cdcb2d365f85b4fe22e77957890bf1dac3bf1ecee9' },
   },
   {
     chain: 'rhchain',
@@ -91,17 +84,6 @@ export const OUR_AGENTS: OnchainAgent[] = [
     mission:
       'The identity behind the Robinhood Chain x402 rail, settling USDG through our own facilitator. Token #0 is the first mint this mainnet registry ever recorded.',
     anchor: { score: 60, tx: '0xe11d5d0f46a9b08b8fe6c623ad0f35e898a3c2db67937377083253fe6b260979' },
-  },
-  {
-    chain: 'arbitrum',
-    tokenId: '1259',
-    identity: ORACLE,
-    owner: OWNER_EVM,
-    tx: '0x23275840eb9a8b85a752769c113109a753f39b592236c85093cf94f6a517b2f3',
-    note: 'Reputation anchored by our oracle validator.',
-    mission:
-      'The identity behind the Arbitrum One x402 rail, which settled native Circle USDC through our own EIP-3009 facilitator, next to well-served alternatives on purpose, until it paused on 2026-11-11; it stays paused until the new key that broadcasts its settlements has gas on Arbitrum One.',
-    anchor: { score: 60, tx: '0x435a5c62bda28db23505812b9deb93dfce7aff3831e8449a5274fd0e7ecc376a' },
   },
   {
     chain: 'xlayer',
@@ -130,19 +112,12 @@ export const OUR_AGENTS: OnchainAgent[] = [
     tx: '0x0a821026621e5b35ff5602f81348b276b0d0f1b61a3892365658295fc5bcb22e',
     note: 'The identity behind the Celo x402 rail.',
     mission:
-      'The identity behind the Celo x402 rail, where payments settle in USDC through the first-party facilitator Celo runs. Owned by the wallet that receives those payments. It moved on 2026-11-11 from 0xF43F...742D, whose key someone else also holds: do not pay that address.',
-  },
-  {
-    chain: 'rhchain-testnet',
-    tokenId: '0',
-    identity: ORACLE,
-    owner: OWNER_EVM,
-    tx: '0x20918ec68186bd4aaee7c36d33d0383f1bc6a2bc921e72e3b812d034da5212fd',
-    note: 'Full registry family, rehearsed first.',
-    mission:
-      'The rehearsal identity. The only chain family where all three canonical registries run together, so identity, reputation and KYA were proven here with test money first.',
+      'The identity behind the Celo x402 rail, where payments settle in USDC through the first-party facilitator Celo runs. Owned by the wallet that receives those payments. It moved on 2026-11-11 from 0xF43F...742D, an address A-Identity retired that day because someone else holds its key: do not pay it.',
   },
 ]
+
+/** How many networks the ring's agents are on, counted rather than typed. */
+const NETWORK_COUNT = new Set(OUR_AGENTS.map((a) => a.chain)).size
 
 const keyOf = (a: OnchainAgent) => `${a.chain}-${a.tokenId}`
 
@@ -401,7 +376,7 @@ export default function AgentRing() {
           Every identity we hold
         </h3>
         <span className="font-mono text-xs text-foreground/70">
-          8 agents · 7 networks · turn a card over for its story
+          {OUR_AGENTS.length} agents · {NETWORK_COUNT} networks · turn a card over for its story
         </span>
       </div>
       {reduced ? null : (

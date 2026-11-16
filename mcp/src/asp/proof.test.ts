@@ -1,6 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { RETIRED_COMPROMISED } from '../chains/retired.js'
 
 /**
  * The proof document serves a test count to reviewers, and it does so as a hardcoded
@@ -111,3 +113,27 @@ test('the mint block the README and ARCHITECTURE quote matches provenance.ts', (
     }
   }
 })
+
+test('/proof never names a retired PAY_TO_ADDRESS as where revenue settles, in JSON or in HTML', () => {
+  // PAY_TO is read once at load, so each spelling gets a fresh process with only that env.
+  const render = (payTo: string) => {
+    const script =
+      `const { PROOF } = await import(${JSON.stringify(new URL('./proof.js', import.meta.url).href)});` +
+      `const { renderProofHtml } = await import(${JSON.stringify(new URL('./proof-html.js', import.meta.url).href)});` +
+      'process.stdout.write(JSON.stringify(PROOF) + "\\n" + renderProofHtml())'
+    const out = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8', env: { PATH: process.env.PATH ?? '', PAY_TO_ADDRESS: payTo } })
+    assert.equal(out.status, 0, out.stderr)
+    return out.stdout.toLowerCase()
+  }
+  for (const r of RETIRED_COMPROMISED) {
+    for (const spelled of [r.address, r.checksum]) {
+      const page = render(spelled)
+      assert.ok(!page.includes(r.address.slice(2)), `${r.label} (${spelled}) is named on /proof`)
+      assert.ok(!page.includes('revenue now settles to'), 'a retired pay-to reads as unset, so nothing says revenue moved to it')
+    }
+  }
+  // The env is still read: an address that is not retired is published as the pay-to.
+  const ours = '0x' + '7c'.repeat(20)
+  assert.ok(render(ours).includes(`revenue now settles to ${ours}`))
+})
+

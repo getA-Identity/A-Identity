@@ -54,6 +54,7 @@
  * itself (receipt.ts).
  */
 import type { ChainDescriptor } from '../chains/index.js'
+import { retiredEntry } from '../chains/retired.js'
 import { railChallenge, railPaidNetwork, railPaywallGate, railServeTool, railStatus, toolPriceUsd, type GatewayRailStatus, type RailDeps } from '../x402-gateway/index.js'
 import type { VtpDecision, VtpFlowDetail, VtpFlowOutcome, VtpFlowRecord } from '../storage.js'
 import { approvalUrlFor, FLOW_LOG_REFUSED_WRITE, FLOW_LOG_UNREADABLE, flowPath, flowUrl, holdsNoFlow, logFlowStoreFault, storageVtpStore, vtpChain, vtpReadClient, VTP_PUBLIC_ORIGIN, whyNoApproval, type VtpDeps, type VtpStore } from './context.js'
@@ -264,6 +265,9 @@ export function parseVtpInput(chain: ChainDescriptor, input: VtpInput): { ok: tr
     payeeAgentId = `${chain.caip2}:8004/${tokenId}`
   }
   if (payee === ZERO_ADDRESS) return { ok: false, httpStatus: 422, code: 'ZeroAddress', reason: 'the payee is the zero address' }
+  // Nothing is ever paid to a retired address (chains/retired.ts): someone else holds its key. Refused before anything is read or charged.
+  const retired = retiredEntry(payee)
+  if (retired) return bad(`the payee is ${retired.label}, an address A-Identity retired on ${retired.retiredOn} because someone else holds its key: nothing is ever paid to it`)
   if (payee === vault || payee === usdc) {
     return { ok: false, httpStatus: 422, code: 'InvalidPayee', reason: 'the payee is the vault itself or the USDC contract; the vault refuses both because nothing would move' }
   }

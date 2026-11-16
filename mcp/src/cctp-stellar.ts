@@ -30,7 +30,8 @@
  */
 import { Keypair } from '@stellar/stellar-sdk'
 import { CHAINS, getChain, getChainById, type ChainDescriptor } from './chains/index.js'
-import { evmPublicClient, evmWalletClientFromKey, txUrl } from './chains/evm/client.js'
+import { evmPublicClient, evmWalletClientFromKey, retiredSignerRefusal, txUrl, usableSignerKey } from './chains/evm/client.js'
+import { retiredEntry, type RetiredAddress } from './chains/retired.js'
 import { sorobanServer, networkPassphrase, simulationArchivedEntries } from './chains/stellar/client.js'
 import { isAccountId, isContractId, isSecretSeed } from './chains/stellar/strkey.js'
 
@@ -131,11 +132,20 @@ export function stellarBridgeSecretVar(chain: ChainDescriptor): string {
  * executed bridge burned USDC from ARC_SIGNER_KEY, the wallet every Arc demo spends from. A
  * bridge now signs with a key that exists for bridging, or it signs nothing and every EVM
  * step comes back prepared.
+ *
+ * A key whose address A-Identity retired as compromised (chains/retired.ts) reads as unset here,
+ * so it never signs, never becomes a default mint recipient, and the status says not configured.
+ * `lookup` is the retired list; a test passes its own, because no test holds a retired key.
  */
 export const EVM_BRIDGE_KEY_VAR = 'CCTP_EVM_SIGNER_KEY'
 
-export function evmBridgeKey(env: NodeJS.ProcessEnv): string | undefined {
-  return env[EVM_BRIDGE_KEY_VAR]?.trim() || undefined
+export function evmBridgeKey(env: NodeJS.ProcessEnv, lookup?: (address: string) => RetiredAddress | null): string | undefined {
+  return usableSignerKey(env[EVM_BRIDGE_KEY_VAR]?.trim() || undefined, EVM_BRIDGE_KEY_VAR, lookup)
+}
+
+/** Why the EVM side signs nothing: the bridging key is retired (said so), or it is not set. */
+function noEvmBridgeKeyReason(env: NodeJS.ProcessEnv): string {
+  return retiredSignerRefusal(env[EVM_BRIDGE_KEY_VAR], EVM_BRIDGE_KEY_VAR) ?? `${EVM_BRIDGE_KEY_VAR} is not set`
 }
 
 /** The variable naming who may make this server EXECUTE a bridge. */
@@ -533,7 +543,7 @@ export async function bridgeEvmToStellar(input: BridgeInput, deps: CctpDeps = {}
   let burnTx = input.resumeBurnTx
   if (!burnTx) {
     if (!execute || !evmKey) {
-      const why = !execute ? 'execute was not requested' : `${EVM_BRIDGE_KEY_VAR} is not set`
+      const why = !execute ? 'execute was not requested' : noEvmBridgeKeyReason(c.env)
       steps.push({ name: 'approve USDC to TokenMessengerV2', state: 'prepared', ...show(approveCall), reason: why })
       steps.push({ name: 'depositForBurnWithHook (recipient in hook data, forwarder in both address slots)', state: 'prepared', ...show(burnCall), reason: why, detail: { maxFee: maxFee.toString(), hookRecipient: recipient, forwarder } })
       steps.push({ name: 'Iris attestation', state: 'prepared', reason: `GET ${host}/v2/messages/${from.domain}?transactionHash=<burn tx>` })
@@ -609,6 +619,11 @@ export async function bridgeStellarToEvm(input: BridgeInput, deps: CctpDeps = {}
   const evmKey = evmBridgeKey(c.env)
   const recipient = input.recipient ?? (evmKey ? await c.evm.signerAddress(evmKey) : '')
   if (!/^0x[0-9a-fA-F]{40}$/.test(recipient)) return { error: 'recipient must be a 0x EVM address; none given and no EVM signer to default to' }
+  // Nothing is ever minted to a retired address, whether it was passed in or came from a key.
+  const retiredRecipient = retiredEntry(recipient)
+  if (retiredRecipient) {
+    return { error: `recipient is ${retiredRecipient.label}, which A-Identity retired on ${retiredRecipient.retiredOn} because someone else holds its key: nothing is minted to it` }
+  }
   const host = irisHost(from.chain.testnet)
   const route = `${from.chain.name} -> ${to.chain.name}`
   const base = { direction: 'stellar-to-evm' as const, route, network: { from: from.chain.caip2, to: to.chain.caip2 }, amountUsd: input.amountUsd, amountUnits6: units.toString(), recipient, finality }
@@ -685,7 +700,7 @@ export async function bridgeStellarToEvm(input: BridgeInput, deps: CctpDeps = {}
 
   const mintCall = { to: to.contracts.messageTransmitter, abi: MESSAGE_TRANSMITTER_V2_ABI, functionName: 'receiveMessage', args: [payload.message, payload.attestation] }
   if (!evmKey) {
-    steps.push({ name: 'receiveMessage on MessageTransmitterV2', state: 'prepared', ...display.mint, args: [payload.message, payload.attestation], reason: `${EVM_BRIDGE_KEY_VAR} is not set; destinationCaller is zero so anyone may submit this` })
+    steps.push({ name: 'receiveMessage on MessageTransmitterV2', state: 'prepared', ...display.mint, args: [payload.message, payload.attestation], reason: `${noEvmBridgeKeyReason(c.env)}; destinationCaller is zero so anyone may submit this` })
     return { ...base, executed: true, steps, attested: payload, reason: 'burned and attested; the EVM mint is prepared, not submitted' }
   }
   const mint = await c.evm.write(to, evmKey, mintCall)

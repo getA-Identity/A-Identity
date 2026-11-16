@@ -290,7 +290,7 @@ test('refusals still need the vault and the gas to pass, with no payment left to
   assert.match(onlyDeny({ operatorGasWei: 0n }).blockers.join(), /^gas: /m)
 })
 
-test('our operating wallet, as the free reads answer for it today, forecasts what the scorer answers: WARN, and the plan refuses it as a DENY payee', () => {
+test('an off-platform wallet, as the free reads answer for one today, forecasts what the scorer answers: WARN, and the plan refuses it as a DENY payee', () => {
   const wallet = { verified: true, kyaStatus: 'unknown', scoreBand: 'very-low', revoked: false, sybilSuspected: false }
   const forecast = forecastVerdict(wallet, { found: false })
   const truth = assessRisk({ onchainVerified: true, kyaVerified: false, reputationScore: 60, tenureDays: 0, revoked: false, onPlatform: false }).decision

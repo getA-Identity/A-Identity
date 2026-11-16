@@ -12,6 +12,7 @@ import { DisplayHeading, Eyebrow, Lede } from '../components/ui/display'
 import { SectionShell, SectionIntro, reveal, revealAt } from '../components/ui/section'
 import { track } from '../lib/analytics'
 import { apiFetch } from '../lib/api'
+import { ARC_LEDGER_RETIRED } from '../lib/arc-ledger'
 import { ago } from '../lib/format'
 import { CHAINS } from '../lib/chains'
 import { usePageMeta } from '../lib/head'
@@ -36,6 +37,11 @@ import { ownRailSplit, sumPaidChecks, type ByNetwork } from '../lib/paidChecks'
  *
  * The live badge on the agent card re-reads ownerOf and tokenURI from the chain on every
  * load, so this page can say "this no longer matches" out loud.
+ *
+ * A former agent (one A-Identity registered that is still held by an address A-Identity retired,
+ * because someone else holds its key) is shown apart from our agent: labeled not ours, with who
+ * holds it re-read live, and never with a green chip. Payments from a retired address are labeled
+ * as such and never count as external.
  */
 
 type Artifact = {
@@ -65,9 +71,14 @@ type LiveCheck =
       owner?: string
       tokenUri?: string
       matchesLedger?: boolean
+      /** Who holds the former agent now, re-read. Absent on an older backend. */
+      formerAgent?: { owner: string | null; tokenUri: string | null; heldByRetired: boolean | null; matchesLedger: boolean | null; reason?: string }
       contracts: { name: string; address: string; deployed: boolean; archived?: boolean }[]
     }
   | { reachable: false; checkedAt: string; reason: string }
+
+/** A retired, compromised address as the backend publishes it: not ours, someone else holds its key. */
+type RetiredPayer = { address: string; label: string; retiredOn: string }
 
 type Network = {
   chain: string
@@ -77,6 +88,8 @@ type Network = {
   summary: string
   explorer: string | null
   agent?: { tokenId: string; caip: string; owner: string; tokenUri: string }
+  /** An agent A-Identity registered that is still held by a retired address whose key someone else holds. Never ours. */
+  formerAgent?: { tokenId: string; caip: string; heldBy: string; tokenUri: string; note: string }
   contractsLinked: ContractRow[]
   artifactsLinked: Artifact[]
   /** Absent on a backend older than the SoW 2 section. */
@@ -122,6 +135,8 @@ type FacilitatorProof = {
   reverted: number
   ambiguous: number
   internalPayers: string[]
+  /** Not ours, and what they paid counts as internal. Absent on an older backend. */
+  retiredPayers?: RetiredPayer[]
   /** Per-chain breakdown. This page is per-rail, so it MUST read this rather than
    *  present the facilitator-wide totals as if they belonged to the rail in the URL. */
   byNetwork?: ByNetwork
@@ -152,6 +167,8 @@ type GatewayProof = {
   failed: number
   unconfirmed: number
   internalPayers: string[]
+  /** Not ours, and what they paid counts as internal. Absent on an older backend. */
+  retiredPayers?: RetiredPayer[]
   /** Counts credited and completed rows, the same way the backend's own totals do. */
   byNetwork?: ByNetwork
   recent: GatewaySettlement[]
@@ -194,6 +211,8 @@ type Sale = {
   explorerUrl?: string
   ts?: string
   internal: boolean
+  /** Paid by an address A-Identity retired as compromised: internal, never external, and not ours. */
+  retired?: boolean
   /** The rail, named only when it is not the chain's default one. */
   via?: string
   /** Credited by Circle Gateway, with its on-chain batch still to land. */
@@ -362,6 +381,13 @@ function fromEvmRails(fac: FacilitatorProof, gw: GatewayProof | null, railNets: 
     gw != null && (viaGateway.length > 0 || Object.keys(gw.byNetwork ?? {}).some((caip) => railNets.has(caip)))
   const facMine = new Set(fac.internalPayers.map((a) => a.toLowerCase()))
   const gwMine = new Set((gw?.internalPayers ?? []).map((a) => a.toLowerCase()))
+  // The addresses A-Identity retired: not ours, and what they paid counts as internal, never external. The
+  // backend publishes them apart from its own wallets, and the build knows them too, so an older backend
+  // cannot turn their rows external.
+  const retired = new Set(
+    [...ARC_LEDGER_RETIRED, ...(fac.retiredPayers ?? []), ...(gw?.retiredPayers ?? [])].map((r) => r.address.toLowerCase()),
+  )
+  const isRetiredPayer = (mine: Set<string>, payer: string) => !mine.has(payer.toLowerCase()) && retired.has(payer.toLowerCase())
 
   const sales: Sale[] = [
     ...direct.map((s) => ({
@@ -371,7 +397,8 @@ function fromEvmRails(fac: FacilitatorProof, gw: GatewayProof | null, railNets: 
       tx: s.tx,
       explorerUrl: s.explorerUrl,
       ts: s.ts,
-      internal: facMine.has(s.payer.toLowerCase()),
+      internal: facMine.has(s.payer.toLowerCase()) || retired.has(s.payer.toLowerCase()),
+      retired: isRetiredPayer(facMine, s.payer),
     })),
     // Several Gateway payments can share one batch hash, so the key is the authorization.
     ...(gatewayHere ? viaGateway : []).map((s) => ({
@@ -381,7 +408,8 @@ function fromEvmRails(fac: FacilitatorProof, gw: GatewayProof | null, railNets: 
       tx: s.outcome === 'completed' ? s.tx : undefined,
       explorerUrl: s.outcome === 'completed' ? s.explorerUrl : undefined,
       ts: s.ts,
-      internal: gwMine.has(s.payer.toLowerCase()),
+      internal: gwMine.has(s.payer.toLowerCase()) || retired.has(s.payer.toLowerCase()),
+      retired: isRetiredPayer(gwMine, s.payer),
       via: 'Circle Gateway',
       pending: s.outcome !== 'completed',
     })),
@@ -729,6 +757,34 @@ export default function ChainProof() {
                       </div>
                     )}
 
+                    {/* A former agent: registered by A-Identity, still held by a retired address, not ours. Who holds it
+                        is re-read live, and nothing here is a green chip or an owner link: we do not vouch for it. */}
+                    {net.formerAgent && (
+                      <div className="mt-6 rounded-2xl border border-warn/30 bg-warn/[0.06] p-5">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <h3 className="text-sm font-semibold text-foreground">Former agent #{net.formerAgent.tokenId}</h3>
+                          <Chip tone="warn">not ours: held by a retired address</Chip>
+                        </div>
+                        <p className="mt-2 text-xs leading-relaxed text-foreground/65">{net.formerAgent.note}</p>
+                        <div className="mt-3">
+                          <Row label="CAIP id">{net.formerAgent.caip}</Row>
+                          <Row label="Held by, as recorded">
+                            <span className="break-all">{net.formerAgent.heldBy}</span>
+                          </Row>
+                          {net.live.reachable && net.live.formerAgent && (
+                            <Row label="Re-read live">
+                              {net.live.formerAgent.owner === null
+                                ? `could not be read: ${net.live.formerAgent.reason ?? 'no answer'}`
+                                : net.live.formerAgent.heldByRetired
+                                  ? `still held by the retired address, block ${net.live.blockNumber}, ${ago(net.live.checkedAt)}`
+                                  : `now held by ${net.live.formerAgent.owner}, block ${net.live.blockNumber}, ${ago(net.live.checkedAt)}`}
+                            </Row>
+                          )}
+                          {!net.live.reachable && <Row label="Live read failed">{net.live.reason}</Row>}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Contracts, each with whether code is actually there right now. */}
                     <div className="mt-6">
                       <h3 className="text-sm font-semibold text-foreground">Contracts</h3>
@@ -806,7 +862,8 @@ export default function ChainProof() {
                     <>
                       <p className="mt-2 text-sm leading-relaxed text-foreground/55">
                         Read from {sales.source}. {sales.basis} Payments from our own wallets are labeled where the
-                        log records them.
+                        log records them, and so are payments from an address A-Identity retired because someone
+                        else holds its key: not ours, and never counted as external.
                       </p>
                       {sales.counters.length > 0 && (
                         <div className="mt-4">
@@ -837,7 +894,7 @@ export default function ChainProof() {
                                 )}
                                 {s.internal && (
                                   <span className="ml-2 rounded-md bg-warn/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warn">
-                                    internal
+                                    {s.retired ? 'internal: retired payer, not ours' : 'internal'}
                                   </span>
                                 )}
                               </span>

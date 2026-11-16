@@ -80,7 +80,8 @@ Arbitrum One, Robinhood Chain, Stellar, Algorand and Base. Stellar's Soroban spe
 vault holds real Circle USDC on pubnet and the Soroban x402 rail sells on both Stellar
 networks. Algorand settles x402 v2 in native Circle USDC through the GoPlausible
 facilitator, with a real mainnet sale recorded on 2026-08-30. Base carries the
-canonical ERC-8004 registries, our agent #73232, and x402 through Circle Gateway
+canonical ERC-8004 registries, agent #73232 (registered by us and still held by an address
+A-Identity retired on 2026-11-11, so not ours any more), and x402 through Circle Gateway
 nanopayments; our own facilitator settled there in native Circle USDC until it paused on
 2026-11-11. Avalanche stays planned until something of ours runs
 there.

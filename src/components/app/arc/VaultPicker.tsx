@@ -4,8 +4,9 @@
  * address on the network picked next to it.
  *
  * No address is typed into the frontend: the rows come from the generated src/lib/arc-ledger.ts,
- * GET /api/proof/arc and GET /api/arc/season. Our own vault always carries its label, "deployed with our former server key,
- * not user-owned", and is shown as retired, so it is never taken for the kind of vault this page exists to deploy.
+ * GET /api/proof/arc and GET /api/arc/season. The launch-day vault always carries its label, "deployed by
+ * A-Identity, retired on 2026-11-11, and not ours any more", and is shown as retired, so it is never taken
+ * for the kind of vault this page exists to deploy.
  */
 import { useEffect, useState, type FormEvent } from 'react'
 import { Loader2, Plus } from 'lucide-react'
@@ -114,10 +115,10 @@ export default function VaultPicker({
                   >
                     <span className="flex flex-wrap items-center gap-1.5">
                       <span className="text-sm font-semibold text-foreground">
-                        {r.kind === 'ours' ? 'Launch-day vault (ours)' : r.ownerKind === 'team' ? 'Team-owned vault' : 'Owner-held vault'}
+                        {r.kind === 'ours' ? 'Launch-day vault' : r.ownerKind === 'team' ? 'Team-owned vault' : 'Owner-held vault'}
                       </span>
                       {r.kind === 'ours' ? (
-                        <Chip tone="warn">Retired</Chip>
+                        <Chip tone="warn">Retired, not ours</Chip>
                       ) : r.ownerKind === 'team' ? (
                         <Chip tone="muted">Our team member's wallet</Chip>
                       ) : (

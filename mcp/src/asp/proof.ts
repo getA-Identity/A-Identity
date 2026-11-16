@@ -5,7 +5,8 @@
  * reviewer can't verify themselves:
  *   - the ASP identity registered on X Layer mainnet (Agent #6271),
  *   - 120 real x402 settlements on X Layer mainnet (4 featured, one per original paid tool),
- *   - the on-chain showcase agent the tools return real data for (Meridian #849980),
+ *   - an example on-chain agent the tools return real data for (Meridian #849980), which
+ *     A-Identity registered and a retired address still holds: it is not ours, and the note says so,
  *   - the engineering rigor behind the scores (deterministic, unit-tested engine).
  *
  * Served free at GET /proof so anyone calling the live ASP sees the substance,
@@ -15,6 +16,7 @@
 
 import { SETTLEMENTS } from './settlements.js'
 import { ARC_CHAIN } from '../chains/index.js'
+import { isRetired } from '../chains/retired.js'
 
 const OKLINK_TX = 'https://www.oklink.com/x-layer/evm/tx/'
 const OKLINK_ADDR = 'https://www.oklink.com/x-layer/evm/address/'
@@ -33,9 +35,13 @@ const PAYER = '0x169ead25d35c146f3f3a7d2936ae37eab2e256d1'
  * uses so the two cannot disagree. When the recipient changed on 2026-08-11 this file kept
  * claiming the old one, because it was hardcoded with no env at all, so /proof advertised a
  * wallet that no longer receives anything while /health already showed the new one.
+ *
+ * A retired address (chains/retired.ts) reads as unset here, exactly as it does in payment.ts and
+ * stats.ts: someone else holds its key, so this page never names it as where revenue settles.
  */
 const SETTLED_TO = '0x6a5f1b8e56a19d456b799c2fa00e513244f58ce6'
-const PAY_TO = process.env.PAY_TO_ADDRESS ?? SETTLED_TO
+const PAY_TO_ENV = process.env.PAY_TO_ADDRESS
+const PAY_TO = (isRetired(PAY_TO_ENV) ? undefined : PAY_TO_ENV) ?? SETTLED_TO
 
 // All real settlements (round 0 = live demo, rounds 1-29 = seeding incl. campaign 2), each + an OKLink link.
 const WITH_URLS = SETTLEMENTS.map((s) => ({ ...s, txUrl: `${OKLINK_TX}${s.txHash}` }))
@@ -84,7 +90,7 @@ export const PROOF = {
     chain: 'Circle Arc testnet',
     reputation: '542 / 1000 (settlement 296 + validation 240 + tenure 6 + behavior 0; no marketplace jobs yet)',
     kya: 'verified',
-    note: 'reputation_score and agent_passport return this live on-chain data',
+    note: "reputation_score and agent_passport return this live on-chain data. An example agent, not A-Identity's: A-Identity registered it, and it is still held by an address A-Identity retired on 2026-11-11 because someone else holds its key, so we do not vouch for it: the feedback our oracle validator wrote for it on chain has not been revoked yet; read it as history, not an endorsement.",
     // A1: the score is also anchored on-chain as an ERC-8004 feedback attestation, written by
     // the A-Identity oracle validator (distinct from the agent owner, as ERC-8004 requires).
     onchainReputationAttestation: {
@@ -109,7 +115,7 @@ export const PROOF = {
   },
   // The rigor behind the numbers - deterministic and unit-tested, not an LLM guess.
   engineering: {
-    tests: 2724,
+    tests: 2760,
     deterministicReputation: true,
     liveOnchainReads: 'ERC-8004 IdentityRegistry + ValidationRegistry (KYA) on Circle Arc, plus the OKX.AI IdentityRegistry on X Layer mainnet (any OKX.AI agent resolves by token id or owner address), read live via viem',
     onchainReputationWrites: 'ERC-8004 ReputationRegistry on Circle Arc: the score is anchored on-chain as a signed observer attestation (A1)',
@@ -125,7 +131,7 @@ export const PROOF = {
     ...(PAY_TO.toLowerCase() !== SETTLED_TO.toLowerCase()
       ? [`Revenue now settles to ${PAY_TO} instead. The settlements above predate that change and are unaffected by it.`]
       : []),
-    'Open the showcase agent onchainReputationAttestation tx on Arcscan - the reputation is anchored on the ERC-8004 ReputationRegistry, not just asserted here.',
+    'Open the example agent onchainReputationAttestation tx on Arcscan - the reputation is anchored on the ERC-8004 ReputationRegistry, not just asserted here.',
     'GET /methodology for the exact, reproducible reputation and risk formulas.',
   ],
   docs: 'https://a-identity.xyz',

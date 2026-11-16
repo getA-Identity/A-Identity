@@ -9,6 +9,7 @@ import { committedOurKeys } from '../arc-owner-vault.js'
 import { internalPayers as facilitatorInternalPayers } from '../x402-3009/rail.js'
 import { internalPayers as gatewayInternalPayers } from '../x402-gateway/rail.js'
 import { PROVENANCE } from './provenance.js'
+import { RETIRED_COMPROMISED, isRetired, retiredPublic } from './retired.js'
 
 // The frontend's chain module is GENERATED from the registry (npm run gen:chains).
 // These guard the thing that actually went wrong before unification: a second chain
@@ -29,6 +30,21 @@ test('the generated frontend chain module is in sync with the registry', () => {
 test('the generated Arc ledger module is in sync with the provenance ledger', () => {
   const onDisk = readFileSync(fileURLToPath(new URL(`../../../${FRONTEND_ARC_LEDGER_MODULE}`, import.meta.url)), 'utf8')
   assert.equal(onDisk, renderFrontendArcLedger(committedOurKeys()), `${FRONTEND_ARC_LEDGER_MODULE} is stale or was hand-edited. Run: cd mcp && npm run gen:chains`)
+})
+
+test('the Arc ledger module lists the retired addresses apart, from the retired list, and never among our keys', () => {
+  const onDisk = readFileSync(fileURLToPath(new URL(`../../../${FRONTEND_ARC_LEDGER_MODULE}`, import.meta.url)), 'utf8')
+  const m = /export const ARC_LEDGER_RETIRED: [^\n]+ = (\[[\s\S]*?\n\])\n/.exec(onDisk)
+  assert.ok(m, 'ARC_LEDGER_RETIRED is missing from the generated module')
+  assert.deepEqual(JSON.parse(m[1]), retiredPublic())
+  const facts = arcLedgerFacts(committedOurKeys())
+  for (const [net, held] of Object.entries(facts.keys)) for (const k of held) assert.equal(isRetired(k), false, `${k} is retired, and listed as ours on ${net}`)
+  // Even a caller that hands it a retired address as ours cannot make the page call it ours.
+  const planted = arcLedgerFacts([...committedOurKeys(), ...RETIRED_COMPROMISED.map((r) => r.checksum)])
+  assert.deepEqual(planted.keys, facts.keys)
+  // The launch-day vault says it is retired, from the head of its own ledger note.
+  const launch = facts.vaults.find((v) => v.name === 'AgentSpendPolicy vault')
+  assert.equal(launch?.retiredOn, '2026-11-11')
 })
 
 test('the Arc ledger module names the launch-day vault and our owner key, and only keys in our custody', () => {

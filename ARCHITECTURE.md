@@ -88,11 +88,15 @@ A payment is checked in depth - a limit you set is enforced in **three** ways:
    console deploys on Arc testnet name the human's own wallet as **`owner`** (freeze / override /
    withdraw) and the **server signer as the delegated `operator`** that calls `pay()` on the
    agent's behalf, so the *limit* holds whoever signs, while *initiating* the payment is a
-   delegated action. Our launch-day Arc Mainnet vault is different: its owner is
-   `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, our server-held operating wallet until 2026-11-11,
-   the contract has no owner transfer, and since 2026-09-25 its `operator` is a separate agent key
-   that we also hold. Someone else has also held that owner key since at least 2026-11-01, so the
-   founder emptied the vault on 2026-11-11 and it is retired. An owner-held Arc Mainnet vault is
+   delegated action. Until 2026-11-11 that server signer was the former operating wallet, which
+   A-Identity retired that day because someone else holds its key, so a testnet vault deployed
+   before then names a retired address as its `operator`: its owner should replace that key
+   (`setOperator`), freeze the vault or withdraw, and `/app/vault/arc` says so on the vault itself.
+   The launch-day Arc Mainnet vault we deployed is different: its owner is
+   `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, the former operating wallet, which A-Identity
+   retired on 2026-11-11 because someone else holds its key (since at least 2026-11-01). The contract has no owner transfer, so the founder emptied the vault that day and it
+   is retired and not ours; since 2026-09-25 its `operator` has been a separate agent key that we
+   hold. An owner-held Arc Mainnet vault is
    different again: the owner's own wallet deploys it from `/app/vault/arc` and is its `owner`, the
    owner's own agent key is its `operator`, and we hold neither key. The live count is on
    `/proof/arc`. Roadmap: hand the
@@ -225,8 +229,10 @@ per settlement" model.
 
 ### Arc testnet
 
-- **Showcase agent "Meridian"** - ERC-8004 id **#849980**, KYA attested on-chain, policy vault,
-  reputation from **3 real settlements**. The score is recency-weighted, so it decays as those
+- **Agent #849980 (Meridian), registered by us, now held by a retired address** - an ERC-8004
+  agent, KYA attested on-chain, policy vault, reputation from **3 real settlements**. It is still held by the former operating
+  wallet, an address A-Identity retired on 2026-11-11 because someone else holds its key, so it is
+  not ours any more; the proof pages list it as a former agent. The score is recency-weighted, so it decays as those
   settlements age and any figure pinned in prose goes stale within days: read the live one from
   [`/api/agents/reputation?agentId=849980`](https://a-identity-backend.onrender.com/api/agents/reputation?agentId=849980),
   which also reports `settledOnchain` (3, and fixed) next to `settledEffective` (the decayed
@@ -237,8 +243,9 @@ per settlement" model.
   createJob [`0xcce5a56c…`](https://explorer.testnet.arc.io/tx/0xcce5a56cc0518d5760f90d11d88eb70d5097636179eb3e92903152a96a684cc5) →
   complete [`0x245f0ee7…`](https://explorer.testnet.arc.io/tx/0x245f0ee76a6d8dd21e8a14cbd1f489a3d80a1824113316f3b39c58c0e50f25e3)
 - **Circle Gateway** - USDC deposited on Arc, then moved to **Base Sepolia gaslessly** via the
-  Forwarding Service and minted there in ~6s (verified live on prod). Recipient balance on Base:
-  [recipient on Basescan, our signer until 2026-11-11](https://sepolia.basescan.org/address/0xd305607510E0Db2c95807173c7A05BEA53c1ed36).
+  Forwarding Service and minted there in ~6s (verified live on prod), to the server signer of the
+  time (`0xd305...ed36`, which A-Identity retired on 2026-11-11 because someone else holds its key;
+  not A-Identity's).
 
 ### Robinhood Chain (mainnet + testnet)
 
@@ -249,9 +256,9 @@ put them at their canonical cross-chain addresses. What is ours is the identity 
   [`0x602ce85a…`](https://robinhoodchain.blockscout.com/tx/0x602ce85ad044836b39918311a3031dcd689e4be0d23aed9ed0ac9227d46ec79e)
   in block 34617892, tokenURI
   [`agent-card.json`](https://a-identity.xyz/.well-known/agent-card.json) - so the card and the
-  token point at each other. Its owner was our operating wallet
-  `0xd305607510E0Db2c95807173c7A05BEA53c1ed36` until 22:10 UTC on 2026-11-10, when it moved to the
-  founder's wallet `0xCB8824ffAF30687E36374C08eC52298b62871bdf`, which a person holds (tx
+  token point at each other. Its owner was `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, then the
+  operating wallet (retired on 2026-11-11 because someone else holds its key, and not
+  A-Identity's), until 22:10 UTC on 2026-11-10, when it moved to the founder's wallet `0xCB8824ffAF30687E36374C08eC52298b62871bdf`, which a person holds (tx
   [`0x228e69a4...`](https://robinhoodchain.blockscout.com/tx/0x228e69a4b5e047413f36a6c4f9473123e028ce3ee0dda3c82333b0580cda08c2)).
   Identity registry
   [`0x8004a169…`](https://robinhoodchain.blockscout.com/address/0x8004a169fb4a3325136eb29fa0ceb6d2e539a432),
@@ -365,18 +372,21 @@ verify-then-pay it reaches the owner as a prepared `ownerPay`.
 ### Base and Arbitrum One
 
 Both are mainnets where the canonical ERC-8004 registries were already deployed **by their
-authors**; registering is permissionless, so what is ours is the agent and the rail.
+authors**; registering is permissionless. We registered an agent on each, and neither is ours any
+more (see below); what is ours is the rail.
 
 - **Base agent [#73232](https://basescan.org/tx/0xb428bf8e79df3c44157c134df1858eb75fe3758b74868445c1dcd07948705bf0)**
-  (2026-08-27 UTC) and the first x402 settlement in native Circle USDC,
+  (registered by us 2026-08-27 UTC) and the first x402 settlement in native Circle USDC,
   [`0xb59ae67c…`](https://basescan.org/tx/0xb59ae67ced56426bdc1d85a71adadb35b0db59bcffeb3ff637eba23fe49a1450) -
   the receipt carries the matching USDC `Transfer` plus the token's `AuthorizationUsed` event.
   That measurement is what the disclosed settlement fee is derived from, not a guess.
-- **Arbitrum One agent #1259** and the first settlement `0x69abb8a9…` (2026-08-13), same
+- **Arbitrum One agent #1259** (registered by us) and the first settlement `0x69abb8a9…` (2026-08-13), same
   first-party EIP-3009 facilitator, buyer signs and pays no gas.
 - **Since 2026-11-11 the EIP-3009 rail has been paused on both**, until its new gas-only broadcaster
-  has gas there. Both agents are still owned by `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, our
-  operating wallet until that day, whose key someone else has also held since at least 2026-11-01.
+  has gas there. Both agents are still held by `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, the
+  former operating wallet, which A-Identity retired that day because someone else holds its key.
+  They are not ours any more, and we do not vouch for them: the feedback our oracle validator wrote
+  for each on chain has not been revoked yet, so read it as history, not an endorsement.
 - Both chains carry the family's ValidationRegistry proxy (read live 2026-10-11), but we do not
   wire it, so KYA is verified off-chain here and recorded rather than anchored.
 
@@ -441,7 +451,7 @@ day it lands rather than the day someone remembers to add it.
   `/mcp` JSON-RPC for agents. Durable state via Postgres (`DATABASE_URL`), JSON-file fallback for dev.
 - **Auth** - wallet sign-in on the EVM, Stellar and Algorand families (EVM personal_sign, Stellar SEP-43 signMessage, an Algorand signed zero-value self-payment; mcp/src/wallet-proof.ts; NEAR, the registry's fourth family, has no wallet sign-in yet) + email magic link (Resend) are *verified*; a plain guest
   session is read-only. Agent ownership is bound to a verified identity.
-- **Tests / CI** - `node:test` unit suite: **2724 tests across 144 colocated `*.test.ts` files**
+- **Tests / CI** - `node:test` unit suite: **2760 tests across 145 colocated `*.test.ts` files**
   (as of Nov 2026; `npm test` in `mcp/`) + a full E2E (`mcp/e2e.mjs`) of about **67 checks** that
   adapts to signer presence: live reads always run, and the on-chain write checks (x402, ERC-8183
   escrow, Gateway, **Nanopayments settle**, **CCTP burn-and-mint**) activate with a funded
@@ -455,16 +465,18 @@ day it lands rather than the day someone remembers to add it.
 - **Circle** *screens* transfers; it does **not** enforce the USD spend cap - the server + the on-chain
   vault do.
 - **Operator custody**: on the vaults the console deploys on Arc testnet the **server signer** is the
-  vault `operator` that submits `pay()` on the agent's behalf (a delegated action), and on our own
-  three mainnet vaults the operator is an agent key we also hold. The human `owner` is the user's own
+  vault `operator` that submits `pay()` on the agent's behalf (a delegated action), and on the
+  three launch-day mainnet vaults we deployed the operator is an agent key we hold. The human `owner` is the user's own
   wallet on vaults a user deploys (Stellar, and Arc Mainnet from `/app/vault/arc`, where the operator
-  is the owner's own agent key and we hold neither), while our own three launch-day mainnet vaults
-  are owned by `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, our server-held operating wallet until
-  2026-11-11. Someone else also holds that key and the contract has no owner transfer, so those three
-  are retired: the founder emptied the Robinhood Chain vault on 2026-11-10 and the Arc Mainnet vault
-  on 2026-11-11, and the Arbitrum One vault still holds 0.01 USDC that the owner key cannot withdraw
-  while its gas is swept, so the vault must not be funded; the agent key `0x8C8D...3349` can still pay
-  it out through `pay()` until its session key lapses on 2026-11-15. The *limit* holds either way, because the
+  is the owner's own agent key and we hold neither), while the three launch-day mainnet vaults we
+  deployed are owned by `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, the former operating wallet,
+  which A-Identity retired on 2026-11-11 because someone else holds its key. The contract has no
+  owner transfer, so those three are retired and not ours to operate: the founder emptied the
+  Robinhood Chain vault on 2026-11-10 and the Arc Mainnet vault on 2026-11-11. The Arbitrum One vault
+  still held 0.01 USDC when read on 2026-11-14, and its owner, that retired address, can withdraw it
+  at any time through `withdraw()` or `ownerPay()`, with no expiry; the agent key `0x8C8D...3349`
+  could pay it out through `pay()` only until its session key lapsed on 2026-11-15. Never fund it.
+  The *limit* holds either way, because the
   contract reverts an over-limit `pay()`; the contract itself is not externally audited. On the vaults we operate the
   agent does not sign its own payments - moving those is the roadmap (agent-held key / Circle
   programmable wallet). We say this plainly.

@@ -10,7 +10,7 @@
  * elsewhere). USDC uses the 6-decimal ERC-20 interface on both chains.
  */
 import { randomBytes } from 'node:crypto'
-import { ARC_CHAIN } from './chains/index.js'
+import { ARC_CHAIN, noSignerReason, usableSignerKey } from './chains/index.js'
 
 export const GATEWAY_API = 'https://gateway-api-testnet.circle.com/v1'
 const GATEWAY_WALLET = '0x0077777d7EBA4688BDeF3E311b846F25870A19B9'
@@ -59,7 +59,8 @@ const BurnIntent = [
 ] as const
 
 async function arcSigner(env: NodeJS.ProcessEnv) {
-  const key = env.ARC_SIGNER_KEY
+  // A key whose address is retired (chains/retired.ts) is no key: this server never signs with it.
+  const key = usableSignerKey(env.ARC_SIGNER_KEY, 'ARC_SIGNER_KEY')
   if (!key) return null
   const { createWalletClient, createPublicClient, http, defineChain } = await import('viem')
   const { privateKeyToAccount } = await import('viem/accounts')
@@ -91,7 +92,7 @@ export async function gatewayBalance(depositor: string): Promise<{ available: nu
 /** Deposit USDC into the Gateway Wallet on Arc (approve + deposit). Establishes/tops up the unified balance. */
 export async function gatewayDeposit(amountUsd: number, env: NodeJS.ProcessEnv = process.env) {
   const s = await arcSigner(env)
-  if (!s) return { executed: false as const, reason: 'No ARC_SIGNER_KEY set.' }
+  if (!s) return { executed: false as const, reason: noSignerReason(env, 'ARC_SIGNER_KEY') }
   const value = usdcUnits(amountUsd)
   const approveTx = await s.wallet.writeContract({ address: ARC.usdc as `0x${string}`, abi: ERC20, functionName: 'approve', args: [GATEWAY_WALLET as `0x${string}`, value] })
   await s.pub.waitForTransactionReceipt({ hash: approveTx })
@@ -107,7 +108,7 @@ export async function gatewayDeposit(amountUsd: number, env: NodeJS.ProcessEnv =
  */
 export async function gatewayTransfer(amountUsd: number, env: NodeJS.ProcessEnv = process.env) {
   const s = await arcSigner(env)
-  if (!s) return { executed: false as const, reason: 'No ARC_SIGNER_KEY set.' }
+  if (!s) return { executed: false as const, reason: noSignerReason(env, 'ARC_SIGNER_KEY') }
   const { pad, zeroAddress } = await import('viem')
   const value = usdcUnits(amountUsd)
   const b32 = (a: string) => pad(a.toLowerCase() as `0x${string}`, { size: 32 })
@@ -158,7 +159,7 @@ export async function gatewayTransfer(amountUsd: number, env: NodeJS.ProcessEnv 
 export async function runGatewayDemo(input: { amountUsd?: number } = {}, env: NodeJS.ProcessEnv = process.env) {
   const s = await arcSigner(env)
   if (!s) {
-    return { executed: false as const, reason: 'No ARC_SIGNER_KEY set. With a funded key this deposits to Gateway and moves USDC Arc -> Base Sepolia (gasless).', gatewayWallet: GATEWAY_WALLET }
+    return { executed: false as const, reason: `${noSignerReason(env, 'ARC_SIGNER_KEY')} With a funded key this deposits to Gateway and moves USDC Arc -> Base Sepolia (gasless).`, gatewayWallet: GATEWAY_WALLET }
   }
   const me = s.account.address
   const amountUsd = input.amountUsd ?? 0.1

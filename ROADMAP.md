@@ -227,9 +227,9 @@ Newest first. Each item names the day it landed and where to check it.
 
   Agent #0 on the canonical ERC-8004 registry, the registry's first mint, is ours. An
   AgentSpendPolicy vault held real USDC under dust caps (emptied by the founder and
-  retired on 2026-11-11, because someone else also holds its owner key), and paid trust
-  calls settled on both rails that day: our own EIP-3009 facilitator and Circle Gateway
-  nanopayments.
+  retired on 2026-11-11: its owner is the former operating wallet, an address A-Identity
+  retired that day because someone else holds its key), and paid trust calls settled on
+  both rails that day: our own EIP-3009 facilitator and Circle Gateway nanopayments.
 
   Gas on Arc is USDC itself, so every cost on the proof page is an exact dollar figure
   with no price feed. The operating wallet was funded by burning native USDC on Base
@@ -311,7 +311,9 @@ Newest first. Each item names the day it landed and where to check it.
   and that funding trail is published rather than left as a gap. The canonical registry
   pair was verified by matching each proxy's implementation code against Arbitrum One,
   because Arc's three registry addresses also have code on Base and delegate to a
-  non-canonical implementation.
+  non-canonical implementation. Agent #73232 is still held by the former operating wallet,
+  an address A-Identity retired on 2026-11-11 because someone else holds its key, so it is
+  not ours any more.
 
   Chains: Base. Evidence: [Base proof](https://a-identity.xyz/proof/base).
 
@@ -369,6 +371,10 @@ Newest first. Each item names the day it landed and where to check it.
   Agent #1259 on the canonical ERC-8004 registry, and x402 settling in native Circle USDC
   through our own EIP-3009 facilitator, with a per-chain fee derived from measured gas
   rather than guessed.
+
+  Agent #1259 is still held by the former operating wallet, an address A-Identity retired
+  on 2026-11-11 because someone else holds its key, so it is not ours any more. The
+  EIP-3009 rail here has been paused since that day.
 
   Chains: Arbitrum One. Evidence: [Arbitrum One proof](https://a-identity.xyz/proof/arbitrum).
 
@@ -490,9 +496,10 @@ promised here.
   nanopayments, and two refusals anyone can inspect: a vault-policy revert with a hash,
   and a DENY that stopped a payment before signing.
 
-  A vault counts only when its owner key is none of the keys of ours it was compared with,
-  so the launch-day vault, owned by our former operating wallet and retired on 2026-11-11,
-  does not. The browser deployer is live at /app/vault/arc. The 100 flows and the two
+  A vault counts only when its owner key is none of the keys of ours it was compared with
+  and no address A-Identity retired, so the launch-day vault does not: its owner is the
+  former operating wallet, which A-Identity retired on 2026-11-11 because someone else
+  holds its key. The browser deployer is live at /app/vault/arc. The 100 flows and the two
   refusals are done, on our own wallets and labeled so; the vaults count as their owners
   deploy them, and /proof/arc has the live count and who stands behind it. Targets are the
   Deliverable 1 commitments as Circle revised them on 2026-10-19; the counts are read from

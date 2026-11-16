@@ -29,7 +29,8 @@ Steps (done once, by the account owner):
    - Service URL: `https://a-identity-asp.onrender.com`
    - Manifest: `https://a-identity-asp.onrender.com/.well-known/agent.json`
    - Tools (USDC/x402): `verify_agent` $0.001 · `reputation_score` $0.002 · `risk_check` $0.005 · `agent_passport` $0.01 · `counterparty_check` $0.008 · `guardrail_check` $0.005
-   - Provider identity: ERC-8004 (Meridian #849980) on Arc testnet · app https://a-identity.xyz
+   - Provider identity: ERC-8004 agent #0 on Arc Mainnet (`eip155:5042`), which A-Identity holds · app https://a-identity.xyz
+     (this line used to name Arc testnet #849980, Meridian, which a retired address still holds, so it is not ours)
 2. Once listed, verify discovery: `npm i -g @circle-fin/cli && circle login`, then
    `circle services search "trust oracle" --output json` /
    `circle services inspect "https://a-identity-asp.onrender.com" --output json`.

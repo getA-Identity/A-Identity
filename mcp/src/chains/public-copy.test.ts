@@ -106,6 +106,8 @@ test('the agent card advertises every agent the provenance ledger records', asyn
     registrations?: { chain?: string; registry?: string }[]
   }
   const regs = card.registrations ?? []
+  // Our agents only. A formerAgent (provenance.ts) is one A-Identity registered that a retired address still holds: it is
+  // never required here, because the card advertises what we vouch for.
   for (const p of PROVENANCE) {
     if (!p.agent) continue
     const chain = CHAINS.find((c) => c.id === p.chain)!

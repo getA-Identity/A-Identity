@@ -37,7 +37,7 @@ const CARDS: {
     doc: 'KYA Verification Log',
     term: 'A verifiable identity',
     rows: [
-      { label: 'Agent', value: 'Meridian #849980' },
+      { label: 'Agent', value: 'Your agent' },
       { label: 'Status', value: 'Verified', tone: 'ok' },
       { label: 'Method', value: 'Wallet-proof KYA' },
       { label: 'Registry', value: 'ERC-8004 on Arc' },

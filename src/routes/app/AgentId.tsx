@@ -197,8 +197,10 @@ export default function AgentId() {
             <ShieldQuestion size={18} className="mt-0.5 shrink-0 text-warn" />
             <p>
               <span className="font-semibold">This is a real example agent</span> (ERC-8004 #849980 on
-              Arc), resolved live on-chain. You haven't created an agent yet. Register one below to get
-              your own on-chain passport.
+              Arc testnet), resolved live on-chain. A-Identity registered it, and it is still held by an
+              address A-Identity retired because someone else holds its key, so it is not ours: never pay
+              or fund it. You haven't created an agent yet. Register one below to get your own on-chain
+              passport.
             </p>
           </div>
         </>

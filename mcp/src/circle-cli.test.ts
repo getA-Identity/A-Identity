@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { compilePolicyPlan, bootstrapCommands } from './circle-cli.js'
 
-const ADDR = '0xd305607510E0Db2c95807173c7A05BEA53c1ed36'
+const ADDR = '0x00000000000000000000000000000000DeaDBeef'
 const PAYEE = '0x000000000000000000000000000000000000bEEF'
 
 /**

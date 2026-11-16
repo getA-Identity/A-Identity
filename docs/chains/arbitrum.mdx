@@ -4,8 +4,10 @@ description: "Arbitrum One network config, the canonical ERC-8004 registries alr
 ---
 
 Arbitrum One is the largest Ethereum L2 by usage, and the chain whose stack Robinhood
-Chain is built on. A-Identity holds an ERC-8004 agent identity here and has settled paid
-trust calls in native Circle USDC.
+Chain is built on. A-Identity registered an ERC-8004 agent identity here and has settled
+paid trust calls in native Circle USDC. The agent is still held by the former operating
+wallet, an address A-Identity retired on 2026-11-11 because someone else holds its key, so
+it is not ours.
 
 ## Why Arbitrum One
 
@@ -22,14 +24,15 @@ trust calls in native Circle USDC.
 </CardGroup>
 
 <Note>
-  Arbitrum One is **live** for us: agent #1259 is ours on the canonical registry, and a
-  real settlement in USDC has gone through our own facilitator. Everything on this page is
-  checkable at [/proof/arbitrum](https://a-identity.xyz/proof/arbitrum).
+  Arbitrum One is **live** for us: agent #1259 was registered by us on the canonical
+  registry, and a real settlement in USDC has gone through our own facilitator. Everything
+  on this page is checkable at [/proof/arbitrum](https://a-identity.xyz/proof/arbitrum).
 
   Since 2026-11-11 our EIP-3009 rail has been paused on Arbitrum One, until its new gas-only
-  broadcaster key has gas on this chain. Agent #1259 is still held by our former operating
-  wallet `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, which also owns the vault below; someone
-  else has also held that wallet's key since at least 2026-11-01, so never pay or fund it.
+  broadcaster key has gas on this chain. Agent #1259 and the vault below are still held by
+  `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, the former operating wallet, which A-Identity
+  retired on 2026-11-11 because someone else holds its key. They are not ours any more:
+  never pay or fund that address.
 </Note>
 
 ## Network config
@@ -71,7 +74,7 @@ export const client = createPublicClient({ chain: arbitrum, transport: http() })
 ```ts read.ts
 import { client } from './chain'
 
-// Agent #1259 is ours on the canonical registry.
+// Agent #1259 on the canonical registry: registered by us, now held by a retired address.
 const owner = await client.readContract({
   address: '0x8004a169fb4a3325136eb29fa0ceb6d2e539a432',
   abi: [{ type: 'function', name: 'ownerOf', stateMutability: 'view', inputs: [{ type: 'uint256' }], outputs: [{ type: 'address' }] }],
@@ -88,20 +91,22 @@ const owner = await client.readContract({
 | IdentityRegistry | [`0x8004a169fb4a3325136eb29fa0ceb6d2e539a432`](https://arbiscan.io/address/0x8004a169fb4a3325136eb29fa0ceb6d2e539a432) |
 | ReputationRegistry | [`0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`](https://arbiscan.io/address/0x8004BAa17C55a88189AE136b182e5fdA19dE9b63) |
 | USDC (settlement) | [`0xaf88d065e77c8cC2239327C5EDb3A432268e5831`](https://arbiscan.io/address/0xaf88d065e77c8cC2239327C5EDb3A432268e5831) |
-| AgentSpendPolicy vault (ours, retired) | [`0xac6c5c9af62bc482ffeef882a6ac4678513be6db`](https://arbiscan.io/address/0xac6c5c9af62bc482ffeef882a6ac4678513be6db) |
+| AgentSpendPolicy vault (deployed by us, retired, not ours) | [`0xac6c5c9af62bc482ffeef882a6ac4678513be6db`](https://arbiscan.io/address/0xac6c5c9af62bc482ffeef882a6ac4678513be6db) |
 
 We deployed none of these except the vault. The registries were already live and
-registering on them is permissionless; what is ours is agent #1259, the vault and the rail
-on top. The family's ValidationRegistry proxy has code here too (read live 2026-10-11), but
-we do not wire it, so a KYA result is not anchored on-chain here.
+registering on them is permissionless; we registered agent #1259 and deployed the vault,
+and what is ours is the rail on top. The family's ValidationRegistry proxy has code here
+too (read live 2026-10-11), but we do not wire it, so a KYA result is not anchored on-chain
+here.
 
 The vault caps the agent key at 1 USDC a day and 0.25 USDC per payment. Since 2026-10-01
-the agent key is a separate wallet from the owner key and its session key runs to
-2026-11-15. As of 2026-11-11 the vault is retired: its owner is our former operating wallet,
-whose key someone else has also held since at least 2026-11-01, and the contract has no owner
-transfer. It still holds 0.01 USDC (read live 2026-11-11), which we cannot withdraw through
-its owner while gas sent to that address is swept; the agent key 0x8C8D...3349 can still pay
-it out through pay() until its session key lapses on 2026-11-15. Never fund it. Before
+the agent key is a separate wallet from the owner key, and its session key ran to
+12:42:37 UTC on 2026-11-15. As of 2026-11-11 the vault is retired and not ours: its owner is
+the former operating wallet, an address A-Identity retired that day because someone else
+holds its key (since at least 2026-11-01), and the contract has no owner transfer. It still
+held 0.01 USDC when read on 2026-11-14, and that owner can withdraw it at any time, through
+withdraw() or ownerPay(), with no expiry; the agent key 0x8C8D...3349 could pay it out
+through pay() only until its session key lapsed. Never fund it. Before
 paying here, [/check/arbitrum](https://a-identity.xyz/check/arbitrum)
 answers whether a token is native Circle USDC and whether the payee is a registered agent;
 the chain itself confirms it is an Arbitrum chain through the ArbSys precompile.
@@ -124,7 +129,7 @@ curl -sX POST https://arb1.arbitrum.io/rpc -H 'content-type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"eth_call","params":[{"to":"0xaf88d065e77c8cC2239327C5EDb3A432268e5831","data":"0x3644e515"},"latest"]}'
 # -> 0x08d11903f8419e68b1b8721bcbe2e9fc68569122a77ef18c216f10b3b5112c78
 
-# Our provenance ledger, with a live re-read of ownerOf(1259) on every request.
+# Our provenance ledger, with a live re-read of who holds former agent #1259 on every request.
 curl -s https://a-identity-backend.onrender.com/api/proof/arbitrum
 ```
 

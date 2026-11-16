@@ -535,8 +535,8 @@ const readRecordOf = async () => ((await import(repoUrl('src/lib/trust-preview.t
 
 test('a preview does not read an identity-only reputation as a platform record', async () => {
   const readRecord = await readRecordOf()
-  // The tool's real fallback shape, for an operating wallet and for a token id, whole and partial.
-  for (const [query, partial] of [['0xd305607510e0db2c95807173c7a05bea53c1ed36', true], ['eip155:5042:8004/0', false]] as const) {
+  // The tool's real fallback shape, for a bare wallet address and for a token id, whole and partial.
+  for (const [query, partial] of [['0x' + '5a'.repeat(20), true], ['eip155:5042:8004/0', false]] as const) {
     const reputation = identityOnlyReputation(query, partial)
     assert.deepEqual(readRecord({ ok: true, data: { found: true, reputation } }), { read: 'no-record', reputation: null }, query)
   }
@@ -849,5 +849,21 @@ test('the public docs state the five vault behaviours, without calling the contr
   assert.match(concept, /sessionKeyExpiry != 0 && block\.timestamp > sessionKeyExpiry\) revert SessionKeyExpired/, 'the pay() shown has lost a gate')
   for (const page of ['docs/chains/arc-integration.mdx', 'docs/concepts/bounded-authority.mdx', 'docs/chains/stellar.mdx', 'public/llms.txt', 'public/llms-full.txt']) {
     assert.doesNotMatch(repo(page), /\b(is|are|been|was|were) audited\b/i, page)
+  }
+})
+
+test('the prerendered /proof and /stats never claim that no settlement log answered, or that the backend is down', () => {
+  // The snapshot is made with no backend to read (scripts/prerender.mjs), so whatever a failed read prints is
+  // baked into the static page. It used to print "0 of 6 answering" and the free-tier outage line, and a reader
+  // of the static page took both for an outage that was not happening.
+  const tile = repo('src/components/stats/LogTile.tsx')
+  assert.match(tile, /\{readAt && answered > 0\s*\?\s*`Settlement logs last read at/, 'the count of logs answering is shown only once one has answered')
+  assert.match(tile, /: 'Settlement logs: checking live sources\. '\}/)
+  assert.doesNotMatch(tile, /did not answer just now/)
+  assert.match(tile, /\? `Checking this log live\. \$\{spec\.basis\}`/)
+  for (const page of ['src/routes/Stats.tsx', 'src/routes/ProofIndex.tsx']) {
+    const text = repo(page)
+    assert.doesNotMatch(text, /BACKEND_UNREACHABLE/, page)
+    assert.match(text.replace(/\s+/g, ' '), /load(?:s)? live from GET \/api\/(?:stats|proof\/rails) and the settlement logs, and (?:they have|it has) not loaded yet\./, page)
   }
 })

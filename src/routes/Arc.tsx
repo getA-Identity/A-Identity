@@ -193,7 +193,7 @@ function WhatRuns({ proof }: { proof: ProofNetwork | null }) {
       {
         icon: ShieldCheck,
         title: 'A budget the contract enforces',
-        body: 'A spend vault held real USDC under a $1 daily cap. It paid inside its policy. On launch day a payment over its limit came back as AboveAutoApprove in simulation, with nothing broadcast. On 2026-11-01 a 0.50 payment was mined and the contract reverted it on chain with the same error (tx 0x134de0b2...). On 2026-11-11 the founder emptied the vault and it is retired: someone else also holds the key of its owner, our former operating wallet, and the contract has no owner transfer.',
+        body: 'A spend vault held real USDC under a $1 daily cap. It paid inside its policy. On launch day a payment over its limit came back as AboveAutoApprove in simulation, with nothing broadcast. On 2026-11-01 a 0.50 payment was mined and the contract reverted it on chain with the same error (tx 0x134de0b2...). On 2026-11-11 the founder emptied the vault and it is retired: its owner is the former operating wallet, an address A-Identity retired that day because someone else holds its key, and the contract has no owner transfer.',
         artifact: receipt(proof, 'settlement', /vault/i),
       },
       {

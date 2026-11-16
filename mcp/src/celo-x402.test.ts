@@ -17,6 +17,7 @@ import {
   type CeloX402Status,
 } from './celo-x402.js'
 import { getChainById, requireChain } from './chains/index.js'
+import { FORMER_CELO_PAYTO, RETIRED_COMPROMISED, retiredAddresses } from './chains/retired.js'
 import type { CeloSettlementRecord } from './storage.js'
 
 /**
@@ -316,8 +317,10 @@ test('a handler failure after settlement is a 500 that still records the settlem
 test('celoProof aggregates the injected store honestly, zeros included', async () => {
   const empty = await celoProof({} as NodeJS.ProcessEnv, async () => [])
   assert.equal(empty.configured, false)
-  // Settlements recorded before the 2026-11-11 switch stay attributed to the address they were paid to.
-  assert.deepEqual(empty.previousPayTo.map((p) => [p.address, p.until]), [['0xf43f43d8aee114a71b164e1f6214bc7625a5742d', '2026-11-11T01:04:32Z']])
+  // Settlements recorded before the 2026-11-11 switch stay attributed to the address they were paid to,
+  // and the note says it is retired and not A-Identity's.
+  assert.deepEqual(empty.previousPayTo.map((p) => [p.address, p.until]), [[FORMER_CELO_PAYTO.address, '2026-11-11T01:04:32Z']])
+  assert.match(empty.previousPayTo[0].note ?? '', /retired that day: someone else holds its key and it is not A-Identity's\. Do not pay it\./)
   assert.equal(empty.totalSettlements, 0)
   assert.equal(empty.totalUsd, 0)
   assert.deepEqual(empty.byTool, {})
@@ -338,6 +341,39 @@ test('celoProof aggregates the injected store honestly, zeros included', async (
   // recent is newest-first and capped at 50.
   assert.equal(proof.recent[0].tool, 'agent_passport')
   assert.equal(proof.recent.length, 3)
+})
+
+test('a retired address is never ours on the Celo rail: dropped from the env list, published apart, and its payments never external', async () => {
+  const listed = RETIRED_COMPROMISED.map((r) => r.checksum).join(',')
+  const records: CeloSettlementRecord[] = [
+    { ts: '2026-08-09T00:00:00Z', tool: 'verify_agent', amountUsd: 0.001, network: 'eip155:42220', payer: RETIRED_COMPROMISED[0].checksum },
+    { ts: '2026-08-09T00:01:00Z', tool: 'verify_agent', amountUsd: 0.001, network: 'eip155:42220', payer: RETIRED_COMPROMISED[1].address },
+    { ts: '2026-08-09T00:02:00Z', tool: 'verify_agent', amountUsd: 0.001, network: 'eip155:42220', payer: '0x8c8d9cd12d8896a40cf2115ee731258bb4983349' },
+    { ts: '2026-08-09T00:03:00Z', tool: 'agent_passport', amountUsd: 0.01, network: 'eip155:42220', payer: '0x' + '42'.repeat(20) },
+  ]
+  // Before: the env listed the retired addresses as ours. After: it does not.
+  const before = await celoProof({ ...CONFIGURED_ENV, CELO_INTERNAL_PAYERS: listed } as NodeJS.ProcessEnv, async () => records)
+  const after = await celoProof(CONFIGURED_ENV, async () => records)
+  const numbers = (p: typeof after) => ({ total: p.totalSettlements, usd: p.totalUsd, internal: p.internalSettlements, internalUsd: p.internalUsd, external: p.externalSettlements, externalUsd: p.externalUsd })
+  assert.deepEqual(numbers(after), numbers(before), 'no published number moves')
+  assert.deepEqual(numbers(after), { total: 4, usd: 0.013, internal: 3, internalUsd: 0.003, external: 1, externalUsd: 0.01 })
+  assert.deepEqual(after.internalPayers, before.internalPayers)
+  assert.ok(!after.internalPayers.some((a) => retiredAddresses().includes(a)), 'not ours')
+  assert.deepEqual(after.retiredPayers.map((r) => r.address), retiredAddresses())
+  assert.deepEqual(after.recent.map((r) => r.internal), [false, true, true, true])
+})
+
+test('a retired Celo pay-to fails closed as not configured, in any case, and is never named as the pay-to', () => {
+  for (const r of RETIRED_COMPROMISED) {
+    for (const spelled of [r.checksum, r.address]) {
+      const status = celoX402Status({ ...CONFIGURED_ENV, CELO_PAYTO: spelled } as NodeJS.ProcessEnv)
+      assert.equal(status.configured, false)
+      assert.equal(status.payTo, null)
+      assert.match(status.reason ?? '', new RegExp(`CELO_PAYTO names ${r.label}`))
+      const gate = celoPaywallGate(status)
+      assert.ok(!gate.ok && gate.httpStatus === 501)
+    }
+  }
 })
 
 // ── registry invariants for the Celo pair ─────────────────────────────────────────
@@ -409,7 +445,7 @@ test('a Celo identity read refuses a non-numeric agent id instead of guessing, a
 })
 
 test('a Celo identity read returns the owner, the CAIP id and a Celoscan NFT link for a minted agent', async () => {
-  const owner = '0xF43F43D8aee114a71B164e1f6214BC7625a5742D'
+  const owner = '0x' + '9a'.repeat(20)
   const seen: string[] = []
   const out = await celoIdentitySummary('#9759', celoStatus(), {
     readContract: async (fn) => {

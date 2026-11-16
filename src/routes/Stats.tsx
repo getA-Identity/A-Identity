@@ -31,7 +31,6 @@ import { RailCard } from '../components/stats/RailCard'
 import { apiFetch } from '../lib/api'
 import { CHAINS, type ChainId, type ChainStatus } from '../lib/chains'
 import { usePageMeta } from '../lib/head'
-import { BACKEND_UNREACHABLE } from '../lib/mcpBase'
 import {
   SETTLEMENT_LOGS,
   SEASON_URL,
@@ -159,7 +158,7 @@ const CHAIN_NOTES: Partial<Record<ChainId, string>> = {
   'arc-mainnet':
     "Circle's stablecoin-native L1, selling since 2026-09-16 on two rails at once: our own EIP-3009 facilitator, whose gas is itself USDC, and Circle Gateway nanopayments, which Gateway batches on-chain. Both rails' rows are on this one card.",
   base:
-    'The same facilitator and the same engine, settling in native Circle USDC until 2026-11-11, when the rail paused here until its new gas key holds ETH on Base; Circle Gateway nanopayments still sell here, and their rows land on this same card. Agent #73232 is ours on the canonical registry, still held by our former operating wallet, whose key someone else has also held since at least 2026-11-01. The EIP-3009 rail\'s first settlement here was broadcast from an operator machine and lives on the proof page; this card counts only what the production rails have settled here, read live, so the two can differ.',
+    'The same facilitator and the same engine, settling in native Circle USDC until 2026-11-11, when the rail paused here until its new gas key holds ETH on Base; Circle Gateway nanopayments still sell here, and their rows land on this same card. Agent #73232 was registered by A-Identity and is still held by the former operating wallet, an address A-Identity retired on 2026-11-11 because someone else holds its key, so it is not ours any more. The EIP-3009 rail\'s first settlement here was broadcast from an operator machine and lives on the proof page; this card counts only what the production rails have settled here, read live, so the two can differ.',
   arbitrum:
     'The same facilitator and the same engine, settling in native Circle USDC until 2026-11-11, when the rail paused here until its new gas key holds ETH on Arbitrum One. Other facilitators already serve this chain, which is the point: here our receipts can be compared against a baseline.',
   rhchain:
@@ -383,13 +382,18 @@ export default function Stats() {
             }
           />
 
-          {/* The honest failure state: shown only when no snapshot has ever arrived. */}
+          {/* The waiting state, shown only when no snapshot has ever arrived. It says what is true at any read,
+              the prerendered snapshot included (made with no backend to read): the numbers load live and have not
+              loaded yet. Nothing about the backend being down, which the snapshot used to bake in. */}
           {unreachable && !stats && (
             <motion.div
               {...reveal}
               className="mt-10 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-card px-5 py-4"
             >
-              <p className="text-sm text-foreground/60">{BACKEND_UNREACHABLE}</p>
+              <p className="text-sm text-foreground/60">
+                The numbers on this page load live from GET /api/stats and the settlement logs, and they have not loaded
+                yet. Give it a few seconds, or use the button to try again.
+              </p>
               <button
                 type="button"
                 onClick={load}

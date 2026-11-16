@@ -18,7 +18,11 @@
  *
  * Chain-generic on purpose, like the rail it guards: a chain gets this check by declaring an
  * identity registry and an eip3009 settlement token in the registry. Nothing here names a
- * chain, a token or an address; all of it is read from the descriptor.
+ * chain, a token or an address; all of it is read from the descriptor, except what is known
+ * against an address, which chains/retired.ts holds with its evidence: the addresses A-Identity
+ * retired because someone else holds their keys, and the recipients of the sweepers on them.
+ * A check of one of those, or of an agent or a 402 challenge that pays one, answers dont_pay
+ * with that evidence, whatever else the chain says of it.
  *
  * Every reason carries a stable machine code (REASON_CODES) and a sentence a person can
  * read. The verdict never says "safe" about something it could not prove: an unprovable
@@ -27,6 +31,7 @@
 import { CHAINS, getChainById } from '../chains/registry.js'
 import type { ChainDescriptor, DocumentedToken, SettlementToken } from '../chains/types.js'
 import { addressUrl } from '../chains/explorer.js'
+import { knownCompromised, shortAddress } from '../chains/retired.js'
 import { EIP3009_ABI } from '../chains/evm/abis.js'
 import { evmPublicClient } from '../chains/evm/client.js'
 import { provenDomainCached, type DomainResult, type TokenReader } from '../x402-3009/domain.js'
@@ -63,6 +68,8 @@ export const REASON_CODES = {
   CHALLENGE_NO_DOMAIN: 'The 402 challenge names the right token but not the signing domain, so a wallet would have to guess it.',
   CHALLENGE_SEVERAL_OFFERS: 'The 402 challenge offers more than one way to pay on this chain; the answer is about the riskiest.',
   PAYEE_IS_TOKEN_CONTRACT: 'The payee is a token contract, not a wallet; money sent there is usually stuck.',
+  KNOWN_COMPROMISED:
+    'Someone else holds this key: the address is one A-Identity retired as compromised, or the recipient of the sweeper on such an address, so a payment to it goes to whoever holds those keys.',
 } as const
 export type ReasonCode = keyof typeof REASON_CODES
 export type Reason = { tone: ReasonTone; code: ReasonCode; text: string }
@@ -278,6 +285,22 @@ const AGENT_ABI = [
 ] as const
 
 const short = (a: string) => `${a.slice(0, 6)}...${a.slice(-4)}`
+
+/**
+ * The reason a known-compromised address gets, or null (chains/retired.ts). `as` says how the check
+ * met it: the address itself, the holder of an agent, or the payee of a 402 challenge.
+ */
+function compromisedReason(address: string | null | undefined, as: 'address' | 'holder' | 'payee'): Reason | null {
+  const known = knownCompromised(address)
+  if (!known || !address) return null
+  const who = shortAddress(address)
+  const what =
+    known.kind === 'retired'
+      ? `${who} is ${known.label}, an address A-Identity retired because someone else holds its key: it is not A-Identity's.`
+      : `${who} is ${known.label}: it receives what is taken from addresses whose keys someone else holds.`
+  const lead = as === 'holder' ? 'This agent is held by a known-compromised address. ' : as === 'payee' ? 'It pays a known-compromised address. ' : ''
+  return { tone: 'bad', code: 'KNOWN_COMPROMISED', text: `${lead}${what} Do not pay or fund it. Evidence: ${known.evidence}` }
+}
 const same = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a.toLowerCase() === b.toLowerCase()
 
 function units(v: bigint, decimals: number): string {
@@ -512,6 +535,12 @@ async function checkAddress(ctx: Ctx, address: `0x${string}`): Promise<PathOut |
     reasons.push({ tone: 'bad', code: 'ZERO_ADDRESS', text: 'This is the zero address. Anything sent to it is gone for good.' })
     return { kind: 'address', address, reasons, positive: null }
   }
+  // Known before any read: whatever the chain says of it (it may hold an agent), paying it pays whoever holds its key.
+  const compromised = compromisedReason(address, 'address')
+  if (compromised) {
+    reasons.push(compromised)
+    return { kind: 'address', address, reasons, positive: null }
+  }
   if (same(address, ctx.token.address)) {
     const t: TokenFacts = { address, name: ctx.canonicalName, symbol: ctx.token.symbol, decimals: ctx.token.decimals, canonical: true, lookalike: false, tier: null }
     tokenReasons(ctx, t, reasons)
@@ -578,6 +607,8 @@ async function checkAgent(ctx: Ctx, tokenId: bigint): Promise<PathOut | EvmPayCh
   }
   const holder = String(owner.value)
   reasons.push({ tone: 'good', code: 'REGISTERED_AGENT', text: `Agent #${tokenId} is registered on ${ctx.chain.name}, held by ${short(holder)}.` })
+  const heldByCompromised = compromisedReason(holder, 'holder')
+  if (heldByCompromised) reasons.push(heldByCompromised)
   const uri = await attempt(ctx.client.readContract({ address: registry, abi: AGENT_ABI as readonly unknown[], functionName: 'tokenURI', args: [tokenId] }))
   const tokenUri = uri.ok ? String(uri.value) : null
 
@@ -662,8 +693,16 @@ async function checkChallenge(ctx: Ctx, url: string): Promise<PathOut | EvmPayCh
     const n = String(a.network ?? '').toLowerCase()
     return n === ctx.chain.caip2.toLowerCase() || n === ctx.chain.id.toLowerCase()
   })
+  // A challenge that pays a known-compromised address answers dont_pay on whatever chain it asks for
+  // payment: the module's promise holds for an offer this chain cannot check as well.
+  const compromisedPayee = ch.accepts
+    .map((a) => compromisedReason(typeof a.payTo === 'string' ? a.payTo : null, 'payee'))
+    .find((r): r is Reason => r !== null)
   if (!mine.length) {
-    const reasons: Reason[] = [{ tone: 'neutral', code: 'CHALLENGE_OTHER_CHAIN', text: `It asks for payment on ${networks.join(', ') || 'no named network'}, not on ${ctx.chain.name}, so there is nothing here to check on this chain.` }]
+    const reasons: Reason[] = [
+      ...(compromisedPayee ? [compromisedPayee] : []),
+      { tone: 'neutral', code: 'CHALLENGE_OTHER_CHAIN', text: `It asks for payment on ${networks.join(', ') || 'no named network'}, not on ${ctx.chain.name}, so there is nothing here to check on this chain.` },
+    ]
     return { kind: 'x402', address: null, reasons, challenge: { url, x402Version: ch.x402Version, offers: ch.accepts.length, networks, onThisChain: null, offersOnThisChain: 0 }, positive: null }
   }
   // A buyer's wallet may pick any offer, so every offer on this chain is checked and the answer
@@ -677,11 +716,13 @@ async function checkChallenge(ctx: Ctx, url: string): Promise<PathOut | EvmPayCh
   const rank = (r: OfferResult) => (r.reasons.some((x) => x.tone === 'bad') ? 2 : r.reasons.some((x) => x.tone === 'warn') ? 1 : 0)
   const worst = results.reduce((a, b) => (rank(b) > rank(a) ? b : a))
   const reasons = [...worst.reasons]
+  // An offer on another chain that pays a known-compromised address condemns the challenge as well.
+  if (compromisedPayee && !reasons.some((x) => x.code === 'KNOWN_COMPROMISED')) reasons.push(compromisedPayee)
   if (results.length > 1) {
     reasons.push({ tone: 'neutral', code: 'CHALLENGE_SEVERAL_OFFERS', text: `It offers ${results.length} ways to pay on ${ctx.chain.name}; this answer is about the riskiest of them.` })
   }
   const challenge: ChallengeFacts = { url, x402Version: ch.x402Version, offers: ch.accepts.length, networks, onThisChain: worst.offer, offersOnThisChain: results.length }
-  return { kind: 'x402', address: worst.offer.payTo, reasons, challenge, account: worst.account, positive: rank(worst) === 0 ? worst.positive : null }
+  return { kind: 'x402', address: worst.offer.payTo, reasons, challenge, account: worst.account, positive: rank(worst) === 0 && !compromisedPayee ? worst.positive : null }
 }
 
 type OfferResult = { offer: ChallengeOffer; reasons: Reason[]; account: AccountFacts | null; positive: string | null }
@@ -741,7 +782,10 @@ async function checkOffer(ctx: Ctx, mine: RawOffer): Promise<OfferResult | EvmPa
   }
 
   let account: AccountFacts | null = null
-  if (offer.payTo && /^0x[0-9a-fA-F]{40}$/.test(offer.payTo)) {
+  const payeeCompromised = compromisedReason(offer.payTo, 'payee')
+  if (payeeCompromised) {
+    reasons.push(payeeCompromised)
+  } else if (offer.payTo && /^0x[0-9a-fA-F]{40}$/.test(offer.payTo)) {
     const payTo = offer.payTo as `0x${string}`
     if (same(payTo, ZERO)) {
       reasons.push({ tone: 'bad', code: 'ZERO_ADDRESS', text: 'It pays the zero address. Anything sent there is gone for good.' })
@@ -845,6 +889,7 @@ async function decide(q: string, parsed: ParsedQuery, chain: ChainDescriptor, de
   const settlesIn = same(imitated.address, token.address)
   if (verdict === 'dont_pay' && out.token?.tier === 'impersonation') headline = `Not the real ${imitated.symbol}. Don't pay with it`
   else if (verdict === 'dont_pay' && out.token?.tier === 'same_symbol') headline = settlesIn ? `Not the ${imitated.symbol} ${chain.name} settles in` : `Not the real ${imitated.symbol}`
+  else if (reasons.some((r) => r.code === 'KNOWN_COMPROMISED')) headline = "Known compromised. Don't pay"
 
   return {
     query: q.trim(),

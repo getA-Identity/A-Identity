@@ -379,7 +379,7 @@ function OutLink({ href, children }: { href: string; children: React.ReactNode }
 }
 
 const FLOW_VAULT_LABEL: Record<NonNullable<FlowItem['vaultKind']>, string> = {
-  'launch-day': 'launch-day vault (ours)',
+  'launch-day': 'the launch-day vault A-Identity deployed, retired since 2026-11-11',
   'owner-held': 'owner-held vault',
   other: 'another vault',
   'not-recorded': 'no vault on record',
@@ -493,7 +493,7 @@ function flowDetail(c: SeasonReport['milestone1']['checks']): string | undefined
   if (c.incomplete && c.count === 0) return undefined
   const linked = c.linked as { paid: number; refused: number }
   const payees = c.internalPayee
-    ? ` (${c.internalPayee} pay or name a payee that is ours: our own wallet, our own agent or the vault's own key; refused flows name ${plural(c.refusedPayees ?? 0, 'distinct payee', 'distinct payees')})`
+    ? ` (${c.internalPayee} pay or name a payee that is ours or retired: our own wallet, our own agent, the vault's own key, or an address A-Identity retired; refused flows name ${plural(c.refusedPayees ?? 0, 'distinct payee', 'distinct payees')})`
     : ''
   const rest = c.incomplete ? '' : `; ${c.unlinked ?? 0} internal checks with nothing linked; ${c.external} external checks count under M2`
   return `${linked.paid} paid, ${linked.refused} refused${payees}${rest}`

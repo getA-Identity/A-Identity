@@ -16,6 +16,7 @@
  * ARC_SIGNER_KEY; a clean `prepared` no-op without it.
  */
 import { nanopayOnce, ensureGatewayBalance, buyerAddress } from './nanopay.js'
+import { noSignerReason } from './chains/index.js'
 
 /** The demo service the agent pays (distinct from the buyer - Gateway rejects self-pay). */
 const SERVICE = '0x000000000000000000000000000000000000bEEF'
@@ -55,7 +56,7 @@ export async function runAgentRun(
   if (!buyer) {
     return {
       executed: false,
-      reason: 'No ARC_SIGNER_KEY set. With a funded key the agent runs autonomously: a burst of real gasless nanopayments, stopping itself at the budget you set, with a protocol fee routed to the treasury.',
+      reason: `${noSignerReason(env, 'ARC_SIGNER_KEY')} With a funded key the agent runs autonomously: a burst of real gasless nanopayments, stopping itself at the budget you set, with a protocol fee routed to the treasury.`,
     }
   }
 

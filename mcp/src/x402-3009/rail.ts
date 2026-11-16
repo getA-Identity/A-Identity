@@ -26,6 +26,7 @@ import {
   type SettlementToken,
 } from '../chains/index.js'
 import { createHash } from 'node:crypto'
+import { isRetired, retiredPayToRefusal, retiredPublic } from '../chains/retired.js'
 import { verifyAgent, reputationScore, riskCheck, agentPassport, type TxContext } from '../asp/tools.js'
 import { loadX402Settlements, X402_SETTLEMENTS_CAP, type X402SettlementRecord } from '../storage.js'
 import { provenDomainCached } from './domain.js'
@@ -190,7 +191,10 @@ export function railStatus(env: NodeJS.ProcessEnv = process.env, network?: strin
     return c && chain && c.caip2 === chain.caip2
   })
   const payToRaw = env.X402_3009_PAYTO?.trim() ?? ''
-  const payTo = /^0x[0-9a-fA-F]{40}$/.test(payToRaw) ? payToRaw.toLowerCase() : null
+  // A retired address (chains/retired.ts) is never a pay-to: someone else holds its key, so the rail
+  // fails closed as not configured and never names it.
+  const payToRetired = retiredPayToRefusal('X402_3009_PAYTO', payToRaw)
+  const payTo = !payToRetired && /^0x[0-9a-fA-F]{40}$/.test(payToRaw) ? payToRaw.toLowerCase() : null
   // The measured fee travels with the token in the registry, so it cannot drift from
   // the chain it was measured on.
   const measured = chain ? railToken(chain, env)?.settlementFeeUsd : undefined
@@ -211,10 +215,11 @@ export function railStatus(env: NodeJS.ProcessEnv = process.env, network?: strin
   const minValueUsd = num(env, 'X402_3009_MIN_VALUE_USD', Number((cheapest + settlementFeeUsd).toFixed(6)))
   const maxValueUsd = num(env, 'X402_3009_MAX_VALUE_USD', DEFAULTS.maxValueUsd)
   const publicSettle = env.X402_3009_PUBLIC_SETTLE === 'true'
+  // A retired address is dropped here too: settling to it would hand a buyer's money to whoever holds its key.
   const allowedPayTo = (env.X402_3009_ALLOWED_PAYTO ?? '')
     .split(',')
     .map((s) => s.trim().toLowerCase())
-    .filter((s) => /^0x[0-9a-fA-F]{40}$/.test(s))
+    .filter((s) => /^0x[0-9a-fA-F]{40}$/.test(s) && !isRetired(s))
   const base = { network: requested, chain: chain?.id ?? null, token: null, payTo, settlementFeeUsd, minValueUsd, maxValueUsd, publicSettle, allowedPayTo }
 
   if (!requested) {
@@ -235,6 +240,9 @@ export function railStatus(env: NodeJS.ProcessEnv = process.env, network?: strin
       configured: false,
       reason: `${chain.id} declares no EIP-3009 settlement token, so it cannot host a signed-transfer rail`,
     }
+  }
+  if (payToRetired) {
+    return { ...base, chain: chain.id, network: chain.caip2, token, configured: false, reason: `x402-3009 rail not configured: ${payToRetired}` }
   }
   if (!payTo) {
     return { ...base, chain: chain.id, network: chain.caip2, token, configured: false, reason: 'x402-3009 rail not configured: set X402_3009_PAYTO (0x receiving address)' }
@@ -742,6 +750,8 @@ export type RailProof = {
   externalSettlements: number
   externalUsd: number
   internalPayers: string[]
+  /** Retired, compromised addresses (chains/retired.ts): not ours, and a row they paid counts as internal, never external. */
+  retiredPayers: { address: string; label: string; retiredOn: string }[]
   reverted: number
   ambiguous: number
   /** Signed and never taken by any node, so it moved nothing and cost no gas. */
@@ -778,12 +788,14 @@ const KNOWN_INTERNAL_PAYERS = [
 ]
 
 /** Buyer wallets that are ours. Labeled, never filtered out: hiding our own traffic would
- *  overstate external demand, and removing it would understate that the rail works. */
+ *  overstate external demand, and removing it would understate that the rail works. An env
+ *  entry that names a retired address (chains/retired.ts) is not ours and is dropped; the
+ *  proof still counts what such an address paid as internal, never external. */
 export function internalPayers(env: NodeJS.ProcessEnv = process.env): string[] {
   const extra = (env.X402_3009_INTERNAL_PAYERS ?? '')
     .split(',')
     .map((s) => s.trim().toLowerCase())
-    .filter((s) => /^0x[0-9a-fA-F]{40}$/.test(s))
+    .filter((s) => /^0x[0-9a-fA-F]{40}$/.test(s) && !isRetired(s))
   return [...new Set([...KNOWN_INTERNAL_PAYERS, ...extra])]
 }
 
@@ -830,7 +842,8 @@ export async function railProof(
     const n = (byNetwork[r.network] ??= { count: 0, usd: 0, assetSymbol: r.assetSymbol, internal: 0, internalUsd: 0 })
     n.count += 1
     n.usd = Number((n.usd + r.amountUsd).toFixed(6))
-    if (mine.has(r.payer.toLowerCase())) {
+    // A retired payer is not ours, and still never external demand.
+    if (mine.has(r.payer.toLowerCase()) || isRetired(r.payer)) {
       internalSettlements += 1
       internalUsd += r.amountUsd
       n.internal += 1
@@ -852,6 +865,7 @@ export async function railProof(
     externalSettlements: settled.length - internalSettlements,
     externalUsd: Number((totalUsd - internalUsd).toFixed(6)),
     internalPayers: [...mine],
+    retiredPayers: retiredPublic(),
     reverted: rows.filter((r) => r.outcome === 'reverted').length,
     ambiguous: rows.filter((r) => r.outcome === 'ambiguous').length,
     dropped: rows.filter((r) => r.outcome === 'dropped').length,
@@ -869,7 +883,7 @@ export async function railProof(
     byTool,
     byNetwork,
     recent: rows.slice(-50).reverse().map(publicSettlementRow),
-    note: `Real settlements only, each recorded from an on-chain receipt plus a matching Transfer log. A broadcast with no receipt inside the window is counted as ambiguous until a later read across every RPC finds one, and the row then carries reconciledAt. A signed transaction no node ever took is counted as dropped: it moved nothing and cost no gas. Payments from our own buyer wallets are labeled internal, never hidden. Totals cover the retained window (last ${X402_SETTLEMENTS_CAP}).`,
+    note: `Real settlements only, each recorded from an on-chain receipt plus a matching Transfer log. A broadcast with no receipt inside the window is counted as ambiguous until a later read across every RPC finds one, and the row then carries reconciledAt. A signed transaction no node ever took is counted as dropped: it moved nothing and cost no gas. Payments from our own buyer wallets are labeled internal, never hidden. A payment from an address under retiredPayers is counted as internal too, never as external demand: A-Identity retired those addresses because someone else holds their keys, and they are not ours. Older rows paid to such an address are history, kept as they were. Totals cover the retained window (last ${X402_SETTLEMENTS_CAP}).`,
   }
 }
 

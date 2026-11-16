@@ -14,6 +14,8 @@
  * SDK: @circle-fin/bridge-kit + @circle-fin/adapter-viem-v2.
  */
 
+import { noSignerReason, usableSignerKey } from './chains/evm/client.js'
+
 /** A single bridge step surfaced from Bridge Kit's lifecycle events. */
 type BridgeStep = { name: string; state: string; txHash?: string; explorerUrl?: string }
 
@@ -30,12 +32,13 @@ export async function runCctpDemo(
   | { executed: true; amountUsd: number; route: string; state: string; steps: BridgeStep[]; reason?: string }
 > {
   const route = 'Arc Testnet -> Base Sepolia'
-  const key = env.ARC_SIGNER_KEY
+  // A key whose address is retired (chains/retired.ts) is no key: this server never signs with it.
+  const key = usableSignerKey(env.ARC_SIGNER_KEY, 'ARC_SIGNER_KEY')
   if (!key) {
     return {
       executed: false,
       route,
-      reason: 'No ARC_SIGNER_KEY set. With a funded key this bridges native USDC Arc -> Base Sepolia via CCTP burn-and-mint (approve -> burn -> attestation -> mint).',
+      reason: `${noSignerReason(env, 'ARC_SIGNER_KEY')} With a funded key this bridges native USDC Arc -> Base Sepolia via CCTP burn-and-mint (approve -> burn -> attestation -> mint).`,
     }
   }
   // Leaving Arc, the amount must clear the CCTPv2 max fee - default to 1.0 USDC.

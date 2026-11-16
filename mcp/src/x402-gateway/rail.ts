@@ -20,6 +20,7 @@
  */
 import { getChain, getChainById, tokenUnits, fromTokenUnits, type ChainDescriptor } from '../chains/index.js'
 import { txUrl } from '../chains/explorer.js'
+import { isRetired, retiredPayToRefusal, retiredPublic } from '../chains/retired.js'
 import { PRICES } from '../asp/payment.js'
 import {
   verifyAgent,
@@ -148,7 +149,10 @@ export function railStatus(env: NodeJS.ProcessEnv = process.env, network?: strin
       return c && chain && c.caip2 === chain.caip2
     })
   const payToRaw = env.X402_GATEWAY_PAYTO?.trim() ?? ''
-  const payTo = /^0x[0-9a-fA-F]{40}$/.test(payToRaw) ? payToRaw.toLowerCase() : null
+  // A retired address (chains/retired.ts) is never a pay-to: someone else holds its key, so the rail
+  // fails closed as not configured and never names it.
+  const payToRetired = retiredPayToRefusal('X402_GATEWAY_PAYTO', payToRaw)
+  const payTo = !payToRetired && /^0x[0-9a-fA-F]{40}$/.test(payToRaw) ? payToRaw.toLowerCase() : null
   const base: GatewayRailStatus = {
     configured: false,
     network: requested,
@@ -166,6 +170,7 @@ export function railStatus(env: NodeJS.ProcessEnv = process.env, network?: strin
   if (!chain) return { ...base, reason: `'${requested}' is not a chain in the registry` }
   if (!chain.gateway) return { ...base, network: chain.caip2, reason: `${chain.id} declares no Circle Gateway in the registry, so it cannot host the batched rail` }
   if (!chain.contracts.usdc) return { ...base, network: chain.caip2, reason: `${chain.id} declares no canonical USDC; Gateway settles USDC only` }
+  if (payToRetired) return { ...base, network: chain.caip2, reason: `x402-gateway rail not configured: ${payToRetired}` }
   if (!payTo) return { ...base, network: chain.caip2, reason: 'x402-gateway rail not configured: set X402_GATEWAY_PAYTO (0x receiving address)' }
   return { ...base, configured: true, network: chain.caip2 }
 }
@@ -570,12 +575,14 @@ export async function railServeTool(
 /**
  * OUR OWN buyer wallets, hardcoded on purpose so the proof page can never report our
  * own test traffic as external demand (the same decision the other rails record).
- * X402_GATEWAY_INTERNAL_PAYERS adds more without a deploy. The first entry is the owner
- * wallet that paid the first testnet call through this rail on 2026-09-10; the second is
- * the buyer wallet that paid the first mainnet call.
+ * X402_GATEWAY_INTERNAL_PAYERS adds more without a deploy. The first entry is the buyer
+ * wallet that paid the first mainnet call.
+ *
+ * The first testnet call through this rail (2026-09-10) was paid by 0xd305...ed36, which is
+ * now retired and compromised: chains/retired.ts keeps its payments out of the external count
+ * without calling it ours, and an env entry that names a retired address is dropped.
  */
 const KNOWN_INTERNAL_PAYERS = [
-  '0xd305607510e0db2c95807173c7a05bea53c1ed36',
   // The x402 buyer wallet (X402_3009_BUYER_KEY), which paid the first MAINNET call through
   // this rail on Arc Mainnet on 2026-09-16 (transfer 5958b158). Without it a local proof
   // counted that self-funded call as external demand, which is the exact error this list
@@ -590,11 +597,12 @@ const KNOWN_INTERNAL_PAYERS = [
   '0x86dc9716eb00164183d43f8e1273888c7eba3cb4',
 ]
 
+/** Our own buyer wallets only: an env entry that names a retired address is not ours, and is dropped. */
 export function internalPayers(env: NodeJS.ProcessEnv = process.env): string[] {
   const extra = (env.X402_GATEWAY_INTERNAL_PAYERS ?? '')
     .split(',')
     .map((s) => s.trim().toLowerCase())
-    .filter((s) => /^0x[0-9a-fA-F]{40}$/.test(s))
+    .filter((s) => /^0x[0-9a-fA-F]{40}$/.test(s) && !isRetired(s))
   return [...new Set([...KNOWN_INTERNAL_PAYERS, ...extra])]
 }
 
@@ -615,6 +623,8 @@ export type GatewayRailProof = {
   externalSettlements: number
   externalUsd: number
   internalPayers: string[]
+  /** Retired, compromised addresses (chains/retired.ts): not ours, and a row they paid counts as internal, never external. */
+  retiredPayers: { address: string; label: string; retiredOn: string }[]
   failed: number
   unconfirmed: number
   byTool: Record<string, { count: number; usd: number }>
@@ -644,7 +654,8 @@ export async function railProof(status: GatewayRailStatus, deps: RailDeps = {}):
     const n = (byNetwork[r.network] ??= { count: 0, usd: 0, assetSymbol: r.assetSymbol, internal: 0, internalUsd: 0 })
     n.count += 1
     n.usd = Number((n.usd + r.amountUsd).toFixed(6))
-    if (mine.has(r.payer.toLowerCase())) {
+    // A retired payer is not ours, and still never external demand.
+    if (mine.has(r.payer.toLowerCase()) || isRetired(r.payer)) {
       internalSettlements += 1
       internalUsd += r.amountUsd
       n.internal += 1
@@ -666,12 +677,13 @@ export async function railProof(status: GatewayRailStatus, deps: RailDeps = {}):
     externalSettlements: settled.length - internalSettlements,
     externalUsd: Number((totalUsd - internalUsd).toFixed(6)),
     internalPayers: [...mine],
+    retiredPayers: retiredPublic(),
     failed: rows.filter((r) => r.outcome === 'failed').length,
     unconfirmed: rows.filter((r) => r.outcome === 'unconfirmed').length,
     byTool,
     byNetwork,
     recent: rows.slice(-50).reverse(),
-    note: `Each row was read back from Circle Gateway's transfers API for the authorization's nonce before it was recorded; "credited" means Gateway holds it for us and the on-chain batch has not landed yet, "completed" means it has and the batch hash is attached. Payments from our own buyer wallets are labeled internal, never hidden. Sub-cent infrastructure, not revenue. Totals cover the retained window (last ${GATEWAY_SETTLEMENTS_CAP}).`,
+    note: `Each row was read back from Circle Gateway's transfers API for the authorization's nonce before it was recorded; "credited" means Gateway holds it for us and the on-chain batch has not landed yet, "completed" means it has and the batch hash is attached. Payments from our own buyer wallets are labeled internal, never hidden. A payment from an address under retiredPayers is counted as internal too, never as external demand: A-Identity retired those addresses because someone else holds their keys, and they are not ours. Older rows paid to such an address are history, kept as they were. Sub-cent infrastructure, not revenue. Totals cover the retained window (last ${GATEWAY_SETTLEMENTS_CAP}).`,
   }
 }
 

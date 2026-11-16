@@ -23,7 +23,7 @@ import {
   type Hex,
 } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { ARC_CHAIN } from './chains/index.js'
+import { ARC_CHAIN, noSignerReason, usableSignerKey } from './chains/index.js'
 import { CONTRACTS, ARC_RPC, ARC_EXPLORER } from './arc-contracts.js'
 import { MerkleAirdropAbi, MerkleAirdropBytecode } from './contracts/MerkleAirdrop.js'
 
@@ -110,7 +110,7 @@ export function buildAirdrop(entries: AirdropEntry[]): BuiltAirdrop {
 
 // ── on-chain (env-gated behind ARC_SIGNER_KEY) ────────────────────────────────────
 
-const NO_KEY = 'No ARC_SIGNER_KEY - prepared only (nothing broadcast). Set the key to deploy/claim.'
+const noKey = (env: NodeJS.ProcessEnv): string => `${noSignerReason(env, 'ARC_SIGNER_KEY')} Prepared only (nothing broadcast): set a usable key to deploy or claim.`
 
 const arcChain = defineChain({
   id: ARC_CHAIN.evmChainId as number,
@@ -120,7 +120,8 @@ const arcChain = defineChain({
 })
 
 function signerFor(env: NodeJS.ProcessEnv) {
-  const key = env.ARC_SIGNER_KEY
+  // A key whose address is retired (chains/retired.ts) is no key: this server never signs with it.
+  const key = usableSignerKey(env.ARC_SIGNER_KEY, 'ARC_SIGNER_KEY')
   if (!key) return null
   const account = privateKeyToAccount((key.startsWith('0x') ? key : `0x${key}`) as Hex)
   return { account, client: createWalletClient({ account, chain: arcChain, transport: http(ARC_RPC) }) }
@@ -162,7 +163,7 @@ export async function deployAirdrop(
     constructorArgs: [CONTRACTS.usdc, built.root, owner, deadline.toString()] as const,
   }
   const signer = signerFor(env)
-  if (!signer) return { executed: false as const, reason: NO_KEY, ...prepared }
+  if (!signer) return { executed: false as const, reason: noKey(env), ...prepared }
   const hash = await signer.client.deployContract({
     abi: MerkleAirdropAbi,
     bytecode: MerkleAirdropBytecode as Hex,
@@ -188,7 +189,7 @@ export async function claimAirdrop(
   if (!r) return { executed: false as const, error: `No recipient at index ${index}` }
   const claimArgs = { index: r.index, account: r.account, amount: r.amount.toString(), proof: r.proof }
   const signer = signerFor(env)
-  if (!signer) return { executed: false as const, reason: NO_KEY, airdrop, claimArgs }
+  if (!signer) return { executed: false as const, reason: noKey(env), airdrop, claimArgs }
   const hash = await signer.client.writeContract({
     address: airdrop,
     abi: MerkleAirdropAbi,

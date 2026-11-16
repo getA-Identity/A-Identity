@@ -169,12 +169,13 @@ export function renderProofHtml(): string {
     <div><b>${p.engineering.tests}</b><span>unit tests</span></div>
   </div>
 
-  <h2>Showcase agent - real, not a mock</h2>
+  <h2>Example agent - real, not a mock, and not ours</h2>
   <div class="panel"><div class="pad showcase">
     <div>
       <div style="font-size:12px;color:var(--faint);text-transform:uppercase;letter-spacing:0.05em;">${esc(p.showcaseAgent.name)} · ERC-8004 ${esc(p.showcaseAgent.erc8004TokenId)}</div>
       <div class="score">${scoreNum || esc(repStr)}<span style="font-size:15px;color:var(--faint);"> / 1000</span></div>
       ${attest ? `<div style="font-size:12px;margin-top:6px;"><a href="${esc(attest.txUrl)}" target="_blank" rel="noopener">Anchored on-chain · ERC-8004 ReputationRegistry <code>${esc(short(attest.tx))}</code> ↗</a></div>` : ''}
+      <div style="font-size:12px;margin-top:6px;color:var(--faint);max-width:44ch;">${esc(String(p.showcaseAgent.note))}</div>
     </div>
     <div class="spectrum">
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">

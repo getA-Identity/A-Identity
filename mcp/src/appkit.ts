@@ -18,6 +18,7 @@
  */
 
 import { ARC_CHAIN as ARC } from './chains/registry.js'
+import { noSignerReason, usableSignerKey } from './chains/evm/client.js'
 
 /**
  * App Kit's own name for Arc Testnet. Everything numeric (the EVM chain id, the explorer
@@ -139,7 +140,8 @@ export async function runArcSwapDemo(
 }> {
   const route = 'USDC -> EURC on Arc Testnet'
   const amountUsd = Math.max(0.01, input.amountUsd ?? 1)
-  const key = env.ARC_SIGNER_KEY
+  // A key whose address is retired (chains/retired.ts) is no key: this server never signs with it.
+  const key = usableSignerKey(env.ARC_SIGNER_KEY, 'ARC_SIGNER_KEY')
   if (!key) {
     return {
       executed: false,
@@ -148,7 +150,7 @@ export async function runArcSwapDemo(
       tokenIn: 'USDC',
       tokenOut: 'EURC',
       reason:
-        'No ARC_SIGNER_KEY set. With a funded key this swaps USDC for EURC on Arc Testnet through Circle App Kit, the only testnet where App Kit supports swap.',
+        `${noSignerReason(env, 'ARC_SIGNER_KEY')} With a funded key this swaps USDC for EURC on Arc Testnet through Circle App Kit, the only testnet where App Kit supports swap.`,
     }
   }
 

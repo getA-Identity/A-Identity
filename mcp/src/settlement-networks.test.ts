@@ -14,6 +14,7 @@ import {
   type SettlementsByNetworkDeps,
 } from './settlement-networks.js'
 import type { GatewaySettlementRecord, X402SettlementRecord } from './storage.js'
+import { RETIRED_COMPROMISED, retiredAddresses } from './chains/retired.js'
 import { internalPayers as gatewayInternalPayers } from './x402-gateway/rail.js'
 import { internalPayers as facilitatorInternalPayers } from './x402-3009/rail.js'
 
@@ -268,6 +269,20 @@ test("a payer is internal on either rail's list, in any case, whichever rail it 
     gateway: split([1, 0.005], [1, 0.005]),
     facilitator: split([1, 0.0015], [1, 0.0015]),
   })
+})
+
+test('a retired payer is not ours and is never external: the split is the same whether the lists name it or not', async () => {
+  const rows = {
+    gateway: [gw({ payer: RETIRED_COMPROMISED[0].checksum }), gw({ payer: shouty(RETIRED_COMPROMISED[1].address) }), gw({ payer: EXT_A })],
+    facilitator: [fac({ payer: RETIRED_COMPROMISED[0].address }), fac({ payer: EXT_B })],
+  }
+  // Before: the lists named the retired addresses as ours. After: they do not.
+  const before = await settlementsByNetwork(deps({ ...rows, internalPayers: { gateway: [lower(OURS_GATEWAY), ...retiredAddresses()], facilitator: [lower(OURS_FACILITATOR), ...retiredAddresses()] } }))
+  const after = await settlementsByNetwork(deps(rows))
+  assert.deepEqual(after.networks, before.networks, 'no published number moves')
+  assert.deepEqual(after.totals, before.totals)
+  assert.deepEqual(after.totals, { gateway: split([2, 0.01], [1, 0.005]), facilitator: split([1, 0.0015], [1, 0.0015]) })
+  assert.match(after.basis, /or is an address A-Identity retired because someone else holds its key \(not ours, and never external demand\)/)
 })
 
 test('Arc Mainnet leads, then the other mainnets, then the testnets, in registry order', async () => {

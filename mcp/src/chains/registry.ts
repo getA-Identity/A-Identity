@@ -716,7 +716,7 @@ export const CHAINS: ChainDescriptor[] = [
     name: 'Base',
     shortName: 'Base',
     color: '#0052FF',
-    role: 'Coinbase-ecosystem EVM rail: canonical ERC-8004 registries live, our agent #73232, and x402 selling through Circle Gateway nanopayments; our own EIP-3009 facilitator has been paused here since 2026-11-11.',
+    role: 'Coinbase-ecosystem EVM rail: canonical ERC-8004 registries live, agent #73232 registered by A-Identity (still held by a retired address, so not ours any more), and x402 selling through Circle Gateway nanopayments; our own EIP-3009 facilitator has been paused here since 2026-11-11.',
     ecosystem: 'evm',
     testnet: false,
     status: 'live',
@@ -777,8 +777,9 @@ export const CHAINS: ChainDescriptor[] = [
       erc8004Native: true,
       note:
         'Canonical ERC-8004 identity + reputation registries are live here, deployed by ' +
-        'their authors; agent #73232 is ours (minted 2026-08-27 UTC, tx 0xb428bf8e, and ' +
-        'ownerOf/tokenURI read back live). TRAP BEFORE PASTING ADDRESSES: Arc\'s three registry ' +
+        'their authors; agent #73232 was registered by A-Identity (minted 2026-08-27 UTC, tx 0xb428bf8e) ' +
+        'and is still held by an address A-Identity retired on 2026-11-11 because someone else holds its key, ' +
+        'so it is not ours any more (ownerOf/tokenURI read back live). TRAP BEFORE PASTING ADDRESSES: Arc\'s three registry ' +
         'addresses all have code on Base mainnet, 130 bytes each, which is minimal-proxy ' +
         'sized and delegates to a NON-canonical implementation. Same address, different ' +
         'contract. An eth_getCode check therefore answers yes here and means nothing; the ' +
@@ -876,7 +877,7 @@ export const CHAINS: ChainDescriptor[] = [
     // Robinhood's brand green is #00C805, which is too light to read as chip text on its own
     // tint in a light theme. This is a darkened variant of it, not a different brand.
     color: '#0F9D30',
-    role: 'Robinhood Chain rehearsal rail: the canonical ERC-8004 registry set is live here, and agent #0 is ours on testnet as it is on mainnet.',
+    role: 'Robinhood Chain rehearsal rail: the canonical ERC-8004 registry set is live here, and agent #0 here was registered by A-Identity but is still held by a retired address, so unlike agent #0 on mainnet it is not ours any more.',
     ecosystem: 'evm',
     testnet: true,
     status: 'beta',
@@ -933,7 +934,7 @@ export const CHAINS: ChainDescriptor[] = [
     name: 'Arbitrum One',
     shortName: 'Arbitrum',
     color: '#28A0F0',
-    role: 'DeFi gateway: large protocol ecosystem, our ERC-8004 agent #1259, and x402 in native Circle USDC through our own EIP-3009 facilitator, paused here since 2026-11-11.',
+    role: 'DeFi gateway: large protocol ecosystem, ERC-8004 agent #1259 registered by A-Identity (still held by a retired address, so not ours any more), and x402 in native Circle USDC through our own EIP-3009 facilitator, paused here since 2026-11-11.',
     ecosystem: 'evm',
     testnet: false,
     // LIVE since 2026-08-13, and it cleared the same bar as the others rather than a
@@ -1002,7 +1003,7 @@ export const CHAINS: ChainDescriptor[] = [
       // Verified 2026-08-13 with eth_getCode on three independent RPCs: the canonical
       // identity and reputation registries ARE already live here, deployed by the ERC-8004
       // authors. What is missing is ours, not theirs, so the note says which.
-      note: 'Canonical ERC-8004 identity + reputation registries are live here (deployed by their authors, not by us); agent #1259 is ours. The family\'s ValidationRegistry is deployed here too (read live 2026-10-11) but not wired, so KYA is not anchored on-chain here.',
+      note: 'Canonical ERC-8004 identity + reputation registries are live here (deployed by their authors, not by us); agent #1259 was registered by A-Identity and is still held by an address A-Identity retired on 2026-11-11 because someone else holds its key, so it is not ours any more. The family\'s ValidationRegistry is deployed here too (read live 2026-10-11) but not wired, so KYA is not anchored on-chain here.',
     },
     payment: {
       x402: true,

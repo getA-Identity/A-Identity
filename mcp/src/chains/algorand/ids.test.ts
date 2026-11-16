@@ -29,7 +29,7 @@ test('the wrong lengths and alphabets are rejected before any decoding', () => {
 })
 
 test('an EVM address and a Stellar StrKey are both rejected', () => {
-  assert.equal(isAlgorandAddress('0xd305607510E0Db2c95807173c7A05BEA53c1ed36'), false)
+  assert.equal(isAlgorandAddress('0x' + 'ab'.repeat(20)), false)
   assert.equal(isAlgorandAddress('GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN'), false)
 })
 

@@ -12,6 +12,7 @@
  * than saying so, and inventing a read would be dishonest.
  */
 import { CHAINS, getChainById } from './registry.js'
+import { isRetired } from './retired.js'
 import type { ChainDescriptor } from './types.js'
 import { evmPublicClient } from './evm/client.js'
 import { nearStatus, nearViewAccount, type NearReadDeps } from './near/client.js'
@@ -46,6 +47,13 @@ export type LiveCheck =
       tokenUri?: string
       /** Does the chain still say what the ledger says? */
       matchesLedger?: boolean
+      /**
+       * Present when the entry records a former agent (provenance.ts FormerAgent): who holds it now,
+       * re-read. Never a claim that it is ours: heldByRetired says whether a retired address still
+       * holds it, and matchesLedger whether that is still the address the ledger recorded. A read
+       * that failed leaves the rest of the check standing and says why in reason.
+       */
+      formerAgent?: { owner: string | null; tokenUri: string | null; heldByRetired: boolean | null; matchesLedger: boolean | null; reason?: string }
       /** `archived` marks a contract whose instance entry came back with a lapsed TTL. */
       contracts: { name: string; address: string; deployed: boolean; archived?: boolean }[]
     }
@@ -219,6 +227,11 @@ function evmVerifyLines(chains: ChainDescriptor[]): string[] {
   if (chains.some((c) => c.contracts.identityRegistry && provenanceFor(c.id)?.agent)) {
     lines.push(
       'Every claim about an agent is re-read live when you load this page: ownerOf and tokenURI on the identity registry, at the current block. If ownerOf stopped matching what we recorded, this page would say so.',
+    )
+  }
+  if (chains.some((c) => c.contracts.identityRegistry && provenanceFor(c.id)?.formerAgent)) {
+    lines.push(
+      'An agent A-Identity registered that a retired address still holds is listed as a former agent, never as ours: someone else holds that address\'s key. Who holds it is re-read live too, and we do not vouch for it.',
     )
   }
 
@@ -567,15 +580,28 @@ async function liveCheck(chain: ChainDescriptor, entry: ChainProvenance, env: No
         return { name: c.name, address: c.address, deployed: Boolean(code && code !== '0x') }
       }),
     )
-    if (!entry.agent || !chain.contracts.identityRegistry) {
+    if ((!entry.agent && !entry.formerAgent) || !chain.contracts.identityRegistry) {
       return { reachable: true, checkedAt, blockNumber: blockNumber.toString(), contracts }
     }
     const registry = chain.contracts.identityRegistry as `0x${string}`
-    const tokenId = BigInt(entry.agent.tokenId)
-    const [owner, tokenUri] = await Promise.all([
-      client.readContract({ address: registry, abi: IDENTITY_ABI, functionName: 'ownerOf', args: [tokenId] }) as Promise<string>,
-      client.readContract({ address: registry, abi: IDENTITY_ABI, functionName: 'tokenURI', args: [tokenId] }) as Promise<string>,
-    ])
+    const readAgent = (tokenId: string) =>
+      Promise.all([
+        client.readContract({ address: registry, abi: IDENTITY_ABI, functionName: 'ownerOf', args: [BigInt(tokenId)] }) as Promise<string>,
+        client.readContract({ address: registry, abi: IDENTITY_ABI, functionName: 'tokenURI', args: [BigInt(tokenId)] }) as Promise<string>,
+      ])
+    // A former agent is re-read on its own: it may have moved or been burned since, and that must not
+    // take down the rest of the check.
+    const former = entry.formerAgent
+    const formerAgent: NonNullable<Extract<LiveCheck, { reachable: true }>['formerAgent']> | undefined = former
+      ? await readAgent(former.tokenId).then(
+          ([owner, tokenUri]) => ({ owner, tokenUri, heldByRetired: isRetired(owner), matchesLedger: owner.toLowerCase() === former.heldBy.toLowerCase() }),
+          (e: unknown) => ({ owner: null, tokenUri: null, heldByRetired: null, matchesLedger: null, reason: e instanceof Error ? e.message : String(e) }),
+        )
+      : undefined
+    if (!entry.agent) {
+      return { reachable: true, checkedAt, blockNumber: blockNumber.toString(), ...(formerAgent ? { formerAgent } : {}), contracts }
+    }
+    const [owner, tokenUri] = await readAgent(entry.agent.tokenId)
     return {
       reachable: true,
       checkedAt,
@@ -583,6 +609,7 @@ async function liveCheck(chain: ChainDescriptor, entry: ChainProvenance, env: No
       owner,
       tokenUri,
       matchesLedger: owner.toLowerCase() === entry.agent.owner.toLowerCase(),
+      ...(formerAgent ? { formerAgent } : {}),
       contracts,
     }
   } catch (e) {

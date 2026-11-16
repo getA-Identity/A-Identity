@@ -12,7 +12,6 @@ import { SectionShell, SectionIntro, reveal, revealAt } from '../components/ui/s
 import { apiFetch } from '../lib/api'
 import { CHAINS } from '../lib/chains'
 import { usePageMeta } from '../lib/head'
-import { BACKEND_UNREACHABLE } from '../lib/mcpBase'
 import { keepLastGoodSplit, readNetworkSplit, type NetworkSplit } from '../lib/settlement-networks'
 import {
   SETTLEMENT_LOGS,
@@ -340,7 +339,12 @@ export default function ProofIndex() {
               {...reveal}
               className="mt-10 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-card px-5 py-4"
             >
-              <p className="text-sm text-foreground/60">{BACKEND_UNREACHABLE}</p>
+              {/* What is true at any read, the prerendered snapshot included (made with no backend to read):
+                  the index loads live and has not loaded yet. Nothing about the backend being down. */}
+              <p className="text-sm text-foreground/60">
+                The rail index on this page loads live from GET /api/proof/rails and the settlement logs, and it has not
+                loaded yet. Give it a few seconds, or use the button to try again.
+              </p>
               <button
                 type="button"
                 onClick={load}

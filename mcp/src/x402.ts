@@ -11,6 +11,7 @@
 import { randomBytes } from 'node:crypto'
 import { CONTRACTS, ARC_RPC, ARC_EXPLORER } from './arc-contracts.js'
 import { ARC_CHAIN } from './chains/index.js'
+import { isRetired, retiredPayToRefusal } from './chains/retired.js'
 import { loadSpentPayments, persistSpentPayment } from './storage.js'
 
 /** Price per call: 0.001 USDC (6 decimals). A true sub-cent nanopayment. */
@@ -136,13 +137,29 @@ async function publicClient() {
   return createPublicClient({ transport: http(ARC_RPC, { timeout: 8000, retryCount: 1 }) })
 }
 
-/** The seller's receiving address: the configured payTo, else the signer address. */
+/**
+ * The seller's receiving address: the configured payTo, else the signer address. Null, which the
+ * routes answer as not configured (501), when neither is set, and when the one in use is an address
+ * A-Identity retired as compromised (chains/retired.ts): nothing is ever paid to one. A retired
+ * X402_PAY_TO does not fall back to the signer: the receiving address is an explicit decision.
+ */
 export async function x402PayTo(env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
-  if (env.X402_PAY_TO && /^0x[0-9a-fA-F]{40}$/.test(env.X402_PAY_TO)) return env.X402_PAY_TO.toLowerCase()
+  if (env.X402_PAY_TO && /^0x[0-9a-fA-F]{40}$/.test(env.X402_PAY_TO)) {
+    if (isRetired(env.X402_PAY_TO)) {
+      console.error(`[x402] not configured: ${retiredPayToRefusal('X402_PAY_TO', env.X402_PAY_TO)}`)
+      return null
+    }
+    return env.X402_PAY_TO.toLowerCase()
+  }
   const key = env.ARC_SIGNER_KEY
   if (!key) return null
   const { privateKeyToAccount } = await import('viem/accounts')
-  return privateKeyToAccount(key as `0x${string}`).address.toLowerCase()
+  const address = privateKeyToAccount(key as `0x${string}`).address.toLowerCase()
+  if (isRetired(address)) {
+    console.error('[x402] not configured: ARC_SIGNER_KEY derives an address A-Identity retired as compromised (chains/retired.ts), so it is no pay-to. Set X402_PAY_TO.')
+    return null
+  }
+  return address
 }
 
 /** The 402 body: what to pay, to whom, on which asset/network, and the single-use

@@ -33,8 +33,10 @@ can still DENY on its limits.
 ## Status, stated plainly
 
 - Arc Mainnet is **live** for us since the day it opened (2026-09-16): agent #0, a spend
-  vault that held real USDC until it was emptied and retired on 2026-11-11 (its owner key was
-  exposed, and the contract has no owner transfer), and x402 settled on both our EIP-3009
+  vault that held real USDC until it was emptied and retired on 2026-11-11 (its owner is the
+  former operating wallet, an address A-Identity retired that day because someone else holds
+  its key, so the vault is not ours any more, and the contract has no owner transfer), and
+  x402 settled on both our EIP-3009
   facilitator and Circle Gateway. The first payments were self-funded; a few checks have
   since been paid by wallets off our internal lists, labeled external (live split:
   https://a-identity.xyz/proof/arc).

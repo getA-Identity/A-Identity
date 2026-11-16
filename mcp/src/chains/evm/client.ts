@@ -11,6 +11,8 @@
  *
  * Behavior is identical to the original Arc wiring when handed the Arc descriptor.
  */
+import { privateKeyToAccount } from 'viem/accounts'
+import { retiredEntry, type RetiredAddress } from '../retired.js'
 import type { ChainDescriptor } from '../types.js'
 
 /**
@@ -42,9 +44,63 @@ export async function evmPublicClient(chain: ChainDescriptor, env: NodeJS.Proces
 }
 
 /**
+ * Why a key must not sign, or null when it may: it derives an address A-Identity retired as
+ * compromised (chains/retired.ts), whose key someone else holds. `name` is the env var that
+ * holds it, for the message; the key itself is never named, returned or kept. A value that is not
+ * a key is not this function's to judge, and answers null. `lookup` is the retired list; a test
+ * passes its own, because no test holds a retired key.
+ */
+export function retiredSignerRefusal(
+  key: string | undefined,
+  name = 'the signer key',
+  lookup: (address: string) => RetiredAddress | null = retiredEntry,
+): string | null {
+  const raw = key?.trim()
+  if (!raw) return null
+  const hex = (raw.startsWith('0x') ? raw : `0x${raw}`).toLowerCase()
+  if (!/^0x[0-9a-f]{64}$/.test(hex)) return null
+  let address: string
+  try {
+    address = privateKeyToAccount(hex as `0x${string}`).address
+  } catch {
+    return null
+  }
+  const r = lookup(address)
+  return r ? `${name} holds the key of ${r.label}, which A-Identity retired on ${r.retiredOn} because someone else holds that key, so this server never signs with it.` : null
+}
+
+/**
+ * The opening sentence of a no-op's reason when a path has no signer: the retired-key refusal when
+ * `name` holds a key whose address is retired (retiredSignerRefusal), so a key that is set and refused
+ * is never reported as not set, and `No ${name} set.` otherwise.
+ */
+export function noSignerReason(
+  env: NodeJS.ProcessEnv,
+  name: string,
+  lookup: (address: string) => RetiredAddress | null = retiredEntry,
+): string {
+  return retiredSignerRefusal(env[name], name, lookup) ?? `No ${name} set.`
+}
+
+/**
+ * The key a server signer may use, or undefined: a key whose address is retired is refused here
+ * (retiredSignerRefusal), logged by name, and every caller answers as it does with no key at all,
+ * a no-op that broadcasts nothing. For the paths that build their own account from an env key
+ * rather than through evmWalletClientFromKey.
+ */
+export function usableSignerKey(key: string | undefined, name: string, lookup: (address: string) => RetiredAddress | null = retiredEntry): string | undefined {
+  const refused = retiredSignerRefusal(key, name, lookup)
+  if (!refused) return key
+  console.error(`[chains] ${refused} Treating it as unset.`)
+  return undefined
+}
+
+/**
  * Build a wallet client from an EXPLICIT private key (used when the signer is not the
  * chain's default signer, e.g. a distinct reputation-validator wallet that, per ERC-8004,
- * must differ from the agent owner). Returns null when there is no usable key.
+ * must differ from the agent owner). Returns null when there is no usable key, and a key
+ * whose address is retired (retiredSignerRefusal) is no usable key: every caller then answers
+ * as it does with no key, a labeled no-op, and the reason is logged by name.
  *
  * A malformed key is treated as no key rather than as an exception, because that is what
  * the honesty rule requires of a missing credential: a clean, labeled no-op. It matters in
@@ -53,7 +109,12 @@ export async function evmPublicClient(chain: ChainDescriptor, env: NodeJS.Proces
  * viem at a user who cannot act on it. Anything still unusable after trimming is logged
  * loudly, because a silently absent signer is a configuration error nobody would find.
  */
-export async function evmWalletClientFromKey(chain: ChainDescriptor, key: string | undefined, env: NodeJS.ProcessEnv = process.env) {
+export async function evmWalletClientFromKey(
+  chain: ChainDescriptor,
+  key: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+  lookup: (address: string) => RetiredAddress | null = retiredEntry,
+) {
   const raw = key?.trim()
   if (!raw) return null
   const hex = (raw.startsWith('0x') ? raw : `0x${raw}`).toLowerCase()
@@ -63,9 +124,13 @@ export async function evmWalletClientFromKey(chain: ChainDescriptor, key: string
     )
     return null
   }
+  const refused = retiredSignerRefusal(hex, `the signer key for ${chain.id}`, lookup)
+  if (refused) {
+    console.error(`[chains] ${refused} Treating it as unset; writes on this chain will report no signer.`)
+    return null
+  }
   if (chain.evmChainId == null) throw new Error(`Chain ${chain.id} has no EVM chain id`)
   const { createWalletClient, defineChain } = await import('viem')
-  const { privateKeyToAccount } = await import('viem/accounts')
   const viemChain = defineChain({
     id: chain.evmChainId,
     name: chain.name,

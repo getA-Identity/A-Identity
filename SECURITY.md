@@ -39,9 +39,9 @@ single source of truth and a test fails the build if any other file disagrees:
 Our facilitators run a "the buyer signs, we broadcast and pay the gas" model. That means
 **every signer below that is set is a hot wallet**: it sits in the host environment, it is used
 without human interaction on each request, and on a mainnet it spends real money. Six of the
-mainnet rows and one testnet row are unset: four since 2026-11-11, and `XLAYER_SIGNER_KEY`,
-`CELO_SIGNER_KEY` and `RHCHAIN_TESTNET_SIGNER_KEY` confirmed removed by 2026-11-14 (see
-[The 2026-11-11 rotation](#the-2026-11-11-rotation)). The
+mainnet rows and one testnet row are unset: four since 2026-11-11, and the X Layer, Celo and
+Robinhood Chain Testnet signers confirmed removed by 2026-11-14 (see
+[The 2026-11-11 rotation](#the-2026-11-11-rotation), which names each variable). The
 previous version of this file listed exactly one of them and described it as test funds.
 
 No secret is committed to git. Runtime credentials live in the host env (Render) and, for
@@ -71,7 +71,8 @@ values, such as the WalletConnect project id.
 than by nature: a key set on it is a mainnet key the moment somebody sends it gas.
 `ARC_MAINNET_SIGNER_KEY` stopped being dormant on 2026-09-16; on Arc the gas is USDC itself,
 so funding the gas IS funding the key, and until 2026-11-11 it held the same operator key as Base,
-our operating wallet then, which left the server env that day (see
+the operating wallet then, which left the server env that day and which A-Identity has since
+retired because someone else holds its key (see
 [The 2026-11-11 rotation](#the-2026-11-11-rotation)). Stellar
 pubnet stopped being hypothetical on 2026-08-24, when burner keys were funded there, a
 contract was deployed and 1 USDC moved through it, and it stopped being a vault-only story
@@ -141,19 +142,46 @@ should be treated as exposed regardless of where it sits in this list.
 
 Recorded here because it is the case the guidance above exists for.
 
-- **Two addresses retired as exposed.** `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, our
-  operating wallet until 2026-11-11: someone else has also held its key since at least
-  2026-11-01 (an EIP-7702 sweeper delegation on Base and Arbitrum One, set by
-  `0xd9D6FE80E840c190dD44fcc21dE58AA5fFd4894B`). And `0xF43F43D8aee114a71B164e1f6214BC7625a5742D`,
-  the Celo pay-to and the owner of Celo agent #9759 until 2026-11-11, which came from the same
-  personal seed: one block after #9759 moved off it, someone else used its key to take its CELO.
-  Neither receives our payments any more. Do not pay or fund either.
+- **Two addresses retired as compromised; neither is A-Identity's.**
+  `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, the operating wallet until 2026-11-11, and
+  `0xF43F43D8aee114a71B164e1f6214BC7625a5742D`, the Celo pay-to and the owner of Celo agent #9759
+  until 2026-11-11, came from the same personal seed, and someone else holds their keys. Neither
+  receives anything of ours any more. Both are on the retired list,
+  [`mcp/src/chains/retired.ts`](mcp/src/chains/retired.ts), which only ever keeps protections in
+  place: a vault either one owns is refused and never counts, what either one pays never counts as
+  external usage, neither can be a pay-to (a rail configured with one fails closed as not
+  configured), and no server signer signs with a key that derives either. Do not pay or fund either.
+- **How they were taken, read on chain on 2026-11-14.**
+  - An EIP-7702 delegation to the sweeper `0x33bcd6304fc165ef0bb85bd5720bc677baae4ce7`, whose only
+    destination is `0xd9D6FE80E840c190dD44fcc21dE58AA5fFd4894B`, is set on `0xd305` on Base and
+    Arbitrum One and on `0xF43F` on Celo, by type-4 transactions that `0xd9D6...4894B` sent itself.
+    It is still set, and it forwards what reaches those addresses there.
+  - What it took, all of it to `0xd9D6...4894B`: 0.000205411756177579 ETH on Arbitrum One (tx
+    `0xafa4611a2b98fbaf8f1c53cdd55ad50774029cf22e810eb8890fd6f3e3ed504b`, 13:00:36 UTC on
+    2026-11-01), 0.000499628214249019 ETH on Base (tx
+    `0x4ddc0bd7ac976287c16d6b2d39f0395dbd44049ad35d9ac3823e98ea9cb75d28`, 13:01:41 UTC the same
+    day), 0.001 ETH sent to `0xd305` on Arbitrum One on 2026-11-10 and forwarded in the same
+    transaction (tx `0x3df4d8e83d491d4b8581692f5adc64788b0f5dccb975629864a1e8a9f8228f67`), and
+    16.9404493575 CELO from `0xF43F` on Celo (tx
+    `0x3ee846c8582dffb2bc91e41ec0c0cb8cc4ba5de184925e002a89487e13444f63`, 01:24:10 UTC on
+    2026-11-11, one block after agent #9759 moved off it). In total 0.001705039970426598 ETH and
+    16.9404493575 CELO. No USDC or other token was taken anywhere.
+  - `0xF43F` has been delegated on Ethereum since 2026-01-28 (tx
+    `0x513ae029b3bc70aff96ce6724eb428241c778470f3661466e756d33179f85964`), to an older sweeper of the
+    same family that pays `0xd4a92e6763aae819473a1730aff5d2263180f6e5`, and that delegation is still
+    set. So by January 2026 someone held that key, or a signature from it (the chain cannot tell
+    which), months before A-Identity used the address: the leak is to be scoped from January, not
+    from November.
+  - We were not singled out: the same sweeper operation has delegated at least 244 accounts on Celo
+    and 93 on Arbitrum One.
 - **Off the server.** The four mainnet chain signer variables in the table above that held `0xd305`
   (`RHCHAIN_SIGNER_KEY`, `ARB_SIGNER_KEY`, `BASE_SIGNER_KEY` and `ARC_MAINNET_SIGNER_KEY`) were
   removed from the server env on 2026-11-11. The other three were confirmed removed by
-  2026-11-14: `CELO_SIGNER_KEY`, whose committed address is the exposed `0xF43F`,
-  `RHCHAIN_TESTNET_SIGNER_KEY`, whose committed address is `0xd305`, and `XLAYER_SIGNER_KEY`.
-  No variable that holds either exposed key is set on the server.
+  2026-11-14: `CELO_SIGNER_KEY` (which held `0xF43F`), `RHCHAIN_TESTNET_SIGNER_KEY` (which held
+  `0xd305`) and `XLAYER_SIGNER_KEY`. No variable that holds either retired key is set on the
+  server, and the backend code refuses one anyway: a signer whose key derives a retired address builds no client
+  and signs nothing, with a labeled reason
+  ([`mcp/src/chains/evm/client.ts`](mcp/src/chains/evm/client.ts)).
 - **A new key, for gas only.** `X402_3009_SIGNER_KEY` is now
   `0x760342469785d06Dc23F8b491a53cA2ebbEaa849`: it broadcasts EIP-3009 settlements on Robinhood
   Chain and Arc Mainnet, pays their gas and receives nothing, and the rail stays paused on Base
@@ -164,15 +192,26 @@ Recorded here because it is the case the guidance above exists for.
 - **The rule from here.** A server key is random, derived from no seed, made for one role and
   never imported into a wallet app. Both retired addresses came from one personal seed, and
   `0xd305` held several roles at once: signer, receiver and vault owner.
-- **What `0xd305` still owns.** The three launch-day AgentSpendPolicy vaults, which have no owner
-  transfer and so are retired (see the operator custody note in [ARCHITECTURE.md](ARCHITECTURE.md)),
-  Arbitrum One agent #1259, Base agent #73232, Arc testnet agent #849980, Robinhood Chain testnet
-  agent #0 and the platform's Arc testnet anchors. Arc Mainnet #0 and Robinhood Chain #0 moved from it to the founder's wallet,
-  and Celo #9759 moved there from `0xF43F`. Past receipts and settlements stay attributed to the
-  address they were paid to.
+- **Never copy an address from transaction history.** Lookalike addresses made to resemble ours
+  sit in the histories (address poisoning), among them `0xcb88744f438b1d8f7cbafeff4eecb4a18c171bdf`
+  on Arc and `0xcb88e3b2095dc7dcc67fde04b064e25633eb1bdf` on Robinhood Chain, both imitating the
+  founder's wallet. Paste an address from this file or from the chain registry, never from an
+  explorer's list of past transactions.
+- **What `0xd305` still holds that A-Identity deployed or registered (none of it ours any more).**
+  The three launch-day AgentSpendPolicy vaults, which have no owner transfer and so are retired
+  (see the operator custody note in [ARCHITECTURE.md](ARCHITECTURE.md)), Arbitrum One agent
+  #1259, Base agent #73232, Arc testnet agent #849980, Robinhood Chain testnet agent #0 and the
+  platform's Arc testnet anchors: on the Arc testnet registry it holds 61 tokens in all. The agent
+  wallet (`getAgentWallet`) of #1259, #73232, #849980 and Robinhood Chain testnet #0 is `0xd305`
+  itself, so anything paid to those agents' wallets goes to it. The Arbitrum One vault still held
+  0.01 USDC when read on 2026-11-14, and its owner, that retired address, can withdraw it at any
+  time through `withdraw()` or `ownerPay()`, with no expiry; the agent key could pay it out only
+  until its session key lapsed at 12:42:37 UTC on 2026-11-15. Arc Mainnet #0 and Robinhood Chain
+  #0 moved from it to the founder's wallet, and Celo #9759 moved there from `0xF43F`. Past receipts
+  and settlements stay attributed to the address they were paid to.
 - **The identities still on `0xd305`, read on chain on 2026-11-16.** Arc testnet #849980
-  (Meridian, the showcase agent), Robinhood Chain testnet #0, Base #73232 and Arbitrum One #1259
-  are still owned by `0xd305`. None of their URIs has changed: three point at
+  (Meridian, the showcase agent we registered), Robinhood Chain testnet #0, Base #73232 and
+  Arbitrum One #1259 are still owned by `0xd305`, so they are former agents, not ours. None of their URIs has changed: three point at
   `https://a-identity.xyz/.well-known/agent-card.json` and #849980 carries its original inline
   JSON. Whoever else holds the key can transfer them or repoint their URIs, so a change to any
   of the four that we have not announced here is not ours, and none of them should be trusted on
@@ -182,9 +221,11 @@ Recorded here because it is the case the guidance above exists for.
   - *Base and Arbitrum One:* the sweeper delegation is still set, so gas sent to `0xd305` is taken
     in the same transaction. These two move only through a sponsored EIP-7702 transaction that
     `0xd305` signs and another key pays for, or they are retired in place.
-  - *`public/.well-known/agent-card.json`* still lists #1259, #73232 and #849980 in
-    `registrations` with `0xd305` as owner. #1259 and #73232 carry a warning there; #849980 does
-    not yet. Each entry comes off the card, or is marked, when its identity moves or is retired.
+  - *`public/.well-known/agent-card.json`* no longer lists #1259, #73232 or #849980 in
+    `registrations`. A note at the top of the card says that they and Robinhood Chain testnet #0
+    are not ours, because someone else holds the same key, and that the card does not vouch for
+    them, although some of their tokenURIs still point at the card. The proof pages list all four
+    as former agents, never as ours.
 
 ## Known limitations
 

@@ -19,7 +19,8 @@
 import { ARC_EXPLORER, CONTRACTS } from './arc-contracts.js'
 import { gatewayBalance, gatewayDeposit } from './gateway.js'
 import { x402PayTo } from './x402.js'
-import { ARC_CHAIN } from './chains/index.js'
+import { ARC_CHAIN, noSignerReason, usableSignerKey } from './chains/index.js'
+import { retiredPayToRefusal } from './chains/retired.js'
 
 /** Circle's public testnet Gateway (permissionless - no API key). */
 const GATEWAY_TESTNET = 'https://gateway-api-testnet.circle.com'
@@ -139,7 +140,8 @@ export function nanoResource(settle: unknown) {
 // ── one-click demo (server signer is the buyer) ──────────────────────────────────
 
 async function buyerSigner(env: NodeJS.ProcessEnv) {
-  const key = env.ARC_SIGNER_KEY
+  // A key whose address is retired (chains/retired.ts) is no key: this server never signs with it.
+  const key = usableSignerKey(env.ARC_SIGNER_KEY, 'ARC_SIGNER_KEY')
   if (!key) return null
   const { privateKeyToAccount } = await import('viem/accounts')
   return privateKeyToAccount(key as `0x${string}`)
@@ -188,8 +190,12 @@ export async function nanopayOnce(
   | { ok: true; authorization: { from: string; to: string; value: string; nonce: string }; transaction?: string }
   | { ok: false; reason: string }
 > {
+  // Nothing is ever paid to a retired address (chains/retired.ts): refused before anything is read or signed,
+  // so the autopilot's treasury and every other server-signed nanopayment are held to it.
+  const refused = retiredPayToRefusal('payTo', payTo)
+  if (refused) return { ok: false, reason: refused }
   const account = await buyerSigner(env)
-  if (!account) return { ok: false, reason: 'No ARC_SIGNER_KEY set.' }
+  if (!account) return { ok: false, reason: noSignerReason(env, 'ARC_SIGNER_KEY') }
   const kind = await getArcKind()
   if (!kind) return { ok: false, reason: 'Gateway batched rail unavailable for Arc testnet.' }
   const req = await arcRequirements(payTo, usdcUnits(amountUsd))
@@ -246,7 +252,7 @@ export async function runNanopayDemo(
   if (!account) {
     return {
       executed: false,
-      reason: 'No ARC_SIGNER_KEY set. With a funded key this signs an EIP-3009 authorization (0 gas) and settles a gasless nanopayment through Circle Gateway on Arc.',
+      reason: `${noSignerReason(env, 'ARC_SIGNER_KEY')} With a funded key this signs an EIP-3009 authorization (0 gas) and settles a gasless nanopayment through Circle Gateway on Arc.`,
       verifyingContract: kind?.extra.verifyingContract,
     }
   }

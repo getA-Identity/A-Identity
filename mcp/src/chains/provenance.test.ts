@@ -7,6 +7,7 @@ import { CHAINS, getChainById } from './registry.js'
 import { OWNER_ADDRESS_RE, SETTLEMENT_ADDRESS_RE, SHAPE_NAME, TX_HASH_RE, isAccountId, isContractId } from './stellar/strkey.js'
 import { howToVerify, proofRailIndex, sow2Report } from './proof.js'
 import { networkPassphrase } from './stellar/client.js'
+import { isRetired } from './retired.js'
 
 /**
  * The ledger is the page a reviewer clicks, so the failure mode that matters is a claim
@@ -120,6 +121,29 @@ test('an agent entry parses to its own chain and token id', () => {
     // hardcoded 0x here would be a landmine for whoever deploys a Soroban registry.
     assert.match(p.agent.owner, OWNER_ADDRESS_RE[chain.ecosystem])
     assert.ok(chain.contracts.identityRegistry, `${p.chain} records an agent but the descriptor has no identity registry`)
+  }
+})
+
+test('a former agent parses to its own chain and token id, is held by a retired address, and is never also our agent', () => {
+  let formers = 0
+  for (const p of PROVENANCE) {
+    if (!p.formerAgent) continue
+    formers += 1
+    const chain = getChainById(p.chain)!
+    assert.equal(p.formerAgent.caip, `${chain.caip2}:8004/${p.formerAgent.tokenId}`, `${p.chain}: caip id disagrees with the descriptor`)
+    assert.match(p.formerAgent.heldBy, OWNER_ADDRESS_RE[chain.ecosystem])
+    assert.ok(isRetired(p.formerAgent.heldBy), `${p.chain}: a former agent is one a retired address holds`)
+    assert.ok(chain.contracts.identityRegistry, `${p.chain} records a former agent but the descriptor has no identity registry`)
+    assert.ok(p.formerAgent.note.length > 40)
+    assert.ok(!p.agent || p.agent.tokenId !== p.formerAgent.tokenId, `${p.chain}: one token cannot be both ours and former`)
+  }
+  assert.equal(formers, 4)
+  // The rail index advertises our agents only.
+  for (const entry of proofRailIndex()) {
+    for (const net of entry.networks) {
+      const p = provenanceFor(net.chain)!
+      if (p.formerAgent && !p.agent) assert.equal(net.agentTokenId, null, `${net.chain}: a former agent is not advertised`)
+    }
   }
 })
 

@@ -514,16 +514,17 @@ Live today:
   is ours (reputation `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`, anchored by our
   oracle the same day). x402 settles in USDC on two rails: our own EIP-3009 facilitator
   (first settlement tx 0xd44287c8..., 0.021 USDC, the buyer paying no gas) and Circle
-  Gateway nanopayments (first credit the same day, batched on-chain by Gateway). Our
-  launch-day AgentSpendPolicy vault held real USDC under a 1 USDC daily cap; on launch day an
+  Gateway nanopayments (first credit the same day, batched on-chain by Gateway). The
+  launch-day AgentSpendPolicy vault we deployed held real USDC under a 1 USDC daily cap; on launch day an
   over-limit payment returned the contract's AboveAutoApprove error in simulation only,
   and on 2026-11-01 one was mined and refused on chain (tx 0x134de0b2...); since
   2026-09-25 its agent key is a separate wallet from its owner key, renewed on 2026-11-01
   to 2027-01-15. It was funded by a CCTP V2 burn on Base that Circle's
-  Forwarding Service minted here. Its owner is our former operating wallet
-  0xd305607510E0Db2c95807173c7A05BEA53c1ed36, whose key someone else has also held since at
-  least 2026-11-01, and the contract has no owner transfer, so the founder emptied it at
-  about 00:38 UTC on 2026-11-11 (withdraw tx 0xaa4714de...) and it is retired. Agent #0
+  Forwarding Service minted here. Its owner is
+  0xd305607510E0Db2c95807173c7A05BEA53c1ed36, the former operating wallet, which A-Identity
+  retired on 2026-11-11 because someone else holds its key (since at
+  least 2026-11-01), and the contract has no owner transfer, so the founder emptied it at
+  about 00:38 UTC on 2026-11-11 (withdraw tx 0xaa4714de...): it is retired and not ours. Agent #0
   moved at about the same time to the founder's wallet
   0xCB8824ffAF30687E36374C08eC52298b62871bdf, which a person holds (tx 0x651650cf...). The
   first payments were self-funded and labeled
@@ -574,15 +575,17 @@ Live today:
 - **Base mainnet** (`eip155:8453`). The canonical ERC-8004 identity and reputation
   registries are live on Base, deployed by their authors as EIP-1967 proxies whose
   implementations match Arbitrum One byte for byte (verified 2026-08-28 by reading the
-  implementation slot on both chains); agent **#73232** is ours, minted 2026-08-27 UTC
-  through the production adapter and still owned by our former operating wallet
-  0xd305607510E0Db2c95807173c7A05BEA53c1ed36, whose key someone else also holds. x402
+  implementation slot on both chains); agent **#73232** was registered by us on 2026-08-27 UTC
+  through the production adapter and is still held by
+  0xd305607510E0Db2c95807173c7A05BEA53c1ed36, the former operating wallet, which A-Identity
+  retired on 2026-11-11 because someone else holds its key, so it is not ours any more. x402
   settled here in native Circle USDC
   (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`) through the same first-party EIP-3009
   facilitator that serves Arc Mainnet and Robinhood Chain, the signing domain proven against
   the token's live DOMAIN_SEPARATOR; the first settlement landed 2026-08-27 UTC with the
-  receipt carrying the matching Transfer log, and agent #73232's reputation is anchored
-  on the canonical ReputationRegistry by our oracle validator. Since 2026-11-11 that rail is
+  receipt carrying the matching Transfer log, and the reputation our oracle validator
+  anchored for agent #73232 on the canonical ReputationRegistry is history, not an
+  endorsement. Since 2026-11-11 that rail is
   paused on Base until its new gas-only broadcaster has gas here. The full trail,
   including the Stellar pubnet funding hop behind the operating wallets, is at
   https://a-identity.xyz/proof/base. The gasless Circle Gateway hop that mints on Base
@@ -601,10 +604,11 @@ Live today:
   the registry asserts none. From 2026-08-28 an AgentSpendPolicy vault was live here
   too, holding USDG under dust caps with a typed AboveAutoApprove refusal proven; since
   2026-10-01 its agent key is a separate wallet from its owner key; its session key was renewed
-  on 2026-11-08 to 2027-01-07. Its owner is our former operating wallet
-  0xd305607510E0Db2c95807173c7A05BEA53c1ed36, whose key someone else also holds, and the
+  on 2026-11-08 to 2027-01-07. Its owner is
+  0xd305607510E0Db2c95807173c7A05BEA53c1ed36, the former operating wallet, which A-Identity
+  retired on 2026-11-11 because someone else holds its key, and the
   contract has no owner transfer, so the founder emptied it at 22:10 UTC on 2026-11-10
-  (withdraw tx 0xa67afdae...) and it is retired. Agent #0 moved at the same time to the
+  (withdraw tx 0xa67afdae...): it is retired and not ours. Agent #0 moved at the same time to the
   founder's wallet 0xCB8824ffAF30687E36374C08eC52298b62871bdf, which a person holds (tx
   0x228e69a4...), and its
   reputation is anchored on the canonical ReputationRegistry by our oracle validator (tagged
@@ -612,19 +616,21 @@ Live today:
 - **Arbitrum One** (`eip155:42161`). ERC-8004 identity
   `0x8004a169fb4a3325136eb29fa0ceb6d2e539a432` and reputation
   `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`, deployed by the ERC-8004 authors; agent
-  **#1259** is ours. x402 settled here in native Circle USDC
+  **#1259** was registered by us. x402 settled here in native Circle USDC
   (`0xaf88d065e77c8cC2239327C5EDb3A432268e5831`) through the same first-party EIP-3009
   facilitator, at a lower disclosed fee because the gas measurably is lower; since
   2026-11-11 that rail has been paused on Arbitrum One until its new gas-only broadcaster has gas
   here. From 2026-08-28 an AgentSpendPolicy vault was live here too, under dust caps with a
   typed AboveAutoApprove refusal proven; since 2026-10-01 its agent key is a separate wallet
-  from its owner key, renewed to 2026-11-15. It is retired: its owner is our former
-  operating wallet 0xd305607510E0Db2c95807173c7A05BEA53c1ed36, whose key someone else also
-  holds, the contract has no owner transfer, and the 0.01 USDC it still holds cannot be
-  withdrawn by that key while its gas is swept; the agent key 0x8C8D...3349 can still pay it
-  out through pay() until its session key lapses on 2026-11-15. Do not fund it. Agent #1259 is still owned by
-  that wallet, and its reputation is anchored on the canonical ReputationRegistry by our
-  oracle validator.
+  from its owner key, renewed to 2026-11-15. It is retired and not ours: its owner is
+  0xd305607510E0Db2c95807173c7A05BEA53c1ed36, the former operating wallet, which A-Identity
+  retired on 2026-11-11 because someone else holds its key, and the contract has no owner
+  transfer. That owner can withdraw the 0.01 USDC the vault still held when read on 2026-11-14
+  at any time, through withdraw() or ownerPay(), with no expiry; the agent key 0x8C8D...3349
+  could pay it out through pay() only until its session key lapsed at 12:42:37 UTC on
+  2026-11-15. Do not fund it. Agent #1259 is still held by that address and is not ours any
+  more, so the reputation our oracle validator anchored for it on the canonical
+  ReputationRegistry is history, not an endorsement.
 - **OKX X Layer mainnet** (`eip155:196`). ERC-8004 identity
   `0x8004a169fb4a3325136eb29fa0ceb6d2e539a432`, OKX.AI's own registry. The Trust
   Oracle sold here as agent #6271 until OKX.AI delisted it on 2026-09-26, settling in real USD₮0.
@@ -649,7 +655,9 @@ Beta, wired and readable:
 - **Robinhood Chain testnet** (`eip155:46630`). The full canonical set: identity
   `0x8004A818BFB912233c491871b3d84c89A494BD9e`, reputation
   `0x8004B663056A597Dffe9eCcC1965A193B7388713`, validation
-  `0x8004Cb1BF31DAf7788923b405b754f57acEB4272`. Agent #0 is ours here too.
+  `0x8004Cb1BF31DAf7788923b405b754f57acEB4272`. Agent #0 here was registered by us and is
+  still held by the former operating wallet, an address A-Identity retired on 2026-11-11
+  because someone else holds its key, so unlike agent #0 on mainnet it is not ours any more.
 - **Celo Sepolia** (`eip155:11142220`). The same identity and reputation addresses
   as Arc, plus testnet USDC and the Celo Sepolia x402 facilitator.
 - **Stellar testnet** (`stellar:testnet`). An `AgentSpendPolicy` Soroban vault at
@@ -750,9 +758,10 @@ https://a-identity.xyz/.well-known/ai-agent-manifest.json
 ## 9. Status, stated plainly
 
 - Circle Arc runs on both networks. Arc **Mainnet** (live since 2026-09-16) carries agent
-  #0 and both x402 rails in real USDC; our launch-day spend vault there was emptied and
-  retired on 2026-11-11, because someone else also holds its owner key and the contract has
-  no owner transfer. Nearly all of it is self-funded and
+  #0 and both x402 rails in real USDC; the launch-day spend vault A-Identity deployed there
+  was emptied and retired on 2026-11-11: its owner is the former operating wallet, an
+  address A-Identity retired that day because someone else holds its key, so the vault is
+  not ours any more, and the contract has no owner transfer. Nearly all of it is self-funded and
   labeled internal; a few checks came from wallets off our internal lists and are labeled
   external. Live split: <https://a-identity.xyz/proof/arc>. Arc
   **testnet** still carries escrow, KYA anchoring, Paymaster and the account-abstraction

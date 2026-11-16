@@ -9,9 +9,9 @@
  * transaction to send on Arbitrum One; a solver fills the same amount (minus its
  * quoted fee) on 4663 in seconds. The script re-verifies chain support and re-quotes
  * on every run (quotes expire), prints the exact in/out/fee, and prints the prepared
- * transaction(s). It never sends anything: it used to sign with RHCHAIN_SIGNER_KEY, which held
- * the key of the operating wallet 0xd305 until 2026-11-11; someone else has also held that key
- * since at least 2026-11-01.
+ * transaction(s). It never signs and never sends anything. RHCHAIN_SIGNER_KEY held the key of
+ * 0xd305...ed36, the former operating wallet that A-Identity retired on 2026-11-11 because someone
+ * else holds its key (mcp/src/chains/retired.ts), so it is neither read nor a default here.
  * The person who holds the wallet named by --user sends the prepared transaction from it.
  *
  * Sending it moves REAL money (mainnet ETH). It exists because a funding deposit landed on
@@ -51,8 +51,9 @@ for (const id of [42161, dest.evmChainId]) {
   }
 }
 
-// RHCHAIN_SIGNER_KEY held the operating wallet 0xd305, whose key someone else has also held since at
-// least 2026-11-01, so this no longer reads it or defaults to that address: name the user with --user.
+// RHCHAIN_SIGNER_KEY held the key of 0xd305...ed36, the former operating wallet that A-Identity retired on
+// 2026-11-11 because someone else holds its key, so this never reads it or defaults to that address: name
+// the user with --user.
 const user = arg('user', '')
 if (!/^0x[0-9a-fA-F]{40}$/.test(user)) {
   console.error('error: pass --user 0x... (the wallet to quote for). This script no longer reads RHCHAIN_SIGNER_KEY.')

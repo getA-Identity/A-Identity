@@ -158,7 +158,7 @@ const RAILS: Rail[] = [
     tileBg: '#ffffff',
     color: '#0000FF',
     role: 'Where the agent economy already trades.',
-    detail: 'Live: the canonical ERC-8004 registries carry our agent #73232, and x402 settled in native Circle USDC through our own EIP-3009 facilitator until 2026-11-11; that rail is paused here until the new key that broadcasts its settlements has gas on Base, and Circle Gateway nanopayments still sell here. The adapter that first proved the core was chain-agnostic moved real money here.',
+    detail: 'Live: the canonical ERC-8004 registries carry agent #73232, which A-Identity registered and which is still held by an address A-Identity retired on 2026-11-11, so it is not ours any more, and x402 settled in native Circle USDC through our own EIP-3009 facilitator until 2026-11-11; that rail is paused here until the new key that broadcasts its settlements has gas on Base, and Circle Gateway nanopayments still sell here. The adapter that first proved the core was chain-agnostic moved real money here.',
     chain: 'base',
   },
   {

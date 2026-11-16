@@ -139,8 +139,8 @@ export default function ConsoleShowcase() {
                 <ProductMock title="Trust check" meta="explorer · illustration, not a live read">
                   <MockRow
                     leading={<OwlMark verdict="allow" size={30} />}
-                    label="Meridian"
-                    sub="#849980 · KYA verified"
+                    label="Example agent"
+                    sub="ERC-8004 · KYA verified"
                     value={
                       <span className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-xs font-bold" style={{ color: 'var(--ok)', background: 'color-mix(in srgb, var(--ok) 8%, transparent)' }}>
                         ALLOW

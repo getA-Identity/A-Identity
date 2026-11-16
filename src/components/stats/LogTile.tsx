@@ -76,8 +76,10 @@ export function LogTile({
         {failed ? '-' : ok ? int(ok.count) : <Bar />}
       </span>
       <span className="text-xs leading-relaxed text-foreground/55">
+        {/* A read that failed says only what is true at any moment, the prerendered snapshot included: the page
+            reads this log live and keeps reading it. "Did not answer" baked into the snapshot read as an outage. */}
         {failed
-          ? 'This log did not answer just now.'
+          ? `Checking this log live. ${spec.basis}`
           : ok
             ? `${coverageSentence(result)} ${payersSentence(spec, result)}`
             : spec.basis}
@@ -129,6 +131,10 @@ export function LogTile({
 /**
  * The line that lets a reader see /stats and /proof agree: the same logs, the last time
  * they were read here, and the link to the other page.
+ *
+ * The count of logs answering is shown only once at least one has answered. Before that the line
+ * stays neutral: the prerendered snapshot is made with no backend to read, and it used to bake in
+ * "0 of 6 answering", which a reader of the static page took for an outage.
  */
 export function LogsAgreementLine({
   readAt,
@@ -143,9 +149,9 @@ export function LogsAgreementLine({
 }) {
   return (
     <p className="text-xs leading-relaxed text-foreground/45">
-      {readAt
+      {readAt && answered > 0
         ? `Settlement logs last read at ${new Date(readAt).toLocaleTimeString('en-US')}, ${int(answered)} of ${int(total)} answering. `
-        : 'Settlement logs not read yet. '}
+        : 'Settlement logs: checking live sources. '}
       The same {int(total)} logs, read through one shared spec, feed{' '}
       <Link to={other.to} className="font-semibold text-accent underline-offset-4 hover:underline">
         {other.label}

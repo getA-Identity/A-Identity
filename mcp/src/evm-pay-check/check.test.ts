@@ -4,6 +4,7 @@ import { getChainById } from '../chains/registry.js'
 import type { ChainDescriptor } from '../chains/types.js'
 import { clearDomainCache, eip712DomainSeparator } from '../x402-3009/domain.js'
 import { preflight, type Fetched, type Refused } from './safe-get.js'
+import { RETIRED_COMPROMISED, SWEEP_RECIPIENTS } from '../chains/retired.js'
 import {
   cardClaims,
   documentedTokensOf,
@@ -442,11 +443,67 @@ test('a challenge that pays an unregistered wallet is a be-careful', async () =>
   assert.ok(codes(r).includes('PAYEE_UNREGISTERED'))
 })
 
+// ── known compromised ────────────────────────────────────────────────────────────────
+
+test('a check of a retired address or a sweep recipient answers dont_pay with the evidence, before any read and whatever it holds', async () => {
+  const known = [...RETIRED_COMPROMISED.map((r) => ({ address: r.checksum, label: r.label, evidence: r.evidence })), ...SWEEP_RECIPIENTS]
+  for (const k of known) {
+    for (const spelled of [k.address, k.address.toLowerCase()]) {
+      // It holds an agent and looks like any registered wallet: that is exactly what the old answer called safe.
+      const w = world({ held: { [lc(spelled)]: 1 }, nonce: { [lc(spelled)]: 17 } })
+      for (const chainId of ['rhchain', 'arbitrum']) {
+        const r = ok(await check(spelled, w, web({}), chainId))
+        assert.equal(r.verdict, 'dont_pay', `${spelled} on ${chainId}`)
+        assert.equal(r.headline, "Known compromised. Don't pay")
+        assert.deepEqual(codes(r), ['KNOWN_COMPROMISED'])
+        assert.ok(r.reasons[0].text.includes(k.label))
+        assert.ok(r.reasons[0].text.includes(k.evidence), 'the evidence, with its transaction hashes, is in the answer')
+        assert.match(r.reasons[0].text, /0x[0-9a-f]{64}/)
+      }
+    }
+  }
+})
+
+test('an agent held by a retired address, and a challenge that pays one, answer dont_pay too', async () => {
+  const retired = RETIRED_COMPROMISED[0].checksum
+  const held = ok(await check('#0', world({ agents: { '0': { owner: retired, uri: CARD } } })))
+  assert.equal(held.verdict, 'dont_pay')
+  assert.ok(codes(held).includes('KNOWN_COMPROMISED'))
+  assert.match(held.reasons.find((x) => x.code === 'KNOWN_COMPROMISED')!.text, /^This agent is held by a known-compromised address\./)
+  const pays = ok(await check(SELLER, world(), web({ [SELLER]: challenge(goodOffer({ payTo: RETIRED_COMPROMISED[1].address })) })))
+  assert.equal(pays.verdict, 'dont_pay')
+  assert.equal(pays.headline, "Known compromised. Don't pay")
+  assert.ok(codes(pays).includes('KNOWN_COMPROMISED'))
+  assert.equal(pays.account, null, 'nothing about the payee is read: what is known is the answer')
+  // Anyone else is answered as before.
+  assert.equal(ok(await check(SELLER, world(), web({ [SELLER]: challenge(goodOffer()) }))).verdict, 'safe')
+})
+
 test('a challenge that only asks for payment elsewhere says so', async () => {
   const r = ok(await check(SELLER, world(), web({ [SELLER]: challenge(goodOffer({ network: 'eip155:1' })) })))
   assert.equal(r.verdict, 'unknown')
   assert.deepEqual(codes(r), ['CHALLENGE_OTHER_CHAIN'])
   assert.equal(r.challenge?.onThisChain, null)
+})
+
+test('a challenge that pays a retired address or a sweep recipient only on another chain still answers dont_pay', async () => {
+  const known = [...RETIRED_COMPROMISED.map((r) => ({ address: r.checksum, label: r.label })), ...SWEEP_RECIPIENTS]
+  for (const k of known) {
+    for (const spelled of [k.address, k.address.toLowerCase()]) {
+      const r = ok(await check(SELLER, world(), web({ [SELLER]: challenge(goodOffer({ network: 'eip155:137', payTo: spelled })) })))
+      assert.equal(r.verdict, 'dont_pay', spelled)
+      assert.equal(r.headline, "Known compromised. Don't pay")
+      assert.deepEqual(codes(r), ['KNOWN_COMPROMISED', 'CHALLENGE_OTHER_CHAIN'])
+      assert.match(r.reasons[0].text, /^It pays a known-compromised address\./)
+      assert.ok(r.reasons[0].text.includes(k.label))
+      assert.equal(r.challenge?.onThisChain, null)
+    }
+  }
+  // Beside an honest offer on this chain, it still condemns the challenge: the seller names that payee.
+  const mixed = ok(await check(SELLER, world(), web({ [SELLER]: challenge(goodOffer(), [goodOffer({ network: 'eip155:137', payTo: RETIRED_COMPROMISED[0].address })]) })))
+  assert.equal(mixed.verdict, 'dont_pay')
+  assert.equal(mixed.headline, "Known compromised. Don't pay")
+  assert.ok(codes(mixed).includes('KNOWN_COMPROMISED'))
 })
 
 test('the v1 network slug is matched too', async () => {

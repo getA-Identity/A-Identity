@@ -34,12 +34,14 @@ import { OUR_AGENTS, type OnchainAgent } from './AgentRing'
  *
  * Above the ranking sits the house's own shelf. Every agent here used to belong to
  * somebody else, which made the shop look like it carried no stock of its own while we
- * hold eight registrations across seven networks. They are on the page now, and each one
+ * hold registrations on several networks. They are on the page now, and each one
  * names the networks it is actually registered on. The roster is the one AgentRing
  * publishes, mirrored from the agent card's `registrations` and
  * mcp/src/chains/provenance.ts, so a badge here is a claim the ring can answer for, with
  * a mint transaction where one exists and a plain admission where one does not (#8913 has
- * none). That is also why the leaderboard cards below carry no chain badge: the
+ * none). Only agents we hold today are on it: the four still held by the former operating
+ * wallet, an address A-Identity retired on 2026-11-11, are not ours and are not shown or
+ * marked as ours. That is also why the leaderboard cards below carry no chain badge: the
  * leaderboard payload has no chain field, and a badge we cannot source is one we do not
  * draw.
  *
@@ -68,9 +70,9 @@ import { OUR_AGENTS, type OnchainAgent } from './AgentRing'
 type OurAgent = { identity: string; registrations: OnchainAgent[] }
 
 /**
- * The ring's roster, grouped by identity. Order is by breadth, so the oracle that answers
- * on five mainnets leads and the single-chain showcase agent follows. Derived, so a new
- * registration re-sorts this without anyone remembering to.
+ * The ring's roster, grouped by identity. Order is by breadth, so the identity registered
+ * on the most networks leads. Derived, so a new registration re-sorts this without anyone
+ * remembering to.
  */
 const OUR_ROSTER: OurAgent[] = (() => {
   const byIdentity = new Map<string, OnchainAgent[]>()
@@ -92,8 +94,6 @@ const OUR_ROSTER: OurAgent[] = (() => {
 const BLURB: Record<string, string> = {
   'A-Identity Trust Oracle':
     'Other agents pay it per call, in real stablecoins, to answer one question before money moves: can this counterparty be trusted?',
-  Meridian:
-    'The phase-1 showcase research agent. It buys market data through the policy-gated wallet, and its wallet control is attested on-chain.',
 }
 
 const blurbOf = (o: OurAgent) => BLURB[o.identity] ?? o.registrations[0].mission
@@ -118,9 +118,11 @@ function receiptHref(a: OnchainAgent): string | undefined {
 /**
  * Token ids that are ours, so a leaderboard row we registered says so.
  *
- * `#0` is excluded deliberately. It is a real registration of ours on Robinhood Chain, but
- * it is also the id a marketplace record could carry by accident, and claiming somebody
- * else's agent as our own is a worse failure than missing one of ours.
+ * `#0` is excluded deliberately. It is a real registration of ours on Arc Mainnet and
+ * Robinhood Chain, but it is also the id a marketplace record could carry by accident, and
+ * claiming somebody else's agent as our own is a worse failure than missing one of ours.
+ * For the same reason an agent A-Identity registered that a retired address still holds (#849980,
+ * #73232, #1259) is not on the roster, so no row carrying its id is marked ours.
  */
 const OURS_BY_TOKEN = new Map(
   OUR_AGENTS.filter((a) => a.tokenId !== '0').map((a) => [a.tokenId, a.identity] as const),
@@ -198,7 +200,7 @@ function RegistrationChip({ a, tabbable }: { a: OnchainAgent; tabbable: boolean 
 }
 
 /**
- * The roster, flowing. One pass of eight registrations, the way a brand strip rotates.
+ * The roster, flowing. One pass of every registration we hold, the way a brand strip rotates.
  *
  * The loop needs the list twice so the track can travel exactly one copy and land back on
  * itself; see the keyframes in index.css for why the gutter is a margin on the chip rather
@@ -268,8 +270,8 @@ function RegistrationStrip() {
 /**
  * One registration as a poster tile: the network's own colour, its mark, the token id,
  * and the two facts that keep the tile honest. Which network it really is, stated rather
- * than implied, because the rehearsal registration on Robinhood Chain testnet is in this
- * list and a poster is exactly where a testnet could quietly pass for a mainnet. And
+ * than implied, because a testnet registration can be in this list and a poster is
+ * exactly where a testnet could quietly pass for a mainnet. And
  * whether we hold its mint transaction, because one registration does not and the tile
  * says so instead of linking somewhere that looks like a receipt.
  */
@@ -410,7 +412,7 @@ function HouseCard({ agent, index }: { agent: OurAgent; index: number }) {
 
       {/* The preview. One tile per registration, in the network's own colour, carrying the
           token id and two facts a reader can check: which network it is (mainnet or
-          testnet, stated, because the rehearsal registration is in this list) and whether
+          testnet, stated, because a testnet registration can be in this list) and whether
           we hold its mint transaction. The tile links to that transaction, or to the
           registry contract for the one registration that has no mint receipt of ours. */}
       <AnimatePresence initial={false}>
@@ -501,7 +503,7 @@ export default function AgentVitrine() {
 
   const useRanked = topRanked.length >= 3
   /* A ranking needs a crowd to mean anything; the house's own shelf does not. This used to
-     return null for the whole section, which took our eight registrations off the page
+     return null for the whole section, which took our own registrations off the page
      every time the backend was cold. Only the ranked block waits for a crowd now. */
   const showRanked = useRanked || topFallback.length >= 3
 
@@ -522,10 +524,11 @@ export default function AgentVitrine() {
         }
       />
 
-      {/* The house's own shelf. Two cards rather than eight, because eight would be the
-          ring in LiveProof again: this says WHO we run and WHERE, and hands the receipts
-          off to the section that exists for them. */}
-      <div className="mt-12 grid items-start gap-4 md:grid-cols-2">
+      {/* The house's own shelf. One card per identity rather than one per registration,
+          because that would be the ring in LiveProof again: this says WHO we run and WHERE,
+          and hands the receipts off to the section that exists for them. A lone identity
+          takes the full row rather than half of an empty one. */}
+      <div className={`mt-12 grid items-start gap-4 ${OUR_ROSTER.length > 1 ? 'md:grid-cols-2' : ''}`}>
         {OUR_ROSTER.map((o, i) => (
           <HouseCard key={o.identity} agent={o} index={i} />
         ))}

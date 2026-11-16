@@ -29,6 +29,7 @@ import { eip712DomainSeparator, clearDomainCache, type TokenReader } from './dom
 import { privateKeyToAccount } from 'viem/accounts'
 import { sendChallenge } from '../http/shared.js'
 import { getChainById } from '../chains/index.js'
+import { RETIRED_COMPROMISED, retiredAddresses } from '../chains/retired.js'
 import { PRICES } from '../asp/payment.js'
 import { CELO_TOOL_PRICES_USD } from '../celo-x402.js'
 import type { X402SettlementRecord } from '../storage.js'
@@ -253,6 +254,35 @@ test('our own buyer wallet is internal even with no environment at all', () => {
   const set = internalPayers({ X402_3009_INTERNAL_PAYERS: ' 0xAAA0000000000000000000000000000000000001 ,nonsense' } as NodeJS.ProcessEnv)
   assert.ok(set.includes('0xaaa0000000000000000000000000000000000001'))
   assert.ok(set.includes('0x8c8d9cd12d8896a40cf2115ee731258bb4983349'), 'the env var must not be able to unset a known internal wallet')
+})
+
+test('a retired address is never ours: dropped from both env lists, published apart, and what it paid never counts as external', async () => {
+  const listed = RETIRED_COMPROMISED.map((r) => r.checksum).join(',')
+  assert.deepEqual(internalPayers({ X402_3009_INTERNAL_PAYERS: listed } as NodeJS.ProcessEnv).filter((a) => retiredAddresses().includes(a)), [])
+  const rows: X402SettlementRecord[] = [
+    row('settled', RETIRED_COMPROMISED[0].checksum, 0.021, 'risk_check'),
+    row('settled', RETIRED_COMPROMISED[1].address, 0.021, 'risk_check'),
+    row('settled', '0xbbb0000000000000000000000000000000000002', 0.021, 'risk_check'),
+  ]
+  // Before: the env listed the retired addresses as ours. After: it does not, and the module keeps them out of the external count.
+  const before = await railProof(railStatus(configured), { load: async () => rows, env: { ...configured, X402_3009_INTERNAL_PAYERS: listed } as NodeJS.ProcessEnv })
+  const after = await railProof(railStatus(configured), { load: async () => rows, env: configured })
+  const numbers = (p: typeof after) => ({ totalSettlements: p.totalSettlements, totalUsd: p.totalUsd, internalSettlements: p.internalSettlements, internalUsd: p.internalUsd, externalSettlements: p.externalSettlements, externalUsd: p.externalUsd, byNetwork: p.byNetwork, byTool: p.byTool })
+  assert.deepEqual(numbers(after), numbers(before), 'no published number moves')
+  assert.equal(after.internalSettlements, 2)
+  assert.equal(after.externalSettlements, 1)
+  assert.ok(!after.internalPayers.some((a) => retiredAddresses().includes(a)))
+  assert.deepEqual(after.retiredPayers.map((r) => r.address), retiredAddresses())
+  // Nothing is ever paid to one: as the pay-to, or as a third-party pay-to the public facilitator would settle to.
+  for (const r of RETIRED_COMPROMISED) {
+    const status = railStatus({ ...configured, X402_3009_PAYTO: r.checksum, X402_3009_ALLOWED_PAYTO: `${r.address},${PAY_TO}` } as NodeJS.ProcessEnv)
+    assert.equal(status.configured, false)
+    assert.equal(status.payTo, null)
+    assert.match(status.reason ?? '', new RegExp(`X402_3009_PAYTO names ${r.label}`))
+    assert.deepEqual(status.allowedPayTo, [PAY_TO.toLowerCase()])
+    const gate = railPaywallGate(status)
+    assert.ok(!gate.ok && gate.httpStatus === 501)
+  }
 })
 
 function row(outcome: X402SettlementRecord['outcome'], payer: string, amountUsd: number, tool: string): X402SettlementRecord {

@@ -12,8 +12,10 @@
  *
  * Unlike the Stellar page, controls exist for Arc MAINNET vaults, on purpose: an owner-held vault
  * on Arc Mainnet is what this page is for. They are labelled real money, they open only for a
- * vault whose code is the build this page deploys, and our own launch-day vault is view only and
- * labelled as deployed with our former server key, and as retired since 2026-11-11.
+ * vault whose code is the build this page deploys, and the launch-day vault is view only and
+ * labelled as deployed by A-Identity and retired since 2026-11-11. A vault whose owner is an address
+ * A-Identity retired as compromised (someone else holds its key) gets no controls and no fund form,
+ * and one whose agent key is such an address tells its owner how to cut that key out.
  *
  * Whichever view holds an owner's vault asks the server to count it on /proof/arc (useVaultCount):
  * no wallet, best effort, and no control on the page waits for it.
@@ -51,7 +53,7 @@ import { Chip, Mono } from '../../components/app/stellar/bits'
 import { track } from '../../lib/analytics'
 import type { Chain } from '../../lib/chains'
 import { listKnownVaults, seededKnownVaults, type KnownVaults } from '../../lib/arc/known-vaults'
-import { autoLandVault, FUND_RISK, isOurKey, isOurVault, NAMES_OUR_KEY, NOT_MY_VAULT } from '../../lib/arc/ours'
+import { autoLandVault, FUND_RISK, isOurKey, isOurVault, isRetiredKey, NAMES_OUR_KEY, NAMES_RETIRED_KEY, NOT_MY_VAULT } from '../../lib/arc/ours'
 import { clearTx, loadDeploys, loadTx, rememberDeploy, saveTx, type TxRecord } from '../../lib/arc/pending'
 import { countableDeploy, deployHashFor, endDateOf, listingOf, listReads, vaultPageStage, vaultThisBrowserHolds, type Listing } from '../../lib/arc/vault-count'
 import { fundingUnresolved, predictedVault, setupAlert, setupFundEndedOn, setupFundInDoubtOn, setupTxOn, withRecord } from '../../lib/arc/tx-rules'
@@ -162,8 +164,9 @@ export default function ArcVault() {
   const closeDeploy = useCallback(() => setParams(network ? { network } : {}), [setParams, network])
 
   // With no vault in the link, open one so the page lands on live values: the one this browser
-  // deployed, else the connected account's own, else ours (labelled as ours), on the network the
-  // link named. Never a stranger's, and never once someone has started typing an address of their own.
+  // deployed, else the connected account's own, else the ledger's launch-day vault (labelled as
+  // deployed by A-Identity and retired), on the network the link named. Never a stranger's, and never
+  // once someone has started typing an address of their own.
   const refused = Boolean(networkParam && !chain) || Boolean(contractParam && !contract)
   useEffect(() => {
     if (deployMode || contractParam || refused || !known || typing.current) return
@@ -234,6 +237,8 @@ export default function ArcVault() {
   // From the ledger as generated into this build, so the labels hold with the backend asleep.
   const ours = Boolean(v && isOurVault(v.network, v.address, known?.vaults))
   const ownerIsOurKey = Boolean(v && isOurKey(v.network, v.owner, known?.ourKeys))
+  // An owner A-Identity retired as compromised: someone else holds that key, so no control, no approval and no fund form.
+  const ownerIsRetired = Boolean(v && isRetiredKey(v.owner))
   // The setup this browser holds, whatever this page is showing: a deploy the wallet was asked for
   // with no hash back, a deploy with no receipt yet, or a vault whose expiry has not been seen to
   // land. The last is hidden only when the vault on screen IS that vault and reads an expiry.
@@ -254,8 +259,8 @@ export default function ArcVault() {
   const failedKind = read.key === key ? read.failure?.kind : undefined
   // The hash this browser holds for the vault on screen, if it saw the deploy. Null is common, and says nothing about the vault.
   const deployHash = useMemo(() => (chain && contract ? deployHashFor(chain.testnet, chain.caip2, contract, setup, loadDeploys()) : null), [chain, contract, setup])
-  // A vault of an owner: this browser deployed it, or the connected wallet owns this page's build. Ours never counts.
-  const ownersVault = Boolean(v && !ours && !ownerIsOurKey && (deployHash !== null || (isOwner && v.knownBuild)))
+  // A vault of an owner: this browser deployed it, or the connected wallet owns this page's build. Ours never counts, and neither does a retired owner's.
+  const ownersVault = Boolean(v && !ours && !ownerIsOurKey && !ownerIsRetired && (deployHash !== null || (isOwner && v.knownBuild)))
 
   useEffect(() => {
     if (!readBehind) return
@@ -493,20 +498,22 @@ export default function ArcVault() {
               </div>
             )}
 
-            {v && !chain.testnet && ((!ours && !ownerIsOurKey) || flowParam) && (
+            {v && !chain.testnet && ((!ours && !ownerIsOurKey && !ownerIsRetired) || flowParam) && (
               <OwnerApprovals
                 key={`${key}:${flowParam ?? ''}`}
                 chain={chain}
                 vault={v}
                 wallet={wallet}
-                canAct={!ours && !ownerIsOurKey && v.knownBuild && v.usdcMatches}
+                canAct={!ours && !ownerIsOurKey && !ownerIsRetired && v.knownBuild && v.usdcMatches}
                 oursKey={ours || ownerIsOurKey || isOurKey(v.network, v.operator, known?.ourKeys)}
                 whyNot={
-                  ours || ownerIsOurKey
-                    ? 'This vault is ours, so this page offers no approval for it, whoever is connected.'
-                    : !v.knownBuild || !v.usdcMatches
-                      ? "This vault's code is not the build this page deploys, or it holds another token, so this page builds no calls for it."
-                      : undefined
+                  ownerIsRetired
+                    ? `${NAMES_RETIRED_KEY} This page offers no approval for it, whoever is connected.`
+                    : ours || ownerIsOurKey
+                      ? 'This vault is ours, so this page offers no approval for it, whoever is connected.'
+                      : !v.knownBuild || !v.usdcMatches
+                        ? "This vault's code is not the build this page deploys, or it holds another token, so this page builds no calls for it."
+                        : undefined
                 }
                 flowParam={flowParam}
                 held={shownTx?.outcome === 'pending' || setupTx !== null || readBehind}
@@ -540,6 +547,7 @@ export default function ArcVault() {
                     wallet={wallet}
                     ours={ours}
                     ownerIsOurKey={ownerIsOurKey}
+                    ownerIsRetired={ownerIsRetired}
                     pending={held}
                     inFlight={inFlight}
                     onSubmitted={onSubmitted}
@@ -549,7 +557,7 @@ export default function ArcVault() {
               </section>
             )}
 
-            {v && !ours && !ownerIsOurKey && v.knownBuild && v.usdcMatches && (
+            {v && !ours && !ownerIsOurKey && !ownerIsRetired && v.knownBuild && v.usdcMatches && (
               <section aria-label="Fund" className="rounded-2xl border border-border bg-card p-4 sm:p-5">
                 <h3 className="text-sm font-semibold text-foreground">Fund this vault</h3>
                 <p className="mt-1 text-xs text-foreground/70">{FUND_RISK} Send only after its session key has an expiry.</p>
@@ -669,6 +677,7 @@ function OwnerSection({
   wallet,
   ours,
   ownerIsOurKey,
+  ownerIsRetired,
   pending,
   inFlight,
   onSubmitted,
@@ -678,12 +687,21 @@ function OwnerSection({
   wallet: ArcWalletState
   ours: boolean
   ownerIsOurKey: boolean
+  ownerIsRetired: boolean
   pending: boolean
   inFlight: TxAction | null
   onSubmitted: (r: TxRecord) => void
 }) {
-  const ownerLine = <OwnerMatch vault={v} account={wallet.account} ownerIsOurKey={ownerIsOurKey} />
+  const ownerLine = <OwnerMatch vault={v} account={wallet.account} ownerIsOurKey={ownerIsOurKey} ownerIsRetired={ownerIsRetired} />
 
+  // First, before ours: the launch-day vault's owner is retired too, and it is not ours any more.
+  if (ownerIsRetired)
+    return (
+      <>
+        {ownerLine}
+        <p className="text-sm text-foreground/75">{`${NAMES_RETIRED_KEY} This page offers no controls for it, whoever is connected.`}</p>
+      </>
+    )
   if (ours || ownerIsOurKey)
     return (
       <>

@@ -17,6 +17,7 @@
  * settlement is brokered through OKX's facilitator via an HMAC-signed client.
  */
 import type { Express } from 'express'
+import { retiredPayToRefusal } from '../chains/retired.js'
 
 /** X Layer mainnet. Testnet is eip155:1952; 195 is deprecated - never use it. */
 const NETWORK = process.env.OKX_X402_NETWORK ?? 'eip155:196'
@@ -141,13 +142,19 @@ export type PaymentStatus = {
  * unpaid calls are stopped first). Returns the resulting mode; never throws.
  */
 export async function applyOkxX402(app: Express): Promise<PaymentStatus> {
-  const payTo = process.env.PAY_TO_ADDRESS ?? null
+  // A retired address (chains/retired.ts) is never a pay-to: someone else holds its key. It is treated as
+  // unset, so nothing is charged to it and nothing names it as where payments go.
+  const payToRetired = retiredPayToRefusal('PAY_TO_ADDRESS', process.env.PAY_TO_ADDRESS)
+  const payTo = payToRetired ? null : (process.env.PAY_TO_ADDRESS ?? null)
   const apiKey = process.env.OKX_API_KEY
   const secretKey = process.env.OKX_SECRET_KEY
   const passphrase = process.env.OKX_PASSPHRASE
 
   const base = { network: NETWORK, payTo, prices: PRICES }
 
+  if (payToRetired) {
+    return { ...base, enabled: false, mode: 'free', reason: `Free mode: ${payToRetired}` }
+  }
   if (!payTo || !apiKey || !secretKey || !passphrase) {
     return {
       ...base,

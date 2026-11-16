@@ -55,6 +55,7 @@ import {
 import type { ArcOwnerHeldVault } from './arc-season.js'
 import { addressUrl, txUrl } from './chains/explorer.js'
 import { getChainById } from './chains/registry.js'
+import { isRetired } from './chains/retired.js'
 import type { ChainDescriptor } from './chains/types.js'
 import { AgentSpendPolicyAbi, AgentSpendPolicyBytecode } from './contracts/AgentSpendPolicy.js'
 import { findAdmittedArcVaultByTx, loadAdmittedArcVaults, persistAdmittedArcVault, type ArcAdmittedVaultRecord, type ArcVaultInsert, type ArcVaultByTx, type ArcVaultStoreIo } from './storage.js'
@@ -385,6 +386,7 @@ export const PLAIN_REFUSALS: Readonly<Record<string, string>> = {
   'vault-state': 'The vault could not be read just now. Try again in a minute.',
   'runtime-code': 'The code at this address is not the vault contract this page deploys.',
   'owner-sent-deploy': "The vault's owner is not the wallet that sent the deploy. A vault counts only when its owner deployed it from their own wallet.",
+  'owner-not-retired': "The vault's owner is an address A-Identity retired on 2026-11-11 because someone else holds its key. A vault it owns cannot count.",
   'owner-not-ours': "The vault's owner is a wallet A-Identity itself holds. Only vaults owned by someone else's wallet count.",
   'operator-set': "The vault's agent key is missing, or it is the same wallet as the owner. The limits only mean something when the agent has a key of its own.",
   usdc: 'The vault does not use the USDC of this network.',
@@ -474,6 +476,7 @@ const NOT_RECORDED = 'every check passed but the vault could not be recorded'
 const OWN_CHECK_UNFINISHED = 'our server could not finish its own safety check, so nothing was decided'
 const ROW_NOT_A_VAULT = 'the row does not name a vault, an owner and a deploy transaction'
 const ROW_OWNER_OURS = 'its owner is one of our keys'
+const ROW_OWNER_RETIRED = 'its owner is an address A-Identity retired as compromised'
 const logRouteFailure = (what: string, raw: unknown) => console.error(`[arc-vaults] ${what}:`, raw instanceof Error ? raw.message : raw)
 
 const ADMITTED_CHECKS =
@@ -484,13 +487,15 @@ const SWEPT_NOTE = `${ADMITTED_CHECKS} Found on the chain by this server's own s
 /** Why a stored row is not counted, or null when it is. The report and the route's answer read this one rule. */
 function storedRowNotCounted(row: ArcAdmittedVaultRecord | null, ours: OurAddresses): string | null {
   if (!row || !ADDRESS.test(String(row.address)) || !ADDRESS.test(String(row.owner)) || !TX_HASH.test(String(row.deployTx))) return ROW_NOT_A_VAULT
+  // Before ours, and whatever any list says: a retired address is never ours, and never an owner that counts.
+  if (isRetired(row.owner)) return ROW_OWNER_RETIRED
   return ours.byAddress.has(row.owner.toLowerCase()) ? ROW_OWNER_OURS : null
 }
 
 /**
  * POST /api/arc/vaults. A hash already admitted answers from the store with no chain read, so the
  * same post twice is a no-op, and says what the report says of that row: one whose owner is by now
- * one of our keys is not counted, so it is refused for that reason and for good. A vault is stored
+ * one of our keys, or a retired address, is not counted, so it is refused for that reason and for good. A vault is stored
  * only when every check passed, and it is called admitted only when the store took it: a store
  * that failed is an answer of its own, never a claim that the vault counts.
  */
@@ -511,8 +516,9 @@ export async function admitVaultDeploy(body: unknown, deps: VaultAdmissionDeps):
   }
   if (known.row) {
     const notCounted = storedRowNotCounted(known.row, deps.ours())
-    if (notCounted === ROW_OWNER_OURS) {
-      return { httpStatus: 200, answer: { status: 'refused', vault: known.row.address, deployTx, retryable: false, reasons: [{ id: 'owner-not-ours', reason: PLAIN_REFUSALS['owner-not-ours'] }] } }
+    if (notCounted === ROW_OWNER_OURS || notCounted === ROW_OWNER_RETIRED) {
+      const id = notCounted === ROW_OWNER_RETIRED ? 'owner-not-retired' : 'owner-not-ours'
+      return { httpStatus: 200, answer: { status: 'refused', vault: known.row.address, deployTx, retryable: false, reasons: [{ id, reason: PLAIN_REFUSALS[id] }] } }
     }
     if (notCounted) {
       logRouteFailure(LIST_UNREADABLE, notCounted)
@@ -621,8 +627,9 @@ export function admissionReadiness(ours: OurAddresses): { ready: boolean; keysCo
 }
 
 /**
- * Stored rows as season vaults. A row that does not read as a vault, or whose owner is by now one
- * of our keys (a key added to the env after it was admitted), is passed to onSkip and not counted.
+ * Stored rows as season vaults. A row that does not read as a vault, whose owner is by now one
+ * of our keys (a key added to the env after it was admitted), or whose owner is a retired address
+ * (chains/retired.ts), is passed to onSkip and not counted.
  * Throws when the store cannot be read: an unreadable list is never an empty one.
  */
 export async function admittedVaultsFromStore(ours: OurAddresses, onSkip?: (row: { vault: string | null; reason: string }) => void, io: ArcVaultStoreIo = {}): Promise<ArcOwnerHeldVault[]> {

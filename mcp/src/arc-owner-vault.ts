@@ -21,19 +21,24 @@
  *     also compared with what that creation code returns in a simulated eth_call, whenever a
  *     host can run one;
  *   - owner() is the wallet that sent the deploy, and it is none of ours;
+ *   - owner() is not an address A-Identity retired as compromised (chains/retired.ts): someone else
+ *     holds those keys, so a vault one of them owns is refused whatever any list says;
  *   - operator() is set and is not the owner;
  *   - usdc() is the registry's USDC for the chain;
  *   - dailyCap and autoApproveMax are both set, because the contract reads 0 as no limit;
  *   - sessionKeyExpiry is set and later than the chain's current block time.
  *
  * Ours means every address this repo publishes or derives as its own: the agent owners in
- * the provenance ledger (the operating wallet among them), both rails' internal payer
+ * the provenance ledger, both rails' internal payer
  * lists, the oracle validator that signs our published attestations, the wallets of our own
  * agents (ARC_OUR_PAYEES), the receiving wallets named in env, the addresses committed for our
  * keys (OUR_KEY_PUBLIC_ADDRESSES) and the address of every EVM key env var that is set. A key is read only to derive its address, inside
  * collectOurAddresses, and is never returned, printed or kept. A key that is neither set in this
  * process nor committed cannot be compared, and is named as not compared (keysNotCompared): a
  * server and a laptop holding different env can therefore answer differently about such a key.
+ *
+ * A retired address is never ours, whichever source names it (an env list, a key that derives it):
+ * collectOurAddresses leaves it out, and its own check refuses a vault it owns.
  */
 import {
   decodeAbiParameters,
@@ -52,6 +57,7 @@ import type { ArcOwnerHeldVault, ArcOwnerKind } from './arc-season.js'
 import { ATTESTATIONS } from './asp/attestations.js'
 import { PROVENANCE, type ChainProvenance } from './chains/provenance.js'
 import { CHAINS } from './chains/registry.js'
+import { RETIRED_COMPROMISED, retiredAddresses, retiredEntry } from './chains/retired.js'
 import type { ChainDescriptor } from './chains/types.js'
 import { internalPayers as gatewayInternalPayers } from './x402-gateway/rail.js'
 import { internalPayers as facilitatorInternalPayers } from './x402-3009/rail.js'
@@ -150,16 +156,22 @@ export const OUR_KEY_PUBLIC_ADDRESSES: Readonly<Record<string, string | null>> =
   X402_GATEWAY_BUYER_KEY: null,
   CELO_BUYER_KEY: '0x8C8D9cd12d8896A40cf2115Ee731258Bb4983349',
   CCTP_EVM_SIGNER_KEY: null,
-  ARC_MAINNET_SIGNER_KEY: '0xd305607510E0Db2c95807173c7A05BEA53c1ed36',
-  // The Arc testnet signer, a new key since 2026-11-11. It was 0xd305...ed36 until then, which
-  // stays ours through the other signer names in this table.
+  // No key of ours has been set here since 2026-11-11. The key it held derived the former operating
+  // wallet (0xd305...ed36), which is retired and compromised, not ours: chains/retired.ts keeps a
+  // vault it owns refused, and chains/evm/client.ts refuses to sign with its key.
+  ARC_MAINNET_SIGNER_KEY: null,
+  // The Arc testnet signer, a new key since 2026-11-11. It was 0xd305...ed36 until then, an address
+  // that is retired and compromised (chains/retired.ts) and not ours.
   ARC_SIGNER_KEY: '0xCE398f99dbC1cA6Cd4901Bff294bd950CEd5055c',
-  BASE_SIGNER_KEY: '0xd305607510E0Db2c95807173c7A05BEA53c1ed36',
-  RHCHAIN_SIGNER_KEY: '0xd305607510E0Db2c95807173c7A05BEA53c1ed36',
-  RHCHAIN_TESTNET_SIGNER_KEY: '0xd305607510E0Db2c95807173c7A05BEA53c1ed36',
-  ARB_SIGNER_KEY: '0xd305607510E0Db2c95807173c7A05BEA53c1ed36',
+  // The same retired key as ARC_MAINNET_SIGNER_KEY until 2026-11-11; nothing of ours since.
+  BASE_SIGNER_KEY: null,
+  RHCHAIN_SIGNER_KEY: null,
+  RHCHAIN_TESTNET_SIGNER_KEY: null,
+  ARB_SIGNER_KEY: null,
   XLAYER_SIGNER_KEY: null,
-  CELO_SIGNER_KEY: '0xF43F43D8aee114a71B164e1f6214BC7625a5742D',
+  // The old key derived 0xF43F...742D, the former Celo pay-to, which is retired and compromised
+  // (chains/retired.ts) and not ours.
+  CELO_SIGNER_KEY: null,
   CELO_SEPOLIA_SIGNER_KEY: null,
   AVAX_SIGNER_KEY: null,
 }
@@ -202,8 +214,9 @@ export type OurAddresses = {
 
 export function collectOurAddresses(s: OurAddressSources): OurAddresses {
   const byAddress = new Map<string, string[]>()
+  // A retired address is never ours, whichever source names it: its own check refuses it instead.
   const add = (address: string, source: string) => {
-    if (!EVM_ADDRESS.test(address)) return
+    if (!EVM_ADDRESS.test(address) || retiredEntry(address)) return
     const key = address.toLowerCase()
     const sources = byAddress.get(key) ?? []
     if (!sources.includes(source)) sources.push(source)
@@ -212,7 +225,7 @@ export function collectOurAddresses(s: OurAddressSources): OurAddresses {
 
   // Agent owners first, grouped, so one wallet that owns our agent on six chains reads as
   // one line. No role is read into the owner: until 2026-11-11 the Arc Mainnet agent owner was
-  // the operating wallet, and since then it is the founder's own wallet.
+  // the former operating wallet, and since then it is the founder's own wallet.
   const agentChains = new Map<string, string[]>()
   for (const p of s.provenance) {
     if (p.agent && EVM_ADDRESS.test(p.agent.owner)) {
@@ -287,6 +300,11 @@ export function liveOurAddressSources(env: NodeJS.ProcessEnv = process.env): Our
 export function committedOurKeys(): string[] {
   const live = liveOurAddressSources({})
   return [...collectOurAddresses({ ...live, keyEnvVars: [], addressEnvVars: [] }).byAddress.keys()].sort()
+}
+
+/** The addresses A-Identity retired as compromised (chains/retired.ts), lowercase: never in committedOurKeys, and refused as a vault owner on their own. */
+export function committedRetiredKeys(): string[] {
+  return retiredAddresses().sort()
 }
 
 /**
@@ -691,6 +709,7 @@ export function keyIsRevoked(s: VaultState): boolean {
 }
 
 const SESSION_KEY_EXPIRY_LABEL = 'sessionKeyExpiry is set and later than the current block time, or revoked by the owner'
+const OWNER_NOT_RETIRED_LABEL = 'owner() is not an address A-Identity retired as compromised'
 
 export function stateChecks(c: StateContext): Check[] {
   const out: Check[] = []
@@ -734,6 +753,7 @@ export function stateChecks(c: StateContext): Check[] {
 
   if (!s) {
     out.push({ id: 'owner-sent-deploy', group: 'ownership', required: c.deployer !== null || !!c.deployerBlockedBy, label: "owner() is receipt.from: the owner's own wallet sent the deploy", ...blocked })
+    out.push({ id: 'owner-not-retired', group: 'ownership', required: true, label: OWNER_NOT_RETIRED_LABEL, ...blocked })
     out.push({ id: 'owner-not-ours', group: 'ownership', required: true, label: 'owner() is none of our keys', ...blocked })
     out.push({ id: 'operator-set', group: 'policy', required: true, label: 'operator() is set and is not the owner', ...blocked })
     out.push({ id: 'usdc', group: 'policy', required: true, label: `usdc() is the registry USDC for ${c.chainId}`, ...blocked })
@@ -774,6 +794,17 @@ export function stateChecks(c: StateContext): Check[] {
             : `owner() is ${getAddress(s.owner)} but the deploy was sent by ${getAddress(c.deployer)}, so the owner's own wallet did not deploy it`,
         },
   )
+  const retired = retiredEntry(s.owner)
+  out.push({
+    id: 'owner-not-retired',
+    group: 'ownership',
+    required: true,
+    label: OWNER_NOT_RETIRED_LABEL,
+    ok: !retired,
+    detail: retired
+      ? `owner ${getAddress(s.owner)} is ${retired.label}, which A-Identity retired on ${retired.retiredOn} because someone else holds its key (chains/retired.ts)`
+      : `${getAddress(s.owner)} is none of the ${RETIRED_COMPROMISED.length} retired addresses`,
+  })
   const ownerOurs = c.ours.byAddress.get(s.owner.toLowerCase())
   out.push({
     id: 'owner-not-ours',

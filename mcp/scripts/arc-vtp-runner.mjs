@@ -25,9 +25,10 @@
  * counts: those use the owner's own agent as operator.
  *
  * Usage (from mcp/, after npm run build and cd ../trust-guard && npm run build):
- *   node scripts/arc-vtp-runner.mjs --allow 1 --deny 9 --log data/arc-vtp-run.jsonl
+ *   node scripts/arc-vtp-runner.mjs --allow 1 --log data/arc-vtp-run.jsonl
  *   CONFIRM_ARC_VTP_RUN=yes node --env-file=.env scripts/arc-vtp-runner.mjs \
- *     --allow 1 --deny 9 --log data/arc-vtp-run.jsonl --execute
+ *     --allow 1 --log data/arc-vtp-run.jsonl --execute
+ *   (--deny <n> also needs --deny-payee <0x...> --deny-agent <#n>: there is no default DENY payee)
  *
  * Run in batches, raising the totals each time, and start with one ALLOW: it is the first real
  * run of the receipt post and the season link. The plan prices every payment at the gas limit
@@ -37,9 +38,13 @@
  *
  * Flags:
  *   --allow <n>          flows paying the showcase agent, expected ALLOW then a Paid tx
- *   --deny <n>           flows naming our operating wallet, expected DENY, nothing sent. Since
- *                        the rule changed on 2026-11-04 it forecasts WARN, so the plan refuses
- *                        these: Milestone 1's 100 flows are finished and are not to be run again
+ *   --deny <n>           flows naming --deny-payee, expected DENY, nothing sent. Milestone 1's
+ *                        DENY flows named the former operating wallet, which A-Identity retired
+ *                        on 2026-11-11 (chains/retired.ts); its 100 flows are finished and are not
+ *                        to be run again, so there is no default DENY payee any more
+ *   --deny-payee <0x...> the wallet the DENY flows name. Required with --deny. A retired address
+ *                        is refused: someone else holds its key, and nothing is paid to it
+ *   --deny-agent <#n>    the Arc Mainnet agent id --deny-payee holds. Required with --deny
  *   --amount-units <n>   USDC base units of the first flow (default 1000); each later flow pays
  *                        one unit more, so no two flows share an amount
  *   --base-url <url>     the hosted API (default https://a-identity.xyz)
@@ -89,24 +94,19 @@ const PAYEES = {
     agentId: '#104498',
     note: 'Simon read 555 on 2026-11-02 after three settled testnet payments of its own.',
   },
-  deny: {
-    role: 'deny',
-    label: 'operating-wallet (internal)',
-    address: '0xd305607510e0db2c95807173c7a05bea53c1ed36',
-    agentId: '#0',
-    // The wallet Milestone 1's DENY flows named on 2026-11-01 and 2026-11-02 UTC, when an off-platform payee got DENY.
-    note: "It is off-platform, and since 2026-11-04 an off-platform payee gets WARN, so it is no longer a DENY payee. Milestone 1's 100 flows finished on 2026-11-02 and are not to be run again, so no other payee replaces it.",
-  },
+  // No DENY payee by default. Milestone 1's DENY flows named the former operating wallet on 2026-11-01 and
+  // 2026-11-02 UTC; A-Identity retired it on 2026-11-11 because someone else holds its key, and its 100 flows are
+  // finished and not to be run again. --deny-payee and --deny-agent set one below, and a retired address is refused.
 }
 
 // ── arguments ─────────────────────────────────────────────────────────────────────
 
-const VALUE_FLAGS = new Set(['allow', 'deny', 'amount-units', 'base-url', 'budget', 'max-fee-gwei', 'pause-ms', 'log', 'operator'])
+const VALUE_FLAGS = new Set(['allow', 'deny', 'deny-payee', 'deny-agent', 'amount-units', 'base-url', 'budget', 'max-fee-gwei', 'pause-ms', 'log', 'operator'])
 const BOOL_FLAGS = new Set(['execute', 'ack-stop', 'ack-fresh-log', 'reconcile', 'help'])
 
 function usage(message) {
   console.error(`error: ${message}`)
-  console.error('usage: arc-vtp-runner.mjs --allow <n> --deny <n> [--amount-units <n>] [--base-url <url>] [--budget <usdc>] [--max-fee-gwei <n>] [--pause-ms <n>] [--log <path>] [--operator <0x...>] [--ack-stop] [--ack-fresh-log] [--reconcile] [--execute]')
+  console.error('usage: arc-vtp-runner.mjs --allow <n> --deny <n> --deny-payee <0x...> --deny-agent <#n> [--amount-units <n>] [--base-url <url>] [--budget <usdc>] [--max-fee-gwei <n>] [--pause-ms <n>] [--log <path>] [--operator <0x...>] [--ack-stop] [--ack-fresh-log] [--reconcile] [--execute]')
   process.exit(2)
 }
 
@@ -142,6 +142,13 @@ function wholeNumber(name, fallback) {
 const allow = wholeNumber('allow')
 const deny = wholeNumber('deny')
 if (allow + deny === 0 && !args.reconcile) usage('nothing to do: pass --allow and/or --deny')
+const denyPayee = args['deny-payee']?.toLowerCase()
+const denyAgent = args['deny-agent']
+if (deny > 0 && (denyPayee === undefined || denyAgent === undefined)) {
+  usage('--deny needs --deny-payee <0x...> and --deny-agent <#n>: there is no default DENY payee')
+}
+if (denyPayee !== undefined && !/^0x[0-9a-f]{40}$/.test(denyPayee)) usage('--deny-payee must be a 0x address')
+if (denyAgent !== undefined && !/^#[0-9]+$/.test(denyAgent)) usage('--deny-agent must be an agent id like #12')
 const pauseMs = wholeNumber('pause-ms', 5000)
 const maxFeeGwei = wholeNumber('max-fee-gwei', 60)
 const amountRaw = args['amount-units'] ?? '1000'
@@ -160,7 +167,7 @@ if (operatorArg !== undefined && !/^0x[0-9a-f]{40}$/.test(operatorArg)) usage('-
 
 // ── what the repo built ───────────────────────────────────────────────────────────
 
-let arc, generated, guardCore, registry, rpc, rules
+let arc, generated, guardCore, registry, retired, rpc, rules
 try {
   ;[arc, generated, guardCore] = await Promise.all([import('../../trust-guard/dist/arc.js'), import('../../trust-guard/dist/arc-mainnet.generated.js'), import('../../trust-guard/dist/index.js')])
 } catch (e) {
@@ -168,10 +175,24 @@ try {
   process.exit(1)
 }
 try {
-  ;[registry, rpc, rules] = await Promise.all([import('../dist/chains/registry.js'), import('../dist/chains/evm/client.js'), import('../dist/arc-vtp-run.js')])
+  ;[registry, retired, rpc, rules] = await Promise.all([import('../dist/chains/registry.js'), import('../dist/chains/retired.js'), import('../dist/chains/evm/client.js'), import('../dist/arc-vtp-run.js')])
 } catch (e) {
   console.error(`error: mcp/dist is not built (${e.message}). Run: cd mcp && npm run build`)
   process.exit(1)
+}
+// A retired address is never a payee: someone else holds its key (chains/retired.ts).
+const retiredPayee = denyPayee !== undefined ? retired.retiredEntry(denyPayee) : null
+if (retiredPayee) {
+  usage(`--deny-payee is ${retiredPayee.label}, which A-Identity retired on ${retiredPayee.retiredOn} because someone else holds its key: nothing is ever paid to it, and no flow names it`)
+}
+if (denyPayee !== undefined) {
+  PAYEES.deny = {
+    role: 'deny',
+    label: 'the --deny-payee wallet',
+    address: denyPayee,
+    agentId: denyAgent,
+    note: 'Named with --deny-payee for this run. An off-platform payee has got WARN since 2026-11-04, so only a payee with a platform record and evidence against it forecasts DENY.',
+  }
 }
 const { ARC_MAINNET, arcChainReader, arcViemChain, fromViemWallet, preflightVault: sdkPreflight, recordFlowReceipt, usdcUnits, verifyThenPay } = arc
 

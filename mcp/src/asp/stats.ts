@@ -4,6 +4,8 @@
  * revenue. Raw JSON-RPC eth_call, timeout-guarded, no extra deps, never throws.
  * Served at GET /stats and fetched by the /proof page so the number reads "live".
  */
+import { isRetired } from '../chains/retired.js'
+
 const RPC = process.env.XLAYER_RPC_URL ?? 'https://rpc.xlayer.tech'
 const USDT0 = '0x779Ded0c9e1022225f8E0630b35a9b54bE713736'
 // Read the balance of the address the OKX middleware actually settles to (PAY_TO_ADDRESS),
@@ -12,7 +14,9 @@ const USDT0 = '0x779Ded0c9e1022225f8E0630b35a9b54bE713736'
 // There is deliberately NO fallback address. The previous default became unspendable when its
 // key was lost, so a missing env var would have silently reported a balance nobody can reach.
 // An empty string reads as unconfigured, which is the honest answer to a missing recipient.
-const PAY_TO = (process.env.PAY_TO_ADDRESS ?? '').toLowerCase()
+// A retired address (chains/retired.ts) reads as unconfigured too: someone else holds its key, so its
+// balance is not our revenue.
+const PAY_TO = isRetired(process.env.PAY_TO_ADDRESS) ? '' : (process.env.PAY_TO_ADDRESS ?? '').toLowerCase()
 
 export type LiveStats = {
   network: string

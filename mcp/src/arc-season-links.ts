@@ -139,8 +139,8 @@ export type ArcOurSideLink = {
 export const ARC_OUR_SIDE_LINKS: ArcOurSideLink[] = [
   {
     kind: 'ours',
-    note: "0x432b...53fd is a team member's own wallet. It funded our operating wallet with 3 USDC and is on the committed internal payer list, so a check it paid would read as internal and never as external. It has paid no check and owns no vault.",
-    evidence: [{ txHash: '0x437f31171291c797516d28bfea583cf6324285060c3f8b481deecf13156899cf', what: "2026-11-02: 3 USDC to our operating wallet" }],
+    note: "0x432b...53fd is a team member's own wallet. It funded the operating wallet of the time (retired on 2026-11-11) with 3 USDC and is on the committed internal payer list, so a check it paid would read as internal and never as external. It has paid no check and owns no vault.",
+    evidence: [{ txHash: '0x437f31171291c797516d28bfea583cf6324285060c3f8b481deecf13156899cf', what: '2026-11-02: 3 USDC to the operating wallet of the time' }],
   },
   {
     kind: 'disclosed',
@@ -164,7 +164,7 @@ export const ARC_OUR_SIDE_LINKS: ArcOurSideLink[] = [
   },
   {
     kind: 'none-found',
-    note: 'No funding from our side: every USDC movement of the tracked wallets was read on Arc Mainnet, and every USDC transfer from our wallets to them on Arc Testnet, and none of our wallets sent USDC to any owner, agent key, external payer, external payee or funder in this report. On Arc Mainnet the operating wallet sent USDC only to the validator, the launch-day vault and the buyer wallet; the buyer wallet only to Circle Gateway and the operating wallet; the launch-day vault only to Simon and the operating wallet.',
+    note: 'No funding from our side: every USDC movement of the tracked wallets was read on Arc Mainnet, and every USDC transfer from our wallets to them on Arc Testnet, and none of our wallets sent USDC to any owner, agent key, external payer, external payee or funder in this report. On Arc Mainnet the operating wallet of the time (retired on 2026-11-11, not ours) sent USDC only to the validator, the launch-day vault and the buyer wallet; the buyer wallet only to Circle Gateway and that wallet; the launch-day vault only to Simon and that wallet.',
   },
   {
     kind: 'none-found',
@@ -212,9 +212,9 @@ export const ARC_NOT_TEAM_PAYERS: ArcNotTeamPayer[] = [
 ]
 
 /**
- * Who has received gas support from our operating wallet. Read from its full USDC outflow on the date below, by hand: the log
+ * Who has received gas support from the former operating wallet. Read from its full USDC outflow on the date below, by hand: the log
  * of sends had no sent line, and every outflow went to our own addresses, none of them to a vault owner. Say it again when it
- * changes: whoever sends one has to change this with the hash. It ended on 2026-11-10: someone else also holds that wallet's
- * key, so nothing is sent from it again, and the count stays what this read found.
+ * changes: whoever sends one has to change this with the hash. It ended on 2026-11-10: someone else holds that wallet's
+ * key, A-Identity retired it on 2026-11-11 (chains/retired.ts), and nothing is sent from it again, and the count stays what this read found.
  */
 export const ARC_GAS_SUPPORT = { readOn: ARC_LINKS_TRACED_ON, owners: 0 } as const

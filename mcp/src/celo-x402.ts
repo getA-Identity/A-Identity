@@ -23,6 +23,7 @@
  * registry - nothing here restates them.
  */
 import { getChainById, usdcUnits, evmPublicClient, type ChainDescriptor } from './chains/index.js'
+import { FORMER_CELO_PAYTO, isRetired, retiredPayToRefusal, retiredPublic } from './chains/retired.js'
 import { verifyAgent, reputationScore, riskCheck, agentPassport, type TxContext } from './asp/tools.js'
 import {
   loadCeloSettlements,
@@ -244,7 +245,10 @@ function resolveCeloChain(env: NodeJS.ProcessEnv): { chain: ChainDescriptor | nu
 export function celoX402Status(env: NodeJS.ProcessEnv = process.env): CeloX402Status {
   const { chain, requested } = resolveCeloChain(env)
   const payToRaw = env.CELO_PAYTO?.trim() ?? ''
-  const payTo = /^0x[0-9a-fA-F]{40}$/.test(payToRaw) ? payToRaw.toLowerCase() : null
+  // A retired address (chains/retired.ts) is never a pay-to: someone else holds its key, so the rail
+  // fails closed as not configured and never names it.
+  const payToRetired = retiredPayToRefusal('CELO_PAYTO', payToRaw)
+  const payTo = !payToRetired && /^0x[0-9a-fA-F]{40}$/.test(payToRaw) ? payToRaw.toLowerCase() : null
   const apiKey = env.CELO_X402_API_KEY?.trim() ?? ''
   const facilitator =
     env.CELO_X402_FACILITATOR?.trim() || (chain?.testnet ? FACILITATOR_TESTNET : FACILITATOR_MAINNET)
@@ -258,6 +262,9 @@ export function celoX402Status(env: NodeJS.ProcessEnv = process.env): CeloX402St
       facilitator,
       reason: `CELO_X402_NETWORK '${requested}' is not a Celo network in the chain registry (use the celo or celo-sepolia CAIP-2 id)`,
     }
+  }
+  if (payToRetired) {
+    return { configured: false, network: chain.caip2, chain: chain.id, payTo, facilitator, reason: `celo x402 not configured: ${payToRetired}` }
   }
   const missing: string[] = []
   if (!payTo) missing.push('CELO_PAYTO (0x receiving address)')
@@ -947,11 +954,12 @@ export async function celoServeTool(
  */
 const CELO_INTERNAL_PAYERS = ['0x8c8d9cd12d8896a40cf2115ee731258bb4983349']
 
+/** Ours only: an env entry that names a retired address (chains/retired.ts) is not ours, and is dropped. */
 function internalPayers(env: NodeJS.ProcessEnv): Set<string> {
   const extra = (env.CELO_INTERNAL_PAYERS ?? '')
     .split(',')
     .map((s) => s.trim().toLowerCase())
-    .filter((s) => /^0x[0-9a-f]{40}$/.test(s))
+    .filter((s) => /^0x[0-9a-f]{40}$/.test(s) && !isRetired(s))
   return new Set([...CELO_INTERNAL_PAYERS, ...extra])
 }
 
@@ -998,16 +1006,17 @@ export function celoStatusReport(env: NodeJS.ProcessEnv = process.env, now: Date
 /**
  * Where Celo payments went before the pay-to address in CELO_PAYTO, newest first. Rows carry no
  * pay-to of their own, so this is how a settlement recorded before a switch stays attributed to the
- * address it was actually paid to. 0xF43F was the Celo pay-to until the restart that moved CELO_PAYTO
- * to a wallet a person holds; someone else also holds its key, so nothing should be paid to it.
+ * address it was actually paid to. 0xF43F...742D was the Celo pay-to until 01:04 UTC on 2026-11-11.
+ * A-Identity retired it that day because someone else holds its key (chains/retired.ts), so nothing
+ * is ever paid to it.
  */
-export const CELO_PREVIOUS_PAYTO = [
+export const CELO_PREVIOUS_PAYTO: readonly { address: string; until: string; note: string }[] = [
   {
-    address: '0xf43f43d8aee114a71b164e1f6214bc7625a5742d',
+    address: FORMER_CELO_PAYTO.address,
     until: '2026-11-11T01:04:32Z',
-    note: 'The Celo pay-to until 2026-11-11 01:04 UTC. Someone else also holds its key: do not pay it.',
+    note: "The Celo pay-to until 2026-11-11 01:04 UTC, retired that day: someone else holds its key and it is not A-Identity's. Do not pay it.",
   },
-] as const
+]
 
 /** GET /api/celo/proof body: the durable settlement log, aggregated. Honest zeros when
  *  nothing has settled; totals cover the retained window (last CELO_SETTLEMENTS_CAP). */
@@ -1018,7 +1027,8 @@ export async function celoProof(
   const status = celoX402Status(env)
   const all = await load()
   const ours = internalPayers(env)
-  const isInternal = (r: CeloSettlementRecord) => !!r.payer && ours.has(r.payer.toLowerCase())
+  // A retired payer is not ours, and still never external demand.
+  const isInternal = (r: CeloSettlementRecord) => !!r.payer && (ours.has(r.payer.toLowerCase()) || isRetired(r.payer))
 
   const byTool: Record<string, { count: number; usd: number }> = {}
   let totalUsd = 0
@@ -1050,10 +1060,12 @@ export async function celoProof(
     externalSettlements: all.length - internalCount,
     externalUsd: round(totalUsd - internalUsd),
     internalPayers: [...ours],
+    // Not ours: addresses A-Identity retired because someone else holds their keys. What they paid counts as internal.
+    retiredPayers: retiredPublic(),
     byTool,
     recent: all.slice(-50).reverse().map((r) => ({ ...r, internal: isInternal(r) })),
     note: `Real settlements only, recorded at settle time and durable across restarts; totals cover the retained window (last ${CELO_SETTLEMENTS_CAP}). Zeros mean nothing has settled yet, not a mock.`,
     internalNote:
-      'Settlements from our own buyer wallets are marked internal: they are real on-chain payments used to exercise and demonstrate the rail, not third-party demand. They are labeled rather than hidden.',
+      'Settlements from our own buyer wallets are marked internal: they are real on-chain payments used to exercise and demonstrate the rail, not third-party demand. They are labeled rather than hidden. A settlement from an address under retiredPayers is marked internal too: A-Identity retired those addresses because someone else holds their keys, so they are not ours, and what they paid is never counted as external demand.',
   }
 }

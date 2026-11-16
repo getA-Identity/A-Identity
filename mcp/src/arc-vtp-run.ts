@@ -391,8 +391,9 @@ const TENURE_POINTS_AT_7_DAYS = 4
  * found:false says the platform holds no record, and such a payee gets WARN whatever its band,
  * because its score only says we have no history for it. A reputation that could not be read
  * (null) says nothing about that, so it stays on the strict side, as the scorer does when it is
- * not told. Our operating wallet is off-platform, so it forecasts WARN, and the plan refuses it
- * as a DENY payee: the rule changed on 2026-11-04, after Milestone 1's DENY flows were recorded.
+ * not told. The former operating wallet, which Milestone 1's DENY flows named and A-Identity retired on
+ * 2026-11-11, is off-platform, so it forecasts WARN, and the plan refuses such a payee as a DENY payee:
+ * the rule changed on 2026-11-04, after Milestone 1's DENY flows were recorded.
  *
  * On a record, a low score is a DENY only with evidence against it. A read that does not show the
  * evidence stays strict too, and says so, because that is what the scorer does when it is not told.

@@ -19,7 +19,7 @@ import { isAddress } from 'viem'
 import type { Chain } from '../../../lib/chains'
 import { AGENT_SPEND_POLICY_COMPILER, AGENT_SPEND_POLICY_SOURCE_SHA256 } from '../../../lib/contracts/agent-spend-policy'
 import { OURS_DETAIL, OURS_LABEL } from '../../../lib/arc/known-vaults'
-import { earlierBuildLine, NAMES_OUR_KEY } from '../../../lib/arc/ours'
+import { earlierBuildLine, NAMES_OUR_KEY, NAMES_RETIRED_KEY, operatorRetiredLine, retiredKeyOf } from '../../../lib/arc/ours'
 import {
   addressUrl,
   localDateTime,
@@ -54,7 +54,7 @@ export default function VaultStatus({
 }: {
   v: VaultSnapshot
   chain: Chain
-  /** The provenance ledger lists this vault as ours. */
+  /** The provenance ledger lists this vault as deployed by A-Identity (the launch-day vault, retired since 2026-11-11). */
   ours: boolean
   /** owner() is a key of ours. Anyone can deploy a contract naming one, so this alone says only that. */
   ownerIsOurKey: boolean
@@ -71,12 +71,22 @@ export default function VaultStatus({
   const resets = readableDate(v.resetsAt)
   // Ledger-backed and only for our own vault: anyone else's unknown code keeps the warning below.
   const earlierBuild = ours ? earlierBuildLine(v.network, v.address) : null
+  // An address A-Identity retired as compromised (from the build, so it holds with the backend asleep):
+  // as owner, the vault is someone else's to drain; as agent key, only its owner can cut it out.
+  const ownerRetired = retiredKeyOf(v.owner)
+  const operatorRetired = retiredKeyOf(v.operator)
 
   return (
     <div className="space-y-3">
+      {ownerRetired && (
+        <p className="rounded-xl border border-danger/30 bg-danger/[0.07] px-3 py-2 text-xs text-foreground/85">
+          <span className="font-semibold text-foreground">Retired owner. </span>
+          {NAMES_RETIRED_KEY}
+        </p>
+      )}
       {ours && (
         <p className="rounded-xl border border-border bg-foreground/[0.04] px-3 py-2 text-xs text-foreground/85">
-          <span className="font-semibold text-foreground">Launch-day vault (ours). </span>
+          <span className="font-semibold text-foreground">Launch-day vault, retired. </span>
           {OURS_LABEL} {OURS_DETAIL}
         </p>
       )}
@@ -84,6 +94,12 @@ export default function VaultStatus({
         <p className="rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-foreground/85">
           <span className="font-semibold text-foreground">Not a vault we list. </span>
           {NAMES_OUR_KEY}
+        </p>
+      )}
+      {operatorRetired && !ownerRetired && (
+        <p role="alert" className="rounded-xl border border-danger/30 bg-danger/[0.07] px-3 py-2 text-xs text-foreground/85">
+          <span className="font-semibold text-foreground">Retired agent key. </span>
+          {operatorRetiredLine(operatorRetired, v)}
         </p>
       )}
       {!ours && !ownerIsOurKey && ownerKind === 'team' && (
@@ -232,6 +248,7 @@ export default function VaultStatus({
               <Mono>{v.owner}</Mono>
               <CopyButton text={v.owner} label="Copy" />
               {ownerIsOurKey && <Chip tone="warn">One of our keys</Chip>}
+              {ownerRetired && <Chip tone="danger">Retired: someone else holds this key</Chip>}
               <Explorer href={addressUrl(chain, v.owner)} />
             </span>
           </Field>
@@ -240,6 +257,7 @@ export default function VaultStatus({
               <Mono>{v.operator}</Mono>
               {sameAddress(v.operator, v.owner) && <Chip tone="danger">Same key as the owner</Chip>}
               {operatorIsOurKey && <Chip tone="warn">One of our keys</Chip>}
+              {operatorRetired && <Chip tone="danger">Retired: someone else holds this key</Chip>}
               <Explorer href={addressUrl(chain, v.operator)} />
             </span>
           </Field>

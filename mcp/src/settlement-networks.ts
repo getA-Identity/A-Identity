@@ -32,6 +32,7 @@
  */
 import { liveArcSeasonDeps, type ArcSeasonDeps } from './arc-season.js'
 import { CHAINS, getChain } from './chains/index.js'
+import { retiredAddresses } from './chains/retired.js'
 import {
   GATEWAY_SETTLEMENTS_CAP,
   X402_SETTLEMENTS_CAP,
@@ -114,7 +115,7 @@ const LOGS: Record<SettlementRail, Pick<SettlementLogState, 'label' | 'path' | '
 }
 
 const BASIS =
-  "A row counts when it settled: a Circle Gateway row credited or completed, or an EIP-3009 facilitator row settled; failed, unconfirmed, reverted and ambiguous rows do not. A payer is internal when its address is on either rail's published list of our own buyer wallets (the hardcoded KNOWN_INTERNAL_PAYERS plus X402_GATEWAY_INTERNAL_PAYERS and X402_3009_INTERNAL_PAYERS), compared case-insensitively; every other payer is external. /api/arc/season starts from the same lists and also reads as internal the other wallets of ours its own basis names, such as the owner of a vault labeled team and its agent key, so for such a wallet the two can differ. " +
+  "A row counts when it settled: a Circle Gateway row credited or completed, or an EIP-3009 facilitator row settled; failed, unconfirmed, reverted and ambiguous rows do not. A payer is internal when its address is on either rail's published list of our own buyer wallets (the hardcoded KNOWN_INTERNAL_PAYERS plus X402_GATEWAY_INTERNAL_PAYERS and X402_3009_INTERNAL_PAYERS), or is an address A-Identity retired because someone else holds its key (not ours, and never external demand), compared case-insensitively; every other payer is external. /api/arc/season starts from the same lists and also reads as internal the other wallets of ours its own basis names, such as the owner of a vault labeled team and its agent key, so for such a wallet the two can differ. " +
   `Each network is named from the chain registry, and each rail is counted on its own, never added to the other. Counts cover the rows each log retains, the latest ${GATEWAY_SETTLEMENTS_CAP} on the Gateway log and the latest ${X402_SETTLEMENTS_CAP} on the facilitator log, not an all-time history.`
 
 const usd6 = (n: number) => Number(n.toFixed(6))
@@ -183,7 +184,8 @@ export async function settlementsByNetwork(deps: SettlementsByNetworkDeps): Prom
     ...gateway.rows.filter((r) => GATEWAY_SETTLED.has(r.outcome)).map((r) => counted('gateway', r)),
     ...facilitator.rows.filter((r) => r.outcome === 'settled').map((r) => counted('facilitator', r)),
   ]
-  const mine = new Set([...deps.internalPayers.gateway, ...deps.internalPayers.facilitator].map((a) => a.toLowerCase()))
+  // Retired addresses (chains/retired.ts) are on neither list, because they are not ours, and what they paid is still never external.
+  const mine = new Set([...deps.internalPayers.gateway, ...deps.internalPayers.facilitator, ...retiredAddresses()].map((a) => a.toLowerCase()))
 
   // Summed in log order and rounded once at the end, as the season report sums, so the two
   // documents print the same USD for the same rows to the last digit.

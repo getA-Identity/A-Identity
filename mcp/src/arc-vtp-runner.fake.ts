@@ -26,7 +26,7 @@ export type FakeScenario = {
    * What the platform says of the deny payee. Default 'low-reputation': a record scoring 60 with
    * evidence against it, the one case that still forecasts DENY, so the rest of the run can be
    * exercised. 'no-evidence' is the same score with nothing against it, and the plan refuses it.
-   * 'no-record' is what the real wallet reads today, and the plan refuses it too.
+   * 'no-record' is what an off-platform wallet reads, and the plan refuses it too.
    */
   denyPayeeRecord?: 'low-reputation' | 'no-evidence' | 'no-record'
   /** What the receipt route answers. Default verified and executed. */
@@ -45,7 +45,8 @@ const REGISTRY = (arc.contracts.identityRegistry as string).toLowerCase()
 const OWNER = '0x' + 'b2'.repeat(20)
 const PAY_TO = '0x' + 'f6'.repeat(20)
 const SIMON = '0x03f1fb189e461b88f3e8ba7100b29b594e5f98a9'
-const OPERATING = '0xd305607510e0db2c95807173c7a05bea53c1ed36'
+/** The wallet the tests name with --deny-payee (arc-vtp-runner.test.ts holds the same value): synthetic, so no real address is a payee here. */
+const DENY_PAYEE = '0x' + 'd0'.repeat(20)
 const FAR = 4_000_000_000n
 const GAS_PRICE = 21_000_000_000n
 
@@ -69,7 +70,7 @@ function ethCall(to: string, data: Hex): Hex {
   if (to.toLowerCase() === REGISTRY) {
     const d = decodeCall({ abi: REGISTRY_ABI, data })
     if (d.functionName === 'balanceOf') return encodeResult({ abi: REGISTRY_ABI, functionName: 'balanceOf', result: 1n })
-    return encodeResult({ abi: REGISTRY_ABI, functionName: 'ownerOf', result: d.args?.[0] === 104498n ? SIMON : OPERATING })
+    return encodeResult({ abi: REGISTRY_ABI, functionName: 'ownerOf', result: d.args?.[0] === 104498n ? SIMON : DENY_PAYEE })
   }
   const d = decodeCall({ abi: AgentSpendPolicyAbi, data })
   if (d.functionName === 'pay') return '0x'
@@ -178,7 +179,7 @@ function offer(): Record<string, unknown> {
 function paidAnswer(req: { vault: string; payee: string; amount: string }, signature: string): Response {
   const sent = JSON.parse(Buffer.from(signature, 'base64').toString('utf8')) as { payload: { authorization: { nonce: string; from: string } } }
   const nonce = sent.payload.authorization.nonce.toLowerCase()
-  const isDenyPayee = req.payee === OPERATING
+  const isDenyPayee = req.payee === DENY_PAYEE
   const decision = isDenyPayee ? (scenario.denyAnswer ?? 'DENY') : 'ALLOW'
   const common = {
     tool: 'verify_then_pay',
@@ -221,11 +222,11 @@ function api(url: URL, method: string, headers: Headers, body: unknown): Respons
     return json(402, { tool: 'verify_then_pay', stage: 'payment_required', charged: false, challenge }, { 'PAYMENT-REQUIRED': Buffer.from(JSON.stringify(challenge)).toString('base64') })
   }
   if (path === '/api/x402/gateway/tools/trust_preview') {
-    const denied = (body as { agentId: string }).agentId === OPERATING
+    const denied = (body as { agentId: string }).agentId === DENY_PAYEE
     return json(200, { verified: true, kya_status: denied ? 'unknown' : 'verified', scoreBand: denied ? 'very-low' : 'medium', flags: { revoked: false, sybilSuspected: false } })
   }
   if (path === '/api/reputation') {
-    if (url.searchParams.get('id') === OPERATING) {
+    if (url.searchParams.get('id') === DENY_PAYEE) {
       if (scenario.denyPayeeRecord === 'no-record') return json(404, { error: 'not found' })
       return json(200, { reputation: { score: 60, breakdown: { tenure: 0 }, sybil: { level: 'none' }, discipline: { rejectedSettlements: 0, overrideAttempts: scenario.denyPayeeRecord === 'no-evidence' ? 0 : 1 } } })
     }

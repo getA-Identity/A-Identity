@@ -11,6 +11,7 @@ import { recordVtpReceipt } from './receipt.js'
 import { toSeasonFlow } from './season.js'
 import type { VtpReadClient } from './reads.js'
 import { ARC_MIN_MAX_FEE_WEI } from './prepare.js'
+import { RETIRED_COMPROMISED } from '../chains/retired.js'
 import { AgentSpendPolicyAbi } from '../contracts/AgentSpendPolicy.js'
 import { getChainById } from '../chains/index.js'
 import { clearKindCache, railProof, railStatus, type GatewayKind, type GatewaySettleResponse, type GatewayTransfer } from '../x402-gateway/index.js'
@@ -321,6 +322,7 @@ test('refusals before the check never reach the rail, even with a valid payment 
     { what: 'the asset is not USDC', status: 422, code: 'WRONG_ASSET', input: { asset: '0x' + '36'.repeat(20) } },
     { what: 'the payee is the vault', status: 422, code: 'InvalidPayee', input: { payee: VAULT } },
     { what: 'the payee is the zero address', status: 422, code: 'ZeroAddress', input: { payee: '0x' + '00'.repeat(20) } },
+    ...RETIRED_COMPROMISED.map((r) => ({ what: `the payee is ${r.label}, a retired address`, status: 400, code: 'INVALID_INPUT', input: { payee: r.checksum } })),
     { what: 'no contract at the vault', status: 422, code: 'NOT_A_VAULT', chain: { code: '0x' } },
     { what: "the vault's usdc() is a lookalike", status: 422, code: 'VAULT_TOKEN_MISMATCH', chain: { usdc: '0x' + '36'.repeat(19) + '01' } },
     { what: 'a named agent the registry does not have', status: 422, code: 'PAYEE_AGENT_MISMATCH', input: { payeeAgentId: '#7' } },
@@ -358,7 +360,7 @@ test('refusals before the check never reach the rail, even with a valid payment 
 })
 
 test('a refusal on input is decided before a single chain read', async () => {
-  for (const input of [{ asset: '0x' + '36'.repeat(20) }, { amount: 'lots' }, { payee: VAULT }]) {
+  for (const input of [{ asset: '0x' + '36'.repeat(20) }, { amount: 'lots' }, { payee: VAULT }, { payee: RETIRED_COMPROMISED[0].checksum }]) {
     const { c, deps } = setup()
     const out = await runVerifyThenPay(request(input), undefined, deps)
     assert.equal(out.body.stage, 'refused')

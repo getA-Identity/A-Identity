@@ -1,7 +1,7 @@
 # A-Identity
 
 [![CI](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-2724%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
+[![Tests](https://img.shields.io/badge/tests-2760%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
 [![npm: marketplace-sdk](https://img.shields.io/npm/v/%40a-identity%2Fmarketplace-sdk?label=marketplace-sdk)](https://www.npmjs.com/package/@a-identity/marketplace-sdk)
 [![npm: trust-guard](https://img.shields.io/npm/v/%40a-identity%2Ftrust-guard?label=trust-guard)](https://www.npmjs.com/package/@a-identity/trust-guard)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/getA-Identity/A-Identity)
@@ -257,11 +257,13 @@ paid by our own buyer wallet during the demo and seeding runs, and all listed at
 | `risk_check` | [`0x36977927…fa8557c1`](https://www.oklink.com/x-layer/evm/tx/0x36977927f1449ea84df341df6fd6c94288f70fd9f4e6c1b57bbe7ba7fa8557c1) |
 | `agent_passport` | [`0xc7f9342b…c302a0cb`](https://www.oklink.com/x-layer/evm/tx/0xc7f9342bde496f21be725f72f5555fa685aeffcc901b54d47bd75e51c302a0cb) |
 
-**Backed by real data, not an LLM guess:** a live ERC-8004 showcase agent, Meridian
-`#849980`, KYA-verified, with a reputation earned from **3 real settlements**. The score
+**Backed by real data, not an LLM guess:** the ERC-8004 agent we registered as our showcase,
+Meridian `#849980`, KYA-verified, with a reputation earned from **3 real settlements**. It is now
+held by a retired address, the former operating wallet, an address A-Identity retired on 2026-11-11 because someone else
+holds its key, so it is not ours any more; its record still shows how a score is built. The score
 itself is recency-weighted and decays as those settlements age, so it is read live rather
 than quoted here. Scoring is **deterministic and
-unit-tested** (2724 unit tests as of Nov 2026), reads on-chain live via viem, and is fully documented at
+unit-tested** (2760 unit tests as of Nov 2026), reads on-chain live via viem, and is fully documented at
 `GET /methodology`. This is our answer to "surface your rigor": every number is
 reproducible and every settlement is on-chain.
 
@@ -321,7 +323,7 @@ bot challenge); every transaction is also at [/proof/arc](https://a-identity.xyz
 | --- | --- | --- |
 | Identity Registry | [`0x8004a169fb4a3325136eb29fa0ceb6d2e539a432`](https://explorer.arc.io/address/0x8004a169fb4a3325136eb29fa0ceb6d2e539a432) | ERC-8004 |
 | Reputation Registry | [`0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`](https://explorer.arc.io/address/0x8004BAa17C55a88189AE136b182e5fdA19dE9b63) | ERC-8004 |
-| AgentSpendPolicy vault (ours, retired 2026-11-11) | [`0xe07819e6d28a5dfd5a9f4cd94dc6dc9aeeda4146`](https://explorer.arc.io/address/0xe07819e6d28a5dfd5a9f4cd94dc6dc9aeeda4146) | Spend policy |
+| AgentSpendPolicy vault (deployed by us, retired 2026-11-11, not ours) | [`0xe07819e6d28a5dfd5a9f4cd94dc6dc9aeeda4146`](https://explorer.arc.io/address/0xe07819e6d28a5dfd5a9f4cd94dc6dc9aeeda4146) | Spend policy |
 | USDC | [`0x3600000000000000000000000000000000000000`](https://explorer.arc.io/address/0x3600000000000000000000000000000000000000) | ERC-20 + EIP-3009 |
 
 ### Circle Arc testnet, `eip155:5042002` - live
@@ -334,8 +336,9 @@ bot challenge); every transaction is also at [/proof/arc](https://a-identity.xyz
 | Agentic Commerce (jobs) | [`0x0747EEf0706327138c69792bF28Cd525089e4583`](https://explorer.testnet.arc.io/address/0x0747EEf0706327138c69792bF28Cd525089e4583) | ERC-8183 |
 | USDC | [`0x3600000000000000000000000000000000000000`](https://explorer.testnet.arc.io/address/0x3600000000000000000000000000000000000000) | ERC-20 |
 
-Our showcase agent **#849980** lives here, and so do the escrow, the spend-policy
-vault and the Gateway nanopayment rail.
+The showcase agent we registered, **#849980**, lives here (still held by the former operating
+wallet, an address A-Identity retired on 2026-11-11, so not ours any more), and so do the escrow,
+the spend-policy vault and the Gateway nanopayment rail.
 
 ### OKX X Layer mainnet, `eip155:196` - live
 
@@ -369,8 +372,9 @@ Its settlement token is the canonical bridge's USDC.e, which our facilitator can
 agent **#0**, the registry's first mint:
 [tx `0x602ce85a…`](https://robinhoodchain.blockscout.com/tx/0x602ce85ad044836b39918311a3031dcd689e4be0d23aed9ed0ac9227d46ec79e)
 in block 34617892, tokenURI
-[`agent-card.json`](https://a-identity.xyz/.well-known/agent-card.json). Its owner was our
-operating wallet `0xd305607510E0Db2c95807173c7A05BEA53c1ed36` until 22:10 UTC on 2026-11-10, when
+[`agent-card.json`](https://a-identity.xyz/.well-known/agent-card.json). Its owner was
+`0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, then the operating wallet (retired on 2026-11-11
+because someone else holds its key, and not A-Identity's), until 22:10 UTC on 2026-11-10, when
 it moved to the founder's wallet `0xCB8824ffAF30687E36374C08eC52298b62871bdf`, which a person holds
 ([tx `0x228e69a4...`](https://robinhoodchain.blockscout.com/tx/0x228e69a4b5e047413f36a6c4f9473123e028ce3ee0dda3c82333b0580cda08c2)).
 The family's
@@ -407,9 +411,10 @@ that we do not wire, so KYA is not anchored on-chain there either.
 | Reputation Registry | [`0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`](https://arbiscan.io/address/0x8004BAa17C55a88189AE136b182e5fdA19dE9b63) | ERC-8004 |
 | USDC | [`0xaf88d065e77c8cC2239327C5EDb3A432268e5831`](https://arbiscan.io/address/0xaf88d065e77c8cC2239327C5EDb3A432268e5831) | ERC-20 |
 
-The canonical registries again, deployed by their authors rather than by us. Ours is
+The canonical registries again, deployed by their authors rather than by us. We registered
 agent **#1259** ([mint tx](https://arbiscan.io/tx/0x23275840eb9a8b85a752769c113109a753f39b592236c85093cf94f6a517b2f3)),
-and paid calls settled in native Circle USDC through our own EIP-3009 facilitator
+which is still held by the former operating wallet, an address A-Identity retired on 2026-11-11
+because someone else holds its key, so it is not ours any more, and paid calls settled in native Circle USDC through our own EIP-3009 facilitator
 ([first settlement](https://arbiscan.io/tx/0x69abb8a9aacf57fa0c3d2d4cd711d4f631e3f90c97222441f9f3ecee06834744),
 0.015 USDC, block 494160024); since 2026-11-11 that rail is paused here until its new gas-only
 broadcaster has gas on Arbitrum One. The family's ValidationRegistry proxy has code here but we do
@@ -493,8 +498,9 @@ upstream as the rest.
 
 Base carries the canonical ERC-8004 identity and reputation registries (verified
 2026-08-28 by reading each proxy's EIP-1967 implementation slot and matching the
-implementation code byte for byte against Arbitrum One), our agent #73232 (minted
-2026-08-27 UTC, tx `0xb428bf8e`), native Circle USDC, the Gateway hop, and the same
+implementation code byte for byte against Arbitrum One), agent #73232 (registered by us
+2026-08-27 UTC, tx `0xb428bf8e`, and still held by an address A-Identity retired on 2026-11-11,
+so not ours any more), native Circle USDC, the Gateway hop, and the same
 first-party x402 facilitator that serves Arc Mainnet and Robinhood Chain, which settled here in
 native USDC: the first settlement landed 2026-08-27 UTC (tx `0xb59ae67c`, 102828 gas, the
 receipt carrying the matching Transfer log). Since 2026-11-11 that rail has been paused on Base and
@@ -539,8 +545,9 @@ No install, no keys - it is already live:
 
 Every claim here is a transaction you can open on [the Arc testnet explorer](https://explorer.testnet.arc.io):
 
-- **Showcase agent "Meridian"** - ERC-8004 id **#849980**, KYA attested on-chain, reputation
-  from real settlements. Registration (mint) tx:
+- **Agent #849980 (Meridian), registered by us, now held by a retired address** - an ERC-8004
+  agent, KYA attested on-chain, reputation from real settlements; it is still held by the former operating wallet,
+  an address A-Identity retired on 2026-11-11, so it is not ours any more. Registration (mint) tx:
   [`0x506b125f…`](https://explorer.testnet.arc.io/tx/0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54) ·
   KYA attestation:
   [`0x758ddbfa…`](https://explorer.testnet.arc.io/tx/0x758ddbfad38daeb772a37deb07e65339f13aeb393899fc7e1d2689c95adf0dad)
@@ -548,8 +555,9 @@ Every claim here is a transaction you can open on [the Arc testnet explorer](htt
   [`0xcce5a56c…`](https://explorer.testnet.arc.io/tx/0xcce5a56cc0518d5760f90d11d88eb70d5097636179eb3e92903152a96a684cc5) →
   complete
   [`0x245f0ee7…`](https://explorer.testnet.arc.io/tx/0x245f0ee76a6d8dd21e8a14cbd1f489a3d80a1824113316f3b39c58c0e50f25e3)
-- **Circle Gateway** - USDC deposited on Arc, moved to Base Sepolia gaslessly and minted there:
-  [recipient on Basescan](https://sepolia.basescan.org/address/0xd305607510E0Db2c95807173c7A05BEA53c1ed36)
+- **Circle Gateway** - USDC deposited on Arc, moved to Base Sepolia gaslessly and minted there to
+  the server signer of the time (`0xd305...ed36`, which A-Identity retired on 2026-11-11 because
+  someone else holds its key; not A-Identity's)
 
 ### On-chain policy vault - programmable money that enforces itself
 

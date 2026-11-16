@@ -34,8 +34,10 @@
  *     run that landed, or by anything else this key sent) a repeat refuses instead of
  *     sending a second transaction, and a pending transaction from the key refuses too;
  *   - it refuses while ARC_REFUSALS, as built in mcp/dist, already holds an on-chain refusal;
- *   - the payee defaults to the vault owner, our own operating wallet, so even a wrong
- *     revert assumption could only pay ourselves, and the amount is capped at 1 USDC;
+ *   - the payee defaults to the vault owner, read on chain; on the launch-day vault that is the
+ *     former operating wallet, which A-Identity retired on 2026-11-11 because someone else holds
+ *     its key, so a retired payee is refused (chains/retired.ts, as built in mcp/dist), and the
+ *     amount is capped at 1 USDC;
  *   - the fixed gas limit times maxFeePerGas bounds the cost, refused above 0.01 USDC.
  *
  * Fees: Arc drops a transaction with maxFeePerGas under 20 gwei without an error receipt
@@ -168,9 +170,10 @@ if (EXECUTE) {
   if (PIN === null) die('--execute needs --nonce <n>, the nonce the dry run printed; nothing was sent')
 }
 
-let getChainById, resolveRpcUrls, txUrl, addressUrl, AgentSpendPolicyAbi, ARC_SEASON_CHAIN, ARC_REFUSALS
+let getChainById, resolveRpcUrls, txUrl, addressUrl, AgentSpendPolicyAbi, ARC_SEASON_CHAIN, ARC_REFUSALS, isRetired
 try {
   ;({ getChainById } = await import('../dist/chains/registry.js'))
+  ;({ isRetired } = await import('../dist/chains/retired.js'))
   ;({ resolveRpcUrls } = await import('../dist/chains/evm/client.js'))
   ;({ txUrl, addressUrl } = await import('../dist/chains/explorer.js'))
   ;({ AgentSpendPolicyAbi } = await import('../dist/contracts/AgentSpendPolicy.js'))
@@ -366,6 +369,8 @@ const AMOUNT = parseUnits(AMOUNT_TEXT, DECIMALS)
 const MAX_AMOUNT_UNITS = parseUnits(MAX_AMOUNT, DECIMALS)
 
 const PAYEE = opts.payee ? getAddress(opts.payee) : owner
+// Nothing is ever paid to a retired address, not even by a pay() that is meant to revert.
+if (isRetired(PAYEE)) die('the payee is an address A-Identity retired because someone else holds its key: nothing is ever paid to it')
 const payeeAllowed = allowlistEnabled ? await readVault('allowed', [PAYEE]) : true
 
 let SENDER
@@ -513,7 +518,7 @@ check(
   same(PAYEE, ZERO) || same(PAYEE, VAULT) || same(PAYEE, usdc)
     ? `the payee ${PAYEE} is the zero address, the vault or its token: pay() would revert ZeroAddress or InvalidPayee first`
     : same(PAYEE, owner)
-      ? `the payee is the vault owner${same(VAULT, DEFAULT_VAULT) ? ', our operating wallet' : ''}: a wrong revert assumption could only move the vault's money to its own owner`
+      ? "the payee is the vault owner: a wrong revert assumption could only move the vault's money to its own owner"
       : `the payee ${PAYEE} is NOT the vault owner: a wrong revert assumption would pay that address`,
 )
 check(!frozen, frozen ? 'the vault is frozen: pay() would revert IsFrozen first' : 'the vault is not frozen')

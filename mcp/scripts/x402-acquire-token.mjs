@@ -60,8 +60,8 @@ const pub = createPublicClient({ chain: viemChain, transport: http(RPC, { timeou
 // The wallet that SPENDS native gas for the swap. Separate from the recipient on
 // purpose: the buyer wallet only ever needs to hold the settlement token, because on
 // this rail it signs and never broadcasts.
-// Only the funder key: RHCHAIN_SIGNER_KEY held the operating wallet 0xd305, whose key someone else has also held
-// since at least 2026-11-01, so it is no fallback here.
+// Only the funder key: RHCHAIN_SIGNER_KEY held the key of 0xd305...ed36, the former operating wallet that
+// A-Identity retired on 2026-11-11 because someone else holds its key, so it is no fallback here.
 const key = process.env.X402_3009_FUNDER_KEY
 const account = key ? privateKeyToAccount(key.startsWith('0x') ? key : `0x${key}`) : null
 const buyer = arg('recipient', '') || account?.address || ''

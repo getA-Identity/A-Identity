@@ -7,6 +7,7 @@ import { CHAINS } from './chains/registry.js'
 import { PROVENANCE } from './chains/provenance.js'
 import { arcLedgerFacts } from './chains/frontend-ledger.js'
 import { PAGE_MAX_SESSION_SECONDS } from './arc-owner-vault.js'
+import { RETIRED_COMPROMISED, retiredPublic } from './chains/retired.js'
 import { BaseError, ContractFunctionZeroDataError, HttpRequestError, InternalRpcError, LimitExceededRpcError, RpcRequestError, TimeoutError } from 'viem'
 import { getContractError } from 'viem/utils'
 
@@ -881,10 +882,16 @@ test('our launch-day vault and our key are labelled from the build, with no answ
   assert.equal(ours.isOurVault(net, launchDay.toUpperCase().replace('0X', '0x')), true)
   assert.equal(ours.isOurKey(net, agentOwner), true)
   assert.equal(ours.isOurKey(net, agentOwner.toLowerCase()), true)
-  // The former operating wallet, which still owns the launch-day vault, stays ours too.
-  // The launch-day vault's owner, our operating wallet until 2026-11-11, pinned as a wallet rather than read from an env-var name.
-  assert.equal(ours.isOurKey(net, '0xd305607510E0Db2c95807173c7A05BEA53c1ed36'), true)
-  assert.equal(ours.isOurKey(testnet, '0xd305607510E0Db2c95807173c7A05BEA53c1ed36'), true)
+  // The launch-day vault's owner, the former operating wallet, and the former Celo pay-to are retired and compromised, not
+  // ours: someone else holds their keys. They are on neither network's key list, and the build lists them apart.
+  const ledger = (await import(repoUrl('src/lib/arc-ledger.ts').href)) as { ARC_LEDGER_RETIRED: readonly { address: string; label: string; retiredOn: string }[] }
+  assert.deepEqual(ledger.ARC_LEDGER_RETIRED, retiredPublic())
+  for (const retired of RETIRED_COMPROMISED) {
+    for (const network of [net, testnet]) {
+      assert.equal(ours.isOurKey(network, retired.checksum), false, `${retired.label} is not ours on ${network}`)
+      assert.equal(ours.isOurKey(network, retired.address), false)
+    }
+  }
   // The network matters: the same address elsewhere is someone else's claim to make.
   assert.equal(ours.isOurVault(testnet, launchDay), false)
   // Nobody else is called ours, and the backend can only add to the list.
@@ -977,6 +984,73 @@ test('a contract that only names our key as owner is not called ours or deployed
   assert.match(status, /\{!ours && ownerIsOurKey && \([\s\S]{0,300}\{NAMES_OUR_KEY\}/)
   const page = codeOnly(repo('src/routes/app/ArcVault.tsx'))
   assert.match(page, /ours \? 'This is our own vault[^']*' : `\$\{NAMES_OUR_KEY\}/)
+})
+
+test('a vault whose owner or agent key is a retired address says so, is never called ours, and gets no fund form or controls', async () => {
+  type Retired = { address: string; label: string; retiredOn: string }
+  const ours = (await import(repoUrl('src/lib/arc/ours.ts').href)) as OursModule & {
+    isOurKey: (network: string, address: string, listed?: Readonly<Record<string, readonly string[]>>) => boolean
+    isRetiredKey: (address: string | null | undefined) => boolean
+    retiredKeyOf: (address: string | null | undefined) => Retired | null
+    retiredVaultOn: (network: string, address: string) => string | null
+    operatorRetiredLine: (r: { label: string; retiredOn: string }, state?: { frozen?: boolean; expired?: boolean }) => string
+    NAMES_RETIRED_KEY: string
+  }
+  const net = ARC_MAINNET?.caip2 ?? ''
+  const testnet = CHAINS.find((c) => c.id === 'arc')?.caip2 ?? ''
+  for (const r of RETIRED_COMPROMISED) {
+    for (const spelled of [r.address, r.checksum, ` ${r.checksum.toUpperCase().replace('0X', '0x')} `]) {
+      assert.equal(ours.isRetiredKey(spelled), true, spelled)
+      assert.deepEqual(ours.retiredKeyOf(spelled), { address: r.address, label: r.label, retiredOn: r.retiredOn })
+      // An older backend listed the former operating wallet among our keys: no list can make a retired address ours.
+      for (const network of [net, testnet]) assert.equal(ours.isOurKey(network, spelled, { [network]: [r.address] }), false)
+    }
+  }
+  for (const other of [OWNER, VAULT, '', null, undefined]) assert.equal(ours.isRetiredKey(other), false, String(other))
+  assert.equal(ours.NAMES_RETIRED_KEY, "This contract names a retired address as its owner: someone else holds that key, and it is not A-Identity's. Do not fund it.")
+  const cutItOut = ours.operatorRetiredLine(retiredPublic()[0])
+  assert.match(cutItOut, /^This vault's agent key \(operator\) is the former operating wallet, which A-Identity retired on 2026-11-11 because someone else holds its key/)
+  for (const call of ['setOperator', 'setFrozen', 'withdraw']) assert.ok(cutItOut.includes(`(${call})`), `the owner is told about ${call}`)
+  assert.doesNotMatch(cutItOut, /\bours\b|one of our keys/i)
+  // It says the key can pay only while that is true: a frozen vault or a lapsed session key stops it, and it stays the agent key.
+  assert.equal(ours.operatorRetiredLine(retiredPublic()[0], { frozen: false, expired: false }), cutItOut)
+  assert.match(cutItOut, /that key can still pay from this vault within its limits/)
+  for (const state of [{ frozen: true }, { expired: true }, { frozen: true, expired: true }]) {
+    const line = ours.operatorRetiredLine(retiredPublic()[0], state)
+    assert.doesNotMatch(line, /can still pay/, JSON.stringify(state))
+    assert.match(line, state.frozen ? /It cannot pay while the vault is frozen, but it stays the agent key until you replace it\./ : /It cannot pay while its session key has lapsed, but it stays the agent key until you replace it\./)
+    for (const call of ['setOperator', 'setFrozen', 'withdraw']) assert.ok(line.includes(`(${call})`), `${JSON.stringify(state)}: the owner is told about ${call}`)
+    assert.doesNotMatch(line, /\bours\b|one of our keys/i)
+  }
+  // The launch-day vault says it is retired, from the ledger generated into the build.
+  const launchDay = PROVENANCE.find((p) => p.chain === 'arc-mainnet')?.contracts.find((c) => c.name === 'AgentSpendPolicy vault')?.address ?? ''
+  assert.equal(ours.retiredVaultOn(net, launchDay), '2026-11-11')
+  assert.equal(ours.retiredVaultOn(net, VAULT), null)
+
+  // The page: a retired owner gets no fund form, no approval and no controls, is answered before "ours", and never counts.
+  const page = codeOnly(repo('src/routes/app/ArcVault.tsx'))
+  assert.match(page, /const ownerIsRetired = Boolean\(v && isRetiredKey\(v\.owner\)\)/)
+  assert.match(page, /\{v && !ours && !ownerIsOurKey && !ownerIsRetired && v\.knownBuild && v\.usdcMatches && \(\s*<section aria-label="Fund"/)
+  assert.match(page, /canAct=\{!ours && !ownerIsOurKey && !ownerIsRetired && v\.knownBuild && v\.usdcMatches\}/)
+  assert.match(page, /const ownersVault = Boolean\(v && !ours && !ownerIsOurKey && !ownerIsRetired && /)
+  const section = page.slice(page.indexOf('function OwnerSection'))
+  const retiredFirst = section.indexOf('if (ownerIsRetired)')
+  assert.ok(retiredFirst > 0 && retiredFirst < section.indexOf('if (ours || ownerIsOurKey)'), 'a retired owner is answered before ours, so the launch-day vault is never called our own')
+  assert.match(section, /\$\{NAMES_RETIRED_KEY\} This page offers no controls for it, whoever is connected\./)
+  // The status panel: the line and a danger chip for a retired owner, never "One of our keys"; for a retired agent key, how to cut it out.
+  const status = codeOnly(repo('src/components/app/arc/VaultStatus.tsx'))
+  assert.match(status, /\{ownerRetired && \([\s\S]{0,300}\{NAMES_RETIRED_KEY\}/)
+  assert.match(status, /\{operatorRetired && !ownerRetired && \([\s\S]{0,300}\{operatorRetiredLine\(operatorRetired, v\)\}/, 'the line is given the vault as read, so it says whether the key can pay now')
+  assert.match(status, /\{ownerRetired && <Chip tone="danger">/)
+  assert.match(status, /\{operatorRetired && <Chip tone="danger">/)
+  const match = repo('src/components/app/arc/OwnerMatch.tsx')
+  assert.match(match, /ownerIsOurKey \|\| ownerIsRetired \? '' : ' To act on this vault, pick the owner account in your wallet\.'/, 'nobody is told to pick a retired key in their wallet')
+  // The launch-day vault is labelled for what it is: deployed by A-Identity, retired, not ours.
+  const kv = repo('src/lib/arc/known-vaults.ts')
+  assert.match(kv, /export const OURS_LABEL = 'Deployed by A-Identity, retired on 2026-11-11, and not ours any more\.'/)
+  assert.match(kv, /export const OURS_DETAIL =\s*"Its owner is the former operating wallet, an address A-Identity retired that day because someone else holds its key/)
+  assert.doesNotMatch(kv, /our former|our operating/)
+  assert.doesNotMatch(repo('src/components/app/arc/VaultPicker.tsx'), /Launch-day vault \(ours\)/)
 })
 
 test('the page labels an operator key of ours, and a team-owned vault is not dressed as a green owner-held one', () => {

@@ -21,7 +21,7 @@
  * moved from arc.network to arc.io on 2026-09-16 and this list moved with them.
  */
 import { ARC_EXPLORER, CONTRACTS } from './arc-contracts.js'
-import { ARC_CHAIN } from './chains/index.js'
+import { ARC_CHAIN, retiredSignerRefusal, usableSignerKey } from './chains/index.js'
 
 /** Arc RPCs whose eth_call revert format works with the Kernel getSenderAddress step. */
 const AA_RPCS = [
@@ -35,9 +35,10 @@ const ERC20_TRANSFER_ABI = [
   { type: 'function', name: 'transfer', stateMutability: 'nonpayable', inputs: [{ name: 'to', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [{ type: 'bool' }] },
 ] as const
 
-/** Session-key AA is available only with a bundler key + a funding signer. */
+/** Session-key AA is available only with a bundler key + a funding signer. A signer key whose
+ *  address is retired (chains/retired.ts) is no signer, so the path stays a no-op. */
 export function aaEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return !!env.PIMLICO_API_KEY && !!env.ARC_SIGNER_KEY
+  return !!env.PIMLICO_API_KEY && !!usableSignerKey(env.ARC_SIGNER_KEY, 'ARC_SIGNER_KEY')
 }
 
 const usdcUnits = (usd: number) => BigInt(Math.round(usd * 1e6))
@@ -153,7 +154,7 @@ export async function runSessionKeyDemo(
   if (!aaEnabled(env)) {
     return {
       executed: false,
-      reason: 'No PIMLICO_API_KEY (+ ARC_SIGNER_KEY) set. With them, this deploys a Kernel ERC-4337 smart account, grants a session key scoped to a spend cap + payee allowlist + expiry, and settles a real UserOp within bounds (rejecting anything outside) - bounded authority on the standard AA primitive.',
+      reason: `${retiredSignerRefusal(env.ARC_SIGNER_KEY, 'ARC_SIGNER_KEY') ?? 'No PIMLICO_API_KEY (+ ARC_SIGNER_KEY) set.'} With them, this deploys a Kernel ERC-4337 smart account, grants a session key scoped to a spend cap + payee allowlist + expiry, and settles a real UserOp within bounds (rejecting anything outside) - bounded authority on the standard AA primitive.`,
     }
   }
   const capUsd = Math.min(Math.max(input.capUsd ?? 0.05, 0.001), 1)

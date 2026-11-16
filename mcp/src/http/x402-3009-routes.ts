@@ -31,7 +31,7 @@ import {
 } from '../x402-3009/rail.js'
 import { supported, verify, settle } from '../x402-3009/facilitator.js'
 import { provenDomainCached } from '../x402-3009/domain.js'
-import { getChainById, evmWalletClientFromKey, type ChainDescriptor } from '../chains/index.js'
+import { getChainById, evmWalletClientFromKey, retiredSignerRefusal, type ChainDescriptor } from '../chains/index.js'
 import type { TxContext } from '../asp/tools.js'
 import { readBody, sendJson, type RouteCtx, sendChallenge } from './shared.js'
 
@@ -47,10 +47,13 @@ async function settlementSigner(chain: ChainDescriptor): Promise<Record<string, 
   const wallet = await evmWalletClientFromKey(chain, dedicated || (chainVar ? process.env[chainVar] : undefined)).catch(() => null)
   if (wallet) return { configured: true, address: wallet.account.address, from: usingVar }
   const present = Boolean((dedicated ?? (chainVar ? process.env[chainVar] : undefined))?.trim())
+  const retired = retiredSignerRefusal(dedicated || (chainVar ? process.env[chainVar] : undefined), usingVar)
   return {
     configured: false,
     from: usingVar,
-    reason: present
+    reason: retired
+      ? `${retired} Settlement is refused until it holds a fresh key.`
+      : present
       ? `${usingVar} is set but is not a 32-byte hex private key, so it was treated as unset. Settlement is refused until it is a real key.`
       : `Neither X402_3009_SIGNER_KEY nor ${chainVar ?? 'a chain signer variable'} is set, so there is nothing to broadcast with.`,
     effect: 'Everything except POST /api/facilitator/settle and the paid tools works; those refuse with no_signer rather than pretending.',

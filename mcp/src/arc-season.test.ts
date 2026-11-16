@@ -36,6 +36,7 @@ import {
 import { REVOKED_KEY_EXPIRY, committedOurKeys, stateChecks, stateNotes, type VaultState } from './arc-owner-vault.js'
 import { getChainById } from './chains/index.js'
 import { PROVENANCE } from './chains/provenance.js'
+import { RETIRED_COMPROMISED, retiredAddresses } from './chains/retired.js'
 import { addressUrl, txUrl } from './chains/explorer.js'
 import { internalPayers as gatewayInternalPayers } from './x402-gateway/rail.js'
 import { internalPayers as facilitatorInternalPayers } from './x402-3009/rail.js'
@@ -645,7 +646,7 @@ test('vault and refusal items derive their explorer links from the registry and 
   assert.doesNotMatch(vaults.note, /No owner-held vault yet/)
   assert.equal(vaults.items[0].ownerKind, 'external')
   // Past 0 the note still says the launch-day vault is not counted, and the page keeps showing it.
-  assert.match(vaults.note, /launch-day vault 0x[0-9a-fA-F]{40} is owned by our former operating wallet and is not among them/)
+  assert.match(vaults.note, /launch-day vault 0x[0-9a-fA-F]{40} is owned by the former operating wallet, which A-Identity retired on 2026-11-11 because someone else holds its key, and is not among them/)
   const page = readFileSync(new URL('../../src/components/proof/ArcSeasonProgress.tsx', import.meta.url), 'utf8')
   assert.match(page, /metric=\{m1\.vaults\} keepNote/)
   assert.match(page, /ownerKind\?: 'team' \| 'external'/, 'a backend from before the label must still render')
@@ -791,8 +792,8 @@ test('with no vault, no chain is read for owner actions', async () => {
 test('with the curated lists empty, the notes say why the launch-day vault and refusal do not count', async () => {
   const r = await arcSeasonReport(deps({ vaults: [], refusals: [], partners: [] }))
   // The address comes from the provenance ledger, not from a second copy in the report.
-  assert.match(r.milestone1.vaults.note, /launch-day vault 0x[0-9a-fA-F]{40} was deployed from our server key with our former operating wallet as its owner/)
-  assert.match(r.milestone1.vaults.note, /not owner-held and is not counted/)
+  assert.match(r.milestone1.vaults.note, /launch-day vault 0x[0-9a-fA-F]{40} was deployed by A-Identity from its server key, with the former operating wallet as its owner, which A-Identity retired on 2026-11-11 because someone else holds its key/)
+  assert.match(r.milestone1.vaults.note, /not owner-held, it is not ours any more, and it is not counted/)
   assert.match(r.milestone1.refusals.note, /simulation/)
   assert.match(r.milestone1.refusals.note, /no hash and is not counted/)
   assert.match(r.milestone1.checks.note, /No verify-then-pay flow yet/)
@@ -927,24 +928,51 @@ test("what the repo calls ours is ours here too: its own agents, the committed l
     assert.equal(viaPlantedRow.milestone2.externalChecks.count, 1)
   }
   assert.match(after.usage.basis, /only a flow recorded before 2026-11-11T00:38:00Z, when the founder emptied it/)
-  // A check paid by an exposed key of ours after the exposure stays internal and opens no counted flow, refused or paid.
-  const exposed = gw({ payer: '0xd305607510E0Db2c95807173c7A05BEA53c1ed36', ts: '2026-11-11T06:00:00Z' })
-  const control = gw({ payer: OURS_GATEWAY, ts: '2026-11-11T06:00:00Z' })
-  for (const [check, counted] of [[exposed, 0], [control, 1]] as const) {
-    const refused = flow({ checkNonce: check.authNonce, outcome: 'refused', txHash: undefined, evidenceUrl: 'https://a-identity.xyz/proof/arc#deny-9', at: '2026-11-11T06:01:00Z' })
-    const paidThrough = flow({ checkNonce: check.authNonce, vault: launch, vaultKeys: { owner: OUR_VAULT_OWNER, operator: '0x8c8d9cd12d8896a40cf2115ee731258bb4983349' }, at: '2026-11-11T06:01:00Z' })
-    for (const f of [refused, paidThrough]) {
-      const r = await arcSeasonReport(deps({ gateway: [check], flows: [f], committedOurs: committedOurKeys() }))
-      // The control, a check our own unexposed wallet paid, shows the same flow does count: the exposure is what stops it.
-      assert.deepEqual([r.milestone1.checks.count, r.milestone2.externalChecks.count, r.milestone2.externalFlows.count], [counted, 0, 0], `${check.payer} ${f.outcome}`)
+  // A check paid by a retired address after its metric cutoff is never external and opens no counted flow, refused or paid,
+  // in any case. The retired list comes from the module, not from the committed list, which no longer names them.
+  for (const retired of RETIRED_COMPROMISED) {
+    const exposed = gw({ payer: retired.checksum, ts: '2026-11-11T06:00:00Z' })
+    const control = gw({ payer: OURS_GATEWAY, ts: '2026-11-11T06:00:00Z' })
+    for (const [check, counted] of [[exposed, 0], [control, 1]] as const) {
+      const refused = flow({ checkNonce: check.authNonce, outcome: 'refused', txHash: undefined, evidenceUrl: 'https://a-identity.xyz/proof/arc#deny-9', at: '2026-11-11T06:01:00Z' })
+      const paidThrough = flow({ checkNonce: check.authNonce, vault: launch, vaultKeys: { owner: OUR_VAULT_OWNER, operator: '0x8c8d9cd12d8896a40cf2115ee731258bb4983349' }, at: '2026-11-11T06:01:00Z' })
+      for (const f of [refused, paidThrough]) {
+        for (const committedOurs of [committedOurKeys(), [...committedOurKeys(), ...retiredAddresses()], undefined]) {
+          const r = await arcSeasonReport(deps({ gateway: [check], flows: [f], committedOurs }))
+          // The control, a check our own wallet paid, shows the same flow does count: the retirement is what stops it.
+          assert.deepEqual([r.milestone1.checks.count, r.milestone2.externalChecks.count, r.milestone2.externalFlows.count], [counted, 0, 0], `${check.payer} ${f.outcome}`)
+        }
+      }
     }
+    // Before its cutoff a check it paid still opens a counted flow, as it did when the flow ran: no recorded number moves.
+    const early = gw({ payer: retired.address, ts: '2026-11-01T13:00:00Z' })
+    const earlyFlow = flow({ checkNonce: early.authNonce, outcome: 'refused', txHash: undefined, evidenceUrl: 'https://a-identity.xyz/proof/arc#deny-8', at: '2026-11-01T13:00:30Z' })
+    const r = await arcSeasonReport(deps({ gateway: [early], flows: [earlyFlow] }))
+    assert.deepEqual([r.milestone1.checks.count, r.milestone2.externalChecks.count], [1, 0])
   }
-  assert.match(own.milestone1.checks.note, /A check paid by 0xd305\.\.\.ed36 or 0xF43F\.\.\.742D after 13:01 UTC on 2026-11-01 opens no counted flow/)
+  assert.match(own.milestone1.checks.note, /A check paid by 0xd305\.\.\.ed36 or 0xF43F\.\.\.742D, the two addresses A-Identity retired on 2026-11-11 because someone else holds their keys, never counts as external, and opens no counted flow if it was paid after 13:01 UTC on 2026-11-01\./)
+  assert.doesNotMatch(own.milestone1.checks.note, /also holds/)
 
-  assert.match(after.usage.basis, /is an address this repo commits as ours \(admission refuses a vault owner from the same addresses, and our own agents are among them\), owns a vault labeled team/)
+  assert.match(after.usage.basis, /is an address this repo commits as ours \(admission refuses a vault owner from the same addresses, and our own agents are among them\), is an address A-Identity retired because someone else holds its key \(not ours, and never external demand\), owns a vault labeled team/)
   assert.match(after.usage.basis, /through such a vault or through the launch-day vault/)
-  assert.match(after.usage.basis, /Everything after the rails' lists counts as internal in this report only: the rails' own proof reads the lists alone/)
+  assert.match(after.usage.basis, /Everything after the rails' lists and the retired addresses counts as internal in this report only: the rails' own proof reads the lists and the retired addresses alone/)
   assert.doesNotMatch(after.usage.basis, /X402_3009_INTERNAL_PAYERS\) owns/, 'the comma that was missing')
+})
+
+test('a vault a retired address owns never counts, whichever list holds it, and no number depends on the lists naming the retired', async () => {
+  const curated = { address: EXT_A, owner: RETIRED_COMPROMISED[0].checksum, ownerKind: 'external' as const, deployTx: '0x' + '3c'.repeat(32), deployedAt: '2026-11-03', note: 'planted' }
+  const r = await arcSeasonReport(deps({ vaults: [curated] }))
+  assert.equal(r.milestone1.vaults.count, 0)
+  assert.deepEqual(r.milestone1.vaults.items, [])
+  // Every number is the same whether the committed list names the retired addresses (as it did) or not (as now).
+  const checks = RETIRED_COMPROMISED.map((x, i) => gw({ payer: x.checksum, ts: `2026-10-0${i + 1}T00:00:00Z` }))
+  const outside = gw({ payer: EXT_A, ts: '2026-10-05T00:00:00Z' })
+  const numbers = (x: Awaited<ReturnType<typeof arcSeasonReport>>) => ({ internal: x.usage.internal, external: x.usage.external.checks, m1: x.milestone1.checks.count, m2: x.milestone2.externalChecks.count, wallets: x.usage.external.wallets })
+  const before = await arcSeasonReport(deps({ gateway: [...checks, outside], committedOurs: [...committedOurKeys(), ...retiredAddresses()] }))
+  const after = await arcSeasonReport(deps({ gateway: [...checks, outside], committedOurs: committedOurKeys() }))
+  assert.deepEqual(numbers(after), numbers(before))
+  assert.equal(after.usage.external.checks, 1)
+  assert.equal(after.usage.internal.checks, 2)
 })
 
 test('the live deps read the committed list with no env: a key only the env knows is not on it', () => {
@@ -2368,7 +2396,7 @@ test('the trace says what it read on each network: every movement on Arc Mainnet
   assert.match(reads, /on Arc Testnet, only the USDC transfers from our wallets to the tracked owners, agent keys, payers, payee and funders, blocks 64,800,000 to 71,411,457 \(2026-09-30 to 2026-11-08\)/)
   const noFunding = ARC_OUR_SIDE_LINKS.find((x) => x.kind === 'none-found' && /No funding from our side/.test(x.note))!
   assert.match(noFunding.note, /every USDC movement of the tracked wallets was read on Arc Mainnet, and every USDC transfer from our wallets to them on Arc Testnet,/)
-  assert.match(noFunding.note, /On Arc Mainnet the operating wallet sent USDC only to/, 'what our wallets sent elsewhere was read on Arc Mainnet only')
+  assert.match(noFunding.note, /On Arc Mainnet the operating wallet of the time \(retired on 2026-11-11, not ours\) sent USDC only to/, 'what our wallets sent elsewhere was read on Arc Mainnet only')
   // The Arc Testnet scan read only transfers from our wallets to the tracked ones, so nothing says it read every movement there.
   const all = JSON.stringify({ reads, limits: ARC_LINK_TRACE.limits, ourSide: ARC_OUR_SIDE_LINKS })
   assert.doesNotMatch(all, /on Arc Mainnet and Arc Testnet|every USDC movement[^;.]*\(2026-09-14 to 2026-11-08\), and on Arc Testnet/)
@@ -2543,7 +2571,7 @@ test('the vault note says what the key comparison covers, when a vault counts, a
   assert.doesNotMatch(note, /A-Identity's servers never held/, 'not a claim the comparison cannot carry')
   assert.match(note, /A vault counts once its agent key has an end date, the second confirmation on \/app\/vault\/arc: a deploy that stopped before that, or a deploy on Arc Testnet, is not counted\./)
   assert.equal(ARC_GAS_SUPPORT.owners, 0)
-  assert.match(note, /Gas support for owners without USDC on Arc \(up to 0\.08 USDC from our former operating wallet for the network fees\) ended on 2026-11-10, when we found that someone else also holds that wallet's key/)
+  assert.match(note, /Gas support for owners without USDC on Arc \(up to 0\.08 USDC for the network fees, sent from the former operating wallet\) ended on 2026-11-10, when we found that someone else holds that wallet's key; A-Identity retired the wallet on 2026-11-11/)
   assert.doesNotMatch(note, /can receive up to 0\.08 USDC/, 'no promise of a payout from an exposed wallet')
   assert.match(note, new RegExp(`No owner received any, as read from that wallet's sends on ${ARC_GAS_SUPPORT.readOn}, and any such transfer is public on chain`))
   assert.doesNotMatch(note, /nothing will be sent from it|None has so far|still signed by the owner/, 'no promise about a wallet someone else holds the key of')
@@ -2699,6 +2727,24 @@ test('an external flow that pays our receiving wallet is said to pay one of our 
   // Without the receiving wallet named as ours it is somebody else, and said so.
   const elsewhere = await externalFlowsOf([v6Flow(V6_OPERATOR, OPERATING, 'paid')])
   assert.match(elsewhere.note, /1 paid a wallet that neither the vault's keys nor a traced link ties to the wallet that paid for the check\.$/)
+})
+
+test('a flow that pays or names a retired address is said as retired, never as ours, even when it is the vault owner, and no count moves', async () => {
+  for (const retired of RETIRED_COMPROMISED) {
+    // An external flow that pays a retired address: the clause says retired, never "one of our own wallets".
+    const paidRow = v6Flow(V6_OPERATOR, retired.checksum, 'paid')
+    paidRow.flow.vaultKeys = undefined
+    const ef = await externalFlowsOf([paidRow])
+    assert.equal(ef.items[0].payeeInternal, "the payee is a retired, compromised address, not A-Identity's")
+    assert.match(ef.note, /Of the flows that paid: 1 paid an address A-Identity retired because someone else holds its key, not A-Identity's\.$/)
+    assert.doesNotMatch(ef.note, /our own wallets or agents/)
+    // A vault whose recorded owner is retired, paying or naming that owner: the retired label comes first.
+    const ownerRow = v6Flow(V6_OPERATOR, retired.address, 'refused')
+    ownerRow.flow.vaultKeys = { owner: retired.checksum, operator: V6_OPERATOR }
+    const named = await externalFlowsOf([ownerRow])
+    assert.equal(named.items[0].payeeInternal, "the payee is a retired, compromised address, not A-Identity's")
+    assert.equal([named.count, named.linked.paid, named.linked.refused].join(), '1,0,1')
+  }
 })
 
 test('the page shows the wallet and party counts beside the numbers, and each link with what it rests on', () => {

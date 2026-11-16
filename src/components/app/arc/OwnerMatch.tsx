@@ -2,21 +2,35 @@
  * The line that comes before any control: is the connected account this vault's owner?
  *
  * Read off the vault's live owner() in the same snapshot as everything else, never off our own
- * records, and compared case-insensitively. For our own launch-day vault the line also says
- * whose key the owner is, because "not you" alone would leave the reader guessing.
+ * records, and compared case-insensitively. For a vault whose owner is one of our keys, or an
+ * address A-Identity retired as compromised, the line also says whose key the owner is, because
+ * "not you" alone would leave the reader guessing.
  */
 import { CheckCircle2, ShieldAlert } from 'lucide-react'
 import type { VaultSnapshot } from '../../../lib/arc/vault-read'
 import { sameAddress } from '../../../lib/arc/vault-rules'
 import { Mono } from '../stellar/bits'
 
-export default function OwnerMatch({ vault, account, ownerIsOurKey }: { vault: VaultSnapshot; account: string | null; ownerIsOurKey: boolean }) {
+export default function OwnerMatch({
+  vault,
+  account,
+  ownerIsOurKey,
+  ownerIsRetired = false,
+}: {
+  vault: VaultSnapshot
+  account: string | null
+  ownerIsOurKey: boolean
+  /** owner() is an address A-Identity retired as compromised: someone else holds that key. */
+  ownerIsRetired?: boolean
+}) {
   if (!account)
     return (
       <p className="text-sm text-foreground/70">
-        {ownerIsOurKey
-          ? 'The owner this contract names is one of our own keys, so no visitor can act on this vault here. Reading it needs no wallet.'
-          : 'Connect an EVM wallet above to see whether you own this vault. Reading it needs no wallet.'}
+        {ownerIsRetired
+          ? "The owner this contract names is a retired address: someone else holds that key, and it is not A-Identity's, so no visitor can act on this vault here. Reading it needs no wallet."
+          : ownerIsOurKey
+            ? 'The owner this contract names is one of our own keys, so no visitor can act on this vault here. Reading it needs no wallet.'
+            : 'Connect an EVM wallet above to see whether you own this vault. Reading it needs no wallet.'}
       </p>
     )
 
@@ -35,8 +49,8 @@ export default function OwnerMatch({ vault, account, ownerIsOurKey }: { vault: V
       <ShieldAlert size={16} className="mt-0.5 shrink-0 text-danger" aria-hidden="true" />
       <p>
         Connected account <Mono>{account}</Mono> is NOT the owner (owner is <Mono>{vault.owner}</Mono>
-        {ownerIsOurKey ? ', one of our own keys' : ''}). Owner controls are hidden.
-        {ownerIsOurKey ? '' : ' To act on this vault, pick the owner account in your wallet.'}
+        {ownerIsRetired ? ', a retired address whose key someone else holds' : ownerIsOurKey ? ', one of our own keys' : ''}). Owner controls are hidden.
+        {ownerIsOurKey || ownerIsRetired ? '' : ' To act on this vault, pick the owner account in your wallet.'}
       </p>
     </div>
   )

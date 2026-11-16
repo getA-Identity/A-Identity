@@ -15,6 +15,7 @@ import {
   blockFingerprint,
   collectOurAddresses,
   committedOurKeys,
+  committedRetiredKeys,
   constructorInputs,
   deployChecks,
   encodeCreationInput,
@@ -48,6 +49,7 @@ import {
 import { ARC_OWNER_HELD_VAULTS } from './arc-season.js'
 import { PROVENANCE } from './chains/provenance.js'
 import { getChainById } from './chains/registry.js'
+import { FORMER_OPERATING_WALLET, RETIRED_COMPROMISED, isRetired, retiredAddresses } from './chains/retired.js'
 import { AgentSpendPolicyAbi, AgentSpendPolicyBytecode } from './contracts/AgentSpendPolicy.js'
 import { internalPayers as gatewayInternalPayers } from './x402-gateway/rail.js'
 import { internalPayers as facilitatorInternalPayers } from './x402-3009/rail.js'
@@ -77,8 +79,10 @@ const DEPLOYED = 1_793_400_000n // 2026-10-30T22:40:00Z
 const ARGS = { owner: OWNER, operator: OPERATOR, usdc: USDC, dailyCap: 1_000_000n, autoApproveMax: 250_000n }
 const INPUT = encodeCreationInput(bytecode, abi, ARGS)
 const OURS: OurAddresses = collectOurAddresses(liveOurAddressSources({} as NodeJS.ProcessEnv))
-/** Our operating wallet until 2026-11-11, which still owns the launch-day vault: the committed address of the Arc Mainnet signer. */
-const OPERATING = getAddress(OUR_KEY_PUBLIC_ADDRESSES.ARC_MAINNET_SIGNER_KEY!)
+/** The former operating wallet, which still owns the launch-day vault: retired on 2026-11-11 and never ours, read from the retired list. */
+const OPERATING = getAddress(FORMER_OPERATING_WALLET.address)
+/** Our buyer wallet and the vaults' agent key: a committed key address and a rail's internal payer. */
+const BUYER = getAddress(OUR_KEY_PUBLIC_ADDRESSES.X402_3009_BUYER_KEY!)
 /** The ledger's Arc Mainnet agent owner, read the way the script reads it: the founder's wallet since 2026-11-11. */
 const AGENT_OWNER = getAddress(PROVENANCE.find((p) => p.chain === ADMISSION_CHAIN)!.agent!.owner)
 
@@ -263,6 +267,7 @@ test('each rule refuses on its own, naming itself', () => {
   })()
   const byOther = deployedBy(OTHER, 7)
   const byUs = deployedBy(OPERATING, 3)
+  const byBuyer = deployedBy(BUYER, 3)
   const cases: [string, Case, string[]][] = [
     ['the deploy reverted', { receipt: { status: '0x0' } }, ['receipt-success']],
     ['the receipt names no contract', { receipt: { contractAddress: null } }, ['contract-created']],
@@ -274,7 +279,8 @@ test('each rule refuses on its own, naming itself', () => {
     ['another build was deployed', { tx: { input: flipped } }, ['creation-input']],
     ['the runtime code is not what the artifact returns', { runtime: matchRuntime('0x6080aa', '0x6080ab') }, ['runtime-code']],
     ['someone other than the owner sent the deploy', { deployer: { from: OTHER, nonce: 7 }, receipt: byOther.receipt, tx: byOther.tx }, ['owner-sent-deploy']],
-    ['the owner is our operating wallet, and it sent the deploy itself', { deployer: { from: OPERATING, nonce: 3 }, receipt: byUs.receipt, tx: byUs.tx, state: { owner: OPERATING } }, ['owner-not-ours']],
+    ['the owner is the former operating wallet, a retired address, and it sent the deploy itself', { deployer: { from: OPERATING, nonce: 3 }, receipt: byUs.receipt, tx: byUs.tx, state: { owner: OPERATING } }, ['owner-not-retired']],
+    ['the owner is our buyer wallet, and it sent the deploy itself', { deployer: { from: BUYER, nonce: 3 }, receipt: byBuyer.receipt, tx: byBuyer.tx, state: { owner: BUYER } }, ['owner-not-ours']],
     ['there is no operator', { state: { operator: zeroAddress } }, ['operator-set']],
     ['the operator is the owner', { state: { operator: OWNER } }, ['operator-set']],
     ['usdc() is another token', { state: { usdc: OTHER } }, ['usdc']],
@@ -293,16 +299,19 @@ test('each rule refuses on its own, naming itself', () => {
 })
 
 test('the owner is matched against our keys whatever its case, and the refusal names whose key it is', () => {
-  const byUs = deployedBy(OPERATING, 3)
-  for (const owner of [OPERATING, OPERATING.toLowerCase()]) {
-    const r = run({ deployer: { from: OPERATING, nonce: 3 }, receipt: byUs.receipt, tx: byUs.tx, state: { owner } })
+  const byBuyer = deployedBy(BUYER, 3)
+  for (const owner of [BUYER, BUYER.toLowerCase()]) {
+    const r = run({ deployer: { from: BUYER, nonce: 3 }, receipt: byBuyer.receipt, tx: byBuyer.tx, state: { owner } })
     const refusal = r.v.refusals.find((c) => c.id === 'owner-not-ours')!
-    assert.match(refusal.detail, /is ours: our agent's owner in the provenance ledger on /)
-    assert.match(refusal.detail, /the committed address of ARC_MAINNET_SIGNER_KEY/)
+    assert.match(refusal.detail, /is ours: /)
+    assert.match(refusal.detail, /the committed address of X402_3009_BUYER_KEY/)
     assert.match(refusal.detail, /x402-gateway internal payer/)
   }
+  const byAgentOwner = deployedBy(AGENT_OWNER, 3)
+  const agentOwned = run({ deployer: { from: AGENT_OWNER, nonce: 3 }, receipt: byAgentOwner.receipt, tx: byAgentOwner.tx, state: { owner: AGENT_OWNER } })
+  assert.match(agentOwned.v.refusals.find((c) => c.id === 'owner-not-ours')!.detail, /is ours: our agent's owner in the provenance ledger on /)
   // An operator that is ours is fine, and said: the agent that pays may be ours, the owner may not.
-  const buyer = gatewayInternalPayers({} as NodeJS.ProcessEnv).find((a) => a.toLowerCase() !== OPERATING.toLowerCase())!
+  const buyer = gatewayInternalPayers({} as NodeJS.ProcessEnv)[0]
   const r = run({ state: { operator: buyer } })
   assert.equal(r.v.admitted, true)
   assert.match(r.checks.find((c) => c.id === 'operator-set')!.detail, /the agent that pays is ours, the owner is not/)
@@ -311,7 +320,7 @@ test('the owner is matched against our keys whatever its case, and the refusal n
 test('refusals lead with ownership, and a missing receipt refuses once with what it blocked listed apart', () => {
   const byUs = deployedBy(OPERATING, 3)
   const r = run({ deployer: { from: OPERATING, nonce: 3 }, receipt: byUs.receipt, tx: byUs.tx, state: { owner: OPERATING, dailyCap: 0n } })
-  assert.deepEqual(refusedBy(r), ['owner-not-ours', 'daily-cap'])
+  assert.deepEqual(refusedBy(r), ['owner-not-retired', 'daily-cap'])
 
   const missing = run({ receiptAnswers: [{ host: 'primary', value: null }, { host: 'blockdaemon', value: null }], state: null })
   assert.deepEqual(refusedBy(missing), ['receipt-found'])
@@ -326,6 +335,34 @@ test('refusals lead with ownership, and a missing receipt refuses once with what
   assert.match(conflict.v.refusals[0].detail, /the hosts disagree/)
 })
 
+test('a vault a retired address owns is refused by its own check in any case, whatever any list says, and is never ours', () => {
+  for (const r of RETIRED_COMPROMISED) {
+    const owner = getAddress(r.address)
+    const deploy = deployedBy(owner, 5)
+    // Every list naming it, the way the live env named both before they were retired: still not ours, still refused.
+    const listed = collectOurAddresses(liveOurAddressSources({ X402_GATEWAY_INTERNAL_PAYERS: retiredAddresses().join(','), X402_3009_PAYTO: r.checksum } as NodeJS.ProcessEnv))
+    for (const spelled of [owner, owner.toLowerCase()]) {
+      const res = run({ deployer: { from: owner, nonce: 5 }, receipt: deploy.receipt, tx: deploy.tx, state: { owner: spelled }, ours: listed })
+      assert.equal(res.v.admitted, false)
+      assert.deepEqual(refusedBy(res), ['owner-not-retired'])
+      const refusal = res.v.refusals[0]
+      assert.equal(refusal.group, 'ownership')
+      assert.equal(refusal.required, true)
+      assert.match(refusal.detail, new RegExp(`is ${r.label}, which A-Identity retired on ${r.retiredOn} because someone else holds its key`))
+      assert.doesNotMatch(refusal.detail, /committed address of/)
+      assert.equal(res.checks.find((c) => c.id === 'owner-not-ours')?.ok, true, 'it is refused as retired, never as ours')
+    }
+  }
+  // Any other owner passes this check, and says what it was compared with.
+  const fine = run({})
+  const check = fine.checks.find((c) => c.id === 'owner-not-retired')!
+  assert.equal(check.ok, true)
+  assert.match(check.detail, /none of the 2 retired addresses/)
+  // With no state to read, it is blocked like every other ownership check, never skipped.
+  const unread = run({ state: null })
+  assert.equal(unread.checks.find((c) => c.id === 'owner-not-retired')?.blockedBy, 'vault-state')
+})
+
 test('a runtime check that cannot run spares a deploy whose creation input matched, but not a state-only read', () => {
   const unsimulated = matchRuntime('0x6080aa', null, 'no host could simulate the creation')
   const withReceipt = run({ runtime: unsimulated })
@@ -336,6 +373,7 @@ test('a runtime check that cannot run spares a deploy whose creation input match
 })
 
 test('ours: agent owners, both rails, the validator, env receiving wallets, and the address of each set EVM key', () => {
+  const OPERATING = getAddress('0x' + '88'.repeat(20))
   const key = generatePrivateKey()
   const bare = generatePrivateKey()
   const env = {
@@ -386,8 +424,8 @@ test('ours: agent owners, both rails, the validator, env receiving wallets, and 
   for (const secret of [key, bare.slice(2), 'not a key']) assert.ok(!everything.includes(secret))
 })
 
-test('the live sources name the launch-day vault owner, both rails\' buyers and every EVM signer env var', () => {
-  assert.match(OURS.byAddress.get(OPERATING.toLowerCase())!.join('; '), /the committed address of ARC_MAINNET_SIGNER_KEY/)
+test('the live sources name both rails\' buyers and every EVM signer env var, and never the retired launch-day vault owner', () => {
+  assert.equal(OURS.byAddress.has(OPERATING.toLowerCase()), false, 'the launch-day vault owner is retired, not ours')
   assert.match(OURS.byAddress.get(AGENT_OWNER.toLowerCase())!.join('; '), /^our agent's owner in the provenance ledger on arc-mainnet/)
   for (const a of [...gatewayInternalPayers({} as NodeJS.ProcessEnv), ...facilitatorInternalPayers({} as NodeJS.ProcessEnv)]) {
     assert.ok(OURS.byAddress.has(a.toLowerCase()), `${a} is on a rail's internal list and must be ours`)
@@ -401,9 +439,12 @@ test('the live sources name the launch-day vault owner, both rails\' buyers and 
     assert.ok(OURS.byAddress.has(address.toLowerCase()), address)
     assert.ok(committedOurKeys().includes(address.toLowerCase()), `${address} is on the list the page is generated from`)
   }
-  // The two wallets whose keys someone else has also held since at least 2026-11-01 stay ours with no env at all,
-  // so a vault either one owns is refused whether or not its key is still in any server's env.
-  for (const exposed of ['0xd305607510e0db2c95807173c7a05bea53c1ed36', '0xf43f43d8aee114a71b164e1f6214bc7625a5742d']) assert.ok(committedOurKeys().includes(exposed), `${exposed} is exposed and must stay ours with no env`)
+  // The two retired addresses, whose keys someone else holds, are never ours: a vault either one owns is refused by
+  // owner-not-retired instead, with no env at all, whatever list names them.
+  for (const r of RETIRED_COMPROMISED) {
+    assert.ok(!committedOurKeys().includes(r.address), `${r.label} is retired and never ours`)
+    assert.ok(committedRetiredKeys().includes(r.address))
+  }
   // The env lists the rails read are honored too, so a wallet added there is refused here.
   const extra = '0x6666666666666666666666666666666666666666'
   const withEnv = collectOurAddresses(liveOurAddressSources({ X402_GATEWAY_INTERNAL_PAYERS: extra } as NodeJS.ProcessEnv))
@@ -578,6 +619,7 @@ test('the curated list holds each vault once, and none owned by a key of ours', 
   assert.equal(new Set(hashes).size, hashes.length, 'a deploy hash is listed twice')
   for (const v of ARC_OWNER_HELD_VAULTS) {
     assert.ok(!OURS.byAddress.has(v.owner.toLowerCase()), `vault ${v.address} is owned by ${v.owner}, which is ours: ${OURS.byAddress.get(v.owner.toLowerCase())?.join('; ')}`)
+    assert.ok(!isRetired(v.owner), `vault ${v.address} is owned by a retired address`)
     assert.ok(Number.isFinite(Date.parse(`${v.deployedAt}T00:00:00Z`)), `vault ${v.address} has no real deploy day`)
   }
 })

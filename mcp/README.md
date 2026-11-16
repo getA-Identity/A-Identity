@@ -249,7 +249,7 @@ npm run start        # MCP server on stdio
 npm run start:http   # the HTTP server (REST + /mcp). Reads config from process.env directly.
 npm run smoke        # spin up the MCP server + exercise every read-only tool
 npm run http-smoke   # exercise the tools over HTTP (server must be running)
-npm test             # tsc + node:test unit tests (2724 across 144 files, as of Nov 2026)
+npm test             # tsc + node:test unit tests (2760 across 145 files, as of Nov 2026)
 npm run e2e          # full end-to-end flow against a running server (E2E_BASE=...)
 ```
 
@@ -261,7 +261,7 @@ node --env-file=.env dist/http.js     # Node 20.6+
 ARC_SIGNER_KEY=0x<funded-key> node dist/http.js
 ```
 
-Tests: **2724 unit tests across 144 colocated `*.test.ts` files** (as of Nov 2026; `npm test`) +
+Tests: **2760 unit tests across 145 colocated `*.test.ts` files** (as of Nov 2026; `npm test`) +
 a full **E2E of about 67 checks** (`npm run e2e`) that adapts to signer presence: green with no
 signer key (live Arc reads; on-chain writes reported as prepared), with the real Arc write
 checks activating under a funded `ARC_SIGNER_KEY`. CI runs the no-signer path.
@@ -304,11 +304,12 @@ node scripts/arc-owner-vault-check.mjs --vault 0x<vault address>    # re-read co
 ```
 
 It refuses unless the owner's own wallet sent the deploy (`owner() == receipt.from`), the owner
-is none of our keys, the operator is set and is not the owner, `usdc()` is the registry USDC,
+is none of our keys and none of the retired addresses (`mcp/src/chains/retired.ts`), the operator is set and is not the owner, `usdc()` is the registry USDC,
 `dailyCap` and `autoApproveMax` are not 0, and the session key outlives the chain's current
 block time. Exit 0 admitted, 1 refused, 2 usage. The launch-day vault (deploy `0xabf41b6f`) is
-refused: its owner is our former operating wallet `0xd305...ed36`, retired on 2026-11-11 and still
-on our key list.
+refused: its owner, `0xd305...ed36`, is on the retired list (`mcp/src/chains/retired.ts`). It is the
+former operating wallet, retired on 2026-11-11 because someone else holds its key, so it is not ours
+and never an owner that counts.
 
 ### Rehearse the vault page on a real chain
 
@@ -354,7 +355,9 @@ check failed, 2 usage.
 `scripts/arc-vtp-runner.mjs` runs verify-then-pay flows through the launch-day vault: each one a
 settled Gateway check followed by a vault payment or a refusal. Milestone 1 needs 100. The rules
 live in `src/arc-vtp-run.ts`, unit-tested with fakes. Status: it finished Milestone 1's 100 flows on Arc Mainnet on
-2026-11-02: 25 DENY and 75 ALLOW, all through our launch-day vault to payees of ours.
+2026-11-02: 25 DENY and 75 ALLOW, all through the launch-day vault A-Identity deployed (retired on 2026-11-11, not
+ours any more), to payees that were ours when the flows ran: the 75 ALLOW flows paid our own agents, and the 25 DENY
+flows named the operating wallet of the time, an address A-Identity has since retired because someone else holds its key.
 `/api/arc/season` is what says how many have run.
 
 ```bash
@@ -371,11 +374,13 @@ CONFIRM_ARC_VTP_RUN=yes node --env-file=.env scripts/arc-vtp-runner.mjs \
 curl -s https://a-identity.xyz/api/arc/season | jq '.milestone1.checks | {count, target, linked, unlinked}'
 ```
 
-`--allow` flows pay Simon, an agent in our own account, and expect ALLOW and a `Paid` transaction. `--deny` flows named our
+`--allow` flows pay Simon, an agent in our own account, and expect ALLOW and a `Paid` transaction. `--deny` flows named the
 operating wallet of the time (the owner of agent #0 then, internal) and expected `TrustDenyError`, which is what its 25 flows got on 2026-11-01 and
-2026-11-02 UTC. It is off-platform, so since the rule changed on 2026-11-04 it forecasts WARN and the plan refuses any
-`--deny`: Milestone 1's 100 flows finished on 2026-11-02 and are not to be run again, and no other payee replaces it.
-The historical run's totals were `--allow 75 --deny 25`, and that invocation now ends REFUSED. Other flags: `--amount-units`
+2026-11-02 UTC. A-Identity retired that wallet on 2026-11-11 because someone else holds its key, so there is no default
+DENY payee any more: `--deny` needs `--deny-payee <0x...>` and `--deny-agent <#n>`, and a retired address is refused as
+the payee. Milestone 1's 100 flows finished on 2026-11-02 and are not to be run again, and an off-platform payee has
+forecast WARN since the rule changed on 2026-11-04, so the plan refuses it. The historical run's totals were
+`--allow 75 --deny 25`, and that invocation now ends with a usage error. Other flags: `--amount-units`
 (default 1000, and each flow pays one unit more, so no two share an amount), `--base-url`,
 `--budget` (default 0.75 USDC), `--max-fee-gwei` (default 60), `--pause-ms` (default 5000),
 `--operator`, `--ack-stop`, `--ack-fresh-log`, `--reconcile`. Exit 0 fits or finished, 1 refused or

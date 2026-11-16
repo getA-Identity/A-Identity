@@ -4,8 +4,10 @@ description: "Base network config, the canonical ERC-8004 registries verified li
 ---
 
 Base is Coinbase's Ethereum L2 and one of the busiest agent ecosystems on any chain.
-A-Identity holds ERC-8004 agent **#73232** on the canonical registry here and has settled
-paid trust calls in native Circle USDC through its own EIP-3009 facilitator.
+A-Identity registered ERC-8004 agent **#73232** on the canonical registry here, and has
+settled paid trust calls in native Circle USDC through its own EIP-3009 facilitator. The
+agent is still held by the former operating wallet, an address A-Identity retired on
+2026-11-11 because someone else holds its key, so it is not ours.
 
 ## Why Base
 
@@ -22,8 +24,8 @@ paid trust calls in native Circle USDC through its own EIP-3009 facilitator.
 </CardGroup>
 
 <Note>
-  Base is **live** for us: agent #73232 is ours on the canonical registry (minted
-  2026-08-27 UTC), and a real settlement in USDC has gone through our own facilitator with
+  Base is **live** for us: agent #73232 was registered by us on the canonical registry
+  (minted 2026-08-27 UTC), and a real settlement in USDC has gone through our own facilitator with
   the receipt carrying the matching Transfer log. Everything on this page, including
   the Stellar funding hop behind the operating wallets, is checkable at
   [/proof/base](https://a-identity.xyz/proof/base).
@@ -33,8 +35,9 @@ paid trust calls in native Circle USDC through its own EIP-3009 facilitator.
   tools here, gasless on both sides, and since 2026-11-11 they have been the only rail of ours
   that sells on Base; no Gateway-credited call has been read back on this chain yet, so that rail stays
   labeled unproven on [/proof/base](https://a-identity.xyz/proof/base). Agent #73232 is still
-  held by our former operating wallet `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`; someone
-  else has also held that wallet's key since at least 2026-11-01, so never pay or fund it.
+  held by `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, the former operating wallet, which
+  A-Identity retired on 2026-11-11 because someone else holds its key. It is not ours any
+  more, so never pay or fund that address.
 </Note>
 
 ## Network config
@@ -91,7 +94,8 @@ const name = await client.readContract({
 | USDC (settlement) | [`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`](https://basescan.org/address/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913) |
 
 We deployed none of these. The registries were already live and registering on them is
-permissionless; what is ours is agent #73232 and the rail on top. The mainnet family's
+permissionless; we registered agent #73232, which is not ours any more, and what is ours is
+the rail on top. The mainnet family's
 ValidationRegistry proxy, `0x8004Cc8439f36fd5F9F049D9fF86523Df6dAAB58`, has code here too
 (read live 2026-10-11; an earlier version of this page said none existed, which was
 wrong). It is not one of the testnet-era addresses in the warning above. We do not wire
@@ -118,14 +122,8 @@ curl -sX POST https://mainnet.base.org -H 'content-type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"eth_call","params":[{"to":"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913","data":"0x3644e515"},"latest"]}'
 # -> 0x02fa7265e7c5d81118673727957699e4d68f74cd74b7db77da710fe8a2c7834f
 
-# Our agent on the canonical registry, answering live: ownerOf(73232).
-curl -sX POST https://mainnet.base.org -H 'content-type: application/json' \
-  -d '{"jsonrpc":"2.0","id":2,"method":"eth_call","params":[{"to":"0x8004a169fb4a3325136eb29fa0ceb6d2e539a432","data":"0x6352211e0000000000000000000000000000000000000000000000000000000000011e10"},"latest"]}'
-# -> 0x...d305607510e0db2c95807173c7a05bea53c1ed36
-# That is our former operating wallet; someone else has also held its key since at least
-# 2026-11-01, so never pay or fund it.
-
-# Our provenance ledger for this rail, re-read live on every request.
+# Our provenance ledger for this rail, re-read live on every request, with who holds
+# former agent #73232 now.
 curl -s https://a-identity-backend.onrender.com/api/proof/base
 ```
 

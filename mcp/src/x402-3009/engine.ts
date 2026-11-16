@@ -42,6 +42,7 @@ import {
   describeReceiptWait,
   evmPublicClient,
   evmWalletClientFromKey,
+  retiredSignerRefusal,
   getChain,
   nodeSaid,
   sendCallSigned,
@@ -480,10 +481,12 @@ export async function settlePayment(input: SettleInput): Promise<SettleResult> {
     const wallet = deps.walletClient ?? signer?.client
     const signerAddress = deps.signerAddress ?? signer?.account?.address
     if (!wallet) {
+      // A key whose address is retired (chains/retired.ts) is refused where the client is built, and said so here.
+      const refused = retiredSignerRefusal(signerKey(chain, env), env.X402_3009_SIGNER_KEY ? 'X402_3009_SIGNER_KEY' : chain.signerEnvVar)
       return {
         success: false,
         code: 'no_signer',
-        errorReason: `No settlement signer configured for ${chain.id}. This rail broadcasts on the buyer's behalf, so it cannot run without one.`,
+        errorReason: `${refused ? `${refused} ` : ''}No settlement signer configured for ${chain.id}. This rail broadcasts on the buyer's behalf, so it cannot run without one.`,
       }
     }
 

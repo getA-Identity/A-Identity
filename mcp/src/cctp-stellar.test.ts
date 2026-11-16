@@ -16,11 +16,14 @@ import {
   bridgeCctp,
   cctpStellarStatus,
   bridgeExecuteGate,
+  evmBridgeKey,
   ZERO_BYTES32,
   type CctpDeps,
   type IrisMessage,
 } from './cctp-stellar.js'
 import { CHAINS, getChainById } from './chains/index.js'
+import { FORMER_OPERATING_WALLET, RETIRED_COMPROMISED, type RetiredAddress } from './chains/retired.js'
+import { privateKeyToAccount } from 'viem/accounts'
 import { handleCctpRoutes } from './http/cctp-routes.js'
 import type { RouteCtx } from './http/shared.js'
 
@@ -294,6 +297,30 @@ test('Stellar -> EVM executed: SAC approve with a short expiry, deposit_for_burn
   assert.equal(log.evmWrites[0].to, arc.contracts.cctp!.messageTransmitter)
   assert.deepEqual(log.evmWrites[0].args, [MESSAGE, ATTESTATION])
   assert.equal(r.steps[r.steps.length - 1].state, 'confirmed')
+})
+
+test('Stellar -> EVM never mints to a retired address: refused before any Iris, Stellar or EVM call, passed in or not', async () => {
+  for (const r of RETIRED_COMPROMISED) {
+    for (const spelled of [r.checksum, r.address]) {
+      const { deps, log } = fakes()
+      const out = await bridgeStellarToEvm({ from: 'stellar-testnet', to: 'arc', amountUsd: 0.15, recipient: spelled, execute: true }, deps)
+      assert.ok('error' in out, JSON.stringify(out))
+      assert.equal(out.error, `recipient is ${r.label}, which A-Identity retired on ${r.retiredOn} because someone else holds its key: nothing is minted to it`)
+      assert.deepEqual([log.irisCalls, log.stellarInvokes.length, log.evmWrites.length], [0, 0, 0])
+    }
+  }
+})
+
+test('a bridging key whose address is retired reads as unset: no signer, no default recipient', (t) => {
+  t.mock.method(console, 'error', () => {})
+  // No test holds a retired key, so a test key stands in for one through the lookup evmBridgeKey takes.
+  const standIn = privateKeyToAccount(EVM_KEY as `0x${string}`).address
+  const lookup = (a: string): RetiredAddress | null => (a.toLowerCase() === standIn.toLowerCase() ? FORMER_OPERATING_WALLET : null)
+  const env = { CCTP_EVM_SIGNER_KEY: EVM_KEY } as NodeJS.ProcessEnv
+  assert.equal(evmBridgeKey(env, lookup), undefined, 'a retired key signs nothing and defaults nothing')
+  assert.equal(evmBridgeKey(env), EVM_KEY, 'a key that is not retired is still the bridging key')
+  assert.equal(evmBridgeKey({ CCTP_EVM_SIGNER_KEY: `  ${EVM_KEY}\n` } as NodeJS.ProcessEnv), EVM_KEY, 'trimmed as before')
+  assert.equal(evmBridgeKey({} as NodeJS.ProcessEnv), undefined)
 })
 
 test('Stellar -> EVM: a refused approve stops the leg; no burn, no Iris', async () => {

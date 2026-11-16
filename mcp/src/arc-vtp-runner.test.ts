@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { privateKeyToAccount } from 'viem/accounts'
 import { readRunLog } from './arc-vtp-run.js'
 import { getChainById } from './chains/index.js'
+import { RETIRED_COMPROMISED } from './chains/retired.js'
 import type { FakeScenario } from './arc-vtp-runner.fake.js'
 
 /**
@@ -26,6 +27,10 @@ const VAULT = '0xe07819e6d28a5dfd5a9f4cd94dc6dc9aeeda4146'
 const BASE = 'https://api.fake.test'
 const KEY = `0x${'59'.repeat(32)}`
 const OPERATOR = privateKeyToAccount(KEY as `0x${string}`).address.toLowerCase()
+/** The wallet the DENY flows name here, synthetic like the fake's (arc-vtp-runner.fake.ts holds the same value). */
+const DENY_PAYEE = '0x' + 'd0'.repeat(20)
+/** Every --deny run names its payee, as the script requires: there is no default DENY payee. */
+const DENY_ARGS = ['--deny-payee', DENY_PAYEE, '--deny-agent', '#0']
 
 type Entry = { kind: string; href?: string; method?: string; paid?: boolean; body?: Record<string, unknown> | null }
 
@@ -40,7 +45,8 @@ function box(): Box {
 
 type Run = { code: number; stdout: string; stderr: string; entries: Entry[]; signatures: Entry[]; rawTxs: Entry[]; receipts: Entry[]; logText: string }
 
-function runner(b: Box, args: string[], o: { key?: string; confirm?: boolean; scenario?: Partial<FakeScenario> } = {}): Promise<Run> {
+function runner(b: Box, args: string[], o: { key?: string; confirm?: boolean; scenario?: Partial<FakeScenario>; bareDeny?: boolean } = {}): Promise<Run> {
+  const named = args.includes('--deny') && !args.includes('--deny-payee') && !o.bareDeny ? [...args, ...DENY_ARGS] : args
   const record = join(b.dir, `requests-${Math.random().toString(36).slice(2)}.jsonl`)
   writeFileSync(record, '')
   const scenario: FakeScenario = { record, operator: OPERATOR, baseUrl: BASE, ...o.scenario }
@@ -48,7 +54,7 @@ function runner(b: Box, args: string[], o: { key?: string; confirm?: boolean; sc
   if (o.key !== undefined) env.X402_3009_BUYER_KEY = o.key
   if (o.confirm) env.CONFIRM_ARC_VTP_RUN = 'yes'
   return new Promise((resolve) => {
-    execFile(process.execPath, ['--import', FAKE, SCRIPT, '--base-url', BASE, '--pause-ms', '0', ...args], { env, cwd: MCP_ROOT, timeout: 90_000 }, (err, stdout, stderr) => {
+    execFile(process.execPath, ['--import', FAKE, SCRIPT, '--base-url', BASE, '--pause-ms', '0', ...named], { env, cwd: MCP_ROOT, timeout: 90_000 }, (err, stdout, stderr) => {
       const entries = readFileSync(record, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as Entry)
       const code = err ? (typeof err.code === 'number' ? err.code : -1) : 0
       resolve({
@@ -88,13 +94,36 @@ test('the fake keeps the runner off the network: a URL nobody planned for is an 
   rmSync(b.dir, { recursive: true })
 })
 
-test('the real deny payee reads as no record today, so it forecasts WARN and the plan refuses, with nothing signed or sent', async () => {
+test('an off-platform deny payee reads as no record, so it forecasts WARN and the plan refuses, with nothing signed or sent', async () => {
   const b = box()
   const r = await runner(b, ['--deny', '1'], { scenario: { denyPayeeRecord: 'no-record' } })
   assert.equal(r.code, 1, r.stderr + r.stdout)
   assert.match(r.stdout + r.stderr, /expected to answer WARN/)
-  assert.match(r.stdout + r.stderr, /not to be run again/)
+  assert.match(r.stdout + r.stderr, /only a payee with a platform record and evidence against it forecasts DENY/)
   assertSpentNothing(r)
+  rmSync(b.dir, { recursive: true })
+})
+
+test('--deny names no payee by default: without --deny-payee and --deny-agent it is refused before anything is read', async () => {
+  const b = box()
+  for (const args of [['--deny', '1'], ['--deny', '1', '--deny-payee', DENY_PAYEE], ['--deny', '1', '--deny-agent', '#0']]) {
+    const r = await runner(b, args, { bareDeny: true })
+    assert.equal(r.code, 2, r.stderr + r.stdout)
+    assert.match(r.stderr, /there is no default DENY payee/)
+    assert.deepEqual(r.entries, [])
+  }
+  rmSync(b.dir, { recursive: true })
+})
+
+test('a retired address is refused as the DENY payee in any case, before anything is read or signed', async () => {
+  const b = box()
+  for (const retired of RETIRED_COMPROMISED) {
+    const r = await runner(b, ['--deny', '1', '--deny-payee', retired.checksum, '--deny-agent', '#0', '--execute', '--log', b.log], { key: KEY, confirm: true })
+    assert.equal(r.code, 2, r.stderr + r.stdout)
+    assert.match(r.stderr, new RegExp(`--deny-payee is ${retired.label}, which A-Identity retired on ${retired.retiredOn} because someone else holds its key`))
+    assert.deepEqual(r.entries, [], 'nothing was read, signed or sent')
+    assert.equal(r.logText, '')
+  }
   rmSync(b.dir, { recursive: true })
 })
 

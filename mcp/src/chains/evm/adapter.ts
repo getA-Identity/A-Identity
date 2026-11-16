@@ -28,6 +28,7 @@ import {
   evmPublicClient,
   evmWalletClient,
   evmWalletClientFromKey,
+  retiredSignerRefusal,
   revertReason,
   usdcUnits,
   fromUsdcUnits,
@@ -100,7 +101,11 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
     throw new Error(`createEvmAdapter: ${chain.id} is not an EVM chain (${chain.ecosystem})`)
   }
 
-  const NO_KEY = `No ${chain.signerEnvVar ?? 'signer'} set. Fund a wallet and export the key to broadcast on-chain.`
+  // Why there is no signer, as each no-op says it: the variable is unset, or it holds a key this server
+  // refuses because its address is retired and compromised (chains/retired.ts). Never the key itself.
+  const noSigner = (env: NodeJS.ProcessEnv): string =>
+    retiredSignerRefusal(chain.signerEnvVar ? env[chain.signerEnvVar] : undefined, chain.signerEnvVar) ?? `No ${chain.signerEnvVar ?? 'signer'} set.`
+  const noKey = (env: NodeJS.ProcessEnv): string => `${noSigner(env)} Fund a wallet and export the key to broadcast on-chain.`
   const tx = (h: string) => txUrl(chain, h)
   const c = chain.contracts
   // For the live app these are all defined; cast for viem's `0x${string}` address type.
@@ -276,7 +281,7 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
         function: 'register(string metadataURI)',
         args: [metadataUri],
         reason:
-          `No ${chain.signerEnvVar ?? 'signer'} set. Fund a wallet at ${chain.faucet ?? 'the chain faucet'} and export ${chain.signerEnvVar ?? 'the key'} to broadcast this for real. This is the exact call that will be made.`,
+          `${noSigner(env)} Fund a wallet at ${chain.faucet ?? 'the chain faucet'} and export ${chain.signerEnvVar ?? 'the key'} to broadcast this for real. This is the exact call that will be made.`,
       }
     }
     const { parseEventLogs } = await import('viem')
@@ -311,7 +316,7 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
         function: 'createJob(address provider, address evaluator, uint256 expiredAt, string description, address hook)',
         args: args.map((a) => (typeof a === 'bigint' ? a.toString() : a)),
         reason:
-          `No ${chain.signerEnvVar ?? 'signer'} set. This is the exact ERC-8183 createJob call. Fund a wallet and export the key to broadcast.`,
+          `${noSigner(env)} This is the exact ERC-8183 createJob call. Fund a wallet and export the key to broadcast.`,
       }
     }
     const hash = await signer.client.writeContract({
@@ -359,7 +364,7 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
     if (!signer) {
       return {
         executed: false,
-        reason: `No ${chain.signerEnvVar ?? 'signer'} set. With a funded key this broadcasts the full ERC-8183 ${outcome === 'refund' ? 'refund/dispute' : 'escrow'} lifecycle (6 real txs).`,
+        reason: `${noSigner(env)} With a funded key this broadcasts the full ERC-8183 ${outcome === 'refund' ? 'refund/dispute' : 'escrow'} lifecycle (6 real txs).`,
         contract: agenticCommerce,
         lifecycle,
         outcome,
@@ -455,7 +460,7 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
         contract: agenticCommerce,
         function: 'reject(uint256 jobId, bytes32 reason, bytes optParams)',
         args: [jobId.toString(), reasonHash],
-        reason: `No ${chain.signerEnvVar ?? 'signer'} set. The evaluator rejects the deliverable; the escrowed USDC is refunded to the client in the same tx.`,
+        reason: `${noSigner(env)} The evaluator rejects the deliverable; the escrowed USDC is refunded to the client in the same tx.`,
       }
     }
     const client = await publicClient(env)
@@ -485,7 +490,7 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
         contract: agenticCommerce,
         function: 'claimRefund(uint256 jobId)',
         args: [jobId.toString()],
-        reason: `No ${chain.signerEnvVar ?? 'signer'} set. After the job's deadline, this returns the escrowed USDC to the client.`,
+        reason: `${noSigner(env)} After the job's deadline, this returns the escrowed USDC to the client.`,
       }
     }
     const client = await publicClient(env)
@@ -548,7 +553,7 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
     const budgetUsd = input.budgetUsd ?? 0.05
     const description = input.description ?? 'A-Identity marketplace escrow'
     const signer = await walletClient(env)
-    if (!signer) return { executed: false, reason: NO_KEY }
+    if (!signer) return { executed: false, reason: noKey(env) }
     const { parseEventLogs } = await import('viem')
     const me = signer.account.address
     const budget = usdcUnits(chain, budgetUsd)
@@ -595,7 +600,7 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
     | { executed: true; steps: EscStep[]; status: string }
   > {
     const signer = await walletClient(env)
-    if (!signer) return { executed: false, reason: NO_KEY }
+    if (!signer) return { executed: false, reason: noKey(env) }
     const { keccak256, toHex } = await import('viem')
     const client = await publicClient(env)
     const empty = '0x' as const
@@ -626,7 +631,7 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
         contract: usdc,
         function: 'transfer(address to, uint256 amount)',
         args: [to, amount.toString()],
-        reason: `No ${chain.signerEnvVar ?? 'signer'} set. Fund a wallet and export the key to move real USDC.`,
+        reason: `${noSigner(env)} Fund a wallet and export the key to move real USDC.`,
       }
     }
     try {
@@ -671,7 +676,7 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
         contract: memoContract,
         function: 'memo(address target, bytes data, bytes32 memoId, bytes memoData)',
         args: [usdc, transferData, memoId, memoBytes],
-        reason: `No ${chain.signerEnvVar ?? 'signer'} set. This is the exact Memo-wrapped USDC transfer (on-chain reason: ${reason}). Fund a wallet and export the key to broadcast.`,
+        reason: `${noSigner(env)} This is the exact Memo-wrapped USDC transfer (on-chain reason: ${reason}). Fund a wallet and export the key to broadcast.`,
       }
     }
     // NOTE: we deliberately do NOT simulateContract here. The Memo precompile rejects
@@ -775,7 +780,7 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
         contract: multicall3From ?? usdc,
         function: multicall3From ? 'aggregate3((address target, bool allowFailure, bytes callData)[])' : 'transfer(address to, uint256 amount) [x' + clean.length + ']',
         args: [calls],
-        reason: `No ${chain.signerEnvVar ?? 'signer'} set. This settles ${clean.length} USDC transfers ${multicall3From ? 'atomically in one Arc tx (Multicall3From)' : 'sequentially'}. Fund a wallet and export the key to broadcast.`,
+        reason: `${noSigner(env)} This settles ${clean.length} USDC transfers ${multicall3From ? 'atomically in one Arc tx (Multicall3From)' : 'sequentially'}. Fund a wallet and export the key to broadcast.`,
       }
     }
     if (clean.length === 0) return { executed: false, reverted: true, reason: 'no valid payments in the batch' }
@@ -815,7 +820,7 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
     const capsRefused = vaultCapsRefusal(input.dailyCapUsd, input.autoApproveUsd, chain.usdcDecimals)
     if (capsRefused) return { executed: false, reverted: false, reason: capsRefused }
     const signer = await walletClient(env)
-    if (!signer) return { executed: false, reverted: false, reason: NO_KEY }
+    if (!signer) return { executed: false, reverted: false, reason: noKey(env) }
     const owner = (input.owner ?? signer.account.address) as Hex
     const operator = (input.operator ?? signer.account.address) as Hex
     const hash = await signer.client.deployContract({
@@ -836,7 +841,7 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
 
   async function vaultWrite(vault: string, functionName: string, args: readonly unknown[], env: NodeJS.ProcessEnv): Promise<VaultResult> {
     const signer = await walletClient(env)
-    if (!signer) return { executed: false, reverted: false, reason: NO_KEY }
+    if (!signer) return { executed: false, reverted: false, reason: noKey(env) }
     const client = await publicClient(env)
     try {
       const { request } = await client.simulateContract({
@@ -864,7 +869,7 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
    */
   async function vaultPayment(vault: string, functionName: 'pay' | 'ownerPay', to: string, amountUsd: number, env: NodeJS.ProcessEnv, hooks: BroadcastHooks): Promise<VaultResult> {
     const signer = await walletClient(env)
-    if (!signer) return { executed: false, reverted: false, reason: NO_KEY }
+    if (!signer) return { executed: false, reverted: false, reason: noKey(env) }
     const client = await publicClient(env)
     const args = [to as Hex, usdcUnits(chain, amountUsd)] as const
     try {
@@ -987,7 +992,7 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
         contract: validationRegistry,
         function: 'validationRequest(address,uint256,string,bytes32) + validationResponse(bytes32,uint8,string,bytes32,string)',
         args: [agentId.toString(), requestUri, requestHash],
-        reason: `No ${chain.signerEnvVar ?? 'signer'} set. This opens + answers an ERC-8004 validation (response=${response}, tag "${tag}") for the agent.`,
+        reason: `${noSigner(env)} This opens + answers an ERC-8004 validation (response=${response}, tag "${tag}") for the agent.`,
       }
     }
     const validator = signer.account.address
@@ -1042,6 +1047,7 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
     const args = [agentId, BigInt(score100), 0, tag, evidenceUri, '', '', feedbackHash] as const
 
     const validatorKey = (opts?.validatorEnvVar && env[opts.validatorEnvVar]) || env.ARC_VALIDATOR_KEY || (chain.signerEnvVar ? env[chain.signerEnvVar] : undefined)
+    const validatorVar = opts?.validatorEnvVar && env[opts.validatorEnvVar] ? opts.validatorEnvVar : env.ARC_VALIDATOR_KEY ? 'ARC_VALIDATOR_KEY' : chain.signerEnvVar
     const signer = await evmWalletClientFromKey(chain, validatorKey, env)
     if (!signer) {
       return {
@@ -1049,7 +1055,7 @@ export function createEvmAdapter(chain: ChainDescriptor, deps: EvmAdapterDeps = 
         contract: reputationRegistry,
         function: 'giveFeedback(uint256,int128,uint8,string,string,string,string,bytes32)',
         args: [agentId.toString(), score100, 0, tag, evidenceUri, '', '', feedbackHash],
-        reason: `No validator key set (ARC_VALIDATOR_KEY or ${chain.signerEnvVar ?? 'signer'}). This records agent ${agentId}'s reputation ${score}/1000 (= ${score100}/100) on the ERC-8004 ReputationRegistry as a signed observer attestation.`,
+        reason: `${retiredSignerRefusal(validatorKey, validatorVar) ?? `No validator key set (ARC_VALIDATOR_KEY or ${chain.signerEnvVar ?? 'signer'}).`} This records agent ${agentId}'s reputation ${score}/1000 (= ${score100}/100) on the ERC-8004 ReputationRegistry as a signed observer attestation.`,
       }
     }
     const client = await publicClient(env)

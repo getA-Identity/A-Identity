@@ -8,7 +8,9 @@
  * drift this repo just paid for), we generate `src/lib/chains.ts` from
  * `mcp/src/chains/registry.ts` and let `frontend-sync.test.ts` fail the build if the
  * two ever disagree. See ../../MULTICHAIN-STRATEGY.md. It also writes `src/lib/arc-ledger.ts`, the
- * two lists /app/vault/arc needs from the provenance ledger (chains/frontend-ledger.ts).
+ * lists /app/vault/arc needs from the provenance ledger (chains/frontend-ledger.ts): the vaults
+ * A-Identity deployed, our own keys, and ARC_LEDGER_RETIRED, the addresses A-Identity retired as
+ * compromised (chains/retired.ts), which are never among our keys.
  */
 import { writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -24,4 +26,4 @@ console.log(`Generated ${target} from mcp/src/chains/registry.ts`)
 
 const ledgerTarget = fileURLToPath(new URL(`../../${FRONTEND_ARC_LEDGER_MODULE}`, import.meta.url))
 writeFileSync(ledgerTarget, renderFrontendArcLedger(committedOurKeys()))
-console.log(`Generated ${ledgerTarget} from mcp/src/chains/provenance.ts`)
+console.log(`Generated ${ledgerTarget} from mcp/src/chains/provenance.ts and mcp/src/chains/retired.ts`)

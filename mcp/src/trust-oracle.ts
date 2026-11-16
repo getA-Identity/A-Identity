@@ -11,7 +11,7 @@
  * without ARC_SIGNER_KEY. The risk engine is the same deterministic one the ASP sells.
  */
 import { ARC_EXPLORER } from './arc-contracts.js'
-import { ARC_CHAIN } from './chains/index.js'
+import { ARC_CHAIN, noSignerReason } from './chains/index.js'
 import { buyerAddress, ensureGatewayBalance, nanopayOnce } from './nanopay.js'
 import { x402PayTo } from './x402.js'
 import { riskCheck } from './asp/tools.js'
@@ -64,8 +64,7 @@ export async function runTrustOracleDogfood(
       executed: false,
       tool: 'risk_check',
       priceUsd: amountUsd,
-      reason:
-        'No ARC_SIGNER_KEY set. With a funded key, a buyer agent pays ~$0.005 over x402 (a gasless Arc nanopayment via Circle Gateway) for a risk_check on the counterparty before it transacts.',
+      reason: `${noSignerReason(env, 'ARC_SIGNER_KEY')} With a funded key, a buyer agent pays ~$0.005 over x402 (a gasless Arc nanopayment via Circle Gateway) for a risk_check on the counterparty before it transacts.`,
     }
   }
 

@@ -27,6 +27,7 @@ import { PRICES } from '../asp/payment.js'
 import { RAIL_BASE_PRICES_USD } from '../x402-3009/rail.js'
 import { loadGatewaySettlementsResult, persistGatewaySettlement, updateGatewaySettlement, type GatewaySettlementRecord } from '../storage.js'
 import { arcSeasonReport } from '../arc-season.js'
+import { RETIRED_COMPROMISED, retiredAddresses } from '../chains/retired.js'
 
 const base = getChainById('base')!
 const PAY_TO = '0x000000000000000000000000000000000000dEaD'
@@ -453,17 +454,58 @@ test('the proof counts credits, separates on-chain batches, labels internal paye
   assert.equal(p.recent[0].authNonce, '0x4')
   assert.match(p.note, /not revenue/)
   const mine = internalPayers({ X402_GATEWAY_INTERNAL_PAYERS: `${PAYER}, nope` } as NodeJS.ProcessEnv)
-  assert.ok(mine.includes('0xd305607510e0db2c95807173c7a05bea53c1ed36'), 'the owner wallet is always labeled internal')
+  assert.ok(mine.includes('0x8c8d9cd12d8896a40cf2115ee731258bb4983349'), 'the buyer wallet is always labeled internal')
   assert.ok(mine.includes(PAYER))
   assert.ok(!mine.includes('nope'))
+  for (const retired of retiredAddresses()) assert.ok(!mine.includes(retired), `${retired} is retired and never ours`)
+})
+
+test('a retired address is never ours: dropped from the env list, published apart, and what it paid still never counts as external', async () => {
+  // In any case, and listed the way the live env listed them before they were retired.
+  const listed = RETIRED_COMPROMISED.map((r) => r.checksum).join(',')
+  assert.deepEqual(internalPayers({ X402_GATEWAY_INTERNAL_PAYERS: `${listed},${PAYER}` } as NodeJS.ProcessEnv).filter((a) => retiredAddresses().includes(a)), [])
+  const row = (payer: string, n: number): GatewaySettlementRecord => ({ ts: '2026-11-08T00:00:00Z', outcome: 'credited', tool: 'risk_check', resource: '/r', network: base.caip2, asset: 'a', assetSymbol: 'USDC', assetDecimals: 6, value: '5000', amountUsd: 0.005, payer, payTo: PAY_TO, authNonce: '0x' + String(n).padStart(64, '0'), confirmedBy: 'gateway-transfers-api', facilitator: 'f' })
+  const rows = [row(RETIRED_COMPROMISED[0].checksum, 1), row(RETIRED_COMPROMISED[1].address, 2), row(PAYER, 3), row('0x2222222222222222222222222222222222222222', 4)]
+  // Before: the env listed the retired addresses as ours. After: it does not, and the module keeps them out of the external count.
+  const before = { ...configured, X402_GATEWAY_INTERNAL_PAYERS: `${listed},${PAYER}` } as NodeJS.ProcessEnv
+  const after = { ...configured, X402_GATEWAY_INTERNAL_PAYERS: PAYER } as NodeJS.ProcessEnv
+  const [b, a] = await Promise.all([railProof(railStatus(before), { env: before, load: async () => rows }), railProof(railStatus(after), { env: after, load: async () => rows })])
+  const numbers = (p: typeof a) => ({ credited: p.credited, totalUsd: p.totalUsd, internalSettlements: p.internalSettlements, internalUsd: p.internalUsd, externalSettlements: p.externalSettlements, externalUsd: p.externalUsd, byNetwork: p.byNetwork, byTool: p.byTool })
+  assert.deepEqual(numbers(a), numbers(b), 'no published number moves')
+  assert.equal(a.internalSettlements, 3)
+  assert.equal(a.externalSettlements, 1)
+  assert.deepEqual(a.internalPayers, b.internalPayers)
+  assert.ok(!a.internalPayers.some((p) => retiredAddresses().includes(p)))
+  assert.deepEqual(a.retiredPayers.map((r) => r.address), retiredAddresses())
+  assert.ok(a.retiredPayers.every((r) => r.retiredOn === '2026-11-11' && r.label.length > 10))
+  assert.match(a.note, /retiredPayers/)
+})
+
+test('a retired pay-to fails closed as not configured, in any case, and is never named as the pay-to', async () => {
+  for (const r of RETIRED_COMPROMISED) {
+    for (const spelled of [r.checksum, r.address, r.address.toUpperCase().replace('0X', '0x')]) {
+      const status = railStatus({ X402_GATEWAY_NETWORKS: base.caip2, X402_GATEWAY_PAYTO: spelled } as NodeJS.ProcessEnv)
+      assert.equal(status.configured, false)
+      assert.equal(status.payTo, null)
+      assert.match(status.reason ?? '', new RegExp(`X402_GATEWAY_PAYTO names ${r.label}`))
+      const gate = railPaywallGate(status)
+      assert.ok(!gate.ok && gate.httpStatus === 501)
+      const challenge = await railChallenge('verify_agent', status)
+      assert.equal(challenge.httpStatus, 501)
+      assert.ok(!JSON.stringify(challenge.body).toLowerCase().includes(r.address), 'the 501 never names the address')
+    }
+  }
 })
 
 test('each network says how many settled rows came from our own wallets, so a headline can show the split', async () => {
   const row = (payer: string, usd: number, n: number): GatewaySettlementRecord => ({ ts: '2026-09-10T00:00:00Z', outcome: 'credited', tool: 'risk_check', resource: '/r', network: base.caip2, asset: 'a', assetSymbol: 'USDC', assetDecimals: 6, value: '1', amountUsd: usd, payer, payTo: PAY_TO, authNonce: '0x' + String(n).padStart(64, '0'), confirmedBy: 'gateway-transfers-api', facilitator: 'f' })
   const env = { ...configured } as NodeJS.ProcessEnv
-  const ours = '0xd305607510e0db2c95807173c7a05bea53c1ed36'
+  const ours = '0x8c8d9cd12d8896a40cf2115ee731258bb4983349'
   const p = await railProof(railStatus(env), { env, load: async () => [row(ours, 0.005, 1), row(ours, 0.005, 2), row(PAYER, 0.005, 3)] })
   assert.deepEqual(p.byNetwork[base.caip2], { count: 3, usd: 0.015, assetSymbol: 'USDC', internal: 2, internalUsd: 0.01 })
+  // A retired payer is not ours and still keeps the internal count where it was.
+  const retired = await railProof(railStatus(env), { env, load: async () => [row(RETIRED_COMPROMISED[0].address, 0.005, 1), row(ours, 0.005, 2), row(PAYER, 0.005, 3)] })
+  assert.deepEqual(retired.byNetwork[base.caip2], { count: 3, usd: 0.015, assetSymbol: 'USDC', internal: 2, internalUsd: 0.01 })
 })
 
 test('the refresh upgrades a credited row to completed once Gateway reports the batch, and leaves the rest alone', async () => {
