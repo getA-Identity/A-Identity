@@ -113,27 +113,6 @@ export const ARC_WALLET_LINKS: ArcWalletLink[] = [
     ],
   },
   {
-    wallets: ['0xae93118cd57ac8645f0ac46a391eaade76d7f7ae', '0xddda78690198398ea24c32faba940ed9582d3681', '0x77152ae071414d967313827587e477a7b6422896'],
-    tracedOn: TRACED_ON,
-    confidence: 'High.',
-    note: 'A paying wallet the founder confirmed on 2026-11-06 is not a team wallet. 0xddda...3681 funded a contract that paid 0xae93...f7ae and returned the rest in one transaction, then sent 0xae93...f7ae 2 USDC more, so the chain reads them as one party.',
-    evidence: [
-      { txHash: '0x670ae198a879fbd33d492d72d5a087e330d3b5eb4ead1b75f944fc66330dd85a', what: '2026-10-24: 0xddda...3681 funded contract 0x7715...2896 with 0.6 USDC' },
-      { txHash: '0x2a0a9b309af4dab4746044d8620c816f0c565aa90bd7da5f433894e76fe19f98', what: '2026-10-24: that contract paid 0xae93...f7ae its first funds, 0.5 USDC, and returned 0.1 to 0xddda...3681' },
-      { txHash: '0xf1d334036a1d615071ad206abc318e66cd1b4618633c5a05511209b5afe3ec54', what: '2026-11-05: 0xddda...3681 sent 0xae93...f7ae 2 USDC' },
-    ],
-  },
-  {
-    wallets: ['0xe7be265f2301e08a6eae5cfd0c1113a7cd35b3dd', '0x94705a9d675daa924f9190eca4c05ed6b12d5345'],
-    tracedOn: TRACED_ON,
-    confidence: 'High.',
-    note: 'A paying wallet the founder confirmed on 2026-11-06 is not a team wallet. 0x9470...5345 funded it and it sent money back.',
-    evidence: [
-      { txHash: '0x7f5f4601074b23293ba04f8bbd5de99ece2a7bd2868b37c583836b9e0b42ac63', what: '2026-09-19: 0x9470...5345 sent 0xe7be...b3dd its first money, 1.52 USDC' },
-      { txHash: '0xed753a04b8fc731599d636bf1be0f750917c362f110fa61acb06d4481b542c61', what: '2026-09-19: 0xe7be...b3dd sent 0.01 USDC back to 0x9470...5345' },
-    ],
-  },
-  {
     wallets: ['0x3c27a3cab7915581941827b47417906e9bd59cf7', '0x889f585ec85c7b8c7c39736219abc99c8915a141'],
     tracedOn: TRACED_ON,
     confidence: 'High.',
@@ -207,7 +186,7 @@ export const ARC_LINK_TRACE = {
     "Not checked: source wallets on Base and Arbitrum (except the one behind vault 0x25e4...6B90's owner), Arc Testnet before 2026-09-30, and any key the server could not compare, which GET /api/arc/vaults lists under admission.keysNotCompared.",
     "Two team wallets known from public platform records have no Arc Mainnet activity. Other team members' personal wallets are not known to this trace, so a link to them cannot be ruled out. On 2026-11-10 the founder said that two other team members made no transactions; he did not give their wallet addresses, so this trace has not checked them.",
     'Not treated as links, because each serves many unrelated users: exchange hot wallets, custodial contracts, CCTP mints and relayers, Circle Gateway, Circle Bridge Kit, LI.FI and widely used contracts.',
-    "Left out of the groups: the wallets behind the named teams' paying wallets. Slippay and Trustless Work agreed to be named as an integration on this page, which does not cover their other wallets. Slippay's two paying wallets count as one party because both are the team's, and the trace also found them tied on chain.",
+    "Left out of the groups: the wallets behind the named teams' paying wallets. Slippay, Trustless Work, KutluhanETH and PayLink agreed to be named as an integration on this page, which does not cover their other wallets. Slippay's two paying wallets count as one party because both are the team's, and the trace also found them tied on chain.",
     "Two flow records of 2026-11-08, each opened by a check that 0x1d54...7f5F, the agent key of vault 0xcB7e...Ed41, paid for, name 0x39AE...5794 and 0x8cd5...27A5, the owners of vaults 0xa4D8...8182 and 0x25e4...6B90, as payees (GET /api/x402/gateway/flows?vault=0xcB7e3b8b323B897E7E4303245dc98DE130B2Ed41). Both were still waiting for the vault owner's approval when read on 2026-11-08, so nothing was paid. A payee named in a flow is not treated as a link: the owner addresses are public on this page, and anyone can name them.",
   ],
 } as const
@@ -219,7 +198,8 @@ export type ArcNotTeamPayer = { wallet: string; saidOn: string }
  * External payers the founder said are not team wallets, each with the day he said it, so the report and the page say whose
  * word it is and when. On 2026-11-06 he said it of the unattributed wallets that had paid by that day, and on 2026-11-10 of
  * the wallets of the first group above, the party behind vault 0xcB7e...Ed41, of which the owner and the agent key have paid
- * checks. A wallet he has not spoken for reads as not identified until someone says otherwise.
+ * checks. A wallet he has not spoken for reads as not identified until someone says otherwise. The first two have since been
+ * named as teams in ARC_PARTNERS (KutluhanETH and PayLink), and a team name always comes before this statement.
  */
 export const ARC_NOT_TEAM_PAYERS: ArcNotTeamPayer[] = [
   { wallet: '0xae93118cd57ac8645f0ac46a391eaade76d7f7ae', saidOn: '2026-11-06' },

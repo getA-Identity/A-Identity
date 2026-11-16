@@ -157,6 +157,15 @@ export const ARC_PARTNERS: ArcPartner[] = [
   // in the commit that added them.
   { wallet: '0x94a2f2f914862f99bf122b9a932ebc4ae3e555c6', team: 'Slippay', publicReference: true, namedWith: 'its OK, confirmed by our founder on 2026-11-06' },
   { wallet: '0xe75d597f414eba88bf4226a3ad8e0fae46b1edc1', team: 'Slippay', publicReference: true, namedWith: 'its OK, confirmed by our founder on 2026-11-06' },
+  // Named on the team's own written OK of 2026-11-05 ("Public reference OK"), in the same scope, passed on by our
+  // founder on 2026-11-16. Its wallet paid 2 risk_check calls on Arc Mainnet from its own Gateway balance on 2026-11-05,
+  // one for each of its two projects, PayRun and Allot: transfers e9b8c83a-6beb-4d97-9f6c-5ba5658d5454 (the first row)
+  // and 82458d6a-a029-4017-a5dd-2d7930223aff, both read back from the log.
+  { wallet: '0xae93118cD57Ac8645f0Ac46A391EAaDe76d7f7aE', team: 'KutluhanETH', publicReference: true, namedWith: 'its own written OK of 2026-11-05, for its PayRun and Allot projects' },
+  // Named on the team's own written OK of 2026-11-05, in the same scope, passed on by our founder on 2026-11-16. Its
+  // wallet paid 1 risk_check call on Arc Mainnet from its own Gateway balance on 2026-11-05: transfer
+  // d10f2174-10a7-4753-a753-474534adc53d, read back from the log. The team ran the paid check only, with no payment after it.
+  { wallet: '0xE7be265f2301E08a6EaE5Cfd0C1113a7Cd35b3dd', team: 'PayLink', publicReference: true, namedWith: 'its own written OK of 2026-11-05' },
 ]
 
 /**
@@ -1365,7 +1374,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   })
   const whoPaidClauses = [
     ...(payers.whoPaid.team.wallets > 0 ? [`${withUnit(payers.whoPaid.team.checks, 'check', 'checks')} from ${withUnit(payers.whoPaid.team.wallets, 'wallet', 'wallets')} of named teams`] : []),
-    ...notTeamByDay.map((d) => `${withUnit(d.checks, 'check', 'checks')} from ${withUnit(d.wallets, 'wallet', 'wallets')} the founder said on ${d.day} are not team wallets`),
+    ...notTeamByDay.map((d) => `${withUnit(d.checks, 'check', 'checks')} from ${withUnit(d.wallets, 'wallet', 'wallets')} the founder said on ${d.day} ${d.wallets === 1 ? 'is not a team wallet' : 'are not team wallets'}`),
     ...(payers.whoPaid['not-identified'].wallets > 0 ? [`${withUnit(payers.whoPaid['not-identified'].checks, 'check', 'checks')} from ${withUnit(payers.whoPaid['not-identified'].wallets, 'wallet', 'wallets')} nobody has identified`] : []),
   ]
   // The same, said of the wallets no team is attributed: each statement of the founder's with its day, then the wallets nobody
@@ -1373,7 +1382,7 @@ export async function arcSeasonReport(deps: ArcSeasonDeps): Promise<ArcSeasonRep
   const unattributedSaid =
     notTeamByDay.length > 0
       ? ` ${[
-          ...notTeamByDay.map((d, i) => `${d.wallets}${i === 0 ? ' of them' : ''} (${withUnit(d.checks, 'check', 'checks')}) the founder said on ${d.day} are not team wallets`),
+          ...notTeamByDay.map((d, i) => `${d.wallets}${i === 0 ? ' of them' : ''} (${withUnit(d.checks, 'check', 'checks')}) the founder said on ${d.day} ${d.wallets === 1 ? 'is not a team wallet' : 'are not team wallets'}`),
           ...(payers.whoPaid['not-identified'].wallets > 0
             ? [`${payers.whoPaid['not-identified'].wallets} (${withUnit(payers.whoPaid['not-identified'].checks, 'check', 'checks')}) nobody has identified, each counted as external until someone says otherwise`]
             : []),

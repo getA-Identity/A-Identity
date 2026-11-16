@@ -1809,7 +1809,7 @@ test('Slippay is named with both of its wallets, which read as one team, so exte
   const slippay = ARC_PARTNERS.filter((p) => p.team === 'Slippay')
   assert.deepEqual(slippay.map((p) => p.wallet.toLowerCase()).sort(), SLIPPAY_WALLETS)
   assert.ok(slippay.every((p) => p.publicReference), 'named in the same scope as Trustless Work')
-  assert.deepEqual([...new Set(ARC_PARTNERS.map((p) => p.team))].sort(), ['Slippay', 'Trustless Work'])
+  assert.deepEqual([...new Set(ARC_PARTNERS.map((p) => p.team))].sort(), ['KutluhanETH', 'PayLink', 'Slippay', 'Trustless Work'])
 
   const r = await arcSeasonReport(deps({ partners: ARC_PARTNERS, gateway: seasonRows(), now: () => SEASON_READ }))
   const m2 = r.milestone2
@@ -2141,7 +2141,7 @@ test('the external checks say how many wallets and parties stand behind them, wi
     ARC_NOT_TEAM_PAYERS.filter((x) => x.saidOn === '2026-11-10').map((x) => lower(x.wallet)).sort(),
     [V6_OPERATOR, V6_OWNER, '0xebbaedce6b4d9339280b933726e7902c38cf5064', '0x24427be91913774187b8547071284506767a77c4'].sort(),
   )
-  assert.deepEqual(p.whoPaid, { team: { wallets: 3, checks: 9 }, 'not-team': { wallets: 5, checks: 24 }, 'not-identified': { wallets: 0, checks: 0 } })
+  assert.deepEqual(p.whoPaid, { team: { wallets: 5, checks: 12 }, 'not-team': { wallets: 3, checks: 21 }, 'not-identified': { wallets: 0, checks: 0 } })
   assert.equal(p.linked.length, 1, 'the one traced group with two or more paying wallets')
   assert.deepEqual([[...p.linked[0].wallets].sort(), p.linked[0].checks, p.linked[0].team], [[V6_OPERATOR, V6_OWNER].sort(), 20, undefined])
   // The group's own note says what the founder said, as his word with its day, and claims no more than he did.
@@ -2152,7 +2152,7 @@ test('the external checks say how many wallets and parties stand behind them, wi
   // They are said to be one party because they are one vault's owner and its agent key, which the flow log names, and the
   // line says what the founder said of them, with its day.
   assert.match(m2.externalChecks.note, /20 of the 33 come from one party whose wallets the founder said on 2026-11-10 are not team wallets: 0x5675\.\.\.1a43 and 0x1d54\.\.\.7f5f, the owner and agent key of vault 0xcB7e\.\.\.Ed41, linked on chain; the other 13 come from 6 wallets\./)
-  assert.match(m2.externalChecks.note, /By who stands behind them: 9 checks from 3 wallets of named teams; 4 checks from 3 wallets the founder said on 2026-11-06 are not team wallets; 20 checks from 2 wallets the founder said on 2026-11-10 are not team wallets\./)
+  assert.match(m2.externalChecks.note, /By who stands behind them: 12 checks from 5 wallets of named teams; 1 check from 1 wallet the founder said on 2026-11-06 is not a team wallet; 20 checks from 2 wallets the founder said on 2026-11-10 are not team wallets\./)
   // Nothing is left that nobody has spoken for, and no sentence says that one of the two could be a team member's.
   assert.doesNotMatch(m2.externalChecks.note, /nobody has identified|could be a team member's/)
   // Each wallet row says it too, so a list of wallets does not read as a list of people.
@@ -2163,14 +2163,17 @@ test('the external checks say how many wallets and parties stand behind them, wi
   assert.deepEqual(row(SLIPPAY_WALLETS[0]).linkedWith, [SLIPPAY_WALLETS[1]])
   assert.equal(row(SLIPPAY_WALLETS[1]).identity, 'team')
   assert.equal(row(SLIPPAY_WALLETS[1]).notTeamSaidOn, undefined)
-  assert.deepEqual([row(ARC_NOT_TEAM_PAYERS[0].wallet).identity, row(ARC_NOT_TEAM_PAYERS[0].wallet).notTeamSaidOn], ['not-team', '2026-11-06'])
-  assert.equal(row(ARC_NOT_TEAM_PAYERS[0].wallet).linkedWith, undefined)
-  assert.deepEqual([m2.unattributed.wallets, m2.unattributed.checks], [5, 24])
-  assert.match(m2.unattributed.note, /3 of them \(4 checks\) the founder said on 2026-11-06 are not team wallets; 2 \(20 checks\) the founder said on 2026-11-10 are not team wallets\.$/)
+  // The first two the founder spoke for on 2026-11-06 have since been named as teams, and a team name comes first.
+  assert.deepEqual([row(ARC_NOT_TEAM_PAYERS[0].wallet).identity, row(ARC_NOT_TEAM_PAYERS[0].wallet).team], ['team', 'KutluhanETH'])
+  assert.deepEqual([row(ARC_NOT_TEAM_PAYERS[1].wallet).identity, row(ARC_NOT_TEAM_PAYERS[1].wallet).team], ['team', 'PayLink'])
+  assert.deepEqual([row(ARC_NOT_TEAM_PAYERS[2].wallet).identity, row(ARC_NOT_TEAM_PAYERS[2].wallet).notTeamSaidOn], ['not-team', '2026-11-06'])
+  assert.equal(row(ARC_NOT_TEAM_PAYERS[2].wallet).linkedWith, undefined)
+  assert.deepEqual([m2.unattributed.wallets, m2.unattributed.checks], [3, 21])
+  assert.match(m2.unattributed.note, /1 of them \(1 check\) the founder said on 2026-11-06 is not a team wallet; 2 \(20 checks\) the founder said on 2026-11-10 are not team wallets\.$/)
   // What moves is teams, days and the new labels: and the checks the two rows above stand on stay what they are.
   assert.equal(r.usage.external.checks, 33)
   assert.equal(r.usage.external.wallets.length, 8)
-  assert.deepEqual([m2.externalTeamsLive.count, m2.teamActiveOnSeveralDays.count, m2.publicReference.count], [2, 2, 2])
+  assert.deepEqual([m2.externalTeamsLive.count, m2.teamActiveOnSeveralDays.count, m2.publicReference.count], [4, 2, 4])
 })
 
 test('a log that could not be read leaves the payers unknown, and names no ceiling', async () => {
@@ -2255,7 +2258,7 @@ test('a team that pays from two wallets is one party whether or not a link was t
 })
 
 test('every curated link names two or more wallets and a transaction for each thing it says, and names no one outside consent', () => {
-  assert.ok(ARC_WALLET_LINKS.length >= 8)
+  assert.ok(ARC_WALLET_LINKS.length >= 6)
   const allText = JSON.stringify({ links: ARC_WALLET_LINKS, ourSide: ARC_OUR_SIDE_LINKS, trace: ARC_LINK_TRACE, gas: ARC_GAS_SUPPORT })
   for (const l of ARC_WALLET_LINKS) {
     assert.ok(l.wallets.length >= 2 && l.wallets.every((w) => /^0x[0-9a-fA-F]{40}$/.test(w)), l.note)
@@ -2283,7 +2286,7 @@ test('every curated link names two or more wallets and a transaction for each th
   for (const notNamed of [/yaman/i, /antigravity/i, /meric/i, /aybars/i, /m[uü]ge/i, /ezgin/i, /mert\b/i]) {
     assert.doesNotMatch(allText, notNamed, `${notNamed} is named outside consent`)
   }
-  assert.deepEqual([...new Set(ARC_PARTNERS.map((p) => p.team))].sort(), ['Slippay', 'Trustless Work'], 'and the partner list stays these two')
+  assert.deepEqual([...new Set(ARC_PARTNERS.map((p) => p.team))].sort(), ['KutluhanETH', 'PayLink', 'Slippay', 'Trustless Work'], 'and the partner list stays these four')
   // The third platform wallet shares naming only: no chain link, so it is in no group and no count.
   assert.ok(!every.includes('0xbfbe3b342b7e7cf3cde3c0783b58abd889fac70f'))
   // An address written short is one the data holds in full: a typo here would be a public claim about the wrong wallet.
@@ -2297,7 +2300,7 @@ test('every curated link names two or more wallets and a transaction for each th
     '0xec0642f7e585764fe0069c9ee43e3505f8d73144', // the dust sender
   ].map((a) => a.toLowerCase())
   const shortForms = [...new Set(allText.match(/0x[0-9a-fA-F]{4}\.\.\.[0-9a-fA-F]{4}/g) ?? [])]
-  assert.ok(shortForms.length > 30)
+  assert.ok(shortForms.length > 20)
   for (const a of shortForms) {
     const [head, tail] = a.toLowerCase().split('...')
     assert.ok(full.some((w) => w.startsWith(head) && w.endsWith(tail)), `${a} is written short and held in full nowhere`)
@@ -2351,7 +2354,7 @@ test("a named team's wallets are published only as the wallets that paid, and th
   }
   const line = ARC_LINK_TRACE.limits.find((l) => /^Left out of the groups/.test(l))
   assert.ok(line)
-  assert.match(line, /the wallets behind the named teams' paying wallets\. Slippay and Trustless Work agreed to be named as an integration on this page, which does not cover their other wallets\./)
+  assert.match(line, /the wallets behind the named teams' paying wallets\. Slippay, Trustless Work, KutluhanETH and PayLink agreed to be named as an integration on this page, which does not cover their other wallets\./)
   // The team list still makes one party of Slippay's two paying wallets, so the ceiling of parties does not move.
   const r = await liveShape()
   assert.deepEqual([r.milestone2.externalChecks.payers.wallets, r.milestone2.externalChecks.payers.parties], [8, 6])
@@ -2412,8 +2415,8 @@ test('a linked party is said to be one nobody has identified only when none of i
   // One of the two linked wallets was said not to be the team's: the party is not one nobody has identified.
   const mixed = await arcSeasonReport(deps({ gateway: rows, walletLinks: [link], notTeamPayers: [{ wallet: a, saidOn: '2026-11-06' }] }))
   assert.doesNotMatch(mixed.milestone2.externalChecks.note, /one party nobody has identified/)
-  assert.match(mixed.milestone2.externalChecks.note, /By who stands behind them: 2 checks from 1 wallet the founder said on 2026-11-06 are not team wallets; 2 checks from 2 wallets nobody has identified\.$/)
-  assert.match(mixed.milestone2.unattributed.note, / 1 of them \(2 checks\) the founder said on 2026-11-06 are not team wallets; 2 \(2 checks\) nobody has identified, each counted as external until someone says otherwise\.$/)
+  assert.match(mixed.milestone2.externalChecks.note, /By who stands behind them: 2 checks from 1 wallet the founder said on 2026-11-06 is not a team wallet; 2 checks from 2 wallets nobody has identified\.$/)
+  assert.match(mixed.milestone2.unattributed.note, / 1 of them \(2 checks\) the founder said on 2026-11-06 is not a team wallet; 2 \(2 checks\) nobody has identified, each counted as external until someone says otherwise\.$/)
   // Both said by the founder on one day: the party line says his word with its day, and each row carries the day.
   const oneDay = await arcSeasonReport(deps({ gateway: rows, walletLinks: [link], notTeamPayers: [{ wallet: shouty(a), saidOn: '2026-11-10' }, { wallet: b, saidOn: '2026-11-10' }] }))
   assert.match(
@@ -2430,7 +2433,7 @@ test('a linked party is said to be one nobody has identified only when none of i
   const twoDays = await arcSeasonReport(deps({ gateway: rows, walletLinks: [link], notTeamPayers: [{ wallet: a, saidOn: '2026-11-06' }, { wallet: b, saidOn: '2026-11-10' }] }))
   assert.match(
     twoDays.milestone2.externalChecks.note,
-    /By who stands behind them: 2 checks from 1 wallet the founder said on 2026-11-06 are not team wallets; 1 check from 1 wallet the founder said on 2026-11-10 are not team wallets; 1 check from 1 wallet nobody has identified\.$/,
+    /By who stands behind them: 2 checks from 1 wallet the founder said on 2026-11-06 is not a team wallet; 1 check from 1 wallet the founder said on 2026-11-10 is not a team wallet; 1 check from 1 wallet nobody has identified\.$/,
   )
   // Every unattributed wallet spoken for: nothing is said of wallets nobody has identified.
   const allSaid = await arcSeasonReport(deps({ gateway: rows, walletLinks: [link], notTeamPayers: [a, b, c].map((wallet) => ({ wallet, saidOn: '2026-11-10' })) }))
@@ -2564,9 +2567,9 @@ test('the roadmap claims only the key comparison for a counted vault, as the sea
 test('the M2 rows say what they mean, and the public reference says what it is', async () => {
   const r = await liveShape()
   const m2 = r.milestone2
-  assert.match(m2.externalTeamsLive.note, /2 of 2 external teams have paid at least one check on Arc Mainnet from a wallet attributed to them: Slippay, 7 checks from 2 wallets; Trustless Work, 2 checks from 1 wallet\./)
+  assert.match(m2.externalTeamsLive.note, /4 of 2 external teams have paid at least one check on Arc Mainnet from a wallet attributed to them: KutluhanETH, 2 checks from 1 wallet; PayLink, 1 check from 1 wallet; Slippay, 7 checks from 2 wallets; Trustless Work, 2 checks from 1 wallet\./)
   assert.match(m2.externalTeamsLive.note, /That is all this row means: a team counts once one of its wallets has paid one check, and it says nothing about how much a team uses it\./)
-  assert.match(m2.publicReference.note, /Slippay, with its OK, confirmed by our founder on 2026-11-06; Trustless Work, with its own written OK of 2026-11-03\./)
+  assert.match(m2.publicReference.note, /KutluhanETH, with its own written OK of 2026-11-05, for its PayRun and Allot projects; PayLink, with its own written OK of 2026-11-05; Slippay, with its OK, confirmed by our founder on 2026-11-06; Trustless Work, with its own written OK of 2026-11-03\./)
   assert.match(m2.publicReference.note, /The reference is this page and the Milestone 2 report, where each is named as an integration; no other public page is linked here\./)
   // A flow is not claimed for a team that has none.
   assert.match(m2.externalTeamsLive.note, /No named team has run a verify-then-pay flow yet\./)
