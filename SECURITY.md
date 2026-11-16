@@ -38,8 +38,9 @@ single source of truth and a test fails the build if any other file disagrees:
 
 Our facilitators run a "the buyer signs, we broadcast and pay the gas" model. That means
 **every signer below that is set is a hot wallet**: it sits in the host environment, it is used
-without human interaction on each request, and on a mainnet it spends real money. Four of the
-mainnet rows have been unset since 2026-11-11 (see
+without human interaction on each request, and on a mainnet it spends real money. Six of the
+mainnet rows and one testnet row are unset: four since 2026-11-11, and `XLAYER_SIGNER_KEY`,
+`CELO_SIGNER_KEY` and `RHCHAIN_TESTNET_SIGNER_KEY` confirmed removed by 2026-11-14 (see
 [The 2026-11-11 rotation](#the-2026-11-11-rotation)). The
 previous version of this file listed exactly one of them and described it as test funds.
 
@@ -149,9 +150,10 @@ Recorded here because it is the case the guidance above exists for.
   Neither receives our payments any more. Do not pay or fund either.
 - **Off the server.** The four mainnet chain signer variables in the table above that held `0xd305`
   (`RHCHAIN_SIGNER_KEY`, `ARB_SIGNER_KEY`, `BASE_SIGNER_KEY` and `ARC_MAINNET_SIGNER_KEY`) were
-  removed from the server env on 2026-11-11. Not confirmed removed yet: `CELO_SIGNER_KEY`, whose
-  committed address is the exposed `0xF43F`, `RHCHAIN_TESTNET_SIGNER_KEY`, whose committed address
-  is `0xd305`, and `XLAYER_SIGNER_KEY`. Any of them still set comes off the server next.
+  removed from the server env on 2026-11-11. The other three were confirmed removed by
+  2026-11-14: `CELO_SIGNER_KEY`, whose committed address is the exposed `0xF43F`,
+  `RHCHAIN_TESTNET_SIGNER_KEY`, whose committed address is `0xd305`, and `XLAYER_SIGNER_KEY`.
+  No variable that holds either exposed key is set on the server.
 - **A new key, for gas only.** `X402_3009_SIGNER_KEY` is now
   `0x760342469785d06Dc23F8b491a53cA2ebbEaa849`: it broadcasts EIP-3009 settlements on Robinhood
   Chain and Arc Mainnet, pays their gas and receives nothing, and the rail stays paused on Base
@@ -168,6 +170,21 @@ Recorded here because it is the case the guidance above exists for.
   agent #0 and the platform's Arc testnet anchors. Arc Mainnet #0 and Robinhood Chain #0 moved from it to the founder's wallet,
   and Celo #9759 moved there from `0xF43F`. Past receipts and settlements stay attributed to the
   address they were paid to.
+- **The identities still on `0xd305`, read on chain on 2026-11-16.** Arc testnet #849980
+  (Meridian, the showcase agent), Robinhood Chain testnet #0, Base #73232 and Arbitrum One #1259
+  are still owned by `0xd305`. None of their URIs has changed: three point at
+  `https://a-identity.xyz/.well-known/agent-card.json` and #849980 carries its original inline
+  JSON. Whoever else holds the key can transfer them or repoint their URIs, so a change to any
+  of the four that we have not announced here is not ours, and none of them should be trusted on
+  ownership alone until it moves.
+  - *Arc testnet and Robinhood Chain testnet:* no delegation is set on `0xd305` there and it still
+    holds gas, so #849980 and testnet #0 can move to `0xCB88...1bdf` directly. That move is next.
+  - *Base and Arbitrum One:* the sweeper delegation is still set, so gas sent to `0xd305` is taken
+    in the same transaction. These two move only through a sponsored EIP-7702 transaction that
+    `0xd305` signs and another key pays for, or they are retired in place.
+  - *`public/.well-known/agent-card.json`* still lists #1259, #73232 and #849980 in
+    `registrations` with `0xd305` as owner. #1259 and #73232 carry a warning there; #849980 does
+    not yet. Each entry comes off the card, or is marked, when its identity moves or is retired.
 
 ## Known limitations
 
