@@ -122,7 +122,9 @@ The **AgentSpendPolicy vault** we deployed here is retired and not ours: 1 USDG 
 USDG per payment for the agent key, and anything above is refused with the contract's typed
 `AboveAutoApprove` error and left to the owner. Since 2026-10-01 the agent key
 (`0x8C8D...3349`) is a separate wallet from the owner key (`0xd305...ed36`), and its session key,
-renewed on 2026-11-08, runs to 2027-01-07. The owner key is the former operating wallet, which
+renewed on 2026-11-08, runs to 2027-01-07. That agent key was also our buyer wallet until
+2026-11-17, when a new key took over that role as a precaution; it is still ours and not known to
+be compromised, and the vault held 0 USDG when read on 2026-11-17. The owner key is the former operating wallet, which
 A-Identity retired on 2026-11-11 because someone else holds its key (since at least
 2026-11-01); its key was off our servers by 2026-11-14 (see
 [SECURITY.md](https://github.com/getA-Identity/A-Identity/blob/main/SECURITY.md)), and the

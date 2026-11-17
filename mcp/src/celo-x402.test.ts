@@ -18,6 +18,7 @@ import {
 } from './celo-x402.js'
 import { getChainById, requireChain } from './chains/index.js'
 import { FORMER_CELO_PAYTO, RETIRED_COMPROMISED, retiredAddresses } from './chains/retired.js'
+import { OUR_KEY_PUBLIC_ADDRESSES } from './arc-owner-vault.js'
 import type { CeloSettlementRecord } from './storage.js'
 
 /**
@@ -527,6 +528,10 @@ test('celoProof splits our own buyer wallet out as internal instead of letting i
   assert.equal(proof.externalUsd, 0.006)
   assert.equal(proof.internalSettlements + proof.externalSettlements, proof.totalSettlements)
   assert.ok(proof.internalPayers.includes(OWN_BUYER))
+  // The buyer key replaced on 2026-11-17 is listed too, before it paid anything, and every entry is lowercase:
+  // payers are compared lowercased, so a checksummed hardcoded entry would never match one.
+  assert.ok(proof.internalPayers.includes(OUR_KEY_PUBLIC_ADDRESSES.CELO_BUYER_KEY!.toLowerCase()))
+  for (const p of proof.internalPayers) assert.equal(p, p.toLowerCase(), p)
 
   // Every recent row carries the flag, so the page can badge it without guessing.
   assert.deepEqual(proof.recent.map((r) => r.internal), [false, false, true, true])
@@ -545,8 +550,8 @@ test('CELO_INTERNAL_PAYERS adds a wallet without a deploy, and ignores anything 
     async () => records,
   )
   assert.equal(on.internalSettlements, 1)
-  // The junk entries never enter the set: only the hardcoded wallet and the valid extra.
-  assert.equal(on.internalPayers.length, 2)
+  // The junk entries never enter the set: only the hardcoded wallets and the valid extra.
+  assert.equal(on.internalPayers.length, off.internalPayers.length + 1)
   assert.ok(on.internalPayers.includes(extra))
 })
 

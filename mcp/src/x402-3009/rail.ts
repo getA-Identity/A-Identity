@@ -781,10 +781,14 @@ export type RailProof = {
  * Celo rail already records. X402_3009_INTERNAL_PAYERS adds more without a deploy.
  */
 const KNOWN_INTERNAL_PAYERS = [
+  // Our buyer wallet until 2026-11-17 (X402_3009_BUYER_KEY and CELO_BUYER_KEY), replaced then as a precaution and still
+  // ours: it is not compromised and not retired, and what it paid stays internal.
   '0x8c8d9cd12d8896a40cf2115ee731258bb4983349',
   // A team member's own wallet, listed so a check it paid could never read as external on either rail; see the same entry in
   // x402-gateway/rail.ts.
   '0x432bd8bb5b9e199677e6a3fa72ac9739030953fd',
+  // Our buyer wallet since 2026-11-17 (X402_3009_BUYER_KEY and CELO_BUYER_KEY), listed before it paid anything.
+  '0x312963475c508eff66951b77989ca459ca41268f',
 ]
 
 /** Buyer wallets that are ours. Labeled, never filtered out: hiding our own traffic would

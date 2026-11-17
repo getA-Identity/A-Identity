@@ -583,10 +583,11 @@ export async function railServeTool(
  * without calling it ours, and an env entry that names a retired address is dropped.
  */
 const KNOWN_INTERNAL_PAYERS = [
-  // The x402 buyer wallet (X402_3009_BUYER_KEY), which paid the first MAINNET call through
-  // this rail on Arc Mainnet on 2026-09-16 (transfer 5958b158). Without it a local proof
-  // counted that self-funded call as external demand, which is the exact error this list
-  // exists to make impossible.
+  // Our buyer wallet until 2026-11-17 (X402_3009_BUYER_KEY and CELO_BUYER_KEY), replaced then
+  // as a precaution and still ours: it is not compromised and not retired, and what it paid
+  // stays internal. It paid the first MAINNET call through this rail on Arc Mainnet on
+  // 2026-09-16 (transfer 5958b158). Without it a local proof counted that self-funded call as
+  // external demand, which is the exact error this list exists to make impossible.
   '0x8c8d9cd12d8896a40cf2115ee731258bb4983349',
   // A team member's own wallet, listed so a check it paid could never read as external: it funded the operating wallet
   // with 3 USDC on 2026-11-02 (tx 0x437f31171291c797516d28bfea583cf6324285060c3f8b481deecf13156899cf), and the
@@ -595,6 +596,9 @@ const KNOWN_INTERNAL_PAYERS = [
   // The agent key of the founder's own approval test on Arc Mainnet. It pays one check from a
   // deposit we fund, so that check is our own traffic and must never read as external demand.
   '0x86dc9716eb00164183d43f8e1273888c7eba3cb4',
+  // Our buyer wallet since 2026-11-17 (X402_3009_BUYER_KEY and CELO_BUYER_KEY), a random key made
+  // for this role only. Listed before it paid anything, so no check of ours can read as external.
+  '0x312963475c508eff66951b77989ca459ca41268f',
 ]
 
 /** Our own buyer wallets only: an env entry that names a retired address is not ours, and is dropped. */

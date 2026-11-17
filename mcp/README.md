@@ -366,7 +366,9 @@ npm run build && (cd ../trust-guard && npm run build)
 # PREPARED, the default: reads only, signs nothing, needs no key. Prints the plan, or REFUSED.
 node scripts/arc-vtp-runner.mjs --allow 25
 
-# EXECUTES, with the operator key in env X402_3009_BUYER_KEY, never printed.
+# EXECUTES with the vault operator's key from env X402_3009_BUYER_KEY, never printed. Milestone 1 ran
+# with 0x8C8D...3349 there, the launch-day vault's operator; since the 2026-11-17 key replacement that
+# variable holds our new buyer wallet, which operates no vault, so the runner refuses that vault.
 CONFIRM_ARC_VTP_RUN=yes node --env-file=.env scripts/arc-vtp-runner.mjs \
   --allow 25 --log data/arc-vtp-run.jsonl --execute
 

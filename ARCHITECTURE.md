@@ -466,7 +466,9 @@ day it lands rather than the day someone remembers to add it.
   vault do.
 - **Operator custody**: on the vaults the console deploys on Arc testnet the **server signer** is the
   vault `operator` that submits `pay()` on the agent's behalf (a delegated action), and on the
-  three launch-day mainnet vaults we deployed the operator is an agent key we hold. The human `owner` is the user's own
+  three launch-day mainnet vaults we deployed the operator is `0x8C8D...3349`, an agent key of ours that was also our
+  buyer wallet until 2026-11-17, when a new key took over the buyer role as a precaution; it is not known to be
+  compromised and stays ours. The human `owner` is the user's own
   wallet on vaults a user deploys (Stellar, and Arc Mainnet from `/app/vault/arc`, where the operator
   is the owner's own agent key and we hold neither), while the three launch-day mainnet vaults we
   deployed are owned by `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, the former operating wallet,

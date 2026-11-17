@@ -952,7 +952,13 @@ export async function celoServeTool(
  * hardcoding it is the point: it cannot be quietly unset the way an env var can.
  * CELO_INTERNAL_PAYERS (comma-separated) adds more without a deploy.
  */
-const CELO_INTERNAL_PAYERS = ['0x8c8d9cd12d8896a40cf2115ee731258bb4983349']
+const CELO_INTERNAL_PAYERS = [
+  // Our buyer wallet until 2026-11-17 (CELO_BUYER_KEY), replaced then as a precaution and still ours: every
+  // settlement it paid stays internal. Lowercase on purpose, because payers are compared lowercased.
+  '0x8c8d9cd12d8896a40cf2115ee731258bb4983349',
+  // Our buyer wallet since 2026-11-17 (CELO_BUYER_KEY), listed before it paid anything.
+  '0x312963475c508eff66951b77989ca459ca41268f',
+]
 
 /** Ours only: an env entry that names a retired address (chains/retired.ts) is not ours, and is dropped. */
 function internalPayers(env: NodeJS.ProcessEnv): Set<string> {

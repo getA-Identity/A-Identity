@@ -468,6 +468,20 @@ test('every key env var is declared with its committed address or as having none
   assert.match(check.detail, /compared with the addresses of A_KEY, B_KEY/)
   assert.match(check.detail, /Not compared.*C_KEY, D_KEY/)
   assert.doesNotMatch(check.label, /every key we hold/)
+  // The 2026-11-17 buyer key replacement: one new key under both buyer names, listed on both rails before it
+  // paid anything, while the former buyer stays ours, first on the Gateway list, and is not retired.
+  const FORMER_BUYER = '0x8c8d9cd12d8896a40cf2115ee731258bb4983349'
+  const buyer = OUR_KEY_PUBLIC_ADDRESSES.X402_3009_BUYER_KEY!.toLowerCase()
+  assert.equal(OUR_KEY_PUBLIC_ADDRESSES.CELO_BUYER_KEY!.toLowerCase(), buyer, 'one buyer key under both names')
+  assert.notEqual(buyer, FORMER_BUYER, 'the buyer key was replaced')
+  for (const [rail, list] of [['x402-gateway', gatewayInternalPayers({})], ['x402-3009', facilitatorInternalPayers({})]] as const) {
+    assert.ok(list.includes(buyer), `${rail} lists the buyer before it pays`)
+    assert.ok(list.includes(FORMER_BUYER), `${rail} still lists the former buyer`)
+  }
+  assert.equal(gatewayInternalPayers({})[0], FORMER_BUYER, 'the wallet that paid the first mainnet call stays first')
+  assert.ok(committedOurKeys().includes(buyer), 'the new buyer is ours')
+  assert.ok(committedOurKeys().includes(FORMER_BUYER), 'the former buyer is still ours')
+  assert.equal(isRetired(FORMER_BUYER), false, 'a precaution, not a compromise')
 })
 
 test('every registry RPC host is read in order, and the env endpoint is added, never substituted or shown', () => {

@@ -147,14 +147,18 @@ export const OUR_KEY_ENV_VARS: readonly { name: string; readBy: string }[] = [
 export const OUR_KEY_PUBLIC_ADDRESSES: Readonly<Record<string, string | null>> = {
   // asp/attestations.ts: the oracle validator scripts/publish-reputation.mjs signs with.
   ARC_VALIDATOR_KEY: '0xee602A161232Aac1436E812676b6626382FC84a9',
-  // x402-gateway/rail.ts: the buyer wallet and the vaults' agent key, 0x8C8D...3349.
-  X402_3009_BUYER_KEY: '0x8c8d9cd12d8896a40cf2115ee731258bb4983349',
+  // Our buyer wallet since 2026-11-17, one random key made for this role only under both buyer names
+  // (scripts/x402-3009-buyer.mjs, scripts/celo-x402-buyer.mjs). It lives in mcp/.env on the founder's
+  // machine and never on a server, and it is on all three internal payer lists. Until then the buyer
+  // was 0x8C8D...3349, also the agent key of the three launch-day vaults. That key was replaced as a
+  // precaution: it is not compromised and not retired, and it stays ours through those lists.
+  X402_3009_BUYER_KEY: '0x312963475c508Eff66951b77989ca459CA41268F',
   // The EIP-3009 broadcaster since 2026-11-11, read live from /api/facilitator/status: a new
   // gas-only key that pays gas on Robinhood Chain and Arc Mainnet and receives nothing.
   X402_3009_SIGNER_KEY: '0x760342469785d06Dc23F8b491a53cA2ebbEaa849',
   X402_3009_FUNDER_KEY: null,
   X402_GATEWAY_BUYER_KEY: null,
-  CELO_BUYER_KEY: '0x8C8D9cd12d8896A40cf2115Ee731258Bb4983349',
+  CELO_BUYER_KEY: '0x312963475c508Eff66951b77989ca459CA41268F',
   CCTP_EVM_SIGNER_KEY: null,
   // No key of ours has been set here since 2026-11-11. The key it held derived the former operating
   // wallet (0xd305...ed36), which is retired and compromised, not ours: chains/retired.ts keeps a
