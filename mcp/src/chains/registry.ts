@@ -877,7 +877,7 @@ export const CHAINS: ChainDescriptor[] = [
     // Robinhood's brand green is #00C805, which is too light to read as chip text on its own
     // tint in a light theme. This is a darkened variant of it, not a different brand.
     color: '#0F9D30',
-    role: 'Robinhood Chain rehearsal rail: the canonical ERC-8004 registry set is live here, and agent #0 here was registered by A-Identity but is still held by a retired address, so unlike agent #0 on mainnet it is not ours any more.',
+    role: 'Robinhood Chain rehearsal rail: the canonical ERC-8004 registry set is live here, and agent #0 is ours on testnet as it is on mainnet.',
     ecosystem: 'evm',
     testnet: true,
     status: 'beta',

@@ -198,7 +198,7 @@
     }
   ],
   "supportsAuthenticatedExtendedCard": false,
-  "note": "ERC-8004 agents #1259 (Arbitrum One), #73232 (Base), #849980 (Arc testnet) and #0 (Robinhood Chain testnet) were registered by A-Identity and are still held by the former operating wallet, an address A-Identity retired on 2026-11-11 because someone else holds its key, so A-Identity does not control them alone. They are not ours and this card does not vouch for them, although some of their tokenURIs still point here; the feedback our oracle validator wrote on chain for #1259, #73232 and #849980 has not been revoked yet, so read it as history, not an endorsement. Never pay or fund their owner or their agent wallet.",
+  "note": "ERC-8004 agents #1259 (Arbitrum One) and #73232 (Base) were registered by A-Identity and are still held by the former operating wallet, an address A-Identity retired on 2026-11-11 because someone else holds its key, so A-Identity does not control them alone. They are not ours and this card does not vouch for them, although their tokenURIs still point here. Our oracle validator revoked the feedback it had written on chain for both on 2026-11-17 (tx 0xa20cbe45 on Arbitrum One, 0x8f75a063 on Base), and A-Identity decided that day not to try to move them. Never pay or fund their owner or their agent wallet.",
   "registrations": [
     {
       "chain": "eip155:5042",
@@ -236,6 +236,16 @@
       "tx": "0x0a821026621e5b35ff5602f81348b276b0d0f1b61a3892365658295fc5bcb22e",
       "explorer": "https://celoscan.io/nft/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432/9759",
       "note": "ERC-8004 IdentityRegistry on Celo mainnet; the identity behind the first-party Celo x402 rail. Registered 2026-08-09 by the Celo payTo wallet of the time, 0xF43F...742D. On 2026-11-11 it moved to 0xCB88...1bdf, the wallet a person holds that also holds agent #0 on Arc Mainnet and on Robinhood Chain, because 0xF43F comes from the same seed as 0xd305...ed36; one block after it moved, someone else used 0xF43F's key to take its CELO. A-Identity retired both addresses that day: neither is A-Identity's, so never pay or fund either."
+    },
+    {
+      "chain": "eip155:5042002",
+      "agentId": "849980",
+      "caip": "eip155:5042002:0x8004A818BFB912233c491871b3d84c89A494BD9e/849980",
+      "registry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+      "owner": "0xCB8824ffAF30687E36374C08eC52298b62871bdf",
+      "tx": "0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54",
+      "explorer": "https://explorer.testnet.arc.io/tx/0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54",
+      "note": "ERC-8004 IdentityRegistry on Circle Arc testnet, the Arc registry family rather than the canonical mainnet address. Agent #849980 (Meridian) is the phase-1 showcase agent, registered 2026-07-10 by the former operating wallet 0xd305...ed36 and moved on 2026-11-17 to 0xCB88...1bdf, the founder's wallet. The move cleared its agent wallet, so its 2026-07-10 KYA attestation through Arc's ValidationRegistry is about a wallet it no longer declares, and the same day our oracle validator revoked the feedback it had written for it. Testnet: no real money."
     }
   ]
 }

@@ -56,9 +56,11 @@ type LogLine = {
   tone?: 'ok' | 'bad' | 'accent'
 }
 
+/* The ALLOW run names no token id, because its [kya] ok line would be a claim about that agent:
+   since its 2026-11-17 move, #849980's wallet-control proof is about a wallet it no longer declares. */
 const RUN_ALLOW: LogLine[] = [
   { tag: '$ risk_check 0x03c4…98c7' },
-  { tag: '[resolve]', body: 'ERC-8004 identity #849980', tail: 'ok', tone: 'ok' },
+  { tag: '[resolve]', body: 'ERC-8004 identity', tail: 'ok', tone: 'ok' },
   { tag: '[kya]', body: 'wallet-proof attestation', tail: 'ok', tone: 'ok' },
   { tag: '[score]', body: 'reputation read live, recency-weighted' },
   { tag: '[verdict]', body: 'ALLOW', tone: 'ok' },

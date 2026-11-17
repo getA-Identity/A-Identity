@@ -258,9 +258,12 @@ paid by our own buyer wallet during the demo and seeding runs, and all listed at
 | `agent_passport` | [`0xc7f9342b…c302a0cb`](https://www.oklink.com/x-layer/evm/tx/0xc7f9342bde496f21be725f72f5555fa685aeffcc901b54d47bd75e51c302a0cb) |
 
 **Backed by real data, not an LLM guess:** the ERC-8004 agent we registered as our showcase,
-Meridian `#849980`, KYA-verified, with a reputation earned from **3 real settlements**. It is now
-held by a retired address, the former operating wallet, an address A-Identity retired on 2026-11-11 because someone else
-holds its key, so it is not ours any more; its record still shows how a score is built. The score
+Meridian `#849980`, with a reputation earned from **3 real settlements**. It is ours again since
+2026-11-17, when it moved from the former operating wallet, an address A-Identity retired on
+2026-11-11 because someone else holds its key, to the founder's wallet. The move cleared its agent
+wallet, so its 2026-07-10 KYA attestation is about a wallet it no longer declares, and the same day
+our oracle validator revoked the feedback it had written for it on chain, so no reputation anchor
+of ours stands for it now. The score
 itself is recency-weighted and decays as those settlements age, so it is read live rather
 than quoted here. Scoring is **deterministic and
 unit-tested** (2760 unit tests as of Nov 2026), reads on-chain live via viem, and is fully documented at
@@ -336,9 +339,9 @@ bot challenge); every transaction is also at [/proof/arc](https://a-identity.xyz
 | Agentic Commerce (jobs) | [`0x0747EEf0706327138c69792bF28Cd525089e4583`](https://explorer.testnet.arc.io/address/0x0747EEf0706327138c69792bF28Cd525089e4583) | ERC-8183 |
 | USDC | [`0x3600000000000000000000000000000000000000`](https://explorer.testnet.arc.io/address/0x3600000000000000000000000000000000000000) | ERC-20 |
 
-The showcase agent we registered, **#849980**, lives here (still held by the former operating
-wallet, an address A-Identity retired on 2026-11-11, so not ours any more), and so do the escrow,
-the spend-policy vault and the Gateway nanopayment rail.
+The showcase agent we registered, **#849980**, lives here (ours again since it moved to the
+founder's wallet on 2026-11-17), and so do the escrow, the spend-policy vault and the Gateway
+nanopayment rail.
 
 ### OKX X Layer mainnet, `eip155:196` - live
 
@@ -545,9 +548,12 @@ No install, no keys - it is already live:
 
 Every claim here is a transaction you can open on [the Arc testnet explorer](https://explorer.testnet.arc.io):
 
-- **Agent #849980 (Meridian), registered by us, now held by a retired address** - an ERC-8004
-  agent, KYA attested on-chain, reputation from real settlements; it is still held by the former operating wallet,
-  an address A-Identity retired on 2026-11-11, so it is not ours any more. Registration (mint) tx:
+- **Agent #849980 (Meridian), registered by us, ours again since 2026-11-17** - an ERC-8004
+  agent, KYA attested on-chain on 2026-07-10, reputation from real settlements. On 2026-11-17 it
+  moved from the former operating wallet, an address A-Identity retired on 2026-11-11, to the
+  founder's wallet (tx `0x477d96e3...`); the move cleared its agent wallet, so that KYA attestation
+  is about a wallet it no longer declares, and the same day our oracle validator revoked the
+  feedback it had written for it (tx `0x258a4521...`). Registration (mint) tx:
   [`0x506b125f…`](https://explorer.testnet.arc.io/tx/0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54) ·
   KYA attestation:
   [`0x758ddbfa…`](https://explorer.testnet.arc.io/tx/0x758ddbfad38daeb772a37deb07e65339f13aeb393899fc7e1d2689c95adf0dad)

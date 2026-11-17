@@ -173,9 +173,9 @@ test('no server-signed nanopayment pays a retired address: nanopayOnce refuses i
   }
 })
 
-test('the four agents the former operating wallet still holds are former agents: never ours, and not advertised', () => {
+test('the two agents the former operating wallet still holds are former agents, and the two it gave up on 2026-11-17 are ours again', () => {
   const former = PROVENANCE.filter((p) => p.formerAgent).map((p) => `${p.chain} #${p.formerAgent!.tokenId}`)
-  assert.deepEqual(former.sort(), ['arbitrum #1259', 'arc #849980', 'base #73232', 'rhchain-testnet #0'])
+  assert.deepEqual(former.sort(), ['arbitrum #1259', 'base #73232'])
   for (const p of PROVENANCE) {
     if (p.agent) assert.equal(isRetired(p.agent.owner), false, `${p.chain}: an agent a retired address holds is not our agent`)
     if (!p.formerAgent) continue
@@ -183,26 +183,56 @@ test('the four agents the former operating wallet still holds are former agents:
     assert.equal(p.formerAgent.caip, `${chain.caip2}:8004/${p.formerAgent.tokenId}`)
     assert.equal(p.formerAgent.heldBy, FORMER_OPERATING_WALLET.checksum)
     assert.match(p.formerAgent.note, /does not control this agent alone, because someone else holds the same key, so it is not ours and we do not vouch for it/)
-    // Our validator rated three of them on chain and has not revoked it: the note says so, and only there.
-    const rated = ['arbitrum', 'arc', 'base'].includes(p.chain)
-    assert.equal(/the feedback our oracle validator wrote for it on chain has not been revoked yet; read it as history, not an endorsement/.test(p.formerAgent.note), rated, `${p.chain}: the feedback clause`)
-    assert.doesNotMatch(p.formerAgent.note, /no longer controls/)
+    // Our validator rated both on chain and revoked that feedback on 2026-11-17: the note names the
+    // revokeFeedback the entry records, and says A-Identity will not try to move the agent.
+    const revocation = p.artifacts.find((a) => a.kind === 'attestation' && a.date === '2026-11-17' && a.note?.startsWith(`revokeFeedback(${p.formerAgent!.tokenId}, 1)`))
+    assert.ok(revocation, `${p.chain}: the ledger records no revokeFeedback for #${p.formerAgent.tokenId}`)
+    assert.ok(
+      p.formerAgent.note.includes(`the feedback our oracle validator wrote for it on chain was revoked on 2026-11-17 (revokeFeedback, tx ${revocation.txHash.slice(0, 10)}), and A-Identity decided that day not to try to move it`),
+      `${p.chain}: the feedback clause`,
+    )
+    assert.ok(p.summary.includes(`revoked the feedback it had written for it on 2026-11-17 (tx ${revocation.txHash.slice(0, 10)})`), `${p.chain}: the summary names the revocation`)
+    for (const text of [p.formerAgent.note, p.summary]) assert.doesNotMatch(text, /has not been revoked|no longer controls/)
     assert.doesNotMatch(p.summary, /\bis ours\b(?! any more)/, `${p.chain}: the summary must not call it ours`)
+  }
+  // Arc testnet #849980 and Robinhood Chain testnet #0 moved from the former operating wallet to the
+  // founder's wallet, the one that holds Arc Mainnet #0, on 2026-11-17: ours again, never former.
+  const founder = PROVENANCE.find((p) => p.chain === 'arc-mainnet')!.agent!.owner
+  for (const [chain, tokenId] of [['arc', '849980'], ['rhchain-testnet', '0']] as const) {
+    const p = PROVENANCE.find((x) => x.chain === chain)!
+    assert.equal(p.formerAgent, undefined, `${chain} #${tokenId} is ours again, not a former agent`)
+    assert.equal(p.agent?.tokenId, tokenId)
+    assert.equal(p.agent?.owner, founder, `${chain} #${tokenId} is held by the founder's wallet`)
+    assert.match(p.summary, /is ours again: A-Identity registered it/)
+    assert.ok(p.caveats.some((c) => c.startsWith(`On 2026-11-17 A-Identity moved agent #${tokenId} from the former operating wallet 0xd305...ed36 to 0xCB88...1bdf`)), `${chain}: a caveat records the move`)
   }
 })
 
-test('every attestation about a former agent says no revocation has been sent, and none about our own agents does', () => {
+test('every attestation our validator revoked says so with the revokeFeedback the ledger records, and every former agent\'s is revoked', () => {
   const formerIds = new Set(PROVENANCE.filter((p) => p.formerAgent).map((p) => `${p.chain}:${p.formerAgent!.tokenId}`))
-  const about = ATTESTATIONS.filter((a) => formerIds.has(`${a.chain}:${a.tokenId}`))
-  assert.deepEqual(about.map((a) => `${a.chain}:${a.tokenId}`).sort(), ['arbitrum:1259', 'arc:849980', 'base:73232'])
+  const revoked = ATTESTATIONS.filter((a) => a.revoked)
+  // Revoked on 2026-11-17: the two former agents' feedback, and Meridian's on Arc testnet, which is ours again.
+  assert.deepEqual(revoked.map((a) => `${a.chain}:${a.tokenId}`).sort(), ['arbitrum:1259', 'arc:849980', 'base:73232'])
+  for (const id of formerIds) assert.ok(revoked.some((a) => `${a.chain}:${a.tokenId}` === id), `${id}: a former agent's attestation must say it was revoked`)
   for (const a of ATTESTATIONS) {
+    if (!a.revoked) {
+      assert.equal(a.caveat, undefined, `${a.chain} #${a.tokenId} stands and carries no caveat`)
+      continue
+    }
+    // The revocation is the one the ledger records on that chain, with its block and day, and its link is derived.
+    const recorded = PROVENANCE.find((p) => p.chain === a.chain)?.artifacts.find((x) => x.txHash === a.revoked!.txHash)
+    assert.ok(recorded, `${a.chain} #${a.tokenId}: the ledger does not record revocation ${a.revoked.txHash}`)
+    assert.equal(recorded.kind, 'attestation')
+    assert.equal(recorded.blockNumber, a.revoked.blockNumber)
+    assert.equal(recorded.date, a.revoked.revokedOn)
+    assert.equal(a.revoked.revokedOn, '2026-11-17')
+    assert.equal(a.revoked.txUrl, `${getChainById(a.chain)!.explorer}/tx/${a.revoked.txHash}`)
+    assert.ok(a.caveat?.startsWith(`Our oracle validator revoked this feedback on 2026-11-17 (revokeFeedback, tx ${a.revoked.txHash}), so it no longer stands on chain`), `${a.chain} #${a.tokenId}: the caveat`)
+    assert.doesNotMatch(a.caveat ?? '', /No revokeFeedback has been sent|still stands on chain|not been revoked|no longer controls/)
     if (formerIds.has(`${a.chain}:${a.tokenId}`)) {
       assert.match(a.caveat ?? '', /an agent A-Identity registered that is still held by 0xd305\.\.\.ed36, the former operating wallet/)
-      // Nothing in the repo prepares a revokeFeedback, so the caveat may only say none was sent.
-      assert.match(a.caveat ?? '', /No revokeFeedback has been sent from that validator, so the entry still stands on chain/)
-      assert.doesNotMatch(a.caveat ?? '', /prepared|no longer controls/)
     } else {
-      assert.equal(a.caveat, undefined, `${a.chain} #${a.tokenId} is ours and carries no caveat`)
+      assert.doesNotMatch(a.caveat ?? '', /still held by/, `${a.chain} #${a.tokenId} is ours again`)
     }
   }
 })
@@ -278,7 +308,12 @@ test('the homepage ring and the agent card advertise only agents A-Identity hold
       assert.equal(regs.some((r) => r.chain === caip2 && r.agentId === id), false, `the agent card still registers former agent ${caip2} #${id}`)
       assert.ok(card.note?.includes(`#${id}`), `the agent card's note does not name former agent #${id}`)
     }
-    if (p.agent) assert.ok(ringHas(p.chain, p.agent.tokenId), `the ring has no card for our agent ${p.chain} #${p.agent.tokenId}`)
+    if (p.agent) {
+      assert.ok(ringHas(p.chain, p.agent.tokenId), `the ring has no card for our agent ${p.chain} #${p.agent.tokenId}`)
+      // A registration the card shares with the ledger names the owner the ledger names (Arc testnet #849980 since 2026-11-17).
+      const reg = regs.find((r) => r.chain === caip2 && r.agentId === p.agent!.tokenId)
+      if (reg?.owner) assert.equal(reg.owner.toLowerCase(), p.agent.owner.toLowerCase(), `the agent card and the ledger disagree on who holds ${caip2} #${p.agent.tokenId}`)
+    }
   }
   for (const r of regs) assert.equal(isRetired(r.owner), false, `the agent card registers ${r.chain} #${r.agentId} under a retired owner`)
   assert.match(card.note ?? '', /so A-Identity does not control them alone\. They are not ours and this card does not vouch for them/)

@@ -40,9 +40,14 @@ primary settlement rail.
   record: agent #849980, the KYA attestation and the first reputation anchor our oracle
   ever wrote are each listed with their transaction at
   [/proof/arc](https://a-identity.xyz/proof/arc), and the index over every chain is at
-  [/proof](https://a-identity.xyz/proof). Agent #849980 is still held by the former operating
-  wallet, an address A-Identity retired on 2026-11-11 because someone else holds its key, so it
-  is listed there as a former agent: not ours any more.
+  [/proof](https://a-identity.xyz/proof). Agent #849980 is ours again: on 2026-11-17 it moved
+  from the former operating wallet, an address A-Identity retired on 2026-11-11 because someone
+  else holds its key, to `0xCB8824ffAF30687E36374C08eC52298b62871bdf`, the founder's wallet (tx
+  `0x477d96e371cf21d688d294818deaa9a6ce532ac14e33918de216d0648755919b`). The move cleared its
+  agent wallet, so the KYA attestation is about a wallet the agent no longer declares and does
+  not make the agent KYA-verified today. The same day our oracle revoked that first reputation
+  anchor (tx `0x258a45213695e716fdce2caff60bf32181f2207ef140477e6b3b809be011d6c0`), so no
+  reputation anchor of ours stands for it now.
 </Note>
 
 ## Network Config

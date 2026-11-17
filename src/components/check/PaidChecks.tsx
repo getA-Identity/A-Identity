@@ -63,7 +63,14 @@ const posterFor =
 
 type Service = { tool: PaidTool; question: string; detail: string }
 
-/** Ids that resolve live, for anyone who does not have one to hand: our own agents. */
+/**
+ * Ids that resolve live, for anyone who does not have one to hand. Not all of them are ours today.
+ * #0 is our oracle's token on Arc Mainnet, Robinhood Chain and its testnet (a bare number can also
+ * name someone else's token on another chain), and 849980 is Meridian on Arc testnet, ours again
+ * since 2026-11-17. Base #73232 is a former agent: A-Identity registered it, but it is still held by
+ * the former operating wallet, which A-Identity retired on 2026-11-11 because someone else holds its
+ * key, so it is not ours (mcp/src/chains/provenance.ts lists it as a formerAgent).
+ */
 const EXAMPLE_AGENT = '#0'
 const EXAMPLE_AGENTS = ['#0', 'eip155:8453:8004/73232', '849980']
 

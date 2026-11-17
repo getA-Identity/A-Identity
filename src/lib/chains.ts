@@ -550,7 +550,7 @@ export const CHAINS: readonly Chain[] = [
     ],
     "rpcUrl": "https://rpc.testnet.chain.robinhood.com",
     "explorer": "https://explorer.testnet.chain.robinhood.com",
-    "role": "Robinhood Chain rehearsal rail: the canonical ERC-8004 registry set is live here, and agent #0 here was registered by A-Identity but is still held by a retired address, so unlike agent #0 on mainnet it is not ours any more.",
+    "role": "Robinhood Chain rehearsal rail: the canonical ERC-8004 registry set is live here, and agent #0 is ours on testnet as it is on mainnet.",
     "status": "beta",
     "protocols": {
       "payment": {

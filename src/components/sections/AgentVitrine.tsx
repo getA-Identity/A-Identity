@@ -39,7 +39,7 @@ import { OUR_AGENTS, type OnchainAgent } from './AgentRing'
  * publishes, mirrored from the agent card's `registrations` and
  * mcp/src/chains/provenance.ts, so a badge here is a claim the ring can answer for, with
  * a mint transaction where one exists and a plain admission where one does not (#8913 has
- * none). Only agents we hold today are on it: the four still held by the former operating
+ * none). Only agents we hold today are on it: the two still held by the former operating
  * wallet, an address A-Identity retired on 2026-11-11, are not ours and are not shown or
  * marked as ours. That is also why the leaderboard cards below carry no chain badge: the
  * leaderboard payload has no chain field, and a badge we cannot source is one we do not
@@ -94,6 +94,8 @@ const OUR_ROSTER: OurAgent[] = (() => {
 const BLURB: Record<string, string> = {
   'A-Identity Trust Oracle':
     'Other agents pay it per call, in real stablecoins, to answer one question before money moves: can this counterparty be trusted?',
+  Meridian:
+    'The phase-1 showcase research agent, in the founder\'s wallet since 2026-11-17. The move cleared its agent wallet, and our oracle revoked its reputation anchor the same day.',
 }
 
 const blurbOf = (o: OurAgent) => BLURB[o.identity] ?? o.registrations[0].mission
@@ -121,8 +123,8 @@ function receiptHref(a: OnchainAgent): string | undefined {
  * `#0` is excluded deliberately. It is a real registration of ours on Arc Mainnet and
  * Robinhood Chain, but it is also the id a marketplace record could carry by accident, and
  * claiming somebody else's agent as our own is a worse failure than missing one of ours.
- * For the same reason an agent A-Identity registered that a retired address still holds (#849980,
- * #73232, #1259) is not on the roster, so no row carrying its id is marked ours.
+ * For the same reason an agent A-Identity registered that a retired address still holds (#73232,
+ * #1259) is not on the roster, so no row carrying its id is marked ours.
  */
 const OURS_BY_TOKEN = new Map(
   OUR_AGENTS.filter((a) => a.tokenId !== '0').map((a) => [a.tokenId, a.identity] as const),

@@ -5,8 +5,8 @@
  * reviewer can't verify themselves:
  *   - the ASP identity registered on X Layer mainnet (Agent #6271),
  *   - 120 real x402 settlements on X Layer mainnet (4 featured, one per original paid tool),
- *   - an example on-chain agent the tools return real data for (Meridian #849980), which
- *     A-Identity registered and a retired address still holds: it is not ours, and the note says so,
+ *   - an example on-chain agent the tools return real data for (Meridian #849980), A-Identity's own
+ *     again since 2026-11-17, with its revoked reputation anchor labeled as revoked,
  *   - the engineering rigor behind the scores (deterministic, unit-tested engine).
  *
  * Served free at GET /proof so anyone calling the live ASP sees the substance,
@@ -83,16 +83,18 @@ export const PROOF = {
     featured: FEATURED,
     settlements: WITH_URLS,
   },
-  // Real data the tools return, not mocks: a live ERC-8004 agent on Circle Arc.
+  // Real data the tools return, not mocks: an ERC-8004 agent on Circle Arc testnet, read live.
   showcaseAgent: {
     name: 'Meridian',
     erc8004TokenId: '#849980',
     chain: 'Circle Arc testnet',
-    reputation: '542 / 1000 (settlement 296 + validation 240 + tenure 6 + behavior 0; no marketplace jobs yet)',
-    kya: 'verified',
-    note: "reputation_score and agent_passport return this live on-chain data. An example agent, not A-Identity's: A-Identity registered it, and it is still held by an address A-Identity retired on 2026-11-11 because someone else holds its key, so we do not vouch for it: the feedback our oracle validator wrote for it on chain has not been revoked yet; read it as history, not an endorsement.",
-    // A1: the score is also anchored on-chain as an ERC-8004 feedback attestation, written by
-    // the A-Identity oracle validator (distinct from the agent owner, as ERC-8004 requires).
+    // The figure anchored on 2026-07-22, not today's: the live score is recency-weighted and recomputed on every call.
+    reputation: '542 / 1000 on 2026-07-22 (settlement 296 + validation 240 + tenure 6 + behavior 0; no marketplace jobs yet), the score anchored that day; the live score is recomputed on every call',
+    kya: 'attested on-chain on 2026-07-10 for the agent wallet 0x4e26Ae66...3431, which the agent no longer declares: the 2026-11-17 move cleared it, so that attestation is history, not current KYA',
+    note: "reputation_score and agent_passport read this agent live on chain. It is A-Identity's own example agent again since 2026-11-17, when it moved from an address A-Identity retired on 2026-11-11 (someone else holds its key) to the founder's wallet. The move cleared its agent wallet, and the same day our oracle validator revoked the feedback it had written for it, so the 2026-07-22 anchor is history, not a live anchor.",
+    // A1: the score was anchored on-chain as an ERC-8004 feedback attestation, written by the
+    // A-Identity oracle validator (distinct from the agent owner, as ERC-8004 requires), and the
+    // same validator revoked it on 2026-11-17 (asp/attestations.ts, chains/provenance.ts).
     onchainReputationAttestation: {
       standard: 'ERC-8004 ReputationRegistry',
       registry: '0x8004B663056A597Dffe9eCcC1965A193B7388713',
@@ -100,7 +102,10 @@ export const PROOF = {
       scoreOnchain: '54 / 100 (the 0-1000 score on the ERC-8004 convention)',
       tx: '0x3f5429819347fb0f75e66ee1416fc2c9ad3dade8fb1bf8dac1b9d2606de92a8c',
       txUrl: `${ARC_CHAIN.explorer}/tx/0x3f5429819347fb0f75e66ee1416fc2c9ad3dade8fb1bf8dac1b9d2606de92a8c`,
-      note: 'reputation_score / agent_passport return this as onchainAttestation - verify the score on-chain instead of trusting the API',
+      revokedOn: '2026-11-17',
+      revokedTx: '0x258a45213695e716fdce2caff60bf32181f2207ef140477e6b3b809be011d6c0',
+      revokedTxUrl: `${ARC_CHAIN.explorer}/tx/0x258a45213695e716fdce2caff60bf32181f2207ef140477e6b3b809be011d6c0`,
+      note: 'Revoked on 2026-11-17 by the validator that wrote it (revokedTx), so it no longer stands on chain. reputation_score / agent_passport still return it as onchainAttestation, marked revoked with a caveat, so a caller can check both transactions instead of trusting the API.',
     },
   },
   // Bounded-authority guardrails. LINKED, not embedded: the ASP is a separate process that
@@ -131,7 +136,7 @@ export const PROOF = {
     ...(PAY_TO.toLowerCase() !== SETTLED_TO.toLowerCase()
       ? [`Revenue now settles to ${PAY_TO} instead. The settlements above predate that change and are unaffected by it.`]
       : []),
-    'Open the example agent onchainReputationAttestation tx on Arcscan - the reputation is anchored on the ERC-8004 ReputationRegistry, not just asserted here.',
+    'Open the example agent onchainReputationAttestation tx and its revokedTx on Arcscan - the 2026-07-22 score was anchored on the ERC-8004 ReputationRegistry, not just asserted here, and the validator revoked it on 2026-11-17.',
     'GET /methodology for the exact, reproducible reputation and risk formulas.',
   ],
   docs: 'https://a-identity.xyz',
@@ -157,7 +162,7 @@ export const METHODOLOGY = {
     chain: 'Circle Arc',
     write: "the score is published via giveFeedback(agentId, score, ...) by the A-Identity oracle validator - a wallet distinct from the agent owner, because ERC-8004 forbids an owner from scoring its own agent (no self-attestation).",
     scale: 'written on the ERC-8004 0-100 convention (the 0-1000 score / 10); the raw 0-1000 value + tag are committed in the feedback hash for exact verification.',
-    surfaced: 'reputation_score and agent_passport return the latest attestation as `onchainAttestation` (chain, registry, validator, tx). Absent until an agent has a published attestation - the score is always recomputed live, so the anchor is a verifiable snapshot, never the source of truth.',
+    surfaced: 'reputation_score and agent_passport return the latest attestation as `onchainAttestation` (chain, registry, validator, tx). Absent until an agent has a published attestation - the score is always recomputed live, so the anchor is a verifiable snapshot, never the source of truth. One the validator later revoked is still returned, with `revoked` (its revokeFeedback tx) and a `caveat`, so it is never read as a standing anchor.',
   },
   liveness: {
     what: 'registered != live: verify_agent and agent_passport probe the agent\'s registered public surface (domain first, else the registration URI) with an SSRF-guarded, redirect-blocked request (3.5s cap). Any HTTP answer proves a listening server.',

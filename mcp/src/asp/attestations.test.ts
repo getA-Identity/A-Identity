@@ -11,11 +11,16 @@ const row = (over: Partial<ReputationAttestation>): ReputationAttestation => ({
 
 // The shipped store carries the real Meridian anchor; this case must run FIRST, before the
 // isolation cleanup below wipes it. Every later case sets up its own rows on a clean store.
-test('the shipped store carries the real Meridian on-chain anchor', () => {
+test('the shipped store carries the real Meridian on-chain anchor, and says it was revoked', () => {
   const m = getReputationAttestation('849980')
   assert.ok(m, 'expected a published attestation for Meridian #849980')
   assert.match(m!.txHash, /^0x[0-9a-fA-F]{64}$/)
   assert.equal(m!.registry, '0x8004B663056A597Dffe9eCcC1965A193B7388713')
+  // The validator revoked it on 2026-11-17: the tools still return it, marked, never as a standing anchor.
+  assert.equal(m!.revoked?.revokedOn, '2026-11-17')
+  assert.match(m!.revoked?.txHash ?? '', /^0x[0-9a-f]{64}$/)
+  assert.ok(m!.revoked!.txUrl.endsWith(`/tx/${m!.revoked!.txHash}`))
+  assert.ok(m!.caveat?.startsWith(`Our oracle validator revoked this feedback on 2026-11-17 (revokeFeedback, tx ${m!.revoked!.txHash})`))
 })
 
 // Keep the shared store clean between the isolated cases below.

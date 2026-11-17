@@ -583,9 +583,9 @@ Live today:
   (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`) through the same first-party EIP-3009
   facilitator that serves Arc Mainnet and Robinhood Chain, the signing domain proven against
   the token's live DOMAIN_SEPARATOR; the first settlement landed 2026-08-27 UTC with the
-  receipt carrying the matching Transfer log, and the reputation our oracle validator
-  anchored for agent #73232 on the canonical ReputationRegistry is history, not an
-  endorsement. Since 2026-11-11 that rail is
+  receipt carrying the matching Transfer log, and on 2026-11-17 our oracle validator revoked
+  the reputation it had anchored for agent #73232 on the canonical ReputationRegistry (tx
+  0x8f75a063...). Since 2026-11-11 that rail is
   paused on Base until its new gas-only broadcaster has gas here. The full trail,
   including the Stellar pubnet funding hop behind the operating wallets, is at
   https://a-identity.xyz/proof/base. The gasless Circle Gateway hop that mints on Base
@@ -629,8 +629,8 @@ Live today:
   at any time, through withdraw() or ownerPay(), with no expiry; the agent key 0x8C8D...3349
   could pay it out through pay() only until its session key lapsed at 12:42:37 UTC on
   2026-11-15. Do not fund it. Agent #1259 is still held by that address and is not ours any
-  more, so the reputation our oracle validator anchored for it on the canonical
-  ReputationRegistry is history, not an endorsement.
+  more, and on 2026-11-17 our oracle validator revoked the reputation it had anchored for it
+  on the canonical ReputationRegistry (tx 0xa20cbe45...).
 - **OKX X Layer mainnet** (`eip155:196`). ERC-8004 identity
   `0x8004a169fb4a3325136eb29fa0ceb6d2e539a432`, OKX.AI's own registry. The Trust
   Oracle sold here as agent #6271 until OKX.AI delisted it on 2026-09-26, settling in real USD₮0.
@@ -656,8 +656,9 @@ Beta, wired and readable:
   `0x8004A818BFB912233c491871b3d84c89A494BD9e`, reputation
   `0x8004B663056A597Dffe9eCcC1965A193B7388713`, validation
   `0x8004Cb1BF31DAf7788923b405b754f57acEB4272`. Agent #0 here was registered by us and is
-  still held by the former operating wallet, an address A-Identity retired on 2026-11-11
-  because someone else holds its key, so unlike agent #0 on mainnet it is not ours any more.
+  ours again: on 2026-11-17 it moved from the former operating wallet, an address A-Identity
+  retired on 2026-11-11 because someone else holds its key, to the founder's wallet
+  0xCB8824ffAF30687E36374C08eC52298b62871bdf, which a person holds (tx 0x1d7a948c...).
 - **Celo Sepolia** (`eip155:11142220`). The same identity and reputation addresses
   as Arc, plus testnet USDC and the Celo Sepolia x402 facilitator.
 - **Stellar testnet** (`stellar:testnet`). An `AgentSpendPolicy` Soroban vault at

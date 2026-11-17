@@ -150,7 +150,7 @@ export default function LiveProof() {
           ))}
         </div>
 
-        {/* The #6271 card above is one of eight: the full identity inventory, as a ring. */}
+        {/* Every agent A-Identity holds today, as a ring. */}
         <AgentRing />
 
         {/* The wire you can touch. */}

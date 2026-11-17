@@ -12,10 +12,9 @@
     "repo": "https://github.com/getA-Identity/A-Identity",
     "identity": {
       "standard": "ERC-8004",
-      "agentId": "0",
-      "chain": "arc-mainnet",
-      "caip2": "eip155:5042",
-      "note": "A-Identity's own agent: token #0 on the canonical ERC-8004 IdentityRegistry on Arc Mainnet, as the agent card at https://a-identity.xyz/.well-known/agent-card.json lists it.",
+      "showcaseAgentId": "849980",
+      "showcaseAgentName": "Meridian",
+      "chain": "arc-testnet",
       "alsoListedOn": { "marketplace": "OKX.AI", "agentId": "6271" }
     }
   },

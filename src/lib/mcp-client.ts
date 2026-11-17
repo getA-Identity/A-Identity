@@ -131,7 +131,11 @@ export type Reputation = {
   basis?: string
   /** The wallet the record has control of proven for right now, where a record with no token has its identity. */
   provenWallet?: string | null
-  /** A1: the latest ERC-8004 on-chain attestation of this score, if one has been published. */
+  /**
+   * A1: the latest ERC-8004 on-chain attestation of this score, if one has been published. One the
+   * validator that wrote it later revoked is still returned, with `revoked` and `caveat` set: it is
+   * history then, never a standing anchor (mcp/src/asp/attestations.ts).
+   */
   onchainAttestation?: {
     tokenId: string
     score: number
@@ -142,6 +146,10 @@ export type Reputation = {
     txHash: string
     txUrl: string
     attestedAt: string
+    /** The revokeFeedback transaction that took it back; its explorer link is derived by the backend. */
+    revoked?: { txHash: string; txUrl: string; blockNumber: number; revokedOn: string }
+    /** Set with `revoked`: the same fact in words. */
+    caveat?: string
   } | null
   agentId: string
   computedAt: string

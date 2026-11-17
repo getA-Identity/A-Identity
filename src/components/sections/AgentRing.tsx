@@ -10,11 +10,13 @@ import { EASE_OUT_EXPO } from '../../lib/brand'
  * one card per agent, counted from the list below. Avalanche is absent
  * because we hold no agent there, and the ring must never imply one.
  *
- * Only agents A-Identity holds today. Four agents A-Identity registered (Arc
- * testnet #849980, Base #73232, Arbitrum One #1259 and Robinhood Chain testnet
- * #0) are still held by the former operating wallet, an address A-Identity
- * retired on 2026-11-11 because someone else holds its key, so they are not
- * ours any more and have no card here; the proof pages list them as former agents.
+ * Only agents A-Identity holds today. Two agents A-Identity registered (Base
+ * #73232 and Arbitrum One #1259) are still held by the former operating wallet,
+ * an address A-Identity retired on 2026-11-11 because someone else holds its key,
+ * so they are not ours any more and have no card here; the proof pages list them
+ * as former agents. Arc testnet #849980 and Robinhood Chain testnet #0 were held
+ * by it too until 2026-11-17, when they moved to the founder's wallet, so they
+ * are ours again and have their cards back.
  *
  * Each card is a real two-sided object. The front is the poster: the chain's
  * brand color as a flat ground (no gradients), the official mark on its
@@ -27,9 +29,9 @@ import { EASE_OUT_EXPO } from '../../lib/brand'
  *
  * The agent list is a hand-typed mirror of public/.well-known/agent-card.json
  * `registrations` plus mcp/src/chains/provenance.ts, with owners as ownerOf read live
- * on 2026-11-11, after the rescue moved three agents to a wallet a person holds; nothing here is invented
- * and the one agent with no recorded mint tx (#8913) says so instead of
- * faking a receipt.
+ * on 2026-11-11 and 2026-11-17, after the moves of those days took five agents to a
+ * wallet a person holds; nothing here is invented and the one agent with no recorded
+ * mint tx (#8913) says so instead of faking a receipt.
  */
 
 export type OnchainAgent = {
@@ -39,19 +41,24 @@ export type OnchainAgent = {
    * Which of OUR agents this registration belongs to, taken from what the registration
    * itself carries rather than from how we would like to group them.
    *
-   * Arc Mainnet, Robinhood Chain and Celo all point their tokenURI at
-   * https://a-identity.xyz/.well-known/agent-card.json, so they are one identity
+   * Arc Mainnet, Robinhood Chain, Celo and the Robinhood Chain rehearsal all point their
+   * tokenURI at https://a-identity.xyz/.well-known/agent-card.json, so they are one identity
    * registered in several places, and the two X Layer entries are that same oracle's
-   * OKX.AI listings. Where the agent card and a token disagree the token wins. Grouping
-   * on this field is what lets the vitrine name the networks an agent is on without
-   * inventing the claim.
+   * OKX.AI listings. Arc testnet #849980 points at its own inline Meridian metadata, so it
+   * is a different agent here even though the agent card lists it among the oracle's
+   * registrations; where the two disagree the token wins. Grouping on this field is what
+   * lets the vitrine name the networks an agent is on without inventing the claim.
    */
   identity: string
   owner: string
   tx?: string
   note: string
   mission: string
-  anchor?: { score: number; tx: string }
+  /**
+   * The reputation anchor our oracle validator wrote for this agent. With `revoked` the validator took
+   * it back (revokeFeedback), so the card shows the revocation and links it, never the score.
+   */
+  anchor?: { score: number; tx: string; revoked?: { on: string; tx: string } }
 }
 
 /** The agent whose tokenURI is the A-Identity agent card: one identity, many registries. */
@@ -59,7 +66,8 @@ const ORACLE = 'A-Identity Trust Oracle'
 
 const OWNER_OKX = '0x169ead25d35c146f3f3a7d2936ae37eab2e256d1'
 // The founder's own wallet, which a person holds: the rescue of 2026-11-10/11 moved Robinhood Chain #0, Celo #9759
-// and Arc Mainnet #0 here from addresses A-Identity has since retired, because someone else holds their keys.
+// and Arc Mainnet #0 here from addresses A-Identity has since retired, because someone else holds their keys, and
+// Arc testnet #849980 and Robinhood Chain testnet #0 followed from the former operating wallet on 2026-11-17.
 const OWNER_FOUNDER = '0xCB8824ffAF30687E36374C08eC52298b62871bdf'
 
 export const OUR_AGENTS: OnchainAgent[] = [
@@ -73,6 +81,21 @@ export const OUR_AGENTS: OnchainAgent[] = [
     mission:
       'The identity behind the Arc Mainnet rails, where paid trust checks have settled in USDC through Circle Gateway nanopayments and our own EIP-3009 facilitator since the day Arc Mainnet opened, 2026-09-16. Token #0 is the first mint this registry recorded. It moved to the founder\'s wallet on 2026-11-11.',
     anchor: { score: 60, tx: '0xbc70c4ce2ded14e17809d6cdcb2d365f85b4fe22e77957890bf1dac3bf1ecee9' },
+  },
+  {
+    chain: 'arc',
+    tokenId: '849980',
+    identity: 'Meridian',
+    owner: OWNER_FOUNDER,
+    tx: '0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54',
+    note: 'Meridian, with the founder since 2026-11-17.',
+    mission:
+      'Meridian, the phase-1 showcase research agent, registered on 2026-07-10. It moved to the founder\'s wallet on 2026-11-17 from an address A-Identity retired, and the move cleared its agent wallet, so its 2026-07-10 KYA attestation is about a wallet it no longer declares. The same day our oracle revoked the first reputation anchor it ever wrote, 542/1000 from 2026-07-22, so no anchor of ours stands for it now.',
+    anchor: {
+      score: 542,
+      tx: '0x3f5429819347fb0f75e66ee1416fc2c9ad3dade8fb1bf8dac1b9d2606de92a8c',
+      revoked: { on: '2026-11-17', tx: '0x258a45213695e716fdce2caff60bf32181f2207ef140477e6b3b809be011d6c0' },
+    },
   },
   {
     chain: 'rhchain',
@@ -113,6 +136,16 @@ export const OUR_AGENTS: OnchainAgent[] = [
     note: 'The identity behind the Celo x402 rail.',
     mission:
       'The identity behind the Celo x402 rail, where payments settle in USDC through the first-party facilitator Celo runs. Owned by the wallet that receives those payments. It moved on 2026-11-11 from 0xF43F...742D, an address A-Identity retired that day because someone else holds its key: do not pay it.',
+  },
+  {
+    chain: 'rhchain-testnet',
+    tokenId: '0',
+    identity: ORACLE,
+    owner: OWNER_FOUNDER,
+    tx: '0x20918ec68186bd4aaee7c36d33d0383f1bc6a2bc921e72e3b812d034da5212fd',
+    note: 'Full registry family, rehearsed first.',
+    mission:
+      'The rehearsal identity, on the only network outside Arc that carries all three canonical ERC-8004 registries, where the deploy path was rehearsed with test money first. It moved to the founder\'s wallet on 2026-11-17 from an address A-Identity retired.',
   },
 ]
 
@@ -248,7 +281,13 @@ function AgentCard({
                   href={explorer && registry ? `${explorer}/address/${registry}` : undefined}
                 />
               )}
-              {agent.anchor ? (
+              {agent.anchor?.revoked ? (
+                <FactRow
+                  label="Anchor"
+                  value={`revoked ${agent.anchor.revoked.on}`}
+                  href={explorer ? `${explorer}/tx/${agent.anchor.revoked.tx}` : undefined}
+                />
+              ) : agent.anchor ? (
                 <FactRow
                   label="Anchor"
                   value={`${agent.anchor.score}/1000`}

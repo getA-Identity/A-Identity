@@ -137,7 +137,9 @@ test('a former agent parses to its own chain and token id, is held by a retired 
     assert.ok(p.formerAgent.note.length > 40)
     assert.ok(!p.agent || p.agent.tokenId !== p.formerAgent.tokenId, `${p.chain}: one token cannot be both ours and former`)
   }
-  assert.equal(formers, 4)
+  // Arbitrum One #1259 and Base #73232. Arc testnet #849980 and Robinhood Chain testnet #0 left the
+  // retired address for the founder's wallet on 2026-11-17, so they are agents of ours again.
+  assert.equal(formers, 2)
   // The rail index advertises our agents only.
   for (const entry of proofRailIndex()) {
     for (const net of entry.networks) {

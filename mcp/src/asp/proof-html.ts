@@ -19,15 +19,23 @@ export function renderProofHtml(): string {
   const rev = p.realOnchainRevenue
   const byTool = rev.byTool as Record<string, number>
 
+  const attest = (p.showcaseAgent as { onchainReputationAttestation?: { txUrl: string; tx: string; registry: string; revokedOn?: string; revokedTx?: string; revokedTxUrl?: string } }).onchainReputationAttestation
+
   // Showcase agent reputation -> a credit-score spectrum (parse the leading number).
   const repStr = String(p.showcaseAgent.reputation)
   const scoreNum = parseInt(repStr, 10) || 0
   const scorePct = Math.max(0, Math.min(100, scoreNum / 10))
+  // A figure whose on-chain anchor the validator revoked is history, not a live score. It is labeled
+  // with the day it was anchored (as the reputation line states it) and the day it was revoked, and it
+  // gets no grade and no verdict pill, because either would present it as standing.
+  const revokedOn = attest?.revokedOn ?? null
+  const anchoredOn = /\bon (\d{4}-\d{2}-\d{2})\b/.exec(repStr)?.[1]
+  const figureLabel = revokedOn ? `${anchoredOn ? `The ${anchoredOn} anchored score` : 'The anchored score'}, revoked ${revokedOn}` : null
   // A score alone is never a DENY: DENY means we hold evidence, and this figure carries none.
-  const verdict = scoreNum >= 500 ? 'ALLOW' : 'WARN'
-  const vColor = verdict === 'ALLOW' ? 'var(--ok)' : 'var(--warn)'
-  const gradeLabel =
-    scoreNum >= 800 ? 'Excellent · AAA' : scoreNum >= 650 ? 'Strong · AA' : scoreNum >= 500 ? 'Good · A'
+  const verdict = revokedOn ? 'REVOKED' : scoreNum >= 500 ? 'ALLOW' : 'WARN'
+  const vColor = revokedOn ? 'var(--muted)' : verdict === 'ALLOW' ? 'var(--ok)' : 'var(--warn)'
+  const gradeLabel = revokedOn ? 'Not a live score'
+    : scoreNum >= 800 ? 'Excellent · AAA' : scoreNum >= 650 ? 'Strong · AA' : scoreNum >= 500 ? 'Good · A'
     : scoreNum >= 350 ? 'Fair · BBB' : scoreNum >= 200 ? 'Weak · B' : 'Low · C'
 
   const SERVICES = [
@@ -40,7 +48,6 @@ export function renderProofHtml(): string {
   const serviceRows = SERVICES
     .map(([t, price, w]) => `<tr><td><code>${t}</code></td><td class="mono price">${price}</td><td class="wrapcell">${esc(w)}</td></tr>`)
     .join('')
-  const attest = (p.showcaseAgent as { onchainReputationAttestation?: { txUrl: string; tx: string; registry: string } }).onchainReputationAttestation
 
   const chips = [
     `<button class="chip active" data-f="all">All ${rev.totalSettlements}</button>`,
@@ -169,12 +176,13 @@ export function renderProofHtml(): string {
     <div><b>${p.engineering.tests}</b><span>unit tests</span></div>
   </div>
 
-  <h2>Example agent - real, not a mock, and not ours</h2>
+  <h2>Example agent - real, not a mock</h2>
   <div class="panel"><div class="pad showcase">
     <div>
       <div style="font-size:12px;color:var(--faint);text-transform:uppercase;letter-spacing:0.05em;">${esc(p.showcaseAgent.name)} · ERC-8004 ${esc(p.showcaseAgent.erc8004TokenId)}</div>
-      <div class="score">${scoreNum || esc(repStr)}<span style="font-size:15px;color:var(--faint);"> / 1000</span></div>
-      ${attest ? `<div style="font-size:12px;margin-top:6px;"><a href="${esc(attest.txUrl)}" target="_blank" rel="noopener">Anchored on-chain · ERC-8004 ReputationRegistry <code>${esc(short(attest.tx))}</code> ↗</a></div>` : ''}
+      <div class="score"${revokedOn ? ' style="color:var(--muted);"' : ''}>${scoreNum || esc(repStr)}<span style="font-size:15px;color:var(--faint);"> / 1000</span></div>
+      ${figureLabel ? `<div style="font-size:12px;margin-top:6px;font-weight:600;color:var(--muted);">${esc(figureLabel)}</div>` : ''}
+      ${attest ? `<div style="font-size:12px;margin-top:6px;"><a href="${esc(attest.txUrl)}" target="_blank" rel="noopener">Anchored on-chain · ERC-8004 ReputationRegistry <code>${esc(short(attest.tx))}</code> ↗</a>${attest.revokedOn && attest.revokedTx && attest.revokedTxUrl ? ` - <a href="${esc(attest.revokedTxUrl)}" target="_blank" rel="noopener">revoked ${esc(attest.revokedOn)} by the same validator <code>${esc(short(attest.revokedTx))}</code></a>` : ''}</div>` : ''}
       <div style="font-size:12px;margin-top:6px;color:var(--faint);max-width:44ch;">${esc(String(p.showcaseAgent.note))}</div>
     </div>
     <div class="spectrum">
@@ -182,7 +190,7 @@ export function renderProofHtml(): string {
         <span style="font-size:13px;font-weight:700;color:${vColor};">${gradeLabel}</span>
         <span class="rpill" style="color:${vColor};background:color-mix(in srgb, ${vColor} 12%, transparent);">${verdict}</span>
       </div>
-      <div class="bar"><span class="ptr" style="left:${scorePct}%"></span></div>
+      <div class="bar"${revokedOn ? ' style="filter:grayscale(1);opacity:.5;"' : ''}><span class="ptr" style="left:${scorePct}%"></span></div>
       <div class="ticks"><span>0</span><span>250</span><span>500</span><span>750</span><span>1000</span></div>
     </div>
   </div></div>

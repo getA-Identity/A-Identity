@@ -136,6 +136,42 @@ function StatRow({ label, value, cap, tone }: { label: string; value: number | s
   )
 }
 
+/**
+ * The score's on-chain anchor, as get_reputation returns it. A standing one links its feedback tx. One
+ * the validator that wrote it has revoked (`revoked`, mcp/src/asp/attestations.ts) is history: it links
+ * the revocation with its date and the feedback with the day it was written, and never offers itself as
+ * an anchor of the score above, which is computed live either way. The backend's caveat is its title.
+ */
+function AnchorLine({ attestation: a }: { attestation: NonNullable<Reputation['onchainAttestation']> }) {
+  if (a.revoked) {
+    const writtenOn = /^\d{4}-\d{2}-\d{2}/.exec(a.attestedAt)?.[0]
+    return (
+      <div className="mt-3.5 text-[11px] leading-relaxed" title={a.caveat}>
+        <a href={a.revoked.txUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-warn hover:underline">
+          Anchor revoked {a.revoked.revokedOn}
+          <ArrowUpRight size={12} aria-hidden="true" />
+        </a>
+        <span className="text-foreground/60">
+          {' '}by the validator that{' '}
+          <a href={a.txUrl} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
+            wrote it{writtenOn ? ` on ${writtenOn}` : ''}
+          </a>
+          , so nothing on chain anchors the score above
+        </span>
+      </div>
+    )
+  }
+  return (
+    <div className="mt-3.5 text-[11px]">
+      <a href={a.txUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-accent hover:underline">
+        Anchored on-chain · ERC-8004 ReputationRegistry
+        <ArrowUpRight size={12} aria-hidden="true" />
+      </a>
+      <span className="text-foreground/60"> verify the score on-chain, not just here</span>
+    </div>
+  )
+}
+
 function TrustProfile({ identity, reputation, recordRead, query }: { identity: AgentIdentity | null; reputation: Reputation | null; recordRead: RecordRead; query: string }) {
   // A resolved on-chain identity (ownerOf succeeded) IS the registration proof. Do NOT
   // read `identity.valid` here: the backend deliberately pins it to false (a tokenURI
@@ -229,15 +265,7 @@ function TrustProfile({ identity, reputation, recordRead, query }: { identity: A
         </div>
         {reputation && !verdict && <p className="mt-3 text-[13px] font-medium leading-relaxed text-foreground/70">{NO_VERDICT_NOTE}</p>}
         {reputation && <div className="mt-4"><Spectrum score={score} /></div>}
-        {reputation?.onchainAttestation && (
-          <div className="mt-3.5 text-[11px]">
-            <a href={reputation.onchainAttestation.txUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-accent hover:underline">
-              Anchored on-chain · ERC-8004 ReputationRegistry
-              <ArrowUpRight size={12} aria-hidden="true" />
-            </a>
-            <span className="text-foreground/60"> verify the score on-chain, not just here</span>
-          </div>
-        )}
+        {reputation?.onchainAttestation && <AnchorLine attestation={reputation.onchainAttestation} />}
       </div>
 
       {/* stats grid */}

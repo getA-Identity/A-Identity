@@ -201,32 +201,44 @@ Recorded here because it is the case the guidance above exists for.
 - **What `0xd305` still holds that A-Identity deployed or registered (none of it ours any more).**
   The three launch-day AgentSpendPolicy vaults, which have no owner transfer and so are retired
   (see the operator custody note in [ARCHITECTURE.md](ARCHITECTURE.md)), Arbitrum One agent
-  #1259, Base agent #73232, Arc testnet agent #849980, Robinhood Chain testnet agent #0 and the
-  platform's Arc testnet anchors: on the Arc testnet registry it holds 61 tokens in all. The agent
-  wallet (`getAgentWallet`) of #1259, #73232, #849980 and Robinhood Chain testnet #0 is `0xd305`
-  itself, so anything paid to those agents' wallets goes to it. The Arbitrum One vault still held
+  #1259, Base agent #73232 and the platform's Arc testnet anchors: on the Arc testnet registry it
+  held 61 tokens in all when read before Arc testnet agent #849980 left it on 2026-11-17. The agent
+  wallet (`getAgentWallet`) of #1259 and #73232 is `0xd305` itself, so anything paid to those
+  agents' wallets goes to it. The Arbitrum One vault still held
   0.01 USDC when read on 2026-11-14, and its owner, that retired address, can withdraw it at any
   time through `withdraw()` or `ownerPay()`, with no expiry; the agent key could pay it out only
   until its session key lapsed at 12:42:37 UTC on 2026-11-15. Arc Mainnet #0 and Robinhood Chain
-  #0 moved from it to the founder's wallet, and Celo #9759 moved there from `0xF43F`. Past receipts
+  #0 moved from it to the founder's wallet, Arc testnet #849980 and Robinhood Chain testnet #0
+  followed on 2026-11-17 (below), and Celo #9759 moved there from `0xF43F`. Past receipts
   and settlements stay attributed to the address they were paid to.
-- **The identities still on `0xd305`, read on chain on 2026-11-16.** Arc testnet #849980
+- **The identities that were still on `0xd305`, read on chain on 2026-11-16.** Arc testnet #849980
   (Meridian, the showcase agent we registered), Robinhood Chain testnet #0, Base #73232 and
-  Arbitrum One #1259 are still owned by `0xd305`, so they are former agents, not ours. None of their URIs has changed: three point at
+  Arbitrum One #1259 were still owned by `0xd305` that day. None of their URIs has changed: three point at
   `https://a-identity.xyz/.well-known/agent-card.json` and #849980 carries its original inline
-  JSON. Whoever else holds the key can transfer them or repoint their URIs, so a change to any
-  of the four that we have not announced here is not ours, and none of them should be trusted on
-  ownership alone until it moves.
+  JSON. On 2026-11-17 #849980 and testnet #0 moved to the founder's wallet, so they are ours again;
+  #73232 and #1259 stay on `0xd305` as former agents, not ours. Whoever else holds the key can
+  transfer those two or repoint their URIs, so a change to either that we have not announced here
+  is not ours, and neither should be trusted on ownership alone.
   - *Arc testnet and Robinhood Chain testnet:* no delegation is set on `0xd305` there and it still
-    holds gas, so #849980 and testnet #0 can move to `0xCB88...1bdf` directly. That move is next.
+    held gas, so on 2026-11-17 A-Identity moved #849980 and testnet #0 to `0xCB88...1bdf` directly,
+    with `transferFrom` signed by the retired key, of which A-Identity still had a copy (Arc testnet
+    tx `0x477d96e371cf21d688d294818deaa9a6ce532ac14e33918de216d0648755919b`, Robinhood Chain testnet
+    tx `0x1d7a948cabe05d5b7ad51040c4ef688599f9195caf9cc31809d544924472b989`). Each move cleared the
+    agent wallet (`getAgentWallet` now reads the zero address), so #849980's 2026-07-10 KYA
+    wallet-control proof is about a wallet it no longer declares, and the same day our oracle
+    validator revoked the feedback it had written for #849980 (tx
+    `0x258a45213695e716fdce2caff60bf32181f2207ef140477e6b3b809be011d6c0`).
   - *Base and Arbitrum One:* the sweeper delegation is still set, so gas sent to `0xd305` is taken
-    in the same transaction. These two move only through a sponsored EIP-7702 transaction that
-    `0xd305` signs and another key pays for, or they are retired in place.
-  - *`public/.well-known/agent-card.json`* no longer lists #1259, #73232 or #849980 in
-    `registrations`. A note at the top of the card says that they and Robinhood Chain testnet #0
-    are not ours, because someone else holds the same key, and that the card does not vouch for
-    them, although some of their tokenURIs still point at the card. The proof pages list all four
-    as former agents, never as ours.
+    in the same transaction. These two could move only through a sponsored EIP-7702 transaction
+    that `0xd305` signs and another key pays for, and on 2026-11-17 A-Identity decided not to try:
+    they are retired in place. The same day our oracle validator revoked the feedback it had written
+    for each (Base tx `0x8f75a0630fdf317240209e1aeda7c82af697e0d80a9d9740822d03e7cbae5adc`,
+    Arbitrum One tx `0xa20cbe45f5d856fbac1ad8dfd701c02070a1e94b9925576f8ba5e2c7618d9bdc`).
+  - *`public/.well-known/agent-card.json`* no longer lists #1259 or #73232 in `registrations`, and
+    lists #849980 again, with the founder's wallet as its owner. A note at the top of the card says
+    that #1259 and #73232 are not ours, because someone else holds the same key, and that the card
+    does not vouch for them, although their tokenURIs still point at the card. The proof pages list
+    both as former agents, never as ours.
 
 ## Known limitations
 

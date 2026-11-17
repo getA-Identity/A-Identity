@@ -229,14 +229,17 @@ per settlement" model.
 
 ### Arc testnet
 
-- **Agent #849980 (Meridian), registered by us, now held by a retired address** - an ERC-8004
-  agent, KYA attested on-chain, policy vault, reputation from **3 real settlements**. It is still held by the former operating
-  wallet, an address A-Identity retired on 2026-11-11 because someone else holds its key, so it is
-  not ours any more; the proof pages list it as a former agent. The score is recency-weighted, so it decays as those
+- **Agent #849980 (Meridian), registered by us, ours again since 2026-11-17** - an ERC-8004
+  agent, KYA attested on-chain on 2026-07-10, policy vault, reputation from **3 real settlements**.
+  On 2026-11-17 it moved from the former operating wallet, an address A-Identity retired on
+  2026-11-11 because someone else holds its key, to the founder's wallet (tx `0x477d96e3...`). The
+  move cleared its agent wallet, so that KYA attestation is about a wallet it no longer declares,
+  and the same day our oracle validator revoked the feedback it had written for it on chain (tx
+  `0x258a4521...`), so no reputation anchor of ours stands for it now. The score is recency-weighted, so it decays as those
   settlements age and any figure pinned in prose goes stale within days: read the live one from
   [`/api/agents/reputation?agentId=849980`](https://a-identity-backend.onrender.com/api/agents/reputation?agentId=849980),
   which also reports `settledOnchain` (3, and fixed) next to `settledEffective` (the decayed
-  weight those same settlements still carry). Anchor tx:
+  weight those same settlements still carry). Registration (mint) tx:
   [`0x506b125f…`](https://explorer.testnet.arc.io/tx/0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54) ·
   KYA attestation: [`0x758ddbfa…`](https://explorer.testnet.arc.io/tx/0x758ddbfad38daeb772a37deb07e65339f13aeb393899fc7e1d2689c95adf0dad)
 - **Completed ERC-8183 escrow job #155504** - full lifecycle settled on Arc.
@@ -385,8 +388,9 @@ more (see below); what is ours is the rail.
 - **Since 2026-11-11 the EIP-3009 rail has been paused on both**, until its new gas-only broadcaster
   has gas there. Both agents are still held by `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, the
   former operating wallet, which A-Identity retired that day because someone else holds its key.
-  They are not ours any more, and we do not vouch for them: the feedback our oracle validator wrote
-  for each on chain has not been revoked yet, so read it as history, not an endorsement.
+  They are not ours any more, and we do not vouch for them: on 2026-11-17 our oracle validator
+  revoked the feedback it had written for each on chain (Base tx `0x8f75a063...`, Arbitrum One tx
+  `0xa20cbe45...`), and A-Identity decided that day not to try to move them.
 - Both chains carry the family's ValidationRegistry proxy (read live 2026-10-11), but we do not
   wire it, so KYA is verified off-chain here and recorded rather than anchored.
 
