@@ -29,7 +29,7 @@ import { EASE_OUT_EXPO } from '../../lib/brand'
  *
  * The agent list is a hand-typed mirror of public/.well-known/agent-card.json
  * `registrations` plus mcp/src/chains/provenance.ts, with owners as ownerOf read live
- * on 2026-11-11 and 2026-11-17, after the moves of those days took five agents to a
+ * between 2026-11-10 and 2026-11-17, after the moves of those days took five agents to a
  * wallet a person holds; nothing here is invented and the one agent with no recorded
  * mint tx (#8913) says so instead of faking a receipt.
  */
@@ -145,7 +145,7 @@ export const OUR_AGENTS: OnchainAgent[] = [
     tx: '0x20918ec68186bd4aaee7c36d33d0383f1bc6a2bc921e72e3b812d034da5212fd',
     note: 'Full registry family, rehearsed first.',
     mission:
-      'The rehearsal identity, on the only network outside Arc that carries all three canonical ERC-8004 registries, where the deploy path was rehearsed with test money first. It moved to the founder\'s wallet on 2026-11-17 from an address A-Identity retired.',
+      'The rehearsal identity, on the only network besides Arc testnet where we wire all three ERC-8004 registries, where the deploy path was rehearsed with test money first. It moved to the founder\'s wallet on 2026-11-17 from an address A-Identity retired.',
   },
 ]
 

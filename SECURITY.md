@@ -200,8 +200,9 @@ Recorded here because it is the case the guidance above exists for.
   explorer's list of past transactions.
 - **What `0xd305` still holds that A-Identity deployed or registered (none of it ours any more).**
   The three launch-day AgentSpendPolicy vaults, which have no owner transfer and so are retired
-  (see the operator custody note in [ARCHITECTURE.md](ARCHITECTURE.md)), Arbitrum One agent
-  #1259, Base agent #73232 and the platform's Arc testnet anchors: on the Arc testnet registry it
+  (see the operator custody note in [ARCHITECTURE.md](ARCHITECTURE.md)), the Robinhood Chain
+  testnet vault `0xd369d63868c13ff32928451a4f881621ff2dbc01`, Arbitrum One agent #1259, Base
+  agent #73232 and the platform's Arc testnet anchors: on the Arc testnet registry it
   held 61 tokens in all when read before Arc testnet agent #849980 left it on 2026-11-17. The agent
   wallet (`getAgentWallet`) of #1259 and #73232 is `0xd305` itself, so anything paid to those
   agents' wallets goes to it. The Arbitrum One vault still held

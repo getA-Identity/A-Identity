@@ -21,6 +21,7 @@
  */
 import { createIdentityProvider, isSafePublicHttpUrl } from '../erc8004.js'
 import { ARC_CHAIN, nearTargetOf, type NearTarget } from '../chains/index.js'
+import { agentWalletClearedFor } from '../chains/provenance.js'
 import { nearCheck, isNearAnswer, NEAR_CHECK_CHAIN, type NearCheckResult } from '../near-check/check.js'
 import {
   NEAR_RISK_LEVEL,
@@ -338,7 +339,10 @@ async function gather(agentId: string, deps: GatherDeps = {}): Promise<Bundle> {
   // The narrowing loses a real distinction (unclaimed is weaker than unverified, because
   // the record is not even the caller's), so if this tool should ever report it, that is a
   // deliberate schema change and a re-registration, not a patch.
-  if (platform) kyaStatus = platform.kya === 'unclaimed' || (movedOff && platform.kya === 'verified') ? 'unverified' : platform.kya
+  // A transfer that cleared the token's agent wallet (chains/provenance.ts agentWalletCleared) leaves the
+  // stored wallet-control proof about a wallet the agent no longer declares: narrowed the same way.
+  const walletCleared = platform ? agentWalletClearedFor(platform.chainId, platform.onchainAgentId) : null
+  if (platform) kyaStatus = platform.kya === 'unclaimed' || ((movedOff || walletCleared) && platform.kya === 'verified') ? 'unverified' : platform.kya
   else if (validation && Number((validation as { kyaCount?: number }).kyaCount ?? 0) > 0) kyaStatus = 'verified'
   const kyaVerified = kyaStatus === 'verified'
 

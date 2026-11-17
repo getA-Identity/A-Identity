@@ -44,7 +44,9 @@ equivalent ways:
 - CAIP identifier: `eip155:5042002:8004/849980`
 - the owner's address: `0x...`
 
-All three resolve to the same agent.
+The CAIP identifier names exactly one agent. A bare token id is matched across chains (the
+first match in registry order, with any collision disclosed), and an owner address returns the
+first token that address holds.
 
 ### KYA, Know Your Agent
 

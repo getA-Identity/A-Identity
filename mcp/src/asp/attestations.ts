@@ -89,7 +89,7 @@ export const ATTESTATIONS: ReputationAttestation[] = [
     // Meridian moved to the founder's wallet on 2026-11-17, so it is ours again, and 22 blocks
     // later the validator revoked this feedback: no anchor of ours stands for it now.
     revoked: MERIDIAN_REVOKED,
-    caveat: `${revokedLine(MERIDIAN_REVOKED)} The agent is A-Identity's again since that day, held by the founder's wallet, but the move cleared its agent wallet, and no reputation anchor of ours stands for it now.`,
+    caveat: `${revokedLine(MERIDIAN_REVOKED)} Arc testnet agent #849980 is A-Identity's again since that day, held by the founder's wallet, but the move cleared its agent wallet, and no reputation anchor of ours stands for it now.`,
   },
   // 2026-08-28: the mainnet wave. The SAME oracle validator as Arc, now writing on the
   // canonical mainnet ReputationRegistry (its giveFeedback selector was located in the

@@ -198,7 +198,7 @@
     }
   ],
   "supportsAuthenticatedExtendedCard": false,
-  "note": "ERC-8004 agents #1259 (Arbitrum One) and #73232 (Base) were registered by A-Identity and are still held by the former operating wallet, an address A-Identity retired on 2026-11-11 because someone else holds its key, so A-Identity does not control them alone. They are not ours and this card does not vouch for them, although their tokenURIs still point here. Our oracle validator revoked the feedback it had written on chain for both on 2026-11-17 (tx 0xa20cbe45 on Arbitrum One, 0x8f75a063 on Base), and A-Identity decided that day not to try to move them. Never pay or fund their owner or their agent wallet.",
+  "note": "ERC-8004 agents #1259 (Arbitrum One) and #73232 (Base) were registered by A-Identity and are still held by the former operating wallet, an address A-Identity retired on 2026-11-11 because someone else holds its key, so A-Identity does not control them alone. They are not ours and this card does not vouch for them, although their tokenURIs still point here. Our oracle validator revoked the feedback it had written on chain for both on 2026-11-17 (revokeFeedback txs 0xa20cbe45... on Arbitrum One and 0x8f75a063... on Base; the full hashes are in the provenance ledger at https://a-identity.xyz/proof), and A-Identity decided that day not to try to move them. Never pay or fund their owner or their agent wallet.",
   "registrations": [
     {
       "chain": "eip155:5042",
@@ -245,7 +245,7 @@
       "owner": "0xCB8824ffAF30687E36374C08eC52298b62871bdf",
       "tx": "0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54",
       "explorer": "https://explorer.testnet.arc.io/tx/0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54",
-      "note": "ERC-8004 IdentityRegistry on Circle Arc testnet, the Arc registry family rather than the canonical mainnet address. Agent #849980 (Meridian) is the phase-1 showcase agent, registered 2026-07-10 by the former operating wallet 0xd305...ed36 and moved on 2026-11-17 to 0xCB88...1bdf, the founder's wallet. The move cleared its agent wallet, so its 2026-07-10 KYA attestation through Arc's ValidationRegistry is about a wallet it no longer declares, and the same day our oracle validator revoked the feedback it had written for it. Testnet: no real money."
+      "note": "ERC-8004 IdentityRegistry on Circle Arc testnet, the Arc registry family rather than the canonical mainnet address. Agent #849980 (Meridian) is the phase-1 showcase agent, registered 2026-07-10 by the former operating wallet 0xd305...ed36 and moved on 2026-11-17 to 0xCB88...1bdf, the founder's wallet (transferFrom tx 0x477d96e3...). The move cleared its agent wallet, so its 2026-07-10 KYA attestation through Arc's ValidationRegistry is about a wallet it no longer declares, and the same day our oracle validator revoked the feedback it had written for it (revokeFeedback tx 0x258a4521...). Testnet: no real money."
     }
   ]
 }

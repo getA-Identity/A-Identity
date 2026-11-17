@@ -150,7 +150,7 @@ export default function LiveProof() {
           ))}
         </div>
 
-        {/* Every agent A-Identity holds today, as a ring. */}
+        {/* The identities A-Identity holds for the oracle and the showcase, as a ring. */}
         <AgentRing />
 
         {/* The wire you can touch. */}

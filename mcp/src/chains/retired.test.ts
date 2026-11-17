@@ -21,7 +21,7 @@ import {
 } from './retired.js'
 import { evmWalletClientFromKey, noSignerReason, retiredSignerRefusal, usableSignerKey } from './evm/client.js'
 import { getChainById } from './registry.js'
-import { PROVENANCE } from './provenance.js'
+import { PROVENANCE, agentWalletClearedFor } from './provenance.js'
 import { arcLedgerFacts } from './frontend-ledger.js'
 import { ATTESTATIONS } from '../asp/attestations.js'
 import { collectOurAddresses, committedOurKeys, committedRetiredKeys, liveOurAddressSources } from '../arc-owner-vault.js'
@@ -205,7 +205,13 @@ test('the two agents the former operating wallet still holds are former agents, 
     assert.equal(p.agent?.owner, founder, `${chain} #${tokenId} is held by the founder's wallet`)
     assert.match(p.summary, /is ours again: A-Identity registered it/)
     assert.ok(p.caveats.some((c) => c.startsWith(`On 2026-11-17 A-Identity moved agent #${tokenId} from the former operating wallet 0xd305...ed36 to 0xCB88...1bdf`)), `${chain}: a caveat records the move`)
+    // The move cleared the agent wallet, so the ledger says so, and readers narrow a stored KYA "verified" with it.
+    const evm = getChainById(chain)?.evmChainId
+    assert.equal(agentWalletClearedFor(evm, tokenId)?.on, '2026-11-17', `${chain} #${tokenId}: the ledger records the cleared agent wallet`)
+    assert.ok(p.artifacts.some((a) => a.kind === 'mint' && a.date === '2026-11-17' && a.txHash === agentWalletClearedFor(evm, tokenId)?.txHash), `${chain}: the move is an artifact`)
   }
+  // A token the ledger never moved is not narrowed: Arc Mainnet #0 kept its agent wallet question to its own reads.
+  assert.equal(agentWalletClearedFor(getChainById('arc-mainnet')?.evmChainId, '0'), null)
 })
 
 test('every attestation our validator revoked says so with the revokeFeedback the ledger records, and every former agent\'s is revoked', () => {

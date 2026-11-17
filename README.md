@@ -23,7 +23,7 @@
 
 ![A seven screen tour captured from the live site: the landing, why the problem is now, the three enforcement layers, our own registered agents with their network badges, the Trust Explorer resolving agent #849980 on Arc with its KYA attestation and deterministic score, the network stats page, and the Stellar provenance ledger.](docs/images/product-tour.gif)
 
-*Captured from [a-identity.xyz](https://a-identity.xyz) in production, so every number in it is a live read rather than a mockup.*
+*Captured from [a-identity.xyz](https://a-identity.xyz) in production on 2026-08-30, so every number in it was a live read that day, not a mockup. It predates two changes: Base #73232 and Arbitrum One #1259 are former agents since 2026-11-11, and #849980 moved to the founder's wallet on 2026-11-17, which cleared its agent wallet, so its KYA attestation is about a wallet it no longer declares and its reputation anchor is revoked.*
 
 | You are | Start here |
 | --- | --- |
@@ -94,7 +94,7 @@ them won a prize.
 
 | We demonstrate | The proof |
 | --- | --- |
-| Agents with verified on-chain identity | ERC-8004 anchor tx + KYA attestation in [Proof it's real](#proof-its-real-arc-testnet) |
+| Agents with verified on-chain identity | ERC-8004 registration (mint) tx in [Proof it's real](#proof-its-real-arc-testnet); its 2026-07-10 KYA attestation is history since the 2026-11-17 move |
 | Agents paying agents, bounded by policy | 120 self-funded x402 settlements with tx hashes at [/proof](https://a-identity-asp.onrender.com/proof) (the same list is in [`mcp/src/asp/settlements.ts`](mcp/src/asp/settlements.ts)); over-limit `pay()` reverts on Arc |
 | A working agent marketplace with escrow | ERC-8183 job #155504 full lifecycle txs below; only KYA-verified agents hireable |
 | Autonomy with a human in the tower | [`/api/guardrail-status`](https://a-identity-backend.onrender.com/api/guardrail-status) answers 503 the moment the engine stops enforcing |
@@ -540,7 +540,7 @@ No install, no keys - it is already live:
 4. **Look up any agent publicly:** [/explorer?q=849980](https://a-identity.xyz/explorer?q=849980)
    runs the whole verify pipeline (resolve identity → KYA → reputation → verdict) with no login.
 
-![The public Trust Explorer resolving the showcase agent: identity from ERC-8004, KYA state, deterministic reputation, and the risk verdict, live.](docs/images/explorer-lookup.png)
+![The public Trust Explorer resolving the showcase agent #849980 on 2026-08-28: identity from ERC-8004, KYA state, deterministic reputation and the risk verdict as they read that day. Since 2026-11-17 its owner is the founder's wallet, its KYA attestation is about a wallet it no longer declares, and its reputation anchor is revoked.](docs/images/explorer-lookup.png)
 
 > First hit can take ~30s if the free-tier backend is waking up; retry once and it is warm.
 
@@ -551,9 +551,10 @@ Every claim here is a transaction you can open on [the Arc testnet explorer](htt
 - **Agent #849980 (Meridian), registered by us, ours again since 2026-11-17** - an ERC-8004
   agent, KYA attested on-chain on 2026-07-10, reputation from real settlements. On 2026-11-17 it
   moved from the former operating wallet, an address A-Identity retired on 2026-11-11, to the
-  founder's wallet (tx `0x477d96e3...`); the move cleared its agent wallet, so that KYA attestation
-  is about a wallet it no longer declares, and the same day our oracle validator revoked the
-  feedback it had written for it (tx `0x258a4521...`). Registration (mint) tx:
+  founder's wallet (tx [`0x477d96e3...`](https://explorer.testnet.arc.io/tx/0x477d96e371cf21d688d294818deaa9a6ce532ac14e33918de216d0648755919b));
+  the move cleared its agent wallet, so that KYA attestation is about a wallet it no longer
+  declares, and the same day our oracle validator revoked the feedback it had written for it
+  (tx [`0x258a4521...`](https://explorer.testnet.arc.io/tx/0x258a45213695e716fdce2caff60bf32181f2207ef140477e6b3b809be011d6c0)). Registration (mint) tx:
   [`0x506b125f…`](https://explorer.testnet.arc.io/tx/0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54) ·
   KYA attestation:
   [`0x758ddbfa…`](https://explorer.testnet.arc.io/tx/0x758ddbfad38daeb772a37deb07e65339f13aeb393899fc7e1d2689c95adf0dad)

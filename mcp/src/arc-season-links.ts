@@ -168,7 +168,7 @@ export const ARC_OUR_SIDE_LINKS: ArcOurSideLink[] = [
   },
   {
     kind: 'none-found',
-    note: 'None of the owners, agent keys, external payers, funders or the external payee 0x2442...77c4 in this report is on a published internal payer list of ours or the committed list of our keys, and none is one of our own agents.',
+    note: 'None of the owners, agent keys, external payers, funders or the external payee 0x2442...77c4 in this report, other than the team vault\'s owner, is on a published internal payer list of ours or the committed list of our keys, and none is one of our own agents. The team vault\'s owner 0xe313...Fb7E is the founder\'s own wallet, labeled team here; since 2026-11-17 it is also on the Celo rail\'s internal payer list, because it holds our Celo facilitator account.',
   },
   {
     kind: 'none-found',

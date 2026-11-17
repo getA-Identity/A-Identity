@@ -128,7 +128,15 @@ export type ChainProvenance = {
   chain: string
   summary: string
   /** Our agent on this chain: one A-Identity holds today. */
-  agent?: { tokenId: string; caip: string; owner: string; tokenUri: string }
+  agent?: {
+    tokenId: string
+    caip: string
+    owner: string
+    tokenUri: string
+    /** Set when a transfer cleared the agent's ERC-8004 agent wallet: a wallet-control (KYA) proof made
+     *  before it is about a wallet the agent no longer declares, so readers narrow a stored "verified". */
+    agentWalletCleared?: { on: string; txHash: string }
+  }
   /** An agent A-Identity registered here that a retired address still holds (see FormerAgent). */
   formerAgent?: FormerAgent
   contracts: { name: string; address: string; note?: string }[]
@@ -595,7 +603,13 @@ export const PROVENANCE: ChainProvenance[] = [
     chain: 'rhchain-testnet',
     summary:
       'The rehearsal network, and the only chain in the registry outside Arc that carries the full canonical ERC-8004 trio. Agent #0 here is ours again: A-Identity registered it, and on 2026-11-17 moved it from 0xd305...ed36, the former operating wallet that A-Identity retired on 2026-11-11 because someone else holds its key, to the founder\'s wallet 0xCB88...1bdf (tx 0x1d7a948c). A-Identity also deployed a real AgentSpendPolicy vault here with a time-bounded session key; the vault is still owned by the former operating wallet, so it is not ours any more.',
-    agent: { tokenId: '0', caip: 'eip155:46630:8004/0', owner: FOUNDER, tokenUri: AGENT_CARD },
+    agent: {
+      tokenId: '0',
+      caip: 'eip155:46630:8004/0',
+      owner: FOUNDER,
+      tokenUri: AGENT_CARD,
+      agentWalletCleared: { on: '2026-11-17', txHash: '0x1d7a948cabe05d5b7ad51040c4ef688599f9195caf9cc31809d544924472b989' },
+    },
     contracts: [
       { name: 'IdentityRegistry', address: '0x8004A818BFB912233c491871b3d84c89A494BD9e', note: 'Same address as Arc and Celo Sepolia.' },
       { name: 'ReputationRegistry', address: '0x8004B663056A597Dffe9eCcC1965A193B7388713' },
@@ -641,6 +655,15 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: '0x65a5ad3166da6652462dc9f7025c84fcf52e411838886bd30c74859f8ccda96a',
         externalChain: 'Ethereum Sepolia',
         note: 'Sent on Ethereum Sepolia, this chain\'s parent, which the registry does not model. No link, because a derived one would point at a chain that has never seen this hash. Paste it into sepolia.etherscan.io.',
+      },
+      {
+        kind: 'mint',
+        label: 'Agent #0 moved to the founder\'s wallet',
+        txHash: '0x1d7a948cabe05d5b7ad51040c4ef688599f9195caf9cc31809d544924472b989',
+        onChain: 'rhchain-testnet',
+        blockNumber: 154527585,
+        date: '2026-11-17',
+        note: 'transferFrom(0xd305...ed36, 0xCB88...1bdf, 0) on the IdentityRegistry above, signed with the key of the former operating wallet A-Identity retired on 2026-11-11, of which A-Identity still had a copy; ownerOf(0) read back as the founder\'s wallet. The move cleared the agent wallet. Recorded as a mint-kind artifact, like the #4306 move on Arc Mainnet.',
       },
     ],
     caveats: [
@@ -1653,13 +1676,14 @@ export const PROVENANCE: ChainProvenance[] = [
   {
     chain: 'arc',
     summary:
-      'The phase-1 chain and the only one where all three registries of the ERC-8004 testnet family run together. Agent #849980 (Meridian) is ours again: A-Identity registered it on 2026-07-10 and KYA-attested it through the ValidationRegistry, and on 2026-11-17 moved it from 0xd305...ed36, the former operating wallet that A-Identity retired on 2026-11-11 because someone else holds its key, to the founder\'s wallet 0xCB88...1bdf (tx 0x477d96e3). The move cleared its agent wallet, so the 2026-07-10 KYA proof is about a wallet the agent no longer declares, and the same day our oracle validator revoked the feedback it had written for it, the first reputation anchor it ever wrote (tx 0x258a4521), so no anchor of ours stands for it now. This entry was added 2026-08-30, when an inventory found the flagship agent absent from the ledger that exists to record such things.',
+      'The phase-1 chain and the only one where all three registries of the ERC-8004 testnet family run together. Agent #849980 (Meridian) is ours again: A-Identity registered it on 2026-07-10 and KYA-attested it through the ValidationRegistry, and on 2026-11-17 moved it from 0xd305...ed36, the former operating wallet that A-Identity retired on 2026-11-11 because someone else holds its key, to the founder\'s wallet 0xCB88...1bdf (tx 0x477d96e3). The move cleared its agent wallet, so the 2026-07-10 KYA proof is about a wallet the agent no longer declares, and the same day our oracle validator revoked the feedback it had written for it (tx 0x258a4521), the first reputation anchor it ever wrote, so no anchor of ours stands for it now. This entry was added 2026-08-30, when an inventory found the flagship agent absent from the ledger that exists to record such things.',
     agent: {
       tokenId: '849980',
       caip: 'eip155:5042002:8004/849980',
       owner: FOUNDER,
       tokenUri:
         'data:application/json,%7B%22name%22%3A%22Meridian%22%2C%22category%22%3A%22Research%20%2F%20Data%22%2C%22standard%22%3A%22ERC-8004%22%2C%22app%22%3A%22A-Identity%22%7D',
+      agentWalletCleared: { on: '2026-11-17', txHash: '0x477d96e371cf21d688d294818deaa9a6ce532ac14e33918de216d0648755919b' },
     },
     contracts: [
       {
@@ -1698,6 +1722,15 @@ export const PROVENANCE: ChainProvenance[] = [
         onChain: 'arc',
         blockNumber: 51174931,
         note: 'register(uri) on 2026-07-10, minting straight to the owner wallet of the time, 0xd305...ed36, then the operating wallet (retired 2026-11-11 as compromised). Re-verified 2026-10-11: ownerOf(849980) read back that wallet and tokenURI carried the inline Meridian metadata. On 2026-11-17 A-Identity moved the agent to 0xCB88...1bdf, the owner recorded here since that day (see the caveats); tokenURI is unchanged, and the page re-reads both live.',
+      },
+      {
+        kind: 'mint',
+        label: 'Agent #849980 moved to the founder\'s wallet',
+        txHash: '0x477d96e371cf21d688d294818deaa9a6ce532ac14e33918de216d0648755919b',
+        onChain: 'arc',
+        blockNumber: 72685096,
+        date: '2026-11-17',
+        note: 'transferFrom(0xd305...ed36, 0xCB88...1bdf, 849980) on the IdentityRegistry above, signed with the key of the former operating wallet A-Identity retired on 2026-11-11, of which A-Identity still had a copy; ownerOf(849980) read back as the founder\'s wallet. The move cleared the agent wallet (getAgentWallet reads the zero address). Recorded as a mint-kind artifact, like the #4306 move on Arc Mainnet.',
       },
       {
         kind: 'attestation',
@@ -2156,4 +2189,18 @@ export function contractUrl(chainId: string, address: string): string | null {
   if (!chain) return null
   if (chain.ecosystem === 'algorand' && /^[0-9]+$/.test(address)) return applicationUrl(chain, address)
   return addressUrl(chain, address)
+}
+
+/**
+ * The ledger's record that a transfer cleared the ERC-8004 agent wallet of the agent with this token id on the
+ * chain with this EVM chain id, or null. A wallet-control (KYA) proof made before such a move is about a wallet
+ * the agent no longer declares, so a stored "verified" reads as "unverified" wherever this answers.
+ */
+export function agentWalletClearedFor(evmChainId: number | null | undefined, tokenId: string | null | undefined): { on: string; txHash: string } | null {
+  if (evmChainId == null || tokenId == null) return null
+  for (const p of PROVENANCE) {
+    if (!p.agent?.agentWalletCleared || p.agent.tokenId !== String(tokenId)) continue
+    if (getChainById(p.chain)?.evmChainId === evmChainId) return p.agent.agentWalletCleared
+  }
+  return null
 }

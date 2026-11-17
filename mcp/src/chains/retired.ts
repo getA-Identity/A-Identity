@@ -68,7 +68,7 @@ export const RETIRED_COMPROMISED: readonly RetiredAddress[] = Object.freeze([
   }),
 ])
 
-/** The wallet that held the server keys until 2026-11-11, and still holds what it registered and deployed then. */
+/** The wallet that held the server keys until 2026-11-11. It still holds part of what it registered and deployed then; chains/provenance.ts records which. */
 export const FORMER_OPERATING_WALLET: RetiredAddress = RETIRED_COMPROMISED[0]
 /** The wallet the Celo rail was paid to until 2026-11-11. */
 export const FORMER_CELO_PAYTO: RetiredAddress = RETIRED_COMPROMISED[1]

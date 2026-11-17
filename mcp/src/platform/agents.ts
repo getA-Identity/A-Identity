@@ -15,6 +15,7 @@ import { sanitizeVelocity } from './permissions.js'
 import { agentReputation } from './reputation.js'
 import { adverseRecordFrom } from '../asp/risk.js'
 import { addressInQuery, recordNamedBy } from '../agent-query.js'
+import { agentWalletClearedFor } from '../chains/provenance.js'
 import { ARC_TESTNET } from '../arc.js'
 import { registerAgentOnchain } from '../arc-contracts.js'
 import { normalizePriceUsd } from '../marketplace.js'
@@ -359,9 +360,11 @@ export function reputationForQuery(query: string) {
   if (!record) return { error: 'Unknown agent' as const }
   const view = agentReputation(record.id)
   if ('error' in view) return { error: 'Unknown agent' as const }
+  // A token the ledger says a transfer stripped of its agent wallet proves no wallet now, whatever the record stored.
+  const cleared = agentWalletClearedFor(record.chainId, record.onchainAgentId)
   const provenWallet = record.walletAddress && provenNow(record, record.walletAddress) ? record.walletAddress : null
-  const kya = at && !at.currentWallet && view.kya === 'verified' ? ('unverified' as const) : view.kya
-  return { ...view, kya, provenWallet }
+  const kya = ((at && !at.currentWallet) || cleared) && view.kya === 'verified' ? ('unverified' as const) : view.kya
+  return { ...view, kya, provenWallet: cleared ? null : provenWallet }
 }
 
 /**

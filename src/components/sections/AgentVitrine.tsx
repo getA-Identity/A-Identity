@@ -77,6 +77,9 @@ type OurAgent = { identity: string; registrations: OnchainAgent[] }
 const OUR_ROSTER: OurAgent[] = (() => {
   const byIdentity = new Map<string, OnchainAgent[]>()
   for (const a of OUR_AGENTS) {
+    // Meridian (#849980) is ours again since 2026-11-17, but that move cleared its agent wallet, so it stays
+    // off this verified, open-for-work shelf until a wallet is declared and proven again. The ring keeps it.
+    if (a.identity === 'Meridian') continue
     const found = byIdentity.get(a.identity)
     if (found) found.push(a)
     else byIdentity.set(a.identity, [a])
