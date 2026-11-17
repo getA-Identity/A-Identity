@@ -22,7 +22,7 @@
  * Chain constants (USDC address, decimals, CAIP-2 ids, RPCs) come from the chain
  * registry - nothing here restates them.
  */
-import { getChainById, usdcUnits, evmPublicClient, type ChainDescriptor } from './chains/index.js'
+import { getChain, getChainByEvmId, getChainById, nearTargetOf, usdcUnits, evmPublicClient, type ChainDescriptor } from './chains/index.js'
 import { FORMER_CELO_PAYTO, isRetired, retiredPayToRefusal, retiredPublic } from './chains/retired.js'
 import { verifyAgent, reputationScore, riskCheck, agentPassport, type TxContext } from './asp/tools.js'
 import {
@@ -180,7 +180,33 @@ export const CELO_TOOL_PRICES_USD: Record<CeloToolName, number> = {
   agent_passport: 0.01,
 }
 
-const AGENT_ID_DOC = 'ERC-8004 token id ("#1"), CAIP id ("eip155:42220:8004/1"), or 0x owner address'
+const AGENT_ID_DOC =
+  'ERC-8004 token id ("#1" is Celo\'s token 1 here: each chain numbers its own agents), a CAIP id ("eip155:42220:8004/1"), or a 0x owner address'
+
+/**
+ * The id a paid call on this rail is answered for. Every chain's ERC-8004 registry mints its own
+ * token ids, so a bare one ("#9759" or "9759") names no agent until a chain is named, and the
+ * shared resolver answers it with the first chain in registry order that has it: "#9759" read
+ * that way was Arc Mainnet's token 9759, someone else's agent, under a receipt for a Celo check.
+ * On this rail a bare id means the rail's own chain (Celo mainnet, or Celo Sepolia on a testnet
+ * rail), so it becomes that chain's CAIP-10 id before any tool sees it, the same id the
+ * celoIdentity read already used. Every other form (a 0x address, any CAIP id, a platform id) is
+ * passed unchanged, so nothing the trust tools do for those inputs moves.
+ */
+export function celoScopedAgentId(agentId: string, chain: Pick<ChainDescriptor, 'caip2'>): string {
+  const bare = /^#?(\d{1,78})$/.exec(agentId.trim())
+  return bare ? `${chain.caip2}:8004/${BigInt(bare[1])}` : agentId
+}
+
+/**
+ * A CAIP-10 token id that names another chain than `chain`, as that chain's CAIP-2 id, or null.
+ * Its number is that chain's token: the same number in Celo's registry is an unrelated agent, so
+ * the Celo-side reads below decline it rather than report a stranger's agent under its id.
+ */
+function otherChainOf(agentId: string, chain: ChainDescriptor): string | null {
+  const caip = /^eip155:(\d+):8004\/\d{1,78}$/i.exec(agentId.trim())
+  return caip && Number(caip[1]) !== chain.evmChainId ? `eip155:${caip[1]}` : null
+}
 
 /** The machine-readable calling contract served inside the 402 challenge, so a buyer
  *  agent knows the method, fields and an example BEFORE paying (same idea as the ASP
@@ -476,6 +502,9 @@ export async function celoReputationSummary(
 
   // A summary read needs a NUMERIC ERC-8004 agent id ("#1", "1", or a CAIP id ending in
   // /1). An owner address can't be summarized without an id, and saying so beats guessing.
+  // Another chain's CAIP id is that chain's token, so Celo's summary is not read for it.
+  const other = otherChainOf(agentId, chain)
+  if (other) return { read: false, reason: `${agentId.trim()} names a token on ${other}, not on ${chain.name} (${chain.caip2}); the same number here is another agent` }
   const m = agentId.trim().match(/^#?(\d{1,78})$/) ?? agentId.trim().match(/:8004\/(\d{1,78})$/)
   if (!m) {
     return { read: false, reason: 'on-chain summary needs a numeric ERC-8004 agent id (e.g. "#1" or a CAIP …:8004/1 id)' }
@@ -529,11 +558,13 @@ export async function celoReputationSummary(
 }
 
 /**
- * Best-effort LIVE read of Celo's IdentityRegistry for an agent id, so a paid answer
- * about a Celo agent carries a CELO-side on-chain fact instead of only the oracle's
- * home-registry view. This exists because the trust body (identity/kya/reputation) is
- * resolved on the home registry, which is a different chain: without this field a Celo
- * buyer asking about a Celo agent id would get an answer that never touched Celo.
+ * Best-effort LIVE read of Celo's IdentityRegistry for an agent id, so a paid answer about a
+ * Celo agent carries the Celo-side facts a buyer can check for themselves: the owner, the
+ * tokenURI and a Celoscan link. It was added when the trust body (identity/kya/reputation)
+ * answered a bare id from whichever chain the shared resolver matched first, so a Celo buyer
+ * could pay for an answer that never touched Celo. celoScopedAgentId now sends a bare id to
+ * Celo's registry, and this read stays as the direct, linkable record. Another chain's CAIP id
+ * is declined, never read here under its number.
  * Degrades to { read: false, reason } - never throws into a paid call.
  */
 export async function celoIdentitySummary(
@@ -546,7 +577,10 @@ export async function celoIdentitySummary(
   const registry = chain.contracts.identityRegistry
   if (!registry) return { read: false, reason: `no identityRegistry address for ${chain.id} in the registry` }
 
-  // Same id grammar as the reputation read: a registry lookup needs a NUMERIC id.
+  // Same id grammar as the reputation read: a registry lookup needs a NUMERIC id, and another
+  // chain's CAIP id is that chain's token, never a reason to report Celo's token of that number.
+  const other = otherChainOf(agentId, chain)
+  if (other) return { read: false, reason: `${agentId.trim()} names a token on ${other}, not on ${chain.name} (${chain.caip2}); the same number here is another agent` }
   const m = agentId.trim().match(/^#?(\d{1,78})$/) ?? agentId.trim().match(/:8004\/(\d{1,78})$/)
   if (!m) {
     return { read: false, reason: 'a Celo identity read needs a numeric ERC-8004 agent id (e.g. "#9759" or a CAIP …:8004/9759 id)' }
@@ -618,27 +652,99 @@ export type CeloServeDeps = {
   settleStatus?: (payer: string, nonce: string) => Promise<{ status: string | null; tx: string | null } | null>
 }
 
-/** Replace the ASP tool meta's OKX network line with this rail's, so a Celo buyer's
- *  receipt never claims it settled on X Layer. Everything else (methodology, the
- *  deterministic-score note) is the same product and stays.
+/**
+ * "Celo mainnet (eip155:42220)", "Celo Sepolia testnet (eip155:11142220)": the registry's name for
+ * a chain and its CAIP-2 id, saying mainnet or testnet where the name does not.
+ */
+function chainLabel(c: ChainDescriptor): string {
+  const name = c.name.replace(/\s*\((?:mainnet|testnet)\)$/i, '')
+  const kind = /mainnet|testnet/i.test(name) ? '' : c.testnet ? ' testnet' : ' mainnet'
+  return `${name}${kind} (${c.caip2})`
+}
+
+/** What the labels say when the call does not name the chain that answered. */
+const RESOLVED_UNNAMED = 'every registry our resolver reads (this answer does not name the one that matched)'
+
+/**
+ * The chain the trust body of a paid answer was resolved against, named from what the call
+ * itself carries, never assumed:
+ *  - A CAIP-10 token id names its chain, and the shared resolver reads that chain's registry
+ *    and no other. After celoScopedAgentId every bare id on this rail is one of these, on Celo.
+ *  - A NEAR testnet account (nearTargetOf, the one NEAR routing rule) is answered from NEAR testnet.
+ *  - Any other form (an address, a platform id) is matched across every chain the resolver
+ *    reads, so only an identity the tool returns can name the chain that answered: verify_agent
+ *    and agent_passport return one, risk_check and reputation_score do not, and then this says so.
+ */
+function resolvedOn(agentId: string, result: Record<string, unknown>): string {
+  const caip = /^eip155:(\d+):8004\/\d{1,78}$/i.exec(agentId.trim())
+  if (caip) {
+    const c = getChainByEvmId(Number(caip[1]))
+    if (!c) return `eip155:${caip[1]}, a chain our registry does not know, so no registry was read for it`
+    return c.contracts.identityRegistry ? chainLabel(c) : `${chainLabel(c)}, where we wire no ERC-8004 identity registry, so none was read`
+  }
+  const near = nearTargetOf(agentId)
+  if (near) {
+    const c = getChain(near.network)
+    return c ? chainLabel(c) : near.network
+  }
+  const identity = result.identity as { chain?: unknown } | null | undefined
+  if (identity && typeof identity.chain === 'string') {
+    const c = getChainById(identity.chain)
+    return c ? chainLabel(c) : identity.chain
+  }
+  return RESOLVED_UNNAMED
+}
+
+/**
+ * This rail's labels on a paid answer. They replace the ASP tool meta's network line, which
+ * names X Layer (where the OKX listings settled), so a Celo buyer's receipt never claims a
+ * chain it did not touch. Everything else in that meta (methodology, the deterministic-score
+ * note) is the same product and stays.
  *
- *  HONEST SCOPE, and the reason this does more than overwrite one string: `network` is
- *  where the PAYMENT settled, which is Celo. The identity / KYA / reputation body below
- *  it is resolved on the oracle's HOME registry, which is a different chain - so the
- *  same agent id means a different agent there. Overwriting `network` alone read as if
- *  the whole verdict were a Celo fact. It now says both networks by name, and the
- *  Celo-side facts travel in the dedicated `celoIdentity` / `celoReputation` fields. */
-function withCeloMeta<T extends { _meta?: Record<string, unknown> }>(result: T, status: CeloX402Status): T {
-  const home = typeof result._meta?.network === 'string' ? result._meta.network : 'the oracle home registry'
+ * HONEST SCOPE: two chains, each said by name. `network` is where the PAYMENT settled, this
+ * Celo rail. `homeRegistryNetwork` is where the identity, KYA and reputation body was resolved
+ * (resolvedOn above): the field keeps its name, but it used to copy the ASP meta's X Layer line
+ * whatever chain the resolver had read, and now names the one it read. The Celo-side facts
+ * travel in the dedicated `celoIdentity` / `celoReputation` fields. Applied to every answer the
+ * rail serves, whichever handler produced it.
+ */
+/** The registry chain an ERC-8004 CAIP-10 agent id (eip155:<chain>:8004/<n>) names, or null for any other form. */
+function chainOfAgentId(agentId: string): string | null {
+  const m = /^eip155:(\d+):8004\/\d{1,78}$/i.exec(agentId.trim())
+  return m ? (getChainByEvmId(Number(m[1]))?.id ?? null) : null
+}
+
+/**
+ * Upstream, a reputation anchor is matched on the token number alone, so an answer about a Celo token
+ * could carry the anchor another chain holds for the same number (Celo #1259 is a stranger's, Arbitrum
+ * #1259 is ours). An anchor whose chain is not the chain the id names is dropped here, on this rail only.
+ */
+function dropForeignAnchor(value: unknown, chainId: string): unknown {
+  if (!value || typeof value !== 'object') return value
+  const chain = (value as { chain?: unknown }).chain
+  return typeof chain === 'string' && chain !== chainId ? null : value
+}
+
+function withCeloMeta(result: Record<string, unknown>, status: CeloX402Status, agentId: string): Record<string, unknown> {
+  const prior = result._meta && typeof result._meta === 'object' ? (result._meta as Record<string, unknown>) : {}
+  const home = resolvedOn(agentId, result)
+  const named = chainOfAgentId(agentId)
+  if (named) {
+    if ('onchainAttestation' in result) result = { ...result, onchainAttestation: dropForeignAnchor(result.onchainAttestation, named) }
+    const rep = result.reputation
+    if (rep && typeof rep === 'object' && 'onchainAttestation' in rep) {
+      result = { ...result, reputation: { ...(rep as Record<string, unknown>), onchainAttestation: dropForeignAnchor((rep as Record<string, unknown>).onchainAttestation, named) } }
+    }
+  }
   return {
     ...result,
     _meta: {
-      ...(result._meta ?? {}),
+      ...prior,
       network: `Celo (${status.network})`,
       settlement: 'x402 v2 exact via the first-party Celo facilitator (EIP-3009 USDC)',
       proof: '/api/celo/proof',
       homeRegistryNetwork: home,
-      scope: `payment settled on Celo (${status.network}); the identity, KYA and reputation body is resolved on ${home}; the celoIdentity and celoReputation fields are read live from Celo's own ERC-8004 registries for this agent id`,
+      scope: `payment settled on Celo (${status.network}); the identity, KYA and reputation body is resolved against ${home}; the celoIdentity and celoReputation fields are read live from Celo's own ERC-8004 registries when the id names a Celo token`,
     },
   }
 }
@@ -647,9 +753,9 @@ function defaultHandlers(status: CeloX402Status): Record<CeloToolName, (input: C
   /** Every paid Celo answer carries a Celo-side identity read for the id it was asked
    *  about - otherwise a Celo buyer could pay a Celo rail and get back nothing that ever
    *  touched Celo. Runs concurrently with the base tool so it costs no extra latency. */
-  const served = async <T extends { _meta?: Record<string, unknown> }>(base: Promise<T>, agentId: string) => {
+  const served = async <T extends object>(base: Promise<T>, agentId: string) => {
     const [result, celoIdentity] = await Promise.all([base, celoIdentitySummary(agentId, status)])
-    return { ...withCeloMeta(result, status), celoIdentity }
+    return { ...result, celoIdentity }
   }
   return {
     verify_agent: async (i) => served(verifyAgent(i.agentId), i.agentId),
@@ -699,6 +805,7 @@ async function facilitatorPost(
  *   500 - settle succeeded but the tool handler itself failed. The settlement is still
  *         recorded (it happened) and the body says exactly that.
  *   200 - settled and served; the settlement is durably recorded for /api/celo/proof.
+ * The tool is asked about celoScopedAgentId(input.agentId): a bare token id is Celo's here.
  */
 export async function celoServeTool(
   tool: CeloToolName,
@@ -723,6 +830,11 @@ export async function celoServeTool(
   // attempted: the routes refuse first, and a direct caller meets the same wall here.
   const pausedNow = celoPauseResponse(now())
   if (pausedNow) return pausedNow
+
+  // A bare token id ("#9759", from the page, the buyer script or any agent) is this chain's:
+  // the tools are asked about the Celo agent the buyer paid this rail to check, never about
+  // whichever chain's token of that number the shared resolver would match first.
+  const asked: CeloToolInput = { ...input, agentId: celoScopedAgentId(input.agentId, chain) }
 
   // 1. Decode the X-PAYMENT header (base64 JSON, x402 v2 exact payload).
   let paymentPayload: Record<string, unknown>
@@ -832,7 +944,9 @@ export async function celoServeTool(
 
     const handler = deps.handlers?.[tool] ?? defaultHandlers(status)[tool]
     try {
-      const result = await handler(input)
+      const answer = await handler(asked)
+      const result =
+        answer && typeof answer === 'object' && !Array.isArray(answer) ? withCeloMeta(answer as Record<string, unknown>, status, asked.agentId) : answer
       return {
         httpStatus: 200,
         body: {
@@ -946,10 +1060,10 @@ export async function celoServeTool(
 // ── public status + proof documents ───────────────────────────────────────────────
 
 /**
- * OUR OWN buyer wallets, published on purpose. /api/celo/proof marks their settlements
+ * OUR OWN wallets, published on purpose. /api/celo/proof marks their settlements
  * internal so nobody can read our own demo traffic as third-party demand - the honest
- * half of running a proof page at all. This is a public address, not a credential, and
- * hardcoding it is the point: it cannot be quietly unset the way an env var can.
+ * half of running a proof page at all. These are public addresses, not credentials, and
+ * hardcoding them is the point: they cannot be quietly unset the way an env var can.
  * CELO_INTERNAL_PAYERS (comma-separated) adds more without a deploy.
  */
 const CELO_INTERNAL_PAYERS = [
@@ -958,6 +1072,12 @@ const CELO_INTERNAL_PAYERS = [
   '0x8c8d9cd12d8896a40cf2115ee731258bb4983349',
   // Our buyer wallet since 2026-11-17 (CELO_BUYER_KEY), listed before it paid anything.
   '0x312963475c508eff66951b77989ca459ca41268f',
+  // The co-founder's wallet: the Self Agent ID human address, the KarmaGAP owner and the Celo
+  // grant payout address. Listed 2026-11-17 so a check it pays never reads as external demand.
+  '0x9ec344badf764ecc38518d48991961254584f8cc',
+  // The founder's wallet that holds our Celo x402 facilitator account at x402.celo.org. Listed
+  // 2026-11-17 for the same reason.
+  '0xe3130ca9061fc911b7f05e66d76ff44761fefb7e',
 ]
 
 /** Ours only: an env entry that names a retired address (chains/retired.ts) is not ours, and is dropped. */
@@ -1072,6 +1192,6 @@ export async function celoProof(
     recent: all.slice(-50).reverse().map((r) => ({ ...r, internal: isInternal(r) })),
     note: `Real settlements only, recorded at settle time and durable across restarts; totals cover the retained window (last ${CELO_SETTLEMENTS_CAP}). Zeros mean nothing has settled yet, not a mock.`,
     internalNote:
-      'Settlements from our own buyer wallets are marked internal: they are real on-chain payments used to exercise and demonstrate the rail, not third-party demand. They are labeled rather than hidden. A settlement from an address under retiredPayers is marked internal too: A-Identity retired those addresses because someone else holds their keys, so they are not ours, and what they paid is never counted as external demand.',
+      'Settlements from wallets of ours are marked internal (our buyer wallets, the co-founder\'s wallet and the founder\'s wallet that holds our facilitator account; internalPayers lists every one): they are real on-chain payments used to exercise and demonstrate the rail, not third-party demand. They are labeled rather than hidden. A settlement from an address under retiredPayers is marked internal too: A-Identity retired those addresses because someone else holds their keys, so they are not ours, and what they paid is never counted as external demand.',
   }
 }

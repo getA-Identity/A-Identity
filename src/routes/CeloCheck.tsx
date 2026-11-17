@@ -34,6 +34,7 @@ import { ChainStop } from '../lib/evm-chain'
 import { ago, short } from '../lib/format'
 import { usePageMeta } from '../lib/head'
 import { cn } from '../lib/utils'
+import { getInjectedWallets, refreshInjectedWallets, walletConnectEnabled } from '../lib/wallets'
 
 /**
  * /check/celo: buy one ALLOW / WARN / DENY check on Celo mainnet from your own EVM wallet.
@@ -53,11 +54,38 @@ const EXPLORER = CELO.explorer ?? 'https://celoscan.io'
 const STATUS_API = `https://a-identity.xyz${STATUS_PATH}`
 const TOOL_API = `https://a-identity.xyz${toolPath(TOOL)}`
 
-/** One-click examples under the input. */
+/** One-click examples under the input. A bare id is Celo's on this page: normalizeAgentId scopes it before it is sent. */
 const EXAMPLES: { label: string; q: string }[] = [
   { label: 'Our Celo agent #9759', q: '#9759' },
-  { label: 'The first agent, #1', q: '#1' },
+  { label: 'Celo agent #1', q: '#1' },
 ]
+
+/**
+ * An id this check cannot read, refused before anything is asked of the wallet, so nobody pays for an
+ * answer that can only be "id not reached": a leftover "#" that did not normalize (a stray "#", "#12a",
+ * "# 9759"), or an ERC-8004 CAIP-10 id on a chain the registry does not know.
+ */
+function unreadableAgentId(agentId: string): string | null {
+  const why = `${agentId} is not an agent id this check can read. Type a number such as #9759, ${CELO.caip2}:8004/9759 or a 0x address. Nothing was charged.`
+  if (agentId.startsWith('#')) return why
+  const m = /^eip155:(\d+):8004\/\d{1,78}$/i.exec(agentId)
+  if (m && !Object.values(CHAIN_BY_ID).some((c) => c.chainId === Number(m[1]))) return why
+  return null
+}
+
+/**
+ * Whether this browser has anything to pay from: an injected EVM wallet, or WalletConnect when this
+ * deployment configures it. Without either, the wallet picker would open on an empty list, so the page
+ * says so instead. Extensions announce themselves a beat late, so a first "none" is asked again once.
+ */
+async function walletAvailable(): Promise<boolean> {
+  if (walletConnectEnabled()) return true
+  refreshInjectedWallets()
+  if (getInjectedWallets().length > 0) return true
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  refreshInjectedWallets()
+  return getInjectedWallets().length > 0
+}
 
 type View =
   | { s: 'idle' }
@@ -181,7 +209,8 @@ function Progress({ view, price, walletStep, chainName, walletName, onCancel }: 
           {sub}
         </p>
       )}
-      {view.s === 'signing' && (
+      {/* Every step before the payment is sent can be left: the wallet's connect and switch, the quote, the balance read and the signature. */}
+      {(view.s === 'wallet' || view.s === 'quoting' || view.s === 'checking' || view.s === 'signing') && (
         <button type="button" onClick={onCancel} className="mt-2 text-xs font-semibold text-foreground/70 underline underline-offset-2 hover:text-foreground">
           Cancel
         </button>
@@ -225,8 +254,9 @@ function Answer({ agentId, answer, from }: { agentId: string; answer: PaidAnswer
   const Icon = v?.Icon ?? Info
   return (
     <section className={cn('rounded-3xl border px-5 py-5 sm:px-7', v ? v.band : 'border-border bg-card')} aria-live="polite">
-      <p className="text-xs font-semibold uppercase tracking-wide text-foreground/50">
-        Agent {agentId} on Celo, {answer.settledAt ? ago(answer.settledAt) : 'just now'}
+      {/* The id as it was sent: a bare number was scoped to Celo first, and another chain's CAIP id names that chain, not Celo. */}
+      <p className="break-words text-xs font-semibold uppercase tracking-wide text-foreground/50 [overflow-wrap:anywhere]">
+        Agent <span className="font-mono normal-case tracking-normal">{agentId}</span>, {answer.settledAt ? ago(answer.settledAt) : 'just now'}
       </p>
       <h2 className={cn('mt-1 flex items-center gap-2 text-2xl font-bold tracking-tight', v ? v.text : 'text-foreground')} style={{ fontFamily: 'var(--font-heading)' }}>
         <Icon size={24} className="shrink-0" aria-hidden="true" />
@@ -253,7 +283,11 @@ function Answer({ agentId, answer, from }: { agentId: string; answer: PaidAnswer
         ) : (
           <>The answer carried no Celo registry read.</>
         )}{' '}
-        The identity and reputation behind the verdict are resolved on our home registry; the risk level is{' '}
+        {answer.resolvedOn ? (
+          <>The identity and reputation behind the verdict were resolved against {answer.resolvedOn}; the risk level is </>
+        ) : (
+          <>The risk level is </>
+        )}
         <span className="font-semibold text-foreground">{answer.risk ?? 'not stated'}</span>.
       </p>
       <div className="mt-4 rounded-2xl border border-border bg-background/60 px-4 py-3 text-sm text-foreground/75">
@@ -296,7 +330,7 @@ export default function CeloCheck() {
   })
 
   const [params] = useSearchParams()
-  const [input, setInput] = useState(() => (params.get('q') ?? '').trim())
+  const [input, setInput] = useState(() => (params.get('q') ?? '').trim().slice(0, 200))
   const [view, setView] = useState<View>({ s: 'idle' })
   const [status, setStatus] = useState<RailStatus | 'down' | null>(null)
   const [receipts, setReceipts] = useState<Receipt[]>(() => loadReceipts())
@@ -334,19 +368,35 @@ export default function CeloCheck() {
   const rail = status && status !== 'down' ? status : null
   const priceUsd = rail?.prices[TOOL]
   const price = priceUsd != null ? formatUsd(priceUsd) : '$0.005'
+  // What a bare number in the box is sent as, shown before anything is paid.
+  const scoped = normalizeAgentId(input, CELO.caip2)
+  const scopedHint = scoped !== input.trim() && scoped.startsWith(`${CELO.caip2}:8004/`) ? scoped : null
 
   const start = async (raw: string) => {
-    const agentId = normalizeAgentId(raw)
+    // A bare number becomes Celo's CAIP-10 id here, so the rail is asked about the Celo agent the page names.
+    const agentId = normalizeAgentId(raw, CELO.caip2)
     if (!agentId) {
       inputRef.current?.focus()
       return
     }
     if (inFlight) return
+    const unreadable = unreadableAgentId(agentId)
+    if (unreadable) {
+      setView({ s: 'stopped', stop: { kind: 'refusal', text: unreadable } })
+      return
+    }
     const mine = ++attempt.current
     const alive = () => mine === attempt.current
     setInput(agentId)
     inputRef.current?.blur()
     setView({ s: 'wallet' })
+
+    // Nothing to pay from: say so, rather than open a picker with nothing in it.
+    if (!payer.wallet && !(await walletAvailable())) {
+      if (alive()) setView({ s: 'stopped', stop: { kind: 'no_wallet' } })
+      return
+    }
+    if (!alive()) return
 
     let w: Awaited<ReturnType<typeof payer.prepare>>
     try {
@@ -413,10 +463,16 @@ export default function CeloCheck() {
     )
   }
 
-  /** Stop waiting for the wallet. A signature that still arrives is dropped, never sent. */
+  /**
+   * Stop waiting for the wallet. A connection or a signature that still arrives is dropped, never
+   * used or sent. Before the quote nothing has been asked of the money, so the wallet step goes
+   * straight back to the start; the signing step says what happened to it.
+   */
   const cancel = () => {
     attempt.current += 1
-    setView({ s: 'stopped', stop: { kind: 'cancelled' } })
+    // Close an open wallet picker too, so a wallet chosen after the cancel is never asked to connect.
+    payer.close()
+    setView(view.s === 'wallet' ? { s: 'idle' } : { s: 'stopped', stop: { kind: 'cancelled' } })
   }
 
   const onSubmit = (e: FormEvent) => {
@@ -478,7 +534,7 @@ export default function CeloCheck() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 aria-label="Agent id"
-                placeholder="#9759 or eip155:...:8004/9759"
+                placeholder={`#9759 or ${CELO.caip2}:8004/9759`}
                 autoComplete="off"
                 autoCapitalize="off"
                 autoCorrect="off"
@@ -494,6 +550,12 @@ export default function CeloCheck() {
             </Button>
           </form>
 
+          {scopedHint && (
+            <p className="mt-2 break-words text-xs text-foreground/55 [overflow-wrap:anywhere]">
+              Checks <span className="font-mono text-foreground/80">{scopedHint}</span>: this number on Celo. Each chain numbers its own agents.
+            </p>
+          )}
+
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-foreground/55">
             Try
             {EXAMPLES.map((ex) => (
@@ -507,6 +569,15 @@ export default function CeloCheck() {
                 {ex.label}
               </button>
             ))}
+            {/* Which wallet pays, with a way to change it: a remembered wrong pick is otherwise a dead end. */}
+            {payer.wallet && (
+              <span className="ml-auto">
+                You pay from <span className="font-semibold text-foreground/80">{payer.wallet.name}</span>.{' '}
+                <button type="button" onClick={payer.change} disabled={inFlight} className="font-semibold text-accent hover:underline disabled:opacity-50">
+                  Change
+                </button>
+              </span>
+            )}
           </div>
 
           <p className="mt-3 text-center text-xs text-foreground/50">
@@ -533,6 +604,8 @@ export default function CeloCheck() {
             {view.s === 'stopped' && <StopBox stop={view.stop} />}
             {view.s === 'paid' && <Answer agentId={view.agentId} answer={view.answer} from={view.from} />}
           </div>
+          {/* prepare() opens this when no wallet is chosen yet (several installed, none remembered), so it must be mounted to be seen. */}
+          {payer.picker}
 
           {receipts.length > 0 && (
             <section className="mt-8 rounded-2xl border border-border bg-card px-5 py-4 sm:px-6">
@@ -585,7 +658,8 @@ export default function CeloCheck() {
             <Fold title="For agents">
               <p className="text-[15px] leading-relaxed text-foreground/75">
                 The same check is an x402 call. A GET returns the 402 with the terms; a POST with an X-PAYMENT header (base64 of the x402 v2
-                exact payload) and a JSON body naming the agentId returns the verdict once the facilitator settles.
+                exact payload) and a JSON body naming the agentId returns the verdict once the facilitator settles. A bare token id is read
+                as Celo's, the same as its CAIP id: each chain's registry numbers its own agents.
               </p>
               <div className="mt-4 space-y-3">
                 <CopyBlock title="The terms" subtitle="GET, no key, a 402 in JSON" text={`curl -s ${TOOL_API}`} />
@@ -593,7 +667,7 @@ export default function CeloCheck() {
                 <CopyBlock
                   title="A buyer in one file"
                   subtitle="The script this page is a port of"
-                  text={`cd mcp && node --env-file=.env scripts/celo-x402-buyer.mjs --url ${TOOL_API} --agent '#9759'`}
+                  text={`cd mcp && node --env-file=.env scripts/celo-x402-buyer.mjs --url ${TOOL_API} --agent '${CELO.caip2}:8004/9759'`}
                 />
               </div>
             </Fold>

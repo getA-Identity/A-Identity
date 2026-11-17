@@ -369,7 +369,7 @@ export default function CeloProof() {
               {p && typeof p.internalSettlements === 'number' && (
                 <p className="mt-4 text-xs leading-relaxed text-foreground/50">
                   Of those, <span className="font-mono font-semibold text-foreground/70">{nf.format(p.internalSettlements)}</span>{' '}
-                  are internal: real on-chain payments from our own buyer wallet, run to
+                  are internal: real on-chain payments from wallets of ours, run to
                   exercise and demonstrate the rail, not third-party demand.{' '}
                   <span className="font-mono font-semibold text-foreground/70">{nf.format(p.externalSettlements ?? 0)}</span>{' '}
                   came from a wallet that is not ours. They are labeled, not filtered out:

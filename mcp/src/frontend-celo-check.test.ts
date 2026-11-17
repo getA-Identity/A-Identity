@@ -50,7 +50,7 @@ type RailStatus = {
   pause: { since: string; until: string; reason: string } | null
 }
 type Stop = { kind: string; text?: string; reason?: string; tx?: string | null; payTo?: string; status?: number; wallet?: string }
-type Answer = { decision: string | null; risk: string | null; reasons: string[]; agentId: string; tx: string | null; payer: string | null; raw: Record<string, unknown> }
+type Answer = { decision: string | null; risk: string | null; reasons: string[]; agentId: string; tx: string | null; payer: string | null; resolvedOn: string | null; raw: Record<string, unknown> }
 type End = { kind: 'paid'; answer: Answer } | { kind: 'stopped'; stop: Stop }
 type Auth = Record<string, string>
 type TypedData = { domain: { name: string; version: string; chainId: number; verifyingContract: string }; types: Record<string, { name: string; type: string }[]>; primaryType: string; message: Auth }
@@ -72,7 +72,7 @@ type Pay = {
   readAnswer: (status: number, body: unknown, payTo: string) => End
   stopText: (s: Stop) => string
   moneyMayBeOut: (s: Stop) => boolean
-  normalizeAgentId: (raw: string) => string
+  normalizeAgentId: (raw: string, network: string) => string
   purchase: (a: {
     tool: string
     agentId: string
@@ -372,7 +372,8 @@ test("the real server's paid path accepts the header the page builds, settles on
   const steps: string[] = []
   const end = await p.purchase({
     tool: TOOL,
-    agentId: '#9759',
+    // What the page sends for a typed "#9759": Celo's token, by its CAIP-10 id.
+    agentId: p.normalizeAgentId('#9759', celo.caip2),
     status: await railStatus(),
     expectedNetwork: celo.caip2,
     wallet,
@@ -391,7 +392,10 @@ test("the real server's paid path accepts the header the page builds, settles on
   assert.ok(end && end.kind === 'paid', `expected a paid answer, got ${JSON.stringify(end)}`)
   assert.equal(end.answer.decision, 'WARN')
   assert.deepEqual(end.answer.reasons, ['no record for this id'])
-  assert.equal(end.answer.agentId, '#9759')
+  assert.equal(end.answer.agentId, `${celo.caip2}:8004/9759`, 'the tool was asked about Celo #9759, not another chain\'s token of that number')
+  // The answer names the chain its identity and reputation were resolved against: Celo, not the X Layer line of the ASP meta.
+  assert.ok(end.answer.resolvedOn?.includes(`(${celo.caip2})`), `resolved on: ${end.answer.resolvedOn}`)
+  assert.doesNotMatch(end.answer.resolvedOn ?? '', /X Layer/)
   assert.equal(end.answer.tx, SETTLE_TX)
   assert.equal(end.answer.payer, buyer.address.toLowerCase())
   assert.deepEqual(
@@ -505,19 +509,33 @@ test('every ending says what happened to the money, and only the true ones say n
   }
   assert.match(p.stopText(p.readAnswer(402, challenge, payTo).kind === 'stopped' ? (p.readAnswer(402, challenge, payTo) as { stop: Stop }).stop : { kind: 'cancelled' }), /nonce already used/)
   assert.match(p.stopText({ kind: 'cancelled' }), /^Payment cancelled\. Nothing was charged\.$/)
+  // No wallet in the browser ends in a sentence that says what to do, not a spinner, and nothing moved.
+  assert.match(p.stopText({ kind: 'no_wallet' }), /^No EVM wallet was found in this browser\. .*Nothing was charged\.$/)
+  assert.equal(p.moneyMayBeOut({ kind: 'no_wallet' }), false)
   // A paid answer with no verdict in it is still a paid answer, not a stop.
   const odd = p.readAnswer(200, { paid: true, tool: TOOL, settlement: { tx: SETTLE_TX }, result: { decision: 'MAYBE' } }, payTo)
   assert.ok(odd.kind === 'paid')
   assert.equal(odd.answer.decision, null)
   assert.equal(odd.answer.tx, SETTLE_TX)
+  assert.equal(odd.answer.resolvedOn, null, 'an answer that names no chain is not given one')
 })
 
 test('an agent id is normalized the way the Celo registry read wants it', async () => {
   const p = await pay()
-  assert.equal(p.normalizeAgentId('9759'), '#9759')
-  assert.equal(p.normalizeAgentId(' #9759 '), '#9759')
-  assert.equal(p.normalizeAgentId(`${celo.caip2}:8004/9759`), `${celo.caip2}:8004/9759`)
-  assert.equal(p.normalizeAgentId(''), '')
+  // A bare token id is Celo's on this page. Sent bare, the shared resolver would answer it with the
+  // first chain in registry order that has that number: "#9759" was Arc Mainnet's token, someone else's agent.
+  const ours = `${celo.caip2}:8004/9759`
+  assert.equal(p.normalizeAgentId('9759', celo.caip2), ours)
+  assert.equal(p.normalizeAgentId(' #9759 ', celo.caip2), ours)
+  assert.equal(p.normalizeAgentId('#09759', celo.caip2), ours)
+  // Every other form passes as typed: a CAIP id names its own chain, even another chain's, and an address is an address.
+  assert.equal(p.normalizeAgentId(ours, celo.caip2), ours)
+  const arcMainnet = getChainById('arc-mainnet')
+  assert.ok(arcMainnet)
+  assert.equal(p.normalizeAgentId(` ${arcMainnet.caip2}:8004/9759 `, celo.caip2), `${arcMainnet.caip2}:8004/9759`)
+  assert.equal(p.normalizeAgentId(buyer.address, celo.caip2), buyer.address)
+  assert.equal(p.normalizeAgentId('# 9759', celo.caip2), '# 9759')
+  assert.equal(p.normalizeAgentId('', celo.caip2), '')
 })
 
 // ---- the page is reachable ----
@@ -531,6 +549,10 @@ test('the Celo pay check is routed, in the sitemap, smoked and published for age
   const page = repo('src/routes/CeloCheck.tsx')
   assert.match(page, /CHAIN_BY_ID\.celo/, 'the page takes Celo from the generated registry, not from a typed id')
   assert.doesNotMatch(page, /0x[0-9a-fA-F]{40}/, 'no address is typed into the page')
+  // prepare() opens the wallet picker whenever no wallet is chosen yet (several installed and none
+  // remembered, or WalletConnect alone); unmounted, that visitor waited at "Pick a wallet..." forever.
+  assert.match(page, /\{payer\.picker\}/, 'the wallet picker is mounted')
+  assert.match(page, /normalizeAgentId\(raw, CELO\.caip2\)/, 'what the page sends is scoped to Celo')
   const lib = repo('src/lib/celo/x402pay.ts')
   assert.doesNotMatch(lib, /^import (?!type )/m, 'the pay module has no runtime imports, so this suite can load it')
   assert.doesNotMatch(lib, /0x[0-9a-fA-F]{40}/, 'no address is typed into the pay module')

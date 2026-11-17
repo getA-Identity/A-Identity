@@ -35,6 +35,7 @@ export function useEvmPayer() {
   const [wallet, setWallet] = useState<EvmWallet | null>(() => currentEvmWallet())
   const [step, setStep] = useState<PayStep>('idle')
   const [pickerOpen, setPickerOpen] = useState(false)
+  const target = useRef<Chain | null>(null)
   const pending = useRef<{ resolve: (w: EvmWallet) => void; reject: (e: Error) => void } | null>(null)
 
   const choose = useCallback(
@@ -61,6 +62,8 @@ export function useEvmPayer() {
 
   const prepare = useCallback(
     async (chain: Chain): Promise<{ provider: Eip1193; from: string; wallet: EvmWallet }> => {
+      // The chain this payment is for, so a WalletConnect session asks the phone wallet for it.
+      target.current = chain
       try {
         let w = wallet ?? currentEvmWallet()
         if (!w) {
@@ -95,9 +98,9 @@ export function useEvmPayer() {
     void choose().catch(() => undefined)
   }, [choose])
 
-  const picker = <PayWalletPicker open={pickerOpen} onPicked={onPicked} onClose={onClose} />
+  const picker = <PayWalletPicker open={pickerOpen} chain={target.current} onPicked={onPicked} onClose={onClose} />
 
-  return { wallet, step, prepare, change, picker }
+  return { wallet, step, prepare, change, picker, close: onClose }
 }
 
 /** The button text for a payment's wallet step. */
@@ -109,7 +112,7 @@ export function payStepLabel(step: PayStep, chainName: string, walletName?: stri
 }
 
 /** One flat list of the EVM wallets in this browser, plus WalletConnect when configured. */
-function PayWalletPicker({ open, onPicked, onClose }: { open: boolean; onPicked: (w: EvmWallet) => void; onClose: () => void }) {
+function PayWalletPicker({ open, chain, onPicked, onClose }: { open: boolean; chain?: Chain | null; onPicked: (w: EvmWallet) => void; onClose: () => void }) {
   const [wallets, setWallets] = useState<WalletOption[]>([])
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -146,7 +149,7 @@ function PayWalletPicker({ open, onPicked, onClose }: { open: boolean; onPicked:
     setBusy('walletconnect')
     setError(null)
     try {
-      const provider = await connectWalletConnect()
+      const provider = await connectWalletConnect(chain ?? undefined)
       setConnectedProvider(provider, { name: 'WalletConnect' })
       onPicked({ provider, name: 'WalletConnect' })
     } catch (e) {

@@ -22,8 +22,8 @@ and sells its trust tools over that facilitator, settled in native USDC.
 </CardGroup>
 
 <Note>
-  Celo mainnet is **live**: agent #9759 is ours on the canonical registry, and the x402
-  rail has real settlements recorded in a durable log you can read at
+  Celo mainnet is **live**: agent `eip155:42220:8004/9759` (#9759 in Celo's registry) is
+  ours, and the x402 rail has real settlements recorded in a durable log you can read at
   [/celo-proof](https://a-identity.xyz/celo-proof). Every one of them so far was paid by
   our own buyer wallet, on 2026-08-09, and is labeled internal. The registration, two
   settlement receipts and the caveats are at [/proof/celo](https://a-identity.xyz/proof/celo).
@@ -86,8 +86,11 @@ const owner = await client.readContract({
 
 The mainnet identity registry is the same address Arc Mainnet, Base, Arbitrum One, X Layer
 and Robinhood Chain carry, and
-the Celo Sepolia pair matches Arc's. That is the point of a deterministic deployment: one
-agent id means the same thing wherever you resolve it.
+the Celo Sepolia pair matches Arc's. That is the point of a deterministic deployment: a
+client finds the registry at one known address on every chain. The address is all they
+share. Each chain's registry mints its own token ids, so `#9759` on Celo and `#9759` on Arc
+Mainnet are two unrelated agents, and a bare number names no agent until a chain is named.
+Write the full id, `eip155:42220:8004/9759`, wherever the chain is not already fixed.
 
 ## Verify it yourself
 
@@ -106,16 +109,18 @@ Celo mainnet to a browser wallet, with no key and no code:
 
 1. Connect Rabby or MetaMask; the page switches it to Celo, adding the network from our
    registry if the wallet has never seen it.
-2. Type an ERC-8004 agent id (`#9759` is ours) and press the button. The page reads the
-   402 terms and refuses them if they name another network, token, payee or price than
-   the rail publishes at `/api/celo/status`.
+2. Type an ERC-8004 agent id (`eip155:42220:8004/9759` is ours) and press the button. A
+   bare number such as `#9759` is read as Celo's token and sent as its full id, and so is
+   one posted to the rail directly; another chain's full id is checked on that chain. The
+   page reads the 402 terms and refuses them if they name another network, token, payee or
+   price than the rail publishes at `/api/celo/status`.
 3. Approve one EIP-3009 `TransferWithAuthorization` in the wallet. It is a signature, not a
    transaction: the Celo facilitator broadcasts it and pays the gas, so the buyer needs a
    little USDC and no CELO.
 
 The answer is ALLOW, WARN or DENY with its reasons, the settlement hash on Celoscan, and a
 line on [/proof/celo](https://a-identity.xyz/proof/celo). A deep link prefills the id and
-never pays on load: `https://a-identity.xyz/check/celo?q=%239759`.
+never pays on load: `https://a-identity.xyz/check/celo?q=eip155:42220:8004/9759`.
 
 ## Where Celo fits
 

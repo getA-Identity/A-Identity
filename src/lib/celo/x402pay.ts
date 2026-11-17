@@ -309,6 +309,8 @@ export type PaidAnswer = {
   payer: string | null
   settledAt: string | null
   amountUsd: number | null
+  /** The chain the verdict's identity and reputation were resolved against, as the rail names it; null when the answer does not say. */
+  resolvedOn: string | null
   /** The Celo-side identity read the rail adds to every paid answer. */
   celo: { agentId: string; owner: string; registry: string; explorer: string } | { reason: string } | null
   /** The whole 200 body, settlement included. */
@@ -318,6 +320,8 @@ export type PaidAnswer = {
 /** How a purchase stopped short of an answer, each with what happened to the money. */
 export type Stop =
   | { kind: 'cancelled' }
+  /** No EVM wallet in this browser and no WalletConnect on this deployment: there is nothing to pick. */
+  | { kind: 'no_wallet' }
   | { kind: 'refusal'; text: string }
   | { kind: 'wallet'; wallet: string; text: string }
   | { kind: 'refused'; reason: string }
@@ -345,6 +349,7 @@ export function readAnswer(httpStatus: number, body: unknown, payTo: string): En
   if (httpStatus === 200 && b.paid === true) {
     const result = (b.result && typeof b.result === 'object' ? b.result : {}) as Record<string, unknown>
     const decision = VERDICTS.find((v) => v === result.decision) ?? null
+    const meta = (result._meta && typeof result._meta === 'object' ? result._meta : {}) as Record<string, unknown>
     const identity = result.celoIdentity as Record<string, unknown> | undefined
     const celo =
       identity && identity.read === true && typeof identity.owner === 'string'
@@ -363,6 +368,7 @@ export function readAnswer(httpStatus: number, body: unknown, payTo: string): En
         payer: str(settlement.payer),
         settledAt: str(settlement.settledAt),
         amountUsd: typeof b.priceUsd === 'number' ? b.priceUsd : null,
+        resolvedOn: str(meta.homeRegistryNetwork),
         celo,
         raw: b,
       },
@@ -393,6 +399,8 @@ export function stopText(stop: Stop): string {
   switch (stop.kind) {
     case 'cancelled':
       return 'Payment cancelled. Nothing was charged.'
+    case 'no_wallet':
+      return "No EVM wallet was found in this browser. Install Rabby or MetaMask and reload this page, or on a phone open it in your wallet app's browser. Nothing was charged."
     case 'refusal':
       return `${sentence(stop.text)} Nothing was charged.`
     case 'wallet':
@@ -469,7 +477,13 @@ export async function purchase(a: {
   a.step('checking')
   let balance: bigint | null = null
   try {
-    balance = unitsFromHex(await a.wallet.request('eth_call', [balanceOfCall(terms.asset, a.wallet.from), 'latest']))
+    // A wallet whose RPC never answers must not hold the visitor here: after 10 s the read counts as unanswered.
+    balance = unitsFromHex(
+      await Promise.race([
+        a.wallet.request('eth_call', [balanceOfCall(terms.asset, a.wallet.from), 'latest']),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('the balance read timed out')), 10_000)),
+      ]),
+    )
   } catch {
     balance = null
   }
@@ -504,10 +518,18 @@ export async function purchase(a: {
   return readAnswer(res.status, res.body, terms.payTo)
 }
 
-/** "9759" and "#9759" are the same id; anything else is passed as typed. */
-export function normalizeAgentId(raw: string): string {
+/**
+ * The id the page asks the Celo rail about, as it is sent and shown. Every chain's ERC-8004
+ * registry mints its own token ids, so a bare number names no agent until a chain is named, and
+ * the shared resolver answers a bare one with the first chain in registry order that has it:
+ * "#9759" read that way was Arc Mainnet's token 9759, someone else's agent. On this page a bare
+ * id ("9759" or "#9759") means Celo's, so it becomes the CAIP-10 id on `network`, the registry's
+ * Celo CAIP-2 id. Every other form (a 0x address, any CAIP id) passes as typed.
+ */
+export function normalizeAgentId(raw: string, network: string): string {
   const q = raw.trim()
-  return /^\d{1,78}$/.test(q) ? `#${q}` : q.slice(0, 200)
+  const bare = /^#?(\d{1,78})$/.exec(q)
+  return bare ? `${network}:8004/${BigInt(bare[1]).toString()}` : q.slice(0, 200)
 }
 
 /** Where to open a settlement on the chain's explorer. */

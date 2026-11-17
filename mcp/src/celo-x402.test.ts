@@ -8,6 +8,7 @@ import {
   celoChallenge,
   celoToolRequirements,
   celoServeTool,
+  celoScopedAgentId,
   celoProof,
   celoIdentitySummary,
   celoPauseResponse,
@@ -200,9 +201,17 @@ test('a settled facilitator flow serves the tool and durably records the settlem
     now: () => new Date('2026-08-09T00:00:00.000Z'),
   })
   assert.equal(out.httpStatus, 200)
-  const body = out.body as { paid: boolean; settlement: { facilitatorCredits: number; payer: string }; result: { served: string } }
+  const body = out.body as { paid: boolean; settlement: { facilitatorCredits: number; payer: string }; result: { served: string; _meta: Record<string, string> } }
   assert.equal(body.paid, true)
-  assert.deepEqual(body.result, { served: '#1' })
+  // A bare id on this rail is Celo's: the tool is asked about the rail chain's CAIP-10 id, never
+  // about whichever chain's #1 the shared resolver would match first.
+  assert.equal(body.result.served, `${status.network}:8004/1`)
+  // The labels name the chain that was read and the one the payment settled on. Neither is the
+  // X Layer line the ASP meta carries.
+  assert.equal(body.result._meta.network, `Celo (${status.network})`)
+  assert.equal(body.result._meta.homeRegistryNetwork, `Celo mainnet (${status.network})`)
+  assert.ok(body.result._meta.scope.includes(`resolved against Celo mainnet (${status.network})`))
+  assert.doesNotMatch(JSON.stringify(body.result._meta), /X Layer|eip155:196/)
   assert.equal(body.settlement.facilitatorCredits, 7)
   assert.equal(body.settlement.payer, BUYER)
   // The durable record is exactly what /api/celo/proof aggregates.
@@ -216,6 +225,28 @@ test('a settled facilitator flow serves the tool and durably records the settlem
   }])
   // The settle call authenticated with OUR facilitator key.
   assert.equal(fac.settleHeaders[0]['X-API-Key'], 'x402_live_testkey')
+
+  // Every other form reaches the tool as sent, and the label names the chain that id names, or the
+  // chain of the identity the tool returned, or says that the answer does not name one.
+  assert.equal(celoScopedAgentId(' 09759 ', requireChain(status.network)), `${status.network}:8004/9759`)
+  const arcMainnet = getChainById('arc-mainnet')
+  assert.ok(arcMainnet)
+  for (const c of [
+    { agentId: `${arcMainnet.caip2}:8004/1`, identity: null, label: `Arc Mainnet (${arcMainnet.caip2})` },
+    { agentId: 'eip155:1:8004/1', identity: null, label: 'eip155:1, a chain our registry does not know, so no registry was read for it' },
+    { agentId: BUYER, identity: { chain: 'arc-mainnet' }, label: `Arc Mainnet (${arcMainnet.caip2})` },
+    { agentId: BUYER, identity: null, label: 'every registry our resolver reads (this answer does not name the one that matched)' },
+  ]) {
+    const again = await celoServeTool('verify_agent', { agentId: c.agentId }, paymentHeader(status), status, {
+      fetchImpl: fakeFacilitator({}).fetchImpl,
+      persist: async () => {},
+      handlers: { verify_agent: async (i) => ({ served: i.agentId, identity: c.identity }) },
+      env: CONFIGURED_ENV,
+    })
+    const result = (again.body as { result: { served: string; _meta: Record<string, string> } }).result
+    assert.equal(result.served, c.agentId, `${c.agentId} is passed as sent`)
+    assert.equal(result._meta.homeRegistryNetwork, c.label, c.agentId)
+  }
 })
 
 test('a facilitator outage is a 502 that neither serves the tool nor records anything', async () => {
@@ -424,11 +455,12 @@ test('celo-sepolia mirrors the testnet shape: Arc\'s registry pair, testnet USDC
 })
 
 // ── the Celo-side identity read (celoIdentitySummary) ─────────────────────────────
-// Why this exists at all: the trust body a paid call returns is resolved on the
-// oracle's HOME registry (X Layer), so the same numeric id means a different agent on
-// Celo. Without a Celo-side read, a Celo buyer asking about a Celo agent id would pay a
-// Celo rail for an answer that never touched Celo. These pin that the read is real,
-// scoped, and degrades honestly instead of throwing into a paid call.
+// Why this exists at all: the same numeric id means a different agent on every chain, and
+// the trust body a paid call returns used to answer a bare id from whichever chain the
+// shared resolver matched first (celoScopedAgentId now scopes it to Celo). Without a
+// Celo-side read, a Celo buyer asking about a Celo agent id could pay a Celo rail for an
+// answer that never touched Celo. These pin that the read is real, scoped, and degrades
+// honestly instead of throwing into a paid call.
 
 /** A configured mainnet status, the same shape celoServeTool resolves. */
 function celoStatus(): CeloX402Status {
@@ -443,6 +475,16 @@ test('a Celo identity read refuses a non-numeric agent id instead of guessing, a
   assert.equal(out.read, false)
   assert.equal(calls, 0)
   assert.match(out.read === false ? out.reason : '', /numeric ERC-8004 agent id/)
+  // Another chain's CAIP id names that chain's token: Celo's token of the same number is another
+  // agent, so it is not read under that id either.
+  const arcMainnet = getChainById('arc-mainnet')
+  assert.ok(arcMainnet)
+  const other = await celoIdentitySummary(`${arcMainnet.caip2}:8004/9759`, celoStatus(), {
+    readContract: async () => { calls++; return '0x' },
+  })
+  assert.equal(other.read, false)
+  assert.equal(calls, 0)
+  assert.ok((other.read === false ? other.reason : '').includes(`names a token on ${arcMainnet.caip2}, not on Celo (eip155:42220)`))
 })
 
 test('a Celo identity read returns the owner, the CAIP id and a Celoscan NFT link for a minted agent', async () => {
@@ -535,6 +577,15 @@ test('celoProof splits our own buyer wallet out as internal instead of letting i
 
   // Every recent row carries the flag, so the page can badge it without guessing.
   assert.deepEqual(proof.recent.map((r) => r.internal), [false, false, true, true])
+
+  // The co-founder's wallet and the founder's wallet that holds our facilitator account (listed
+  // 2026-11-17) are ours too, in any spelling: a check either pays is never external demand.
+  for (const payer of ['0x9Ec344BaDF764ecC38518D48991961254584f8CC', '0xe3130cA9061FC911b7F05e66D76fF44761fEFb7E']) {
+    const one = await celoProof(CONFIGURED_ENV, async () => [{ ts: '2026-11-17T00:00:00Z', tool: 'risk_check', amountUsd: 0.005, network: 'eip155:42220', payer }])
+    assert.equal(one.internalSettlements, 1, payer)
+    assert.equal(one.externalSettlements, 0, payer)
+    assert.ok(one.internalPayers.includes(payer.toLowerCase()), payer)
+  }
 })
 
 test('CELO_INTERNAL_PAYERS adds a wallet without a deploy, and ignores anything that is not an address', async () => {
@@ -550,8 +601,10 @@ test('CELO_INTERNAL_PAYERS adds a wallet without a deploy, and ignores anything 
     async () => records,
   )
   assert.equal(on.internalSettlements, 1)
-  // The junk entries never enter the set: only the hardcoded wallets and the valid extra.
+  // The junk entries never enter the set: only the hardcoded wallets and the valid extra, which
+  // adds to them and removes none.
   assert.equal(on.internalPayers.length, off.internalPayers.length + 1)
+  assert.ok(off.internalPayers.every((a) => on.internalPayers.includes(a)))
   assert.ok(on.internalPayers.includes(extra))
 })
 
