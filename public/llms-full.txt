@@ -176,12 +176,18 @@ the same entity to manufacture settlement history. A one-sided scan cannot see
 it by construction. On Celo it also asks the Self Agent ID registry, a
 third-party ERC-8004 proof-of-human registry, whether both agents are bound to
 the same verified human (`sameHuman`: true, false, or null when either side is
-not registered there). Two operators can look distinct by owner and wallet and
-still be one person with one passport. `verify_agent` and `agent_passport`
-carry the one-sided read as `human_proof`: registered or not, human-backed or
-not, fresh or expired, and how many agents that human runs. It says a unique
-human exists, never who they are, and it is read live from a registry we do
-not operate.
+not registered there, or when a side's ID was found only through the IDs its
+owner holds and does not settle which human is that agent's: the owner's IDs
+name more than one human, the owner holds more IDs than the read found, or a
+read of an address the agent is known by did not answer). A match on an ID an
+agent's owner holds (Self's linked mode) says so in its reason. Two operators
+can look distinct by owner and wallet and still be one person with one
+passport. `verify_agent` and `agent_passport` carry the one-sided read as
+`human_proof`: registered or not, human-backed or not, fresh or expired, and
+how many agents that human runs. For an ERC-8004 agent on Celo it can be an ID
+the agent's owner holds in Self's linked mode, and its note then says so and
+whether the agent key was verified. It says a unique human exists, never who
+they are, and it is read live from a registry we do not operate.
 
 ### Guardrail status
 

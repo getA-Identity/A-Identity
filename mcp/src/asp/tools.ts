@@ -22,9 +22,9 @@
  * The Self Agent ID read behind `human_proof` also knows Self's linked mode for an ERC-8004
  * agent on Celo (selfLinkedIdentity): a Self Agent ID held by the agent's owner, or keyed by
  * its ERC-8004 agent wallet. Same fields, same prices, and every other target reads as before.
- * counterparty_check rests its same-human signal on an ID the owner holds only when the read
- * found every ID that owner holds and they name one human, and its reason then says the ID was
- * read that way.
+ * counterparty_check rests its same-human signal on an ID the owner holds only when every
+ * agent-key read answered and the read found every ID that owner holds and they name one human,
+ * and its reason then says the ID was read that way.
  */
 import { createIdentityProvider, isSafePublicHttpUrl } from '../erc8004.js'
 import { ARC_CHAIN, nearTargetOf, type NearTarget } from '../chains/index.js'
@@ -496,6 +496,12 @@ export function selfLookupCandidates(
  * which token the owner holds, and balanceOf on that chain's ERC-8004 registry proved the owner.
  * It has no token id, so the read through it skips the agent wallet (tokenId null). Everything
  * else gets null, which leaves the lookup exactly as it was. Pure, so it is unit-testable.
+ *
+ * One limit, stated and not built: an owner address resolves on the first chain, in
+ * identityChains() order, where it holds an ERC-8004 token (erc8004.ts resolve()). An owner that
+ * also holds one on an earlier chain with no Self registry, as AbaPay's owner does on Base, is
+ * anchored there and keeps the agent-key lookup, while the agent's Celo CAIP id reads linked mode.
+ * Reading linked mode for that address too waits on a founder decision (CLAUDE.md).
  */
 export function selfLinkedIdentity(
   identity: { chain: string; tokenId: number; owner?: string | null; partial?: boolean } | null,
@@ -862,8 +868,9 @@ export async function counterpartyCheck(from: string, to: string, txContext: TxC
   // The same question one layer deeper: are the two agents bound to the same verified
   // HUMAN in the Self Agent ID registry? Two operators can look distinct by owner and
   // wallet and still be one person with one passport. Answerable only when both sides are
-  // registered there on the same chain, and neither side's ID is a pick among IDs its owner holds
-  // for more than one human (see selfSameHuman); otherwise null, never a guessed answer.
+  // registered there on the same chain, and neither side's ID is one its owner holds that does not
+  // settle which human is that agent's ('holder-ambiguous', see selfSameHuman); otherwise null,
+  // never a guessed answer.
   const sameHuman = await selfSameHuman(payer, cp, deps.sameHuman ?? sameHumanOn)
   if (sameHuman === true && payer.agentId !== cp.agentId) {
     reasons.push(sameHumanReason(payer.humanProofFoundBy, cp.humanProofFoundBy))
@@ -903,9 +910,10 @@ function humanBacked(p: HumanProofRead | null): boolean | null {
 
 /**
  * sameHuman across two reads, only when both are registered on the same chain. A Self Agent ID
- * reached through an owner whose IDs name more than one human, or who holds more IDs than the read
- * found, is the read's pick, not this agent's known human, so nothing rests on it: null, never a
- * guessed answer.
+ * reached through an owner whose IDs name more than one human, who holds more IDs than the read
+ * found, or after an agent-key read that did not answer (it may have missed an ID keyed to the
+ * agent itself), is the read's pick, not this agent's known human, so nothing rests on it: null,
+ * never a guessed answer.
  */
 async function selfSameHuman(x: Bundle, y: Bundle, same: typeof sameHumanOn): Promise<boolean | null> {
   const a = x.humanProof

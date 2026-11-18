@@ -196,11 +196,36 @@ test('a non-address query, and a read that fails, are errors on a supported chai
   assert.ok(keyUnread.supported && 'error' in keyUnread && keyUnread.error.includes(`agent key ${OWNER}`), JSON.stringify(keyUnread))
 
   // A failed read on one path does not hide a find on another: a key outage, and the owner's ID found.
+  // The read that did not answer may have missed an ID keyed to the agent itself, which would have
+  // been reported instead, so the find is ambiguous (no same-human signal rests on it) and the note
+  // names that read.
+  const cannotRuleOut = 'did not answer, so this read cannot rule out a Self Agent ID keyed to an address this agent is known by, which it would have reported instead.'
   __resetSelfHolderIndexForTests()
   const foundAnyway = fakeCelo({ 197: { holder: OWNER, key: KEY } }, { 10000: OWNER }, ['agentKeyToAgentId'])
   const found = await readHumanProofFor('celo', [OWNER], { erc8004: linkedOf(OWNER), reads: () => foundAnyway.reads, onFound: how.onFound })
   assert.ok(found.supported && 'registered' in found && found.registered && found.agentId === '197', JSON.stringify(found))
-  assert.equal(how.log.pop(), 'holder')
+  assert.equal(how.log.pop(), 'holder-ambiguous')
+  if (found.supported && 'registered' in found) {
+    assert.ok(found.note.includes(`Self's linked mode, where the ID is held by a wallet the human named when registering and the agent key is a separate address. The agent-key read of ${OWNER} ${cannotRuleOut}`), found.note)
+  }
+  // Every read that did not answer is named: a second known address, the agent wallet's key read,
+  // and the agent wallet read itself.
+  __resetSelfHolderIndexForTests()
+  const walletKeyDown = fakeCelo({ 197: { holder: OWNER, key: KEY } }, { 10000: WALLET }, ['agentKeyToAgentId'])
+  const viaWalletDown = await readHumanProofFor('celo', [STRANGER, OWNER], { erc8004: linkedOf(OWNER), reads: () => walletKeyDown.reads, onFound: how.onFound })
+  assert.ok(viaWalletDown.supported && 'registered' in viaWalletDown && viaWalletDown.agentId === '197', JSON.stringify(viaWalletDown))
+  assert.equal(how.log.pop(), 'holder-ambiguous')
+  if (viaWalletDown.supported && 'registered' in viaWalletDown) {
+    assert.ok(viaWalletDown.note.includes(`The agent-key read of ${STRANGER}, the agent-key read of ${OWNER} and the agent-key read of this agent's ERC-8004 agent wallet (${WALLET}) ${cannotRuleOut}`), viaWalletDown.note)
+  }
+  __resetSelfHolderIndexForTests()
+  const walletDown = fakeCelo({ 197: { holder: OWNER, key: KEY } }, { 10000: WALLET }, ['getAgentWallet'])
+  const noWallet = await readHumanProofFor('celo', [OWNER], { erc8004: linkedOf(OWNER), reads: () => walletDown.reads, onFound: how.onFound })
+  assert.ok(noWallet.supported && 'registered' in noWallet && noWallet.agentId === '197', JSON.stringify(noWallet))
+  assert.equal(how.log.pop(), 'holder-ambiguous')
+  if (noWallet.supported && 'registered' in noWallet) {
+    assert.ok(noWallet.note.includes(`The read of this agent's ERC-8004 agent wallet ${cannotRuleOut}`), noWallet.note)
+  }
   // During that outage an ID keyed by the owner itself is reached through linked mode, and its
   // key is checked rather than assumed foreign: it is the owner, so the answer says it is verified,
   // and names it for what it is, Self's simple registration, not linked mode.
@@ -216,6 +241,8 @@ test('a non-address query, and a read that fails, are errors on a supported chai
     assert.ok(own.note.includes(`Its agent key, ${OWNER}, is among the addresses this read knows this agent by, so the agent key is verified as well.`), own.note)
     assert.ok(!own.note.includes('is not among the addresses this read knows this agent by'), own.note)
     assert.ok(!own.note.includes("Self's linked mode") && !own.note.includes('the agent key is a separate address'), own.note)
+    // The read that did not answer is the read of this very key, which would have answered this ID.
+    assert.ok(!own.note.includes('cannot rule out'), own.note)
   }
   assert.equal(how.log.pop(), 'agent-key', 'its agent key is an address the agent is known by')
   // The same outage with a second ID beside it, bound to another human: the one keyed to the owner
@@ -232,7 +259,7 @@ test('a non-address query, and a read that fails, are errors on a supported chai
       both.note,
     )
     assert.ok(both.note.includes('They are bound to 2 different humans; this read reports #194, the one keyed to the owner itself, which the agent-key read did not return.'), both.note)
-    assert.ok(!both.note.includes('if any, is this agent'), both.note)
+    assert.ok(!both.note.includes('if any, is this agent') && !both.note.includes('cannot rule out'), both.note)
   }
   assert.equal(how.log.pop(), 'agent-key')
 
@@ -518,4 +545,23 @@ test('sameHumanOn: null on a chain that cannot answer, never a guessed false', a
   const keyed = await counterpartyCheck(agent(9907), agent(9908), null, deps)
   assert.equal(keyed.sameHuman, true)
   assert.deepEqual(sameHumanReasons(keyed.reasons), [`Payer and counterparty are bound to the same verified human in the Self Agent ID registry (same passport nullifier)${tail}`])
+
+  // With the agent-key reads down, the payer's owner's one ID settles nothing: the read that did not
+  // answer may have missed an ID keyed to the payer itself, bound to another human. So the payer the
+  // healthy read above answered true for is null now, never a guessed true or false, and the
+  // registry is not asked. The counterparty's ID is keyed to its owner, so it is still found by key.
+  __resetSelfHolderIndexForTests()
+  const keysDown = fakeCelo(registry.ids, {}, ['agentKeyToAgentId'])
+  const outage: GatherDeps = {
+    ...deps,
+    readHumanProof: ((anchor: string, candidates: string[], opts: Parameters<typeof readHumanProofFor>[2] = {}) =>
+      readHumanProofFor(anchor, candidates, { ...opts, reads: () => keysDown.reads })) as typeof readHumanProofFor,
+  }
+  const askedBefore = asked.length
+  for (const [from, to] of [[10000, 9907], [9907, 10000]]) {
+    const unsure = await counterpartyCheck(agent(from), agent(to), null, outage)
+    assert.equal(unsure.sameHuman, null, `#${from} paying #${to} during an agent-key outage`)
+    assert.deepEqual(sameHumanReasons(unsure.reasons), [], JSON.stringify(unsure.reasons))
+  }
+  assert.equal(asked.length, askedBefore)
 })

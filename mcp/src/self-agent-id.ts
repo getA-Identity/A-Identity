@@ -48,8 +48,9 @@
  *
  * How an answer reached its ID (HumanProofFoundBy) is told to the caller beside the answer, not
  * in it, because the answer's fields are published. counterparty_check needs it: an ID the owner
- * holds says which human is behind the agent only when the read found every ID the owner holds
- * and they all name the same one.
+ * holds says which human is behind the agent only when every agent-key read answered (one that did
+ * not may have missed an ID keyed to the agent itself, which would have been reported instead), the
+ * read found every ID the owner holds, and they all name the same one.
  */
 import { createHash } from 'node:crypto'
 import { CHAINS, getChainById, type ChainDescriptor } from './chains/index.js'
@@ -352,6 +353,8 @@ function agentKeyText(key: string): string {
 
 const listOf = (xs: string[]) => (xs.length <= 2 ? xs.join(' and ') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`)
 
+const upperFirst = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
 /** How many different humans the ids carry a proof for (each nullifier is one human). */
 const humansOf = (held: HeldId[]) => new Set(held.filter((h) => h.nullifier > 0n).map((h) => h.nullifier)).size
 
@@ -371,9 +374,12 @@ function preferred(held: HeldId[], known: string[]): HeldId {
  * is not one whenever the agent-key reads answered (they would have found it), and when one of
  * them failed it may be, so it is checked rather than assumed. An ID keyed to the holder itself
  * is Self's simple registration, not linked mode, and is named as that. `balance` is what
- * balanceOf says the holder holds, so an answer that found fewer IDs says so.
+ * balanceOf says the holder holds, so an answer that found fewer IDs says so. `unanswered` names
+ * the agent-key and agent-wallet reads that did not answer: an ID found by holder says one of them
+ * may have missed an ID keyed to this agent, which would have been reported instead. An ID keyed to
+ * a known address does not, because it is what the read of that address answers.
  */
-function linkedNote(chain: ChainDescriptor, holder: string, held: HeldId[], chosen: HeldId, known: string[], balance: bigint): string {
+function linkedNote(chain: ChainDescriptor, holder: string, held: HeldId[], chosen: HeldId, known: string[], balance: bigint, unanswered: string[]): string {
   const mode = "Self's linked mode, where the ID is held by a wallet the human named when registering and the agent key is a separate address"
   const simple = "Self's simple registration, where the human's own wallet is the agent key"
   const ownKey = chosen.key === holder
@@ -412,6 +418,9 @@ function linkedNote(chain: ChainDescriptor, holder: string, held: HeldId[], chos
   if (BigInt(held.length) < balance) {
     parts.push(`balanceOf reports ${balance} Self Agent IDs held by this owner and this read found ${held.length}, so it may not name every ID the owner holds or every human they are bound to.`)
   }
+  if (!keyKnown && unanswered.length > 0) {
+    parts.push(`${upperFirst(listOf(unanswered))} did not answer, so this read cannot rule out a Self Agent ID keyed to an address this agent is known by, which it would have reported instead.`)
+  }
   parts.push(
     keyKnown
       ? `Its agent key, ${chosen.key}, is among the addresses this read knows this agent by, so the agent key is verified as well.`
@@ -429,23 +438,27 @@ function linkedNote(chain: ChainDescriptor, holder: string, held: HeldId[], chos
  *   - 'agent-key': an address this agent is known by is the ID's agent key. Every find was this
  *     one before linked mode was read.
  *   - 'agent-wallet': its ERC-8004 agent wallet is the ID's agent key.
- *   - 'holder': its owner holds the ID (Self's linked mode), the read found as many IDs as
- *     balanceOf says the owner holds, and every one of them that carries a human proof is bound
- *     to the same human. The agent key is not verified.
- *   - 'holder-ambiguous': its owner holds IDs bound to more than one human, or more IDs than the
- *     read found, so which human, if any, is this agent's is not known.
+ *   - 'holder': its owner holds the ID (Self's linked mode), every agent-key and agent-wallet read
+ *     answered, the read found as many IDs as balanceOf says the owner holds, and every one of them
+ *     that carries a human proof is bound to the same human. The agent key is not verified.
+ *   - 'holder-ambiguous': its owner holds the ID, and which human, if any, is this agent's is not
+ *     known: the owner holds IDs bound to more than one human, or more IDs than the read found, or
+ *     an agent-key or agent-wallet read did not answer, so an ID keyed to the agent itself, which
+ *     would have been reported instead, is not ruled out.
  */
 export type HumanProofFoundBy = 'agent-key' | 'agent-wallet' | 'holder' | 'holder-ambiguous'
 
 /**
  * How a linked-mode answer reached `chosen`: by key when its agent key is one of `keys` (or the
- * agent wallet, `walletKey`), else by holder, ambiguous when the held ids name more than one human
- * or fewer were found than balanceOf reports.
+ * agent wallet, `walletKey`), else by holder, ambiguous when the held ids name more than one human,
+ * fewer were found than balanceOf reports, or `keyReadsFailed`, an agent-key or agent-wallet read
+ * did not answer. A find by key stays one when such a read failed: an ID keyed to an address the
+ * agent is known by is what the read of that address answers.
  */
-function holderFoundBy(held: HeldId[], chosen: HeldId, keys: string[], walletKey: string | null, balance: bigint): HumanProofFoundBy {
+function holderFoundBy(held: HeldId[], chosen: HeldId, keys: string[], walletKey: string | null, balance: bigint, keyReadsFailed: boolean): HumanProofFoundBy {
   if (keys.includes(chosen.key)) return 'agent-key'
   if (walletKey !== null && chosen.key === walletKey) return 'agent-wallet'
-  return humansOf(held) > 1 || BigInt(held.length) < balance ? 'holder-ambiguous' : 'holder'
+  return keyReadsFailed || humansOf(held) > 1 || BigInt(held.length) < balance ? 'holder-ambiguous' : 'holder'
 }
 
 /** An ERC-8004 agent on a chain with a Self registry, as Self's linked mode is read through it. */
@@ -485,7 +498,8 @@ type Lookup = { read: HumanProofRead; foundBy: HumanProofFoundBy | null }
  * The lookup for an ERC-8004 agent on a chain with a Self registry, in the order the module
  * header gives: every older key candidate exactly as before, then the ERC-8004 agent wallet as a
  * key, then the Self Agent IDs its owner holds. A read that failed on the way turns "none found"
- * into "unknown", never into "unregistered".
+ * into "unknown", never into "unregistered", and an ID then found by holder into a
+ * 'holder-ambiguous' find whose note names the read that did not answer.
  */
 async function readHumanProofForAgent(chain: ChainDescriptor, keys: string[], linked: LinkedIdentity, env: NodeJS.ProcessEnv, readsFor?: HumanProofOptions['reads']): Promise<Lookup> {
   const base = baseOf(chain)
@@ -498,6 +512,9 @@ async function readHumanProofForAgent(chain: ChainDescriptor, keys: string[], li
   }
   const failed: string[] = []
   const tried: string[] = []
+  // The agent-key and agent-wallet reads that did not answer, in words, for a find by holder: any
+  // one of them may have missed an ID keyed to this agent, which would have been reported first.
+  const unanswered: string[] = []
 
   // The owner is an agent-key candidate too (Self's simple registration keys the ID by the
   // human's own wallet); the trust tools already pass it, so this only fills it in for a caller
@@ -507,7 +524,10 @@ async function readHumanProofForAgent(chain: ChainDescriptor, keys: string[], li
     const r = await readHumanProofOn(chain.id, key, env, reads)
     tried.push(key.toLowerCase())
     if (r.supported && 'registered' in r && r.registered) return { read: r, foundBy: 'agent-key' }
-    if (r.supported && 'error' in r) failed.push(`agent key ${key}: ${r.error}`)
+    if (r.supported && 'error' in r) {
+      failed.push(`agent key ${key}: ${r.error}`)
+      unanswered.push(`the agent-key read of ${key.toLowerCase()}`)
+    }
   }
   const keyed = [...tried]
 
@@ -530,10 +550,14 @@ async function readHumanProofForAgent(chain: ChainDescriptor, keys: string[], li
             foundBy: 'agent-wallet',
           }
         }
-        if (r.supported && 'error' in r) failed.push(`agent wallet ${wallet}: ${r.error}`)
+        if (r.supported && 'error' in r) {
+          failed.push(`agent wallet ${wallet}: ${r.error}`)
+          unanswered.push(`the agent-key read of this agent's ERC-8004 agent wallet (${wallet})`)
+        }
       }
     } catch (e) {
       failed.push(`the ERC-8004 agent wallet: ${errorText(e)}`)
+      unanswered.push("the read of this agent's ERC-8004 agent wallet")
     }
   }
 
@@ -549,8 +573,8 @@ async function readHumanProofForAgent(chain: ChainDescriptor, keys: string[], li
         const chosen = preferred(held, tried)
         const count = chosen.nullifier > 0n ? ((await reads.read(selfCall(registry, 'getAgentCountForHuman', [chosen.nullifier]))) as bigint) : 0n
         return {
-          read: registeredAnswer(chain, owner, chosen.id, chosen, count, linkedNote(chain, owner, held, chosen, tried, n)),
-          foundBy: holderFoundBy(held, chosen, keyed, walletKey, n),
+          read: registeredAnswer(chain, owner, chosen.id, chosen, count, linkedNote(chain, owner, held, chosen, tried, n, unanswered)),
+          foundBy: holderFoundBy(held, chosen, keyed, walletKey, n, unanswered.length > 0),
         }
       }
       failed.push(`this agent's owner holds ${n} Self Agent ID${n === 1n ? '' : 's'} by balanceOf, and a scan of the registry did not find which`)

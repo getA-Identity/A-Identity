@@ -137,6 +137,9 @@ test('selfLookupCandidates: wallet first, then owner, then identity owner, then 
   assert.equal(selfLinkedIdentity(null, 'celo'), null)
   assert.equal(selfLinkedIdentity({ ...celo, owner: 'GABC' }, 'celo'), null)
   assert.equal(selfLinkedIdentity({ ...celo, owner: null }, 'celo'), null)
+  // An owner address resolves on the first identity chain where it holds a token, so an owner that
+  // also holds one on Base, as AbaPay's owner does, resolves there and keeps the agent-key lookup:
+  // the limit CLAUDE.md states, which only a founder decision would widen.
   assert.equal(selfLinkedIdentity({ ...partial, chain: 'base' }, 'base'), null)
   assert.equal(selfLinkedIdentity(partial, 'base'), null)
   assert.equal(selfLinkedIdentity({ ...partial, owner: 'GABC' }, 'celo'), null)
