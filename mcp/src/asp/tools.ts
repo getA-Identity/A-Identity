@@ -22,6 +22,9 @@
  * The Self Agent ID read behind `human_proof` also knows Self's linked mode for an ERC-8004
  * agent on Celo (selfLinkedIdentity): a Self Agent ID held by the agent's owner, or keyed by
  * its ERC-8004 agent wallet. Same fields, same prices, and every other target reads as before.
+ * counterparty_check rests its same-human signal on an ID the owner holds only when the read
+ * found every ID that owner holds and they name one human, and its reason then says the ID was
+ * read that way.
  */
 import { createIdentityProvider, isSafePublicHttpUrl } from '../erc8004.js'
 import { ARC_CHAIN, nearTargetOf, type NearTarget } from '../chains/index.js'
@@ -36,7 +39,7 @@ import {
   nearReputationBasis,
 } from '../near-check/trust.js'
 import { readValidationOn } from '../validation-registry.js'
-import { readHumanProofFor, sameHumanOn, supportsHumanProof, type HumanProofRead, type LinkedIdentity } from '../self-agent-id.js'
+import { readHumanProofFor, sameHumanOn, supportsHumanProof, type HumanProofFoundBy, type HumanProofRead, type LinkedIdentity } from '../self-agent-id.js'
 import { computeAgentReputation, type ReputationResult } from '../reputation.js'
 import { addressInQuery, recordNamedBy } from '../agent-query.js'
 import {
@@ -77,6 +80,12 @@ type Bundle = {
   validation: Awaited<ReturnType<typeof readValidationOn>> | null
   /** Self Agent ID proof-of-human read (third-party registry on Celo), or null if it timed out. */
   humanProof: HumanProofRead | null
+  /**
+   * How humanProof reached its Self Agent ID (self-agent-id.ts HumanProofFoundBy), or null when it
+   * found none or its reader did not say. Kept beside humanProof, not in it, because humanProof's
+   * fields are published; counterparty_check reads it.
+   */
+  humanProofFoundBy: HumanProofFoundBy | null
   reputation: ReputationResult & { basis: string; behavioral: BehavioralSummary | null; sybil: SybilSummary | null }
   onchainVerified: boolean
   kyaVerified: boolean
@@ -187,6 +196,8 @@ export type GatherDeps = {
   refreshState?: () => Promise<boolean>
   readValidation?: typeof readValidationOn
   readHumanProof?: typeof readHumanProofFor
+  /** The Self registry's sameHuman read behind counterparty_check's same-human signal. */
+  sameHuman?: typeof sameHumanOn
   /**
    * The NEAR verdict for a NEAR testnet account, asked in its CAIP-10 form (near:testnet:<account>),
    * which routes every account kind. Reached only by the NEAR forms; see gather().
@@ -232,6 +243,7 @@ async function gatherNear(agentId: string, target: NearTarget, deps: GatherDeps)
     tokenId: null,
     validation: null,
     humanProof,
+    humanProofFoundBy: null,
     reputation: { ...none, score: answer ? answer.score : none.score, basis: nearReputationBasis(result), behavioral: null, sybil: null },
     onchainVerified: false,
     kyaVerified: false,
@@ -324,8 +336,15 @@ async function gather(agentId: string, deps: GatherDeps = {}): Promise<Bundle> {
   // is the one place it becomes a signal, through sameHuman. For an ERC-8004 agent on Celo the
   // lookup also tries its ERC-8004 agent wallet as a key and reads Self's linked mode through
   // its owner (see selfLinkedIdentity); every other agent gets the agent-key lookup it always got.
+  // How the ID was reached comes back beside the answer (onFound), for counterparty_check.
+  let humanProofFoundBy = null as HumanProofFoundBy | null
   const humanProof: Bundle['humanProof'] = await withTimeout(
-    (deps.readHumanProof ?? readHumanProofFor)(anchorChain, selfLookupCandidates(platform, identity, address ?? q), { erc8004: selfLinkedIdentity(identity, anchorChain) }),
+    (deps.readHumanProof ?? readHumanProofFor)(anchorChain, selfLookupCandidates(platform, identity, address ?? q), {
+      erc8004: selfLinkedIdentity(identity, anchorChain),
+      onFound: (how) => {
+        humanProofFoundBy = how
+      },
+    }),
     RPC_TIMEOUT_MS,
     null,
   )
@@ -393,7 +412,12 @@ async function gather(agentId: string, deps: GatherDeps = {}): Promise<Bundle> {
   const stateUnreadable = !rosterReadable || agents.length === 0
   const lookupFailure: Bundle['lookupFailure'] = stateUnreadable ? 'state-unreadable' : onPlatform === undefined ? 'id-not-reached' : null
 
-  return { agentId: q, platform, walletClaim: atAddress?.claim ?? null, addressNote, lookupFailure, identity, tokenId, validation, humanProof, reputation, onchainVerified, kyaVerified, kyaStatus, revoked: kyaStatus === 'revoked', tenureDays, onPlatform, adverseRecord, near: null }
+  return {
+    agentId: q, platform, walletClaim: atAddress?.claim ?? null, addressNote, lookupFailure, identity, tokenId, validation, humanProof,
+    // A read that timed out is null, and so is how it found anything, should it finish late.
+    humanProofFoundBy: humanProof ? humanProofFoundBy : null,
+    reputation, onchainVerified, kyaVerified, kyaStatus, revoked: kyaStatus === 'revoked', tenureDays, onPlatform, adverseRecord, near: null,
+  }
 }
 
 const STALE_RECORD_NOTE = 'Our platform records could not be refreshed for this read, so what this record holds could not be confirmed, and a low score is treated strictly. That part is us being unable to look, not evidence against it.'
@@ -466,18 +490,21 @@ export function selfLookupCandidates(
  * separate address, so an agent whose owner holds one is missed by the candidates above.
  *
  * Scoped by founder decision on 2026-11-18 (CLAUDE.md): an ERC-8004 agent whose identity is on
- * a chain with a Self registry (Celo, Celo Sepolia), resolved in full (a partial identity has no
- * token id), and on the chain the lookup is anchored on, because a token of the same number on
- * another chain is another agent. Everything else gets null, which leaves the lookup exactly as
- * it was. Pure, so it is unit-testable.
+ * a chain with a Self registry (Celo, Celo Sepolia), with a known owner, and on the chain the
+ * lookup is anchored on, because a token of the same number on another chain is another agent.
+ * A partial identity counts: it is what an owner address resolves to when the RPC cannot list
+ * which token the owner holds, and balanceOf on that chain's ERC-8004 registry proved the owner.
+ * It has no token id, so the read through it skips the agent wallet (tokenId null). Everything
+ * else gets null, which leaves the lookup exactly as it was. Pure, so it is unit-testable.
  */
 export function selfLinkedIdentity(
   identity: { chain: string; tokenId: number; owner?: string | null; partial?: boolean } | null,
   anchorChain: string,
 ): LinkedIdentity | null {
-  if (!identity || identity.partial || identity.chain !== anchorChain || !supportsHumanProof(identity.chain)) return null
-  if (typeof identity.owner !== 'string' || !isAddress(identity.owner) || !Number.isSafeInteger(identity.tokenId) || identity.tokenId < 0) return null
-  return { chain: identity.chain, tokenId: BigInt(identity.tokenId), owner: identity.owner.toLowerCase() }
+  if (!identity || identity.chain !== anchorChain || !supportsHumanProof(identity.chain)) return null
+  if (typeof identity.owner !== 'string' || !isAddress(identity.owner)) return null
+  const tokenId = !identity.partial && Number.isSafeInteger(identity.tokenId) && identity.tokenId >= 0 ? BigInt(identity.tokenId) : null
+  return { chain: identity.chain, tokenId, owner: identity.owner.toLowerCase() }
 }
 
 /**
@@ -835,10 +862,11 @@ export async function counterpartyCheck(from: string, to: string, txContext: TxC
   // The same question one layer deeper: are the two agents bound to the same verified
   // HUMAN in the Self Agent ID registry? Two operators can look distinct by owner and
   // wallet and still be one person with one passport. Answerable only when both sides are
-  // registered there on the same chain; otherwise null, never a guessed false.
-  const sameHuman = await selfSameHuman(payer.humanProof, cp.humanProof)
+  // registered there on the same chain, and neither side's ID is a pick among IDs its owner holds
+  // for more than one human (see selfSameHuman); otherwise null, never a guessed answer.
+  const sameHuman = await selfSameHuman(payer, cp, deps.sameHuman ?? sameHumanOn)
   if (sameHuman === true && payer.agentId !== cp.agentId) {
-    reasons.push('Payer and counterparty are bound to the same verified human in the Self Agent ID registry (same passport nullifier); a settlement between them builds no independent reputation.')
+    reasons.push(sameHumanReason(payer.humanProofFoundBy, cp.humanProofFoundBy))
     if (decision === 'ALLOW') { decision = 'WARN'; if (risk === 'low') risk = 'medium' }
   }
   return {
@@ -873,11 +901,37 @@ function humanBacked(p: HumanProofRead | null): boolean | null {
   return p.registered ? p.humanBacked : false
 }
 
-/** sameHuman across two reads, only when both are registered on the same chain. */
-async function selfSameHuman(a: HumanProofRead | null, b: HumanProofRead | null): Promise<boolean | null> {
+/**
+ * sameHuman across two reads, only when both are registered on the same chain. A Self Agent ID
+ * reached through an owner whose IDs name more than one human, or who holds more IDs than the read
+ * found, is the read's pick, not this agent's known human, so nothing rests on it: null, never a
+ * guessed answer.
+ */
+async function selfSameHuman(x: Bundle, y: Bundle, same: typeof sameHumanOn): Promise<boolean | null> {
+  const a = x.humanProof
+  const b = y.humanProof
   if (!a || !b || !a.supported || !b.supported || !('registered' in a) || !('registered' in b)) return null
   if (!a.registered || !b.registered || a.chain !== b.chain || !a.agentId || !b.agentId) return null
-  return withTimeout(sameHumanOn(a.chain, BigInt(a.agentId), BigInt(b.agentId)), RPC_TIMEOUT_MS, null)
+  if (x.humanProofFoundBy === 'holder-ambiguous' || y.humanProofFoundBy === 'holder-ambiguous') return null
+  return withTimeout(same(a.chain, BigInt(a.agentId), BigInt(b.agentId)), RPC_TIMEOUT_MS, null)
+}
+
+/**
+ * The same-human reason, in words that say what was read: an ID keyed by the agent (or by its
+ * agent wallet) is the agent's, while an ID its owner holds in Self's linked mode is the owner's.
+ */
+function sameHumanReason(payer: HumanProofFoundBy | null, counterparty: HumanProofFoundBy | null): string {
+  const tail = '; a settlement between them builds no independent reputation.'
+  const payerHolds = payer === 'holder'
+  const counterpartyHolds = counterparty === 'holder'
+  if (!payerHolds && !counterpartyHolds) {
+    return `Payer and counterparty are bound to the same verified human in the Self Agent ID registry (same passport nullifier)${tail}`
+  }
+  if (payerHolds && counterpartyHolds) {
+    return `The payer's owner and the counterparty's owner each hold a Self Agent ID bound to the same verified human (same passport nullifier, read through Self's linked mode)${tail}`
+  }
+  const [holder, other] = payerHolds ? ['payer', 'counterparty'] : ['counterparty', 'payer']
+  return `The ${holder}'s owner holds a Self Agent ID bound to the same verified human as the ${other} (same passport nullifier, read through Self's linked mode)${tail}`
 }
 
 export type { TxContext }

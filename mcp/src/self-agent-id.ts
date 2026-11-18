@@ -42,9 +42,14 @@
  *     holds the ID, not that this agent signs with its key, and the answer says so in words.
  *
  * For an ERC-8004 agent on a chain with a Self registry (Celo), its ERC-8004 agent wallet
- * (getAgentWallet) is one more agent-key candidate, tried after every older one, and linked
- * mode is read only when no agent key matched. So an agent found before this was written is
- * found the same way, with the same answer.
+ * (getAgentWallet, read when its token id is known) is one more agent-key candidate, tried after
+ * every older one, and linked mode is read only when no agent key matched. So an agent found
+ * before this was written is found the same way, with the same answer.
+ *
+ * How an answer reached its ID (HumanProofFoundBy) is told to the caller beside the answer, not
+ * in it, because the answer's fields are published. counterparty_check needs it: an ID the owner
+ * holds says which human is behind the agent only when the read found every ID the owner holds
+ * and they all name the same one.
  */
 import { createHash } from 'node:crypto'
 import { CHAINS, getChainById, type ChainDescriptor } from './chains/index.js'
@@ -148,20 +153,24 @@ export type ChainReads = {
   readMany(calls: ViewCall[]): Promise<unknown[]>
 }
 
+/** The one method chainReadsOver needs of a viem public client. */
+export type ReadContractClient = { readContract(args: never): Promise<unknown> }
+
 /**
- * Production's reads: the chain's RPCs through viem, and a batch through the chain's
- * Multicall3 with aggregate3 called directly. viem's own multicall turns a failed RPC call
- * into a failure for every call in it, which is the same shape as a revert, and here a revert
- * means "no holder" while a failed call means "we could not look".
+ * ChainReads over a viem public client: one view call through readContract, and a batch through
+ * the chain's Multicall3 with aggregate3 called directly. viem's own multicall turns a failed RPC
+ * call into a failure for every call in it, which is the same shape as a revert, and here a revert
+ * means "no holder" while a failed call means "we could not look". So a call that reverted inside
+ * the batch answers null, and the batch throws when the RPC failed, when the answer has the wrong
+ * length or does not decode, and when the chain names no Multicall3. Production builds it in
+ * liveReads; a test hands it a client whose transport the test describes.
  */
-async function liveReads(chain: ChainDescriptor, env: NodeJS.ProcessEnv): Promise<ChainReads> {
-  const client = await evmPublicClient(chain, env)
-  const multicall = chain.contracts.multicall3 as `0x${string}` | undefined
+export function chainReadsOver(client: ReadContractClient, multicall: `0x${string}` | undefined, chainName: string): ChainReads {
   return {
-    read: (call) => client.readContract(call as never) as Promise<unknown>,
+    read: (call) => client.readContract(call as never),
     async readMany(calls) {
       if (calls.length === 0) return []
-      if (!multicall) throw new Error(`${chain.name} names no Multicall3 contract, so a batch read cannot be made there`)
+      if (!multicall) throw new Error(`${chainName} names no Multicall3 contract, so a batch read cannot be made there`)
       const { decodeFunctionResult, encodeFunctionData, multicall3Abi } = await import('viem')
       const results = (await client.readContract({
         address: multicall,
@@ -173,6 +182,11 @@ async function liveReads(chain: ChainDescriptor, env: NodeJS.ProcessEnv): Promis
       return results.map((r, i) => (r.success ? decodeFunctionResult({ abi: calls[i].abi, functionName: calls[i].functionName, data: r.returnData } as never) : null))
     },
   }
+}
+
+/** Production's reads: the chain's RPCs through viem, as chainReadsOver makes them. */
+async function liveReads(chain: ChainDescriptor, env: NodeJS.ProcessEnv): Promise<ChainReads> {
+  return chainReadsOver(await evmPublicClient(chain, env), chain.contracts.multicall3 as `0x${string}` | undefined, chain.name)
 }
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e)).slice(0, 200)
@@ -338,9 +352,16 @@ function agentKeyText(key: string): string {
 
 const listOf = (xs: string[]) => (xs.length <= 2 ? xs.join(' and ') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`)
 
-/** Of several held ids, the one to report: a fresh human proof first, then any human proof, then the newest. */
-function preferred(held: HeldId[]): HeldId {
-  const rank = (h: HeldId) => (h.humanBacked && h.fresh ? 2 : h.humanBacked ? 1 : 0)
+/** How many different humans the ids carry a proof for (each nullifier is one human). */
+const humansOf = (held: HeldId[]) => new Set(held.filter((h) => h.nullifier > 0n).map((h) => h.nullifier)).size
+
+/**
+ * Of several held ids, the one to report: one whose agent key is among `known`, the addresses this
+ * read knows the agent by (it is what an agent-key read that did not return it would have found),
+ * then a fresh human proof, then any human proof, then the newest.
+ */
+function preferred(held: HeldId[], known: string[]): HeldId {
+  const rank = (h: HeldId) => (known.includes(h.key) ? 4 : 0) + (h.humanBacked && h.fresh ? 2 : h.humanBacked ? 1 : 0)
   return [...held].sort((a, b) => rank(b) - rank(a) || (b.id > a.id ? 1 : b.id < a.id ? -1 : 0))[0]
 }
 
@@ -348,27 +369,51 @@ function preferred(held: HeldId[]): HeldId {
  * What a linked-mode answer says, in words that claim no more than was read: who holds the ID,
  * and whether its agent key is one of `known`, the addresses this read knows the agent by. It
  * is not one whenever the agent-key reads answered (they would have found it), and when one of
- * them failed it may be, so it is checked rather than assumed.
+ * them failed it may be, so it is checked rather than assumed. An ID keyed to the holder itself
+ * is Self's simple registration, not linked mode, and is named as that. `balance` is what
+ * balanceOf says the holder holds, so an answer that found fewer IDs says so.
  */
-function linkedNote(chain: ChainDescriptor, holder: string, held: HeldId[], chosen: HeldId, known: string[]): string {
+function linkedNote(chain: ChainDescriptor, holder: string, held: HeldId[], chosen: HeldId, known: string[], balance: bigint): string {
   const mode = "Self's linked mode, where the ID is held by a wallet the human named when registering and the agent key is a separate address"
-  const parts =
-    held.length === 1
-      ? [`Self Agent ID #${chosen.id} is held by this agent's owner, ${holder}: ${mode}.`]
-      : [`This agent's owner, ${holder}, holds ${held.length} Self Agent IDs, ${listOf(held.map((h) => `#${h.id}`))}: ${mode}.`]
-  if (held.length > 1) {
-    const humans = new Set(held.filter((h) => h.nullifier > 0n).map((h) => h.nullifier)).size
+  const simple = "Self's simple registration, where the human's own wallet is the agent key"
+  const ownKey = chosen.key === holder
+  const keyKnown = known.includes(chosen.key)
+  const parts: string[] = []
+  if (held.length === 1) {
+    parts.push(
+      ownKey
+        ? `Self Agent ID #${chosen.id} is held by this agent's owner, ${holder}, and keyed to it: ${simple}. This read found it through the IDs the owner holds, because the agent-key read did not return it.`
+        : `Self Agent ID #${chosen.id} is held by this agent's owner, ${holder}: ${mode}.`,
+    )
+  } else {
+    const own = held.filter((h) => h.key === holder).map((h) => `#${h.id}`)
+    const except = own.length > 0 ? `, except ${listOf(own)}, keyed to the owner itself (${simple})` : ''
+    parts.push(`This agent's owner, ${holder}, holds ${held.length} Self Agent IDs, ${listOf(held.map((h) => `#${h.id}`))}: ${mode}${except}.`)
+    const humans = humansOf(held)
     const binding =
       humans > 1
-        ? `They are bound to ${humans} different humans, and the registry does not say which of them, if any, is this agent's`
+        ? keyKnown
+          ? `They are bound to ${humans} different humans`
+          : `They are bound to ${humans} different humans, and the registry does not say which of them, if any, is this agent's`
         : humans === 1 && held.every((h) => h.nullifier > 0n)
           ? 'They are bound to the same human'
           : 'Not all of them carry a human proof'
-    const which = chosen.humanBacked && chosen.fresh ? 'the newest with a fresh human proof' : chosen.humanBacked ? 'the newest with a human proof' : 'the newest'
+    const which = ownKey
+      ? 'the one keyed to the owner itself, which the agent-key read did not return'
+      : keyKnown
+        ? 'the one whose agent key is an address this read knows this agent by'
+        : chosen.humanBacked && chosen.fresh
+          ? 'the newest with a fresh human proof'
+          : chosen.humanBacked
+            ? 'the newest with a human proof'
+            : 'the newest'
     parts.push(`${binding}; this read reports #${chosen.id}, ${which}.`)
   }
+  if (BigInt(held.length) < balance) {
+    parts.push(`balanceOf reports ${balance} Self Agent IDs held by this owner and this read found ${held.length}, so it may not name every ID the owner holds or every human they are bound to.`)
+  }
   parts.push(
-    known.includes(chosen.key)
+    keyKnown
       ? `Its agent key, ${chosen.key}, is among the addresses this read knows this agent by, so the agent key is verified as well.`
       : `Its agent key, ${chosen.key}, is not among the addresses this read knows this agent by, so this read verified who holds the ID, not that this agent signs with that key.`,
   )
@@ -376,12 +421,42 @@ function linkedNote(chain: ChainDescriptor, holder: string, held: HeldId[], chos
   return parts.join(' ')
 }
 
+/**
+ * How a registered answer reached its Self Agent ID. It is not a field of the answer, whose fields
+ * are published; a caller that weighs the find rather than shows it, as counterparty_check does,
+ * is told it through HumanProofOptions.onFound.
+ *
+ *   - 'agent-key': an address this agent is known by is the ID's agent key. Every find was this
+ *     one before linked mode was read.
+ *   - 'agent-wallet': its ERC-8004 agent wallet is the ID's agent key.
+ *   - 'holder': its owner holds the ID (Self's linked mode), the read found as many IDs as
+ *     balanceOf says the owner holds, and every one of them that carries a human proof is bound
+ *     to the same human. The agent key is not verified.
+ *   - 'holder-ambiguous': its owner holds IDs bound to more than one human, or more IDs than the
+ *     read found, so which human, if any, is this agent's is not known.
+ */
+export type HumanProofFoundBy = 'agent-key' | 'agent-wallet' | 'holder' | 'holder-ambiguous'
+
+/**
+ * How a linked-mode answer reached `chosen`: by key when its agent key is one of `keys` (or the
+ * agent wallet, `walletKey`), else by holder, ambiguous when the held ids name more than one human
+ * or fewer were found than balanceOf reports.
+ */
+function holderFoundBy(held: HeldId[], chosen: HeldId, keys: string[], walletKey: string | null, balance: bigint): HumanProofFoundBy {
+  if (keys.includes(chosen.key)) return 'agent-key'
+  if (walletKey !== null && chosen.key === walletKey) return 'agent-wallet'
+  return humansOf(held) > 1 || BigInt(held.length) < balance ? 'holder-ambiguous' : 'holder'
+}
+
 /** An ERC-8004 agent on a chain with a Self registry, as Self's linked mode is read through it. */
 export type LinkedIdentity = {
   /** The chain the ERC-8004 identity is on; the Self read is made there and nowhere else. */
   chain: string
-  /** Its ERC-8004 token id, for getAgentWallet. */
-  tokenId: bigint
+  /**
+   * Its ERC-8004 token id, for getAgentWallet, or null when the identity is known by its owner
+   * only (a partial identity), in which case the agent wallet is not read.
+   */
+  tokenId: bigint | null
   /** Its ERC-8004 owner (ownerOf): the wallet that holds a Self Agent ID in linked mode. */
   owner: string
 }
@@ -390,13 +465,21 @@ export type HumanProofOptions = {
   env?: NodeJS.ProcessEnv
   /**
    * Set for an ERC-8004 agent on a chain with a Self registry (Celo): its agent wallet becomes
-   * one more agent-key candidate, and linked mode is read through its owner. Absent, the
-   * lookup is the agent-key lookup it always was.
+   * one more agent-key candidate when its token id is known, and linked mode is read through its
+   * owner. Absent, the lookup is the agent-key lookup it always was.
    */
   erc8004?: LinkedIdentity | null
+  /**
+   * Told how a registered Self Agent ID was reached (HumanProofFoundBy), once, before the answer
+   * is returned; not called when none was found.
+   */
+  onFound?: (how: HumanProofFoundBy) => void
   /** The chain reads, for a test. Production reads the chain. */
   reads?: (chain: ChainDescriptor) => ChainReads | Promise<ChainReads>
 }
+
+/** An answer, and how it reached its Self Agent ID when it found one. */
+type Lookup = { read: HumanProofRead; foundBy: HumanProofFoundBy | null }
 
 /**
  * The lookup for an ERC-8004 agent on a chain with a Self registry, in the order the module
@@ -404,14 +487,14 @@ export type HumanProofOptions = {
  * key, then the Self Agent IDs its owner holds. A read that failed on the way turns "none found"
  * into "unknown", never into "unregistered".
  */
-async function readHumanProofForAgent(chain: ChainDescriptor, keys: string[], linked: LinkedIdentity, env: NodeJS.ProcessEnv, readsFor?: HumanProofOptions['reads']): Promise<HumanProofRead> {
+async function readHumanProofForAgent(chain: ChainDescriptor, keys: string[], linked: LinkedIdentity, env: NodeJS.ProcessEnv, readsFor?: HumanProofOptions['reads']): Promise<Lookup> {
   const base = baseOf(chain)
   const owner = linked.owner.toLowerCase()
   let reads: ChainReads
   try {
     reads = readsFor ? await readsFor(chain) : await liveReads(chain, env)
   } catch (e) {
-    return { ...base, address: owner, error: errorText(e) }
+    return { read: { ...base, address: owner, error: errorText(e) }, foundBy: null }
   }
   const failed: string[] = []
   const tried: string[] = []
@@ -423,22 +506,29 @@ async function readHumanProofForAgent(chain: ChainDescriptor, keys: string[], li
   for (const key of ordered) {
     const r = await readHumanProofOn(chain.id, key, env, reads)
     tried.push(key.toLowerCase())
-    if (r.supported && 'registered' in r && r.registered) return r
+    if (r.supported && 'registered' in r && r.registered) return { read: r, foundBy: 'agent-key' }
     if (r.supported && 'error' in r) failed.push(`agent key ${key}: ${r.error}`)
   }
+  const keyed = [...tried]
 
   // The ERC-8004 agent wallet, as one more agent key. It is read only now, so it can never take
-  // the place of a key that matched above.
+  // the place of a key that matched above, and only with a token id: a partial identity names its
+  // owner, not which token it holds.
+  let walletKey: string | null = null
   const identityRegistry = chain.contracts.identityRegistry as `0x${string}` | undefined
-  if (identityRegistry) {
+  if (identityRegistry && linked.tokenId !== null) {
     try {
       const w = await reads.read({ address: identityRegistry, abi: ERC8004_AGENT_WALLET_ABI, functionName: 'getAgentWallet', args: [linked.tokenId] })
       const wallet = typeof w === 'string' && isEvmAddress(w) && !isZeroAddress(w) ? w.toLowerCase() : null
       if (wallet && !tried.includes(wallet)) {
+        walletKey = wallet
         tried.push(wallet)
         const r = await readHumanProofOn(chain.id, wallet, env, reads)
         if (r.supported && 'registered' in r && r.registered) {
-          return { ...r, note: `Found through this agent's ERC-8004 agent wallet, ${wallet}, which is the agent key of Self Agent ID #${r.agentId}. ${r.note}` }
+          return {
+            read: { ...r, note: `Found through this agent's ERC-8004 agent wallet, ${wallet}, which is the agent key of Self Agent ID #${r.agentId}. ${r.note}` },
+            foundBy: 'agent-wallet',
+          }
         }
         if (r.supported && 'error' in r) failed.push(`agent wallet ${wallet}: ${r.error}`)
       }
@@ -456,9 +546,12 @@ async function readHumanProofForAgent(chain: ChainDescriptor, keys: string[], li
       const ids = await idsHeldBy(chain, owner, reads)
       const held = ids.length > 0 ? await readHeld(chain, owner, ids, reads) : []
       if (held.length > 0) {
-        const chosen = preferred(held)
+        const chosen = preferred(held, tried)
         const count = chosen.nullifier > 0n ? ((await reads.read(selfCall(registry, 'getAgentCountForHuman', [chosen.nullifier]))) as bigint) : 0n
-        return registeredAnswer(chain, owner, chosen.id, chosen, count, linkedNote(chain, owner, held, chosen, tried))
+        return {
+          read: registeredAnswer(chain, owner, chosen.id, chosen, count, linkedNote(chain, owner, held, chosen, tried, n)),
+          foundBy: holderFoundBy(held, chosen, keyed, walletKey, n),
+        }
       }
       failed.push(`this agent's owner holds ${n} Self Agent ID${n === 1n ? '' : 's'} by balanceOf, and a scan of the registry did not find which`)
     }
@@ -467,13 +560,19 @@ async function readHumanProofForAgent(chain: ChainDescriptor, keys: string[], li
   }
 
   if (failed.length > 0) {
-    return { ...base, address: owner, error: `No Self Agent ID was found for this agent on ${chain.name}, but not every read answered, so this is unknown, not unregistered: ${failed.join('; ')}`.slice(0, 600) }
+    return {
+      read: { ...base, address: owner, error: `No Self Agent ID was found for this agent on ${chain.name}, but not every read answered, so this is unknown, not unregistered: ${failed.join('; ')}`.slice(0, 600) },
+      foundBy: null,
+    }
   }
   return {
-    ...base, address: owner, registered: false, agentId: null, humanBacked: false, fresh: null, expiresAt: null, provider: null, agentsForSameHuman: null, humanRef: null,
-    note:
-      `No Self Agent ID was found for this agent on ${chain.name}. In agent-key mode the registry keys an ID by the agent's own address, and none of the addresses this read knows this agent by (${listOf(tried)}) is one; in linked mode a wallet holds the ID, and this agent's owner holds none. ` +
-      'Unregistered is not the same as unverified elsewhere: the agent may simply never have gone through Self.',
+    read: {
+      ...base, address: owner, registered: false, agentId: null, humanBacked: false, fresh: null, expiresAt: null, provider: null, agentsForSameHuman: null, humanRef: null,
+      note:
+        `No Self Agent ID was found for this agent on ${chain.name}. In agent-key mode the registry keys an ID by the agent's own address, and none of the addresses this read knows this agent by (${listOf(tried)}) is one; in linked mode a wallet holds the ID, and this agent's owner holds none. ` +
+        'Unregistered is not the same as unverified elsewhere: the agent may simply never have gone through Self.',
+    },
+    foundBy: null,
   }
 }
 
@@ -485,9 +584,16 @@ async function readHumanProofForAgent(chain: ChainDescriptor, keys: string[], li
  *
  * With `opts.erc8004` naming an ERC-8004 agent on the anchor chain, and that chain carrying a
  * Self registry, the lookup also reads Self's linked mode (readHumanProofForAgent). Without it,
- * or anywhere else, this is the agent-key lookup it always was.
+ * or anywhere else, this is the agent-key lookup it always was. A registered answer is also
+ * told to `opts.onFound`, with how it was reached.
  */
 export async function readHumanProofFor(anchorChain: string, candidates: string[], opts: HumanProofOptions = {}): Promise<HumanProofRead> {
+  const { read, foundBy } = await lookupHumanProof(anchorChain, candidates, opts)
+  if (foundBy) opts.onFound?.(foundBy)
+  return read
+}
+
+async function lookupHumanProof(anchorChain: string, candidates: string[], opts: HumanProofOptions): Promise<Lookup> {
   const env = opts.env ?? process.env
   const linked = opts.erc8004
   if (linked && linked.chain === anchorChain && supportsHumanProof(linked.chain) && isEvmAddress(linked.owner)) {
@@ -496,21 +602,21 @@ export async function readHumanProofFor(anchorChain: string, candidates: string[
   const chains = supportsHumanProof(anchorChain)
     ? [getChainById(anchorChain)!]
     : [...humanProofChains()].sort((a, b) => Number(a.testnet) - Number(b.testnet))
-  if (chains.length === 0) return unsupported(anchorChain)
+  if (chains.length === 0) return { read: unsupported(anchorChain), foundBy: null }
   const addresses = candidates.filter(isEvmAddress)
   if (addresses.length === 0) {
-    return { supported: false, chain: anchorChain, reason: 'No EVM address is known for this agent, and the Self Agent ID registry keys agents by address.' }
+    return { read: { supported: false, chain: anchorChain, reason: 'No EVM address is known for this agent, and the Self Agent ID registry keys agents by address.' }, foundBy: null }
   }
   let last: HumanProofRead | null = null
   for (const chain of chains) {
     const reads = opts.reads ? await opts.reads(chain) : undefined
     for (const address of addresses) {
       const r = await readHumanProofOn(chain.id, address, env, reads)
-      if (r.supported && 'registered' in r && r.registered) return r
+      if (r.supported && 'registered' in r && r.registered) return { read: r, foundBy: 'agent-key' }
       if (!last || (r.supported && 'registered' in r)) last = r
     }
   }
-  return last ?? unsupported(anchorChain)
+  return { read: last ?? unsupported(anchorChain), foundBy: null }
 }
 
 /**

@@ -38,11 +38,15 @@ public/llms-full.txt, public/.well-known/ (agent card, MCP server card, agent sk
   A second exception, by founder decision on 2026-11-18: the trust tools' Self Agent ID
   lookup may read Self's linked mode (a Self Agent ID held by an ERC-8004 agent's owner, or
   keyed by its agentWallet) for Celo agents only: an ERC-8004 identity on Celo or Celo
-  Sepolia (the chains whose descriptor names a Self registry), resolved in full and on the
-  chain the lookup is anchored on (asp/tools.ts selfLinkedIdentity). Schemas, prices and
-  every older target form stay unchanged, an agent key that matched before answers exactly
-  as before, and the answer says what was found without claiming an agent key it did not
-  verify; mcp/src/self-agent-id.test.ts holds each mode and a failed read to its answer.
+  Sepolia (the chains whose descriptor names a Self registry), with a known owner and on the
+  chain the lookup is anchored on (asp/tools.ts selfLinkedIdentity). An owner address that
+  resolves there with no token id counts, and its agentWallet is then not read. Schemas,
+  prices and every older target form stay unchanged, an agent key that matched before
+  answers exactly as before, and the answer says what was found without claiming an agent
+  key it did not verify. counterparty_check rests its same-human signal on an ID an owner
+  holds only when the read found every ID that owner holds and they name one human;
+  mcp/src/self-agent-id.test.ts holds each mode and a failed read to its answer, and
+  asp/payee-forms.test.ts is not edited for this exception.
 
 ## Structure (see mcp/README.md "Module map" for the full version)
 

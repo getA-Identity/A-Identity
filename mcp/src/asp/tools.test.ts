@@ -104,7 +104,7 @@ test('scoreBand: bands align with the risk thresholds (DENY < 200, WARN 200-500)
   assert.equal(scoreBand(1000), 'high')
 })
 
-test('selfLookupCandidates: wallet first, then owner, then identity owner, then the query; lowercased, de-duplicated; linked mode only for a full Celo identity', () => {
+test('selfLookupCandidates: wallet first, then owner, then identity owner, then the query; lowercased, de-duplicated; linked mode only for a Celo identity with a known owner', () => {
   const out = selfLookupCandidates(
     agent({ walletAddress: '0x6A5F1b8e56A19D456b799C2fA00E513244F58Ce6', owner: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' }),
     { owner: '0x6a5f1b8e56a19d456b799c2fa00e513244f58ce6' },
@@ -122,16 +122,25 @@ test('selfLookupCandidates: wallet first, then owner, then identity owner, then 
   const celo = { chain: 'celo', tokenId: 10000, owner }
   assert.deepEqual(selfLinkedIdentity(celo, 'celo'), { chain: 'celo', tokenId: 10000n, owner: owner.toLowerCase() })
   assert.deepEqual(selfLinkedIdentity({ ...celo, chain: 'celo-sepolia' }, 'celo-sepolia'), { chain: 'celo-sepolia', tokenId: 10000n, owner: owner.toLowerCase() })
+  // A partial identity is what an owner address resolves to when the RPC cannot list which token
+  // it holds (Forno on Celo refuses getLogs from block 0). balanceOf proved its owner, so linked
+  // mode is read through it, with no token id, and so with no agent wallet to read.
+  const partial = { chain: 'celo', tokenId: 0, owner, partial: true }
+  assert.deepEqual(selfLinkedIdentity(partial, 'celo'), { chain: 'celo', tokenId: null, owner: owner.toLowerCase() })
+  assert.deepEqual(selfLinkedIdentity({ ...partial, chain: 'celo-sepolia' }, 'celo-sepolia'), { chain: 'celo-sepolia', tokenId: null, owner: owner.toLowerCase() })
   // Everything else is null, which leaves the lookup the agent-key lookup it always was: a chain
-  // with no Self registry, a token of the same number on a chain other than the anchor, a partial
-  // identity (no token id), no identity, and an owner that is not an EVM address.
+  // with no Self registry, a token of the same number on a chain other than the anchor, no
+  // identity, and an owner that is not an EVM address, each for a partial identity as well.
   assert.equal(selfLinkedIdentity({ ...celo, chain: 'arc' }, 'arc'), null)
   assert.equal(selfLinkedIdentity({ ...celo, chain: 'xlayer' }, 'xlayer'), null)
   assert.equal(selfLinkedIdentity(celo, 'arc'), null)
-  assert.equal(selfLinkedIdentity({ ...celo, partial: true }, 'celo'), null)
   assert.equal(selfLinkedIdentity(null, 'celo'), null)
   assert.equal(selfLinkedIdentity({ ...celo, owner: 'GABC' }, 'celo'), null)
   assert.equal(selfLinkedIdentity({ ...celo, owner: null }, 'celo'), null)
+  assert.equal(selfLinkedIdentity({ ...partial, chain: 'base' }, 'base'), null)
+  assert.equal(selfLinkedIdentity(partial, 'base'), null)
+  assert.equal(selfLinkedIdentity({ ...partial, owner: 'GABC' }, 'celo'), null)
+  assert.equal(selfLinkedIdentity({ ...partial, owner: null }, 'celo'), null)
 })
 
 test('selfLookupCandidates: non-addresses (ids, usernames, CAIP ids) are dropped, so an empty list means no lookup', () => {
