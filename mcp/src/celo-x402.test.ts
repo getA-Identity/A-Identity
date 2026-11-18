@@ -1,12 +1,22 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { Readable } from 'node:stream'
+import { recoverTypedDataAddress } from 'viem'
+import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import {
+  CELO_PUBLIC_ORIGIN,
   CELO_TOOLS,
   CELO_TOOL_PRICES_USD,
   celoX402Status,
   celoPaywallGate,
   celoChallenge,
+  celoChallengeResponse,
+  celoFacilitatorRequirements,
+  celoPaymentHeader,
+  celoPaymentRequired,
   celoToolRequirements,
+  celoToolUrl,
   celoServeTool,
   celoScopedAgentId,
   celoProof,
@@ -15,8 +25,12 @@ import {
   celoSettlementPause,
   celoStatusReport,
   _setCeloSettlementPauseForTests,
+  type CeloServeDeps,
+  type CeloToolName,
   type CeloX402Status,
 } from './celo-x402.js'
+import { applyCeloToolCors, CELO_TOOL_CORS, handleCeloRoutes } from './http/celo-routes.js'
+import type { RouteCtx } from './http/shared.js'
 import { getChainById, requireChain } from './chains/index.js'
 import { FORMER_CELO_PAYTO, RETIRED_COMPROMISED, retiredAddresses } from './chains/retired.js'
 import { OUR_KEY_PUBLIC_ADDRESSES } from './arc-owner-vault.js'
@@ -38,41 +52,58 @@ import type { CeloSettlementRecord } from './storage.js'
 const PAY_TO = '0x' + 'ab'.repeat(20)
 const BUYER = '0x' + 'cd'.repeat(20)
 const CONFIGURED_ENV = { CELO_PAYTO: PAY_TO, CELO_X402_API_KEY: 'x402_live_testkey' } as NodeJS.ProcessEnv
+const SIGNATURE = '0x' + '11'.repeat(65)
+const b64 = (v: unknown) => Buffer.from(JSON.stringify(v)).toString('base64')
+const unb64 = (v: string) => JSON.parse(Buffer.from(v, 'base64').toString('utf8')) as Record<string, any>
 
+const authorizationFor = (status: CeloX402Status, value: string) => ({
+  from: BUYER,
+  to: status.payTo,
+  value,
+  validAfter: '0',
+  validBefore: '99999999999',
+  nonce: '0x' + '22'.repeat(32),
+})
+
+/** The earlier flat payment shape this rail asked for until 2026-11-18, still accepted. */
 function paymentHeader(status: CeloX402Status, value = '1000'): string {
-  const payload = {
+  return b64({
     x402Version: 2,
     scheme: 'exact',
     network: status.network,
-    payload: {
-      signature: '0x' + '11'.repeat(65),
-      authorization: {
-        from: BUYER,
-        to: status.payTo,
-        value,
-        validAfter: '0',
-        validBefore: '99999999999',
-        nonce: '0x' + '22'.repeat(32),
-      },
-    },
-  }
-  return Buffer.from(JSON.stringify(payload)).toString('base64')
+    payload: { signature: SIGNATURE, authorization: authorizationFor(status, value) },
+  })
+}
+
+/** The same authorization as an x402 v2 PaymentPayload: the offer it pays under `accepted`. */
+function v2PaymentHeader(status: CeloX402Status, tool: CeloToolName = 'verify_agent', patch: Record<string, unknown> = {}, top: Record<string, unknown> = {}): string {
+  const accepted = { ...celoToolRequirements(tool, status), ...patch }
+  return b64({
+    x402Version: 2,
+    resource: { url: celoToolUrl(tool), description: 'x', mimeType: 'application/json' },
+    accepted,
+    payload: { signature: SIGNATURE, authorization: authorizationFor(status, String(accepted.amount)) },
+    ...top,
+  })
 }
 
 type FakeResponse = { status: number; json: () => Promise<unknown> }
 const jsonRes = (status: number, body: unknown): FakeResponse => ({ status, json: async () => body })
 
 /** A scripted facilitator: answers /verify and /settle from the given results and logs
- *  every call (url + settle headers) so tests can assert exact call counts. */
+ *  every call (url, settle headers and the JSON body) so tests can assert exact call counts
+ *  and exactly what crossed the facilitator boundary. */
 function fakeFacilitator(opts: {
   verify?: FakeResponse | 'throw'
   settle?: FakeResponse | 'throw'
-}): { fetchImpl: typeof fetch; calls: string[]; settleHeaders: Record<string, string>[] } {
+}): { fetchImpl: typeof fetch; calls: string[]; settleHeaders: Record<string, string>[]; bodies: string[] } {
   const calls: string[] = []
   const settleHeaders: Record<string, string>[] = []
-  const fetchImpl = (async (url: unknown, init?: { headers?: Record<string, string> }) => {
+  const bodies: string[] = []
+  const fetchImpl = (async (url: unknown, init?: { headers?: Record<string, string>; body?: string }) => {
     const u = String(url)
     calls.push(u)
+    bodies.push(String(init?.body ?? ''))
     if (u.endsWith('/verify')) {
       if (opts.verify === 'throw') throw new Error('facilitator unreachable')
       return opts.verify ?? jsonRes(200, { isValid: true })
@@ -84,7 +115,38 @@ function fakeFacilitator(opts: {
     }
     throw new Error(`unexpected facilitator url: ${u}`)
   }) as unknown as typeof fetch
-  return { fetchImpl, calls, settleHeaders }
+  return { fetchImpl, calls, settleHeaders, bodies }
+}
+
+/** The headers a request has behind the Vercel rewrite: the backend host, with the site's forwarded. */
+const VIA_SITE = { host: 'a-identity-backend.onrender.com', 'x-forwarded-host': 'a-identity.xyz', 'x-forwarded-proto': 'https' }
+
+type RouteAnswer = { handled: boolean; status?: number; headers: Record<string, string>; body?: Record<string, any> }
+
+/** One request through handleCeloRoutes, the route group a buyer codes against, with a real
+ *  readable body so readBody runs as it does on the wire. */
+async function route(
+  method: string,
+  path: string,
+  opts: { headers?: Record<string, string>; body?: string; env?: NodeJS.ProcessEnv; serve?: CeloServeDeps } = {},
+): Promise<RouteAnswer> {
+  const out: RouteAnswer = { handled: false, headers: {} }
+  const headers = Object.fromEntries(Object.entries(opts.headers ?? {}).map(([k, v]) => [k.toLowerCase(), v]))
+  const req = Object.assign(Readable.from(opts.body === undefined ? [] : [Buffer.from(opts.body)]), { method, headers })
+  const res = {
+    setHeader: (k: string, v: unknown) => void (out.headers[k.toLowerCase()] = String(v)),
+    writeHead(status: number, h?: Record<string, unknown>) {
+      out.status = status
+      for (const [k, v] of Object.entries(h ?? {})) out.headers[k.toLowerCase()] = String(v)
+      return this
+    },
+    end: (payload?: string) => {
+      if (payload) out.body = JSON.parse(payload) as Record<string, any>
+    },
+  }
+  const ctx: RouteCtx = { req: req as never, res: res as never, url: new URL(`http://localhost${path}`), caller: null, callerId: undefined }
+  out.handled = await handleCeloRoutes(ctx, { env: opts.env ?? CONFIGURED_ENV, serve: opts.serve })
+  return out
 }
 
 // ── prices ────────────────────────────────────────────────────────────────────────
@@ -156,7 +218,7 @@ test('an unknown CELO_X402_NETWORK fails closed instead of guessing a chain', ()
 
 // ── the 402 challenge ─────────────────────────────────────────────────────────────
 
-test('the 402 challenge quotes the registry asset, payTo, network and exact 6-dec price units', () => {
+test('the 402 challenge quotes the registry asset, payTo, network and exact 6-dec price units', async () => {
   const status = celoX402Status(CONFIGURED_ENV)
   const celo = getChainById('celo')
   assert.ok(celo)
@@ -166,22 +228,165 @@ test('the 402 challenge quotes the registry asset, payTo, network and exact 6-de
   assert.equal(challenge.error, 'payment required')
   assert.equal(challenge.accepts.length, 1)
   const req = challenge.accepts[0]
+  // An x402 v2 accepts entry carries exactly the fields the v2 spec defines, and no v1 name:
+  // no maxAmountRequired, and no per-entry resource, description or mimeType.
+  assert.deepEqual(Object.keys(req), ['scheme', 'network', 'amount', 'asset', 'payTo', 'maxTimeoutSeconds', 'extra'])
   assert.equal(req.scheme, 'exact')
   assert.equal(req.network, celo.caip2)
   assert.equal(req.asset, celo.contracts.usdc)
   assert.equal(req.payTo, PAY_TO)
-  assert.equal(req.maxAmountRequired, '1000') // $0.001 at the registry's 6 USDC decimals
-  assert.equal(req.resource, '/api/celo/tools/verify_agent')
+  assert.equal(req.amount, '1000') // $0.001 at the registry's 6 USDC decimals, in atomic units
+  assert.equal(req.maxTimeoutSeconds, 600)
   // The EIP-712 domain a buyer signs with (read live from the USDC contract).
   assert.deepEqual(req.extra, { name: 'USDC', version: '2' })
+  // v2 hoists the resource into one object, and its url is ABSOLUTE: the site's own origin when
+  // the caller names none, the origin the request reached when the route passes one.
+  assert.deepEqual(challenge.resource, {
+    url: 'https://a-identity.xyz/api/celo/tools/verify_agent',
+    description: 'Verify an AI agent: ERC-8004 identity + KYA status + endpoint liveness. Settled in USDC on Celo via the Celo x402 facilitator.',
+    mimeType: 'application/json',
+  })
+  assert.equal(CELO_PUBLIC_ORIGIN, 'https://a-identity.xyz')
+  assert.equal(celoToolUrl('risk_check', 'https://a-identity-backend.onrender.com'), 'https://a-identity-backend.onrender.com/api/celo/tools/risk_check')
+  assert.equal(celoToolUrl('risk_check', 'http://localhost:3399'), 'http://localhost:3399/api/celo/tools/risk_check')
+  for (const junk of ['', 'not a url', 'javascript:alert(1)', 'ftp://a-identity.xyz']) {
+    assert.equal(celoToolUrl('risk_check', junk), 'https://a-identity.xyz/api/celo/tools/risk_check', `origin ${JSON.stringify(junk)}`)
+  }
   // The tool card rides along so a probing client sees the calling contract pre-payment.
   assert.equal(challenge.tool.name, 'verify_agent')
   assert.equal(challenge.tool.priceUsd, 0.001)
+  assert.match(challenge.tool.payment, /header PAYMENT-SIGNATURE/)
+  assert.match(challenge.tool.payment, /X-PAYMENT is still accepted/)
 
   // Every price converts at 6 decimals, per tool.
-  assert.equal(celoToolRequirements('reputation_score', status).maxAmountRequired, '2000')
-  assert.equal(celoToolRequirements('risk_check', status).maxAmountRequired, '5000')
-  assert.equal(celoToolRequirements('agent_passport', status).maxAmountRequired, '10000')
+  assert.equal(celoToolRequirements('reputation_score', status).amount, '2000')
+  assert.equal(celoToolRequirements('risk_check', status).amount, '5000')
+  assert.equal(celoToolRequirements('agent_passport', status).amount, '10000')
+
+  // The facilitator leg did not move: the requirements it verifies against are field for field,
+  // in order, the v1 object this rail always sent it (slug network, maxAmountRequired, relative resource).
+  const v1 = celoFacilitatorRequirements('verify_agent', status)
+  assert.equal(JSON.stringify(v1), JSON.stringify({
+    scheme: 'exact',
+    network: 'celo',
+    asset: celo.contracts.usdc,
+    payTo: PAY_TO,
+    maxAmountRequired: '1000',
+    resource: '/api/celo/tools/verify_agent',
+    description: 'Verify an AI agent: ERC-8004 identity + KYA status + endpoint liveness. Settled in USDC on Celo via the Celo x402 facilitator.',
+    mimeType: 'application/json',
+    maxTimeoutSeconds: 600,
+    extra: { name: 'USDC', version: '2' },
+  }))
+
+  // The header carries the PaymentRequired object alone; the body is that object plus the tool card.
+  const sent = celoChallengeResponse('verify_agent', status, { origin: 'https://a-identity.xyz' })
+  assert.equal(sent.httpStatus, 402)
+  const fromHeader = unb64(sent.headers['PAYMENT-REQUIRED'])
+  assert.deepEqual(fromHeader, celoPaymentRequired('verify_agent', status, { origin: 'https://a-identity.xyz' }))
+  assert.deepEqual(Object.keys(fromHeader), ['x402Version', 'error', 'resource', 'accepts'])
+  const { tool: card, ...rest } = sent.body
+  assert.deepEqual(rest, fromHeader)
+  assert.equal(card.name, 'verify_agent')
+
+  // The oracle is the reference implementation, not our reading of the spec: @x402/core decodes the
+  // header, its v2 schema accepts it, and its HTTP client reads the challenge from the header.
+  const { decodePaymentRequiredHeader } = await import('@x402/core/http')
+  const { parsePaymentRequired } = await import('@x402/core/schemas')
+  const { x402HTTPClient } = await import('@x402/core/client')
+  const decoded = decodePaymentRequiredHeader(sent.headers['PAYMENT-REQUIRED'])
+  const parsed = parsePaymentRequired(decoded)
+  assert.ok(parsed.success, `the reference schema rejects the challenge: ${JSON.stringify(parsed.success ? [] : parsed.error.issues)}`)
+  assert.equal(parsed.data.x402Version, 2)
+  const read = (x402HTTPClient.prototype as unknown as {
+    getPaymentRequiredResponse: (g: (k: string) => string | undefined, b: unknown) => { x402Version: number; accepts: { amount: string }[] }
+  }).getPaymentRequiredResponse.call({}, (k) => (k.toUpperCase() === 'PAYMENT-REQUIRED' ? sent.headers['PAYMENT-REQUIRED'] : undefined), sent.body)
+  assert.equal(read.x402Version, 2)
+  assert.equal(read.accepts[0].amount, '1000')
+
+  // Over the route: no payment means the 402, on GET and on POST, whatever the body. A probe that
+  // sends nothing, malformed JSON or no agentId learns the price; it used to get 400 "agentId required".
+  const fac = fakeFacilitator({})
+  const serve = { fetchImpl: fac.fetchImpl, persist: async () => {}, handlers: { risk_check: async () => ({}) } }
+  for (const probe of [
+    { method: 'GET', body: undefined },
+    { method: 'POST', body: undefined },
+    { method: 'POST', body: '' },
+    { method: 'POST', body: '{}' },
+    { method: 'POST', body: '{"agentId":""}' },
+    { method: 'POST', body: 'not json' },
+    { method: 'POST', body: '{"agentId":"#9759"}' },
+  ]) {
+    const r = await route(probe.method, '/api/celo/tools/risk_check', { headers: { ...VIA_SITE, 'content-type': 'application/json' }, body: probe.body, serve })
+    const label = `${probe.method} ${JSON.stringify(probe.body ?? null)}`
+    assert.equal(r.handled, true, label)
+    assert.equal(r.status, 402, label)
+    assert.ok(r.headers['payment-required'], `${label} carries PAYMENT-REQUIRED`)
+    const pr = unb64(r.headers['payment-required'])
+    assert.equal(pr.x402Version, 2, label)
+    assert.equal(pr.resource.url, 'https://a-identity.xyz/api/celo/tools/risk_check', `${label}: the absolute URL the request reached, through the site`)
+    assert.equal(pr.accepts[0].amount, '5000', label)
+    assert.deepEqual(r.body, { ...pr, tool: r.body!.tool }, `${label}: the body is the same PaymentRequired object plus the tool card`)
+  }
+  // Straight to the backend host, the URL names that host.
+  const direct = await route('GET', '/api/celo/tools/risk_check', { headers: { host: 'a-identity-backend.onrender.com', 'x-forwarded-proto': 'https' } })
+  assert.equal(unb64(direct.headers['payment-required']).resource.url, 'https://a-identity-backend.onrender.com/api/celo/tools/risk_check')
+  // A GET only quotes: a payment sent on one is refused unused, and the 402 says how to send it.
+  const paidGet = await route('GET', '/api/celo/tools/risk_check', { headers: { 'payment-signature': v2PaymentHeader(status, 'risk_check') }, serve })
+  assert.equal(paidGet.status, 402)
+  assert.match(paidGet.body!.verifyError, /a GET only quotes the price/)
+  assert.equal(unb64(paidGet.headers['payment-required']).error, paidGet.body!.verifyError)
+  assert.deepEqual(fac.calls, [], 'no probe reached the facilitator')
+  // Not a price: unconfigured, unknown tool and paused rails carry no PAYMENT-REQUIRED.
+  const off = await route('POST', '/api/celo/tools/risk_check', { env: {} as NodeJS.ProcessEnv })
+  assert.equal(off.status, 501)
+  assert.equal(off.headers['payment-required'], undefined)
+  const unknown = await route('GET', '/api/celo/tools/nope')
+  assert.equal(unknown.status, 404)
+  assert.equal(unknown.headers['payment-required'], undefined)
+
+  // CORS: the Celo paid tool routes, and their preflight, answer any origin with no credentials,
+  // allow the payment headers and expose the challenge and receipt; every other path keeps the
+  // allowlist http.ts sets (this stands in for it: an echoed origin with credentials).
+  const corsFor = (path: string) => {
+    const h: Record<string, string> = {
+      'access-control-allow-origin': 'https://a-identity.xyz',
+      'access-control-allow-credentials': 'true',
+      'access-control-allow-headers': 'Content-Type, Authorization, X-Payment, X-Payment-Nonce, X-Payment-Payer, X-Payment-Sig, PAYMENT-SIGNATURE, mcp-session-id, mcp-protocol-version, X-Client-Name, X-Client-Version',
+      'access-control-expose-headers': 'PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-PAYMENT-RESPONSE',
+    }
+    const applied = applyCeloToolCors(path, {
+      setHeader: (k: string, v: unknown) => { h[k.toLowerCase()] = String(v); return undefined as never },
+      removeHeader: (k: string) => { delete h[k.toLowerCase()] },
+    })
+    return { applied, h }
+  }
+  for (const tool of CELO_TOOLS) {
+    const { applied, h } = corsFor(`/api/celo/tools/${tool}`)
+    assert.equal(applied, true, tool)
+    assert.equal(h['access-control-allow-origin'], '*', tool)
+    assert.equal(h['access-control-allow-credentials'], undefined, `${tool}: '*' never goes with credentials`)
+    assert.equal(h['access-control-allow-headers'], 'Content-Type, PAYMENT-SIGNATURE, X-PAYMENT', tool)
+    assert.equal(h['access-control-expose-headers'], 'PAYMENT-REQUIRED, PAYMENT-RESPONSE', tool)
+  }
+  assert.deepEqual(CELO_TOOL_CORS, {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type, PAYMENT-SIGNATURE, X-PAYMENT',
+    'Access-Control-Expose-Headers': 'PAYMENT-REQUIRED, PAYMENT-RESPONSE',
+  })
+  for (const other of ['/api/celo/status', '/api/celo/proof', '/api/celo/tools/', '/api/celo/tools/risk_check/x', '/api/x402/tools/risk_check', '/api/x402/gateway/tools/risk_check', '/api/agents', '/mcp', '/']) {
+    const { applied, h } = corsFor(other)
+    assert.equal(applied, false, other)
+    assert.equal(h['access-control-allow-origin'], 'https://a-identity.xyz', `${other} keeps the allowlist`)
+    assert.equal(h['access-control-allow-credentials'], 'true', other)
+  }
+  // http.ts boots a server on import, so its wiring is read as text: the override runs after the
+  // global headers and before the OPTIONS answer, so the preflight gets it too, on the raw path.
+  const http = readFileSync(new URL('../src/http.ts', import.meta.url), 'utf8')
+  const globalOrigin = http.indexOf("res.setHeader('Access-Control-Allow-Origin', corsOrigin)")
+  const override = http.indexOf("applyCeloToolCors((req.url ?? '/').split('?')[0], res)")
+  const preflight = http.indexOf("if (req.method === 'OPTIONS')")
+  assert.ok(globalOrigin > 0 && override > globalOrigin && preflight > override, 'the Celo CORS override sits between the global headers and the preflight answer')
 })
 
 // ── verify -> settle -> serve -> record ──────────────────────────────────────────────
@@ -225,6 +430,100 @@ test('a settled facilitator flow serves the tool and durably records the settlem
   }])
   // The settle call authenticated with OUR facilitator key.
   assert.equal(fac.settleHeaders[0]['X-API-Key'], 'x402_live_testkey')
+  // The v2 receipt rides in PAYMENT-RESPONSE, readable by the reference decoder. This settle
+  // answer named no hash, so `transaction` is the empty string and the body says who confirmed it.
+  const { decodePaymentResponseHeader } = await import('@x402/core/http')
+  assert.deepEqual(decodePaymentResponseHeader(out.headers!['PAYMENT-RESPONSE']), {
+    success: true,
+    transaction: '',
+    network: status.network,
+    payer: BUYER,
+    amount: '1000',
+  })
+
+  // The facilitator leg is exactly what it was: the earlier flat payment and an x402 v2 payment
+  // carrying the same signature cross the boundary as the same bytes, the v1 body with the slug.
+  const bodiesFor = async (header: string) => {
+    const f = fakeFacilitator({ settle: jsonRes(200, { success: true, transaction: '0x' + 'ef'.repeat(32) }) })
+    const r = await celoServeTool('verify_agent', { agentId: '#1' }, header, status, { fetchImpl: f.fetchImpl, persist: async () => {}, handlers: { verify_agent: async () => ({}) }, env: CONFIGURED_ENV })
+    assert.equal(r.httpStatus, 200)
+    return f.bodies
+  }
+  const flat = await bodiesFor(paymentHeader(status))
+  const v2 = await bodiesFor(v2PaymentHeader(status))
+  assert.deepEqual(v2, flat, 'a v2 payment reaches /verify and /settle as the same bytes as the earlier shape')
+  assert.equal(flat.length, 2)
+  assert.equal(flat[0], flat[1], '/verify and /settle get the same body')
+  assert.equal(flat[0], JSON.stringify({
+    x402Version: 1,
+    paymentPayload: { x402Version: 1, scheme: 'exact', network: 'celo', payload: { signature: SIGNATURE, authorization: authorizationFor(status, '1000') } },
+    paymentRequirements: celoFacilitatorRequirements('verify_agent', status),
+  }))
+
+  // Through the route, under either header name and in either shape, a paid POST settles once and
+  // answers 200 with PAYMENT-RESPONSE naming the transaction.
+  const TX = '0x' + 'ef'.repeat(32)
+  for (const [name, header] of [
+    ['PAYMENT-SIGNATURE', v2PaymentHeader(status)],
+    ['X-PAYMENT', paymentHeader(status)],
+    ['X-PAYMENT', v2PaymentHeader(status)],
+    ['PAYMENT-SIGNATURE', paymentHeader(status)],
+  ] as const) {
+    const f = fakeFacilitator({ settle: jsonRes(200, { success: true, transaction: TX }) })
+    const r = await route('POST', '/api/celo/tools/verify_agent', {
+      headers: { [name]: header, 'content-type': 'application/json', ...VIA_SITE },
+      body: '{"agentId":"#1"}',
+      serve: { fetchImpl: f.fetchImpl, persist: async () => {}, handlers: { verify_agent: async () => ({ ok: true }) } },
+    })
+    assert.equal(r.status, 200, name)
+    assert.equal(r.body!.paid, true, name)
+    assert.deepEqual(f.calls.map((u) => u.slice(u.lastIndexOf('/'))), ['/verify', '/settle'], name)
+    assert.deepEqual(unb64(r.headers['payment-response']), { success: true, transaction: TX, network: status.network, payer: BUYER, amount: '1000' }, name)
+    assert.equal(r.headers['payment-required'], undefined, `${name}: a paid answer is not a price`)
+  }
+
+  // A stock x402 v2 client pays it: @x402/core's HTTP client reads our 402 from PAYMENT-REQUIRED,
+  // @x402/evm signs the EIP-3009 authorization, and the PAYMENT-SIGNATURE it builds settles. The
+  // signature recovers to the buyer against the domain the facilitator is handed.
+  const { x402Client, x402HTTPClient } = await import('@x402/core/client')
+  const { registerExactEvmScheme } = await import('@x402/evm/exact/client')
+  const buyer = privateKeyToAccount(generatePrivateKey())
+  const stock = new x402HTTPClient(registerExactEvmScheme(new x402Client(), { signer: buyer }))
+  const quote = await route('POST', '/api/celo/tools/risk_check', { headers: { ...VIA_SITE, 'content-type': 'application/json' }, body: '{"agentId":"#9759"}' })
+  assert.equal(quote.status, 402)
+  const required = stock.getPaymentRequiredResponse((k) => quote.headers[k.toLowerCase()], quote.body)
+  const signed = await stock.createPaymentPayload(required)
+  const stockHeaders = stock.encodePaymentSignatureHeader(signed) as Record<string, string>
+  assert.deepEqual(Object.keys(stockHeaders), ['PAYMENT-SIGNATURE'])
+  const sf = fakeFacilitator({ settle: jsonRes(200, { success: true, transaction: TX }) })
+  const paid = await route('POST', '/api/celo/tools/risk_check', {
+    headers: { ...stockHeaders, ...VIA_SITE, 'content-type': 'application/json' },
+    body: '{"agentId":"#9759"}',
+    serve: { fetchImpl: sf.fetchImpl, persist: async () => {}, handlers: { risk_check: async () => ({ decision: 'WARN' }) } },
+  })
+  assert.equal(paid.status, 200, JSON.stringify(paid.body))
+  const sent = JSON.parse(sf.bodies[0]) as { paymentPayload: { x402Version: number; scheme: string; network: string; payload: { signature: `0x${string}`; authorization: Record<string, string> } }; paymentRequirements: Record<string, any> }
+  assert.deepEqual(sent.paymentPayload, { x402Version: 1, scheme: 'exact', network: 'celo', payload: (signed as { payload: unknown }).payload })
+  assert.deepEqual(sent.paymentRequirements, celoFacilitatorRequirements('risk_check', status))
+  const auth = sent.paymentPayload.payload.authorization
+  const signer = await recoverTypedDataAddress({
+    domain: { name: sent.paymentRequirements.extra.name, version: sent.paymentRequirements.extra.version, chainId: requireChain(status.network).evmChainId as number, verifyingContract: sent.paymentRequirements.asset as `0x${string}` },
+    types: {
+      TransferWithAuthorization: [
+        { name: 'from', type: 'address' }, { name: 'to', type: 'address' }, { name: 'value', type: 'uint256' },
+        { name: 'validAfter', type: 'uint256' }, { name: 'validBefore', type: 'uint256' }, { name: 'nonce', type: 'bytes32' },
+      ],
+    },
+    primaryType: 'TransferWithAuthorization',
+    message: { from: auth.from as `0x${string}`, to: auth.to as `0x${string}`, value: BigInt(auth.value), validAfter: BigInt(auth.validAfter), validBefore: BigInt(auth.validBefore), nonce: auth.nonce as `0x${string}` },
+    signature: sent.paymentPayload.payload.signature,
+  })
+  assert.equal(signer, buyer.address)
+  assert.equal(auth.to.toLowerCase(), PAY_TO)
+  assert.equal(auth.value, '5000')
+  const settled = stock.getPaymentSettleResponse((k) => paid.headers[k.toLowerCase()])
+  assert.equal(settled.success, true)
+  assert.equal(settled.transaction, TX)
 
   // Every other form reaches the tool as sent, and the label names the chain that id names, or the
   // chain of the identity the tool returned, or says that the answer does not name one.
@@ -277,11 +576,46 @@ test('an invalid payment re-challenges with 402 and the facilitator reason, and 
     env: CONFIGURED_ENV,
   })
   assert.equal(out.httpStatus, 402)
-  const body = out.body as { verifyError: string; accepts: unknown[] }
+  const body = out.body as { verifyError: string; accepts: unknown[]; error: string }
   assert.ok(body.verifyError.includes('authorization expired'))
   assert.equal(body.accepts.length, 1, 'the 402 must carry a fresh challenge so the client can pay correctly')
+  // The fresh challenge travels in PAYMENT-REQUIRED too, with the facilitator's reason as its error,
+  // the way a reference x402 server answers a payment that failed verification.
+  assert.equal(body.error, 'authorization expired')
+  assert.equal(unb64(out.headers!['PAYMENT-REQUIRED']).error, 'authorization expired')
+  assert.equal(out.headers!['PAYMENT-RESPONSE'], undefined, 'nothing settled, so there is no receipt')
   assert.deepEqual(persisted, [])
   assert.equal(fac.calls.length, 1, 'an invalid payment must never reach /settle')
+
+  // The live facilitator refuses with HTTP 400 and a verdict (read 2026-11-18). That is still the
+  // buyer's payment to fix, so a 402 with the reason; a 400 without a refusal verdict, a 5xx, or a
+  // contradictory answer stays a facilitator failure (502), and none of them reaches /settle.
+  const recorded: CeloSettlementRecord[] = []
+  for (const [answer, want] of [
+    [jsonRes(400, { isValid: false, invalidReason: 'insufficient_funds' }), 402],
+    [jsonRes(400, { isValid: false, invalidReason: 'recipient_mismatch' }), 402],
+    [jsonRes(400, { error: 'bad request' }), 502],
+    [jsonRes(400, { isValid: true }), 502],
+    [jsonRes(500, { isValid: false, invalidReason: 'insufficient_funds' }), 502],
+  ] as const) {
+    const f = fakeFacilitator({ verify: answer })
+    const r = await celoServeTool('agent_passport', { agentId: '#1' }, v2PaymentHeader(status, 'agent_passport'), status, {
+      fetchImpl: f.fetchImpl,
+      persist: async (rec) => { recorded.push(rec) },
+      handlers: { agent_passport: async () => ({}) },
+      env: CONFIGURED_ENV,
+    })
+    const said = JSON.stringify(await answer.json())
+    assert.equal(r.httpStatus, want, said)
+    if (want === 402) {
+      assert.equal((r.body as { verifyError: string }).verifyError, (await answer.json() as { invalidReason: string }).invalidReason, said)
+      assert.ok(r.headers?.['PAYMENT-REQUIRED'], said)
+    } else {
+      assert.equal((r.body as { error: string }).error, 'celo facilitator verify failed', said)
+    }
+    assert.deepEqual(f.calls.map((u) => u.slice(u.lastIndexOf('/'))), ['/verify'], `${said}: never settled`)
+  }
+  assert.deepEqual(recorded, [])
 })
 
 test('a settle refusal is a 502 with no resubmission: exactly one verify and one settle call', async () => {
@@ -308,7 +642,7 @@ test('a settle refusal is a 502 with no resubmission: exactly one verify and one
   assert.deepEqual(fac.calls.map((u) => u.slice(u.lastIndexOf('/'))), ['/verify', '/settle'])
 })
 
-test('a malformed X-PAYMENT header re-challenges with 402 before any facilitator call', async () => {
+test('a malformed payment header re-challenges with 402 before any facilitator call', async () => {
   const status = celoX402Status(CONFIGURED_ENV)
   const fac = fakeFacilitator({})
   const out = await celoServeTool('verify_agent', { agentId: '#1' }, '%%%not-a-payload%%%', status, {
@@ -318,8 +652,70 @@ test('a malformed X-PAYMENT header re-challenges with 402 before any facilitator
     env: CONFIGURED_ENV,
   })
   assert.equal(out.httpStatus, 402)
-  assert.ok((out.body as { verifyError: string }).verifyError.includes('malformed X-PAYMENT'))
+  assert.ok((out.body as { verifyError: string }).verifyError.includes('malformed payment header (PAYMENT-SIGNATURE or X-PAYMENT)'))
+  // A refusal is a fresh v2 challenge in both transports, naming why in `error`.
+  const refused = unb64(out.headers!['PAYMENT-REQUIRED'])
+  assert.equal(refused.x402Version, 2)
+  assert.equal(refused.error, (out.body as { verifyError: string }).verifyError)
   assert.deepEqual(fac.calls, [], 'garbage input must not consume a facilitator round-trip')
+
+  // The payment is read from PAYMENT-SIGNATURE, the v2 name, and still from X-PAYMENT; the v2 name
+  // wins when both are sent, and a blank one is no payment.
+  assert.equal(celoPaymentHeader({ 'payment-signature': ' abc ' }), 'abc')
+  assert.equal(celoPaymentHeader({ 'x-payment': 'def' }), 'def')
+  assert.equal(celoPaymentHeader({ 'payment-signature': 'abc', 'x-payment': 'def' }), 'abc')
+  assert.equal(celoPaymentHeader({ 'payment-signature': '  ', 'x-payment': 'def' }), 'def')
+  assert.equal(celoPaymentHeader({ 'payment-signature': ['xyz', 'other'] }), 'xyz')
+  assert.equal(celoPaymentHeader({}), '')
+
+  // A payment with a body that cannot be answered is 400 and is never verified or settled: an
+  // invalid request is never charged, under either header name.
+  const serve = { fetchImpl: fac.fetchImpl, persist: async () => { throw new Error('nothing may be recorded') }, handlers: { verify_agent: async () => ({}) } }
+  for (const name of ['PAYMENT-SIGNATURE', 'X-PAYMENT']) {
+    for (const body of [undefined, '', '{}', '{"agentId":"  "}', '{"agentId":42}', 'not json']) {
+      const r = await route('POST', '/api/celo/tools/verify_agent', { headers: { [name]: v2PaymentHeader(status), 'content-type': 'application/json' }, body, serve })
+      const label = `${name} with body ${JSON.stringify(body ?? null)}`
+      assert.equal(r.status, 400, label)
+      assert.equal(r.body!.charged, false, label)
+      assert.match(r.body!.note, /before the payment was verified or settled, so nothing was charged/, label)
+      assert.equal(r.headers['payment-required'], undefined, `${label}: a 400 is not a price`)
+    }
+  }
+  assert.deepEqual(fac.calls, [], 'no invalid request reached the facilitator')
+
+  // A v2 payment names the offer it signed for under `accepted`, and an offer that is not this
+  // resource's is refused by field, before the facilitator is asked anything.
+  for (const [patch, field] of [
+    [{ scheme: 'upto' }, 'scheme'],
+    [{ network: 'eip155:8453' }, 'network'],
+    [{ amount: '1' }, 'amount'],
+    [{ asset: '0x' + '99'.repeat(20) }, 'asset'],
+    [{ payTo: '0x' + '98'.repeat(20) }, 'payTo'],
+    [{ maxTimeoutSeconds: 86_400 }, 'maxTimeoutSeconds'],
+  ] as const) {
+    const r = await celoServeTool('verify_agent', { agentId: '#1' }, v2PaymentHeader(status, 'verify_agent', patch), status, { fetchImpl: fac.fetchImpl, env: CONFIGURED_ENV })
+    assert.equal(r.httpStatus, 402, field)
+    assert.match((r.body as { verifyError: string }).verifyError, new RegExp(`^accepted\\.${field} is `), field)
+    assert.ok(r.headers?.['PAYMENT-REQUIRED'], field)
+  }
+  for (const [top, why] of [
+    [{ x402Version: 1 }, /is x402 v2, and this one says x402Version 1/],
+    [{ accepted: null }, /accepted must be the accepts entry/],
+    [{ accepted: [] }, /accepted must be the accepts entry/],
+  ] as const) {
+    const r = await celoServeTool('verify_agent', { agentId: '#1' }, v2PaymentHeader(status, 'verify_agent', {}, top), status, { fetchImpl: fac.fetchImpl, env: CONFIGURED_ENV })
+    assert.equal(r.httpStatus, 402)
+    assert.match((r.body as { verifyError: string }).verifyError, why)
+  }
+  // Addresses are compared in any case, the way a checksumming client sends them.
+  const checksummed = await celoServeTool('verify_agent', { agentId: '#1' }, v2PaymentHeader(status, 'verify_agent', { payTo: PAY_TO.toUpperCase().replace('0X', '0x') }), status, {
+    fetchImpl: fakeFacilitator({}).fetchImpl,
+    persist: async () => {},
+    handlers: { verify_agent: async () => ({}) },
+    env: CONFIGURED_ENV,
+  })
+  assert.equal(checksummed.httpStatus, 200)
+  assert.deepEqual(fac.calls, [], 'a mismatched offer never reached the facilitator')
 })
 
 test('a handler failure after settlement is a 500 that still records the settlement', async () => {
@@ -342,6 +738,8 @@ test('a handler failure after settlement is a 500 that still records the settlem
   assert.equal(body.error, 'tool execution failed after settlement')
   assert.equal(body.settlement.settled, true)
   assert.equal(persisted.length, 1, 'the settlement happened and must be on the record')
+  // The payment settled, so the receipt header says so even though the tool failed.
+  assert.equal(unb64(out.headers!['PAYMENT-RESPONSE']).success, true)
 })
 
 // ── the proof document ────────────────────────────────────────────────────────────
@@ -635,6 +1033,10 @@ test('a settle timeout tells the buyer the money may have moved, because the fac
   assert.equal(fac.calls.filter((u) => u.endsWith('/settle')).length, 1)
   assert.equal(handlerRan, false)
   assert.deepEqual(persisted, [], 'nothing may be recorded as settled when we do not know that it was')
+  // No v2 receipt either way: success would claim a settlement nobody saw, and a failure receipt
+  // would tell a stock client to pay again while this payment may still land.
+  assert.equal(out.headers?.['PAYMENT-RESPONSE'], undefined)
+  assert.equal(out.headers?.['PAYMENT-REQUIRED'], undefined, 'and no fresh price: retrying is a decision for after the explorer check')
 })
 
 // ── what a failed settle leaves open, settled by the chain ────────────────────────
@@ -698,6 +1100,21 @@ test('an empty settlement balance at the facilitator pauses the rail: 503, nothi
     const retry = await celoServeTool('risk_check', { agentId: '#9759' }, paymentHeader(status), status, { ...deps, now: () => after })
     assert.equal(retry.httpStatus, 503, 'still out of funds: the attempt re-arms the pause')
     assert.equal(fac.calls.length, callsBefore + 2, 'the retry went to the facilitator (verify, settle)')
+
+    // Over the route, a live pause still comes before the 402: no price is quoted, with or without
+    // a payment, so nobody signs for a settlement the facilitator will refuse.
+    _setCeloSettlementPauseForTests({ since: new Date(), reason: 'Out of mainnet settlement funds' })
+    const callsNow = fac.calls.length
+    for (const r of [
+      await route('GET', '/api/celo/tools/risk_check'),
+      await route('POST', '/api/celo/tools/risk_check', { body: '{}' }),
+      await route('POST', '/api/celo/tools/risk_check', { headers: { 'payment-signature': v2PaymentHeader(status, 'risk_check') }, body: '{"agentId":"#9759"}', serve: deps }),
+    ]) {
+      assert.equal(r.status, 503)
+      assert.equal(r.body!.error, 'celo settlement paused')
+      assert.equal(r.headers['payment-required'], undefined, 'a paused rail quotes no price')
+    }
+    assert.equal(fac.calls.length, callsNow, 'and asks the facilitator nothing')
   } finally {
     _setCeloSettlementPauseForTests(null)
   }
@@ -737,6 +1154,8 @@ test('a settle the facilitator did not confirm but the chain did is served and r
   assert.deepEqual(asked, [`${BUYER}:0x${'22'.repeat(32)}`], 'the read is for the buyer and the nonce that was signed')
   // Still exactly one settle attempt: the chain, not a resubmission, is what confirmed it.
   assert.equal(fac.calls.filter((u) => u.endsWith('/settle')).length, 1)
+  // The receipt header names the hash the facilitator's own record supplied.
+  assert.deepEqual(unb64(out.headers!['PAYMENT-RESPONSE']), { success: true, transaction: TX, network: status.network, payer: BUYER, amount: '1000' })
 })
 
 test('a settle failure with the authorization unspent says nothing was charged; an unreadable chain keeps the honest maybe', async () => {

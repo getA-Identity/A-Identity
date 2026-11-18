@@ -1,22 +1,25 @@
 #!/usr/bin/env node
 /**
- * Minimal x402 v2 buyer for the Celo rail — pays one of our /api/celo/tools endpoints
- * end to end and prints the served result. Used for the honest smoke settlement and
- * the demo: nothing here is mocked, the wallet signs a real EIP-3009 authorization
- * and the server's facilitator settles real USDC.
+ * Minimal x402 v2 buyer for the Celo rail: pays one of our /api/celo/tools endpoints end to
+ * end and prints the served result. Used for the honest smoke settlement and the demo:
+ * nothing here is mocked, the wallet signs a real EIP-3009 authorization and the server's
+ * facilitator settles real USDC.
  *
- * ASSUMPTIONS (x402 v2 exact scheme; noted per the integration handoff):
- *  1. X-PAYMENT header = base64(JSON of
- *       { x402Version: 2, scheme: 'exact', network: <caip2>,
+ * The x402 v2 HTTP transport (https://github.com/coinbase/x402/blob/main/specs/transports-v2/http.md):
+ *  1. The 402 carries the PaymentRequired object base64 in the PAYMENT-REQUIRED header (the
+ *     body carries the same fields too). Its accepts entry names scheme 'exact', the CAIP-2
+ *     network, `amount` in atomic units, asset, payTo, maxTimeoutSeconds and the token's
+ *     EIP-712 domain in `extra` (read live from the Celo USDC contracts on 2026-08-09:
+ *     name "USDC", version "2").
+ *  2. The authorization is USDC `TransferWithAuthorization` (EIP-3009) typed data with that
+ *     domain, chainId parsed from the CAIP-2 network, verifyingContract = the asset.
+ *     value = amount exactly (scheme 'exact'), validAfter = 0,
+ *     validBefore = now + maxTimeoutSeconds (default 600), nonce = 32 random bytes.
+ *  3. PAYMENT-SIGNATURE header = base64(JSON of
+ *       { x402Version: 2, resource, accepted: <the accepts entry, unchanged>,
  *         payload: { signature, authorization: { from, to, value, validAfter,
  *                                                validBefore, nonce } } })
- *     — the same client shape our OKX x402 flow uses for the exact scheme.
- *  2. The authorization is USDC `TransferWithAuthorization` (EIP-3009) typed data with
- *     domain { name, version } taken from the challenge's `extra` (read live from the
- *     Celo USDC contracts on 2026-08-09: name "USDC", version "2"), chainId parsed from
- *     the challenge's CAIP-2 `network`, verifyingContract = the challenge's `asset`.
- *  3. value = maxAmountRequired exactly (scheme 'exact'), validAfter = 0,
- *     validBefore = now + maxTimeoutSeconds (default 600), nonce = 32 random bytes.
+ *  4. A settled answer carries the receipt base64 in the PAYMENT-RESPONSE header.
  *
  * Usage:
  *   node --env-file=.env scripts/celo-x402-buyer.mjs \
@@ -45,19 +48,26 @@ if (!key) {
   process.exit(1)
 }
 const account = privateKeyToAccount(key.startsWith('0x') ? key : `0x${key}`)
+const fromBase64Json = (v) => JSON.parse(Buffer.from(v, 'base64').toString('utf8'))
 
-// ── 1. quote: GET the 402 challenge ───────────────────────────────────────────────
+// -- 1. quote: GET the 402 challenge -------------------------------------------------
 console.log(`Buyer:  ${account.address}`)
 console.log(`GET     ${URL_ARG}`)
 const quoteRes = await fetch(URL_ARG, { signal: AbortSignal.timeout(15000) })
-const quote = await quoteRes.json()
-if (quoteRes.status !== 402 || !Array.isArray(quote.accepts) || !quote.accepts[0]) {
-  console.error(`error: expected a 402 challenge, got ${quoteRes.status}:`)
-  console.error(JSON.stringify(quote, null, 2))
+const quoteBody = await quoteRes.json().catch(() => null)
+const requiredHeader = quoteRes.headers.get('payment-required')
+const quote = requiredHeader ? fromBase64Json(requiredHeader) : quoteBody
+if (quoteRes.status !== 402 || quote?.x402Version !== 2 || !Array.isArray(quote.accepts) || !quote.accepts[0]) {
+  console.error(`error: expected an x402 v2 402 challenge, got ${quoteRes.status}:`)
+  console.error(JSON.stringify(quoteBody, null, 2))
   process.exit(1)
 }
 const req = quote.accepts[0]
-console.log(`Quote:  ${req.maxAmountRequired} base units of ${req.asset} on ${req.network} -> ${req.payTo}`)
+if (typeof req.amount !== 'string' || !/^\d+$/.test(req.amount)) {
+  console.error('error: the accepts entry names no amount')
+  process.exit(1)
+}
+console.log(`Quote:  ${req.amount} base units of ${req.asset} on ${req.network} -> ${req.payTo}${requiredHeader ? ' (from PAYMENT-REQUIRED)' : ' (from the body)'}`)
 
 const chainId = Number(/^eip155:(\d+)$/.exec(req.network)?.[1])
 if (!Number.isFinite(chainId)) {
@@ -65,12 +75,12 @@ if (!Number.isFinite(chainId)) {
   process.exit(1)
 }
 
-// ── 2. sign the EIP-3009 TransferWithAuthorization ────────────────────────────────
+// -- 2. sign the EIP-3009 TransferWithAuthorization ----------------------------------
 const now = Math.floor(Date.now() / 1000)
 const authorization = {
   from: account.address,
   to: req.payTo,
-  value: BigInt(req.maxAmountRequired),
+  value: BigInt(req.amount),
   validAfter: 0n,
   validBefore: BigInt(now + (Number(req.maxTimeoutSeconds) || 600)),
   nonce: `0x${randomBytes(32).toString('hex')}`,
@@ -98,8 +108,8 @@ const signature = await account.signTypedData({
 
 const paymentPayload = {
   x402Version: 2,
-  scheme: 'exact',
-  network: req.network,
+  ...(quote.resource ? { resource: quote.resource } : {}),
+  accepted: req,
   payload: {
     signature,
     authorization: {
@@ -112,16 +122,18 @@ const paymentPayload = {
 }
 const header = Buffer.from(JSON.stringify(paymentPayload)).toString('base64')
 
-// ── 3. pay: POST with X-PAYMENT ───────────────────────────────────────────────────
-console.log(`POST    ${URL_ARG} (agentId=${AGENT}, X-PAYMENT attached)`)
+// -- 3. pay: POST with PAYMENT-SIGNATURE ---------------------------------------------
+console.log(`POST    ${URL_ARG} (agentId=${AGENT}, PAYMENT-SIGNATURE attached)`)
 const payRes = await fetch(URL_ARG, {
   method: 'POST',
-  headers: { 'content-type': 'application/json', 'X-PAYMENT': header },
+  headers: { 'content-type': 'application/json', 'PAYMENT-SIGNATURE': header },
   body: JSON.stringify({ agentId: AGENT }),
   signal: AbortSignal.timeout(30000),
 })
 const body = await payRes.json()
 console.log(`\nHTTP ${payRes.status}`)
+const receipt = payRes.headers.get('payment-response')
+if (receipt) console.log(`PAYMENT-RESPONSE: ${JSON.stringify(fromBase64Json(receipt))}`)
 console.log(JSON.stringify(body, null, 2))
 if (payRes.status === 200 && body.paid === true) {
   console.log('\nSETTLED: the facilitator moved real USDC and the tool was served.')

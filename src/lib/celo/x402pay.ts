@@ -27,6 +27,12 @@ export const CHECK_TOOL: CeloTool = 'risk_check'
 export const STATUS_PATH = '/api/celo/status'
 export const toolPath = (tool: CeloTool) => `/api/celo/tools/${tool}`
 
+/**
+ * The request header the payment travels in: PAYMENT-SIGNATURE, the x402 v2 name. The rail still
+ * reads X-PAYMENT, the v1 name this page sent until 2026-11-18, for older clients.
+ */
+export const PAYMENT_HEADER = 'PAYMENT-SIGNATURE'
+
 /** Native USDC on Celo has 6 decimals, like every Circle USDC; the quote's units are read in them. */
 export const USDC_DECIMALS = 6
 
@@ -156,6 +162,8 @@ export type Terms = {
   validSeconds: number
   /** The token's EIP-712 domain, as the 402 carries it. */
   domain: { name: string; version: string }
+  /** The accepts entry these terms were read from, sent back unchanged as `accepted` (x402 v2). */
+  accepted: Record<string, unknown>
 }
 
 /**
@@ -185,8 +193,9 @@ export function readTerms(a: { tool: CeloTool; status: RailStatus; expectedNetwo
   }
   const priceUsd = a.status.prices[a.tool]
   if (typeof priceUsd !== 'number' || !(priceUsd > 0)) throw new PayRefusal(`The rail publishes no price for ${a.tool}.`)
-  if (typeof r.maxAmountRequired !== 'string' || !/^\d+$/.test(r.maxAmountRequired)) throw new PayRefusal('The quote names no amount.')
-  const amount = BigInt(r.maxAmountRequired)
+  // x402 v2 names the price `amount`, in atomic units of the asset.
+  if (typeof r.amount !== 'string' || !/^\d+$/.test(r.amount)) throw new PayRefusal('The quote names no amount.')
+  const amount = BigInt(r.amount)
   if (amount !== usdcUnits(priceUsd)) {
     throw new PayRefusal(`The quote asks for ${formatUsdc(amount)} USDC; the published price is ${formatUsd(priceUsd)}.`)
   }
@@ -207,6 +216,7 @@ export function readTerms(a: { tool: CeloTool; status: RailStatus; expectedNetwo
     amountUsd: priceUsd,
     validSeconds,
     domain: { name: extra.name, version: extra.version },
+    accepted: r,
   }
 }
 
@@ -290,10 +300,14 @@ export function typedDataFor(terms: Terms, auth: Authorization) {
   }
 }
 
-/** The X-PAYMENT header: base64 of the x402 v2 exact payload the server decodes. */
+/**
+ * The PAYMENT-SIGNATURE header: base64 of the x402 v2 payment payload, the offer it pays under
+ * `accepted` exactly as the 402 quoted it and the signed authorization under `payload`. Encoded
+ * from UTF-8 bytes, the way the x402 reference client does it.
+ */
 export function paymentHeader(terms: Terms, auth: Authorization, signature: string): string {
-  const json = JSON.stringify({ x402Version: 2, scheme: 'exact', network: terms.network, payload: { signature, authorization: auth } })
-  return btoa(json)
+  const json = JSON.stringify({ x402Version: 2, accepted: terms.accepted, payload: { signature, authorization: auth } })
+  return btoa(Array.from(new TextEncoder().encode(json), (b) => String.fromCharCode(b)).join(''))
 }
 
 // ---- what came back ----
@@ -451,7 +465,7 @@ export async function purchase(a: {
   wallet: PayWallet
   /** GET the tool's endpoint: the 402 with the terms. */
   quote: () => Promise<{ status: number; body: unknown }>
-  /** POST the tool's endpoint with X-PAYMENT and the JSON body. One send, never retried. */
+  /** POST the tool's endpoint with the payment in PAYMENT_HEADER and the JSON body. One send, never retried. */
   post: (header: string, body: string) => Promise<{ status: number; body: unknown }>
   randomBytes: () => Uint8Array
   /** Unix seconds now. */

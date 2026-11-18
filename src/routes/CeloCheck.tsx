@@ -13,6 +13,7 @@ import { payStepLabel, useEvmPayer } from '../components/app/wallet/PayWallet'
 import { apiFetch, readJson } from '../lib/api'
 import {
   CHECK_TOOL,
+  PAYMENT_HEADER,
   STATUS_PATH,
   addressUrl,
   formatUsd,
@@ -431,12 +432,20 @@ export default function CeloCheck() {
       status: fresh,
       expectedNetwork: CELO.caip2,
       wallet: { name: w.wallet.name, from: w.from, request: (method, p) => w.provider.request({ method, params: p }) },
+      // The tool routes answer any origin without credentials (the payment is the credential), so
+      // these two calls send no cookie: a credentialed request to them is one a browser refuses.
       quote: async () => {
-        const res = await apiFetch(toolPath(TOOL), { retries: 2, timeoutMs: 15_000 })
+        const res = await apiFetch(toolPath(TOOL), { retries: 2, timeoutMs: 15_000, credentials: 'omit' })
         return { status: res.status, body: await readJson(res) }
       },
       post: async (header, body) => {
-        const res = await apiFetch(toolPath(TOOL), { method: 'POST', headers: { 'content-type': 'application/json', 'X-PAYMENT': header }, body, timeoutMs: 90_000 })
+        const res = await apiFetch(toolPath(TOOL), {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', [PAYMENT_HEADER]: header },
+          body,
+          timeoutMs: 90_000,
+          credentials: 'omit',
+        })
         return { status: res.status, body: await readJson(res) }
       },
       randomBytes: () => crypto.getRandomValues(new Uint8Array(32)),
@@ -657,9 +666,11 @@ export default function CeloCheck() {
             </Fold>
             <Fold title="For agents">
               <p className="text-[15px] leading-relaxed text-foreground/75">
-                The same check is an x402 call. A GET returns the 402 with the terms; a POST with an X-PAYMENT header (base64 of the x402 v2
-                exact payload) and a JSON body naming the agentId returns the verdict once the facilitator settles. A bare token id is read
-                as Celo's, the same as its CAIP id: each chain's registry numbers its own agents.
+                The same check is an x402 v2 call. A request without a payment returns the 402 with the terms, in the PAYMENT-REQUIRED
+                header and the body; a POST with a PAYMENT-SIGNATURE header (base64 of the x402 v2 payment payload) and a JSON body naming
+                the agentId returns the verdict once the facilitator settles, with the receipt in PAYMENT-RESPONSE. The older X-PAYMENT
+                header is still accepted. A bare token id is read as Celo's, the same as its CAIP id: each chain's registry numbers its
+                own agents.
               </p>
               <div className="mt-4 space-y-3">
                 <CopyBlock title="The terms" subtitle="GET, no key, a 402 in JSON" text={`curl -s ${TOOL_API}`} />

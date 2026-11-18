@@ -38,6 +38,7 @@ type Terms = {
   amountUsd: number
   validSeconds: number
   domain: { name: string; version: string }
+  accepted: Record<string, unknown>
 }
 type RailStatus = {
   network: string
@@ -57,6 +58,7 @@ type TypedData = { domain: { name: string; version: string; chainId: number; ver
 type Wallet = { name: string; from: string; request: (method: string, params: unknown[]) => Promise<unknown> }
 type Pay = {
   CHECK_TOOL: string
+  PAYMENT_HEADER: string
   PayRefusal: new (m: string) => Error
   readStatus: (body: unknown) => RailStatus | null
   readTerms: (a: { tool: string; status: RailStatus; expectedNetwork: string; httpStatus: number; body: unknown }) => Terms
@@ -207,7 +209,7 @@ const serve = async (header: string, body: string, facilitator = fakeFacilitator
     now: () => new Date('2026-11-11T00:00:00.000Z'),
     handlers: { [TOOL]: async (i) => ({ tool: TOOL, agentId: i.agentId, decision: 'WARN', risk: 'medium', reasons: ['no record for this id'] }) },
   })
-  return { status: out.httpStatus, body: out.body }
+  return { status: out.httpStatus, body: out.body, headers: out.headers ?? {} }
 }
 
 const quote = () => ({ status: 402, body: celoChallenge(TOOL, serverStatus) })
@@ -240,6 +242,8 @@ test("the terms come from the server's own 402 and are held against the registry
   assert.equal(terms.amount, p.usdcUnits(status.prices[TOOL]))
   assert.equal(terms.validSeconds, 600)
   assert.deepEqual(terms.domain, { name: 'USDC', version: '2' })
+  // The offer itself is kept as quoted: the payment sends it back unchanged as `accepted`.
+  assert.deepEqual(terms.accepted, celoChallenge(TOOL, serverStatus).accepts[0])
 })
 
 test('terms on another network, token, payee, price or scheme are refused, and so is a quote that is not a 402', async () => {
@@ -260,7 +264,10 @@ test('terms on another network, token, payee, price or scheme are refused, and s
   assert.match(refusal(mutate({ network: 'eip155:1' })), /network/)
   assert.match(refusal(mutate({ asset: other })), /token/)
   assert.match(refusal(mutate({ payTo: other })), /pays/)
-  assert.match(refusal(mutate({ maxAmountRequired: String(BigInt(base.accepts[0].maxAmountRequired) + 1n) })), /published price/)
+  assert.match(refusal(mutate({ amount: String(BigInt(base.accepts[0].amount) + 1n) })), /published price/)
+  // The page reads the x402 v2 `amount`: an entry that names the price only under the v1 name is a
+  // quote with no amount, refused before the wallet is asked anything.
+  assert.match(refusal(mutate({ amount: undefined, maxAmountRequired: base.accepts[0].amount })), /names no amount/)
   assert.match(refusal(mutate({ scheme: 'upto' })), /scheme/)
   assert.match(refusal(mutate({ extra: undefined })), /domain/)
   assert.match(refusal({ error: 'nope' }, 200), /did not quote a price/)
@@ -347,12 +354,22 @@ test('what the wallet signs is the EIP-3009 authorization the facilitator verifi
 
   const signature = await buyer.signTypedData({ domain: { ...td.domain, verifyingContract: hex(td.domain.verifyingContract) }, types: TYPES, primaryType: 'TransferWithAuthorization', message: messageOf(auth) })
   const header = p.paymentHeader(terms, auth, signature)
-  const decoded = JSON.parse(Buffer.from(header, 'base64').toString('utf8')) as { x402Version: number; scheme: string; network: string; payload: { signature: string; authorization: Auth } }
+  // What the page sends is an x402 v2 PaymentPayload, in the PAYMENT-SIGNATURE header: the offer it
+  // pays under `accepted`, exactly as quoted, and the credential under `payload`. Nothing else, and
+  // nothing of the earlier flat shape.
+  assert.equal(p.PAYMENT_HEADER, 'PAYMENT-SIGNATURE')
+  const decoded = JSON.parse(Buffer.from(header, 'base64').toString('utf8')) as { x402Version: number; accepted: Record<string, unknown>; payload: { signature: string; authorization: Auth } }
+  assert.deepEqual(Object.keys(decoded), ['x402Version', 'accepted', 'payload'])
   assert.equal(decoded.x402Version, 2)
-  assert.equal(decoded.scheme, 'exact')
-  assert.equal(decoded.network, celo.caip2)
+  assert.deepEqual(decoded.accepted, celoChallenge(TOOL, serverStatus).accepts[0])
+  assert.equal(decoded.accepted.scheme, 'exact')
+  assert.equal(decoded.accepted.network, celo.caip2)
   assert.equal(decoded.payload.signature, signature)
   assert.deepEqual(decoded.payload.authorization, auth)
+  // The reference v2 schema reads it as a PaymentPayload.
+  const { parsePaymentPayload } = await import('@x402/core/schemas')
+  const parsed = parsePaymentPayload(decoded)
+  assert.ok(parsed.success, `the reference schema rejects the page's payment: ${JSON.stringify(parsed.success ? [] : parsed.error.issues)}`)
   // The facilitator's view: the same typed data, built from the server's requirements, recovers the buyer.
   const signer = await recoverTypedDataAddress({
     domain: { name: 'USDC', version: '2', chainId: celo.evmChainId as number, verifyingContract: hex(USDC) },
@@ -370,6 +387,7 @@ test("the real server's paid path accepts the header the page builds, settles on
   const facilitator = fakeFacilitator()
   const persisted: CeloSettlementRecord[] = []
   const steps: string[] = []
+  let receipt = ''
   const end = await p.purchase({
     tool: TOOL,
     // What the page sends for a typed "#9759": Celo's token, by its CAIP-10 id.
@@ -378,7 +396,11 @@ test("the real server's paid path accepts the header the page builds, settles on
     expectedNetwork: celo.caip2,
     wallet,
     quote: async () => quote(),
-    post: (header, body) => serve(header, body, facilitator, persisted),
+    post: async (header, body) => {
+      const out = await serve(header, body, facilitator, persisted)
+      receipt = out.headers['PAYMENT-RESPONSE'] ?? ''
+      return out
+    },
     randomBytes: bytes32,
     now: () => NOW,
     step: (s) => steps.push(s),
@@ -403,13 +425,20 @@ test("the real server's paid path accepts the header the page builds, settles on
     ['/verify', '/settle'],
     'verified, then settled exactly once',
   )
-  const verifyBody = facilitator.calls[0].body as { x402Version: number; paymentPayload: { network: string }; paymentRequirements: { network: string; payTo: string } }
+  const verifyBody = facilitator.calls[0].body as { x402Version: number; paymentPayload: Record<string, unknown> & { network: string }; paymentRequirements: { network: string; payTo: string } }
   assert.equal(verifyBody.x402Version, 1, 'the server speaks the facilitator v1 shape at its boundary')
   assert.equal(verifyBody.paymentPayload.network, celo.id)
+  // The page's v2 payload reaches the facilitator as the v1 payload it has always accepted: no
+  // `accepted`, the scheme at the top, the slug network.
+  assert.deepEqual(Object.keys(verifyBody.paymentPayload), ['x402Version', 'scheme', 'network', 'payload'])
+  assert.equal(verifyBody.paymentPayload.scheme, 'exact')
   assert.equal(verifyBody.paymentRequirements.payTo, seller.address.toLowerCase())
   assert.equal(persisted.length, 1)
   assert.equal(persisted[0].payer, buyer.address.toLowerCase())
   assert.equal(persisted[0].tx, SETTLE_TX)
+  // And the 200 carries the v2 receipt the page could read without the body.
+  const r = JSON.parse(Buffer.from(receipt, 'base64').toString('utf8')) as Record<string, unknown>
+  assert.deepEqual(r, { success: true, transaction: SETTLE_TX, network: celo.caip2, payer: buyer.address.toLowerCase(), amount: '5000' })
 })
 
 test('a declined signature sends nothing, and a wallet that returns no usable signature is reported as the wallet failing', async () => {
@@ -553,6 +582,11 @@ test('the Celo pay check is routed, in the sitemap, smoked and published for age
   // remembered, or WalletConnect alone); unmounted, that visitor waited at "Pick a wallet..." forever.
   assert.match(page, /\{payer\.picker\}/, 'the wallet picker is mounted')
   assert.match(page, /normalizeAgentId\(raw, CELO\.caip2\)/, 'what the page sends is scoped to Celo')
+  // The payment goes out under the v2 header name, and both calls to the tool route send no cookie:
+  // that route answers any origin with '*', which a browser refuses to pair with credentials.
+  assert.match(page, /\[PAYMENT_HEADER\]: header/, 'the page sends the payment in PAYMENT_HEADER')
+  assert.doesNotMatch(page, /'X-PAYMENT'/, 'and no longer under the v1 name')
+  assert.equal((page.match(/apiFetch\(toolPath\(TOOL\),[\s\S]*?credentials: 'omit'/g) ?? []).length, 2, 'the quote and the paid call omit credentials')
   const lib = repo('src/lib/celo/x402pay.ts')
   assert.doesNotMatch(lib, /^import (?!type )/m, 'the pay module has no runtime imports, so this suite can load it')
   assert.doesNotMatch(lib, /0x[0-9a-fA-F]{40}/, 'no address is typed into the pay module')

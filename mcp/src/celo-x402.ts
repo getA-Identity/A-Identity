@@ -323,61 +323,226 @@ export function celoPaywallGate(
 }
 
 // ── the 402 challenge ─────────────────────────────────────────────────────────────
+//
+// The client-facing interface is x402 v2 over HTTP, as coinbase/x402 specifies it (read
+// 2026-11-18: https://github.com/coinbase/x402/blob/main/specs/x402-specification-v2.md and
+// https://github.com/coinbase/x402/blob/main/specs/transports-v2/http.md):
+//  - "The `PAYMENT-REQUIRED` header is the canonical HTTP transport location for the
+//    `PaymentRequired` object", base64 of its JSON, on a 402.
+//  - PaymentRequired is { x402Version: 2, error?, resource: { url, description?, mimeType? },
+//    accepts: [PaymentRequirements] }, and each accepts entry is { scheme, network (CAIP-2),
+//    amount ("Required payment amount in atomic token units"), asset, payTo,
+//    maxTimeoutSeconds, extra? }. The v1 names (maxAmountRequired, a per-entry resource,
+//    description and mimeType) are not part of it.
+//  - "Clients send payment data using the `PAYMENT-SIGNATURE` HTTP header", base64 of a
+//    PaymentPayload { x402Version: 2, resource?, accepted: <the entry chosen>, payload }.
+//  - "Servers communicate payment settlement results using the `PAYMENT-RESPONSE` header",
+//    base64 of a SettlementResponse { success, transaction, network, payer?, amount? }.
+// The facilitator leg is NOT that interface and did not change: see celoFacilitatorRequirements.
 
+/**
+ * The site's own origin. It proxies /api to this backend (vercel.json), so it is the public home
+ * of every Celo tool URL, and the origin a challenge names when the caller does not say which
+ * host the request reached (a direct caller of these functions, a test).
+ */
+export const CELO_PUBLIC_ORIGIN = 'https://a-identity.xyz'
+
+/** Where one tool is served, relative to the backend. */
+export function celoToolPath(tool: CeloToolName): string {
+  return `/api/celo/tools/${tool}`
+}
+
+/**
+ * The absolute URL of one tool, which x402 v2 carries in `resource.url`: on the origin the request
+ * reached (the route passes it, so a call through a-identity.xyz is named there and a call to the
+ * backend host is named on that host), else on the site's own origin. Anything that is not a plain
+ * http(s) origin falls back to the site's, so the field is always an absolute URL.
+ */
+export function celoToolUrl(tool: CeloToolName, origin?: string): string {
+  try {
+    const u = new URL(origin || CELO_PUBLIC_ORIGIN)
+    if (u.protocol === 'https:' || u.protocol === 'http:') return `${u.origin}${celoToolPath(tool)}`
+  } catch {
+    /* not an origin at all: the site's own, below */
+  }
+  return `${CELO_PUBLIC_ORIGIN}${celoToolPath(tool)}`
+}
+
+/** How long a signed authorization may stay valid, in seconds: 600 since the rail opened. */
+const CELO_MAX_TIMEOUT_SECONDS = 600
+
+/**
+ * One x402 v2 PaymentRequirements entry, with exactly the fields the spec defines for `accepts`.
+ * A v2 buyer signs against it and sends it back unchanged as `accepted`.
+ */
 export type CeloPaymentRequirements = {
   scheme: 'exact'
+  /** CAIP-2, e.g. 'eip155:42220'. */
   network: string
+  /** Atomic units of the asset, at the registry's USDC decimals. */
+  amount: string
   asset: string
   payTo: string
-  maxAmountRequired: string
-  resource: string
-  description: string
-  mimeType: 'application/json'
   maxTimeoutSeconds: number
   /** EIP-712 domain params of the asset, for the buyer's EIP-3009 signature. */
   extra: { name: string; version: string }
 }
 
-/** The x402 v2 paymentRequirements for one tool - the exact object we also hand the
- *  facilitator's /verify, so challenge and verification can never disagree. */
-export function celoToolRequirements(tool: CeloToolName, status: CeloX402Status): CeloPaymentRequirements {
+/** The descriptor a configured status settles on. Routes gate first, so a throw here is a bug. */
+function railChain(status: CeloX402Status): ChainDescriptor {
   const chain = status.chain ? getChainById(status.chain) : undefined
   if (!status.configured || !chain || !status.payTo) {
     throw new Error('celoToolRequirements requires a configured status (gate first)')
   }
+  return chain
+}
+
+function celoToolDescription(tool: CeloToolName, chain: ChainDescriptor): string {
+  return `${CELO_TOOL_CARDS[tool].description} Settled in USDC on ${chain.name} via the Celo x402 facilitator.`
+}
+
+/** The x402 v2 requirements for one tool: the entry the 402 offers, and what an `accepted` is held to. */
+export function celoToolRequirements(tool: CeloToolName, status: CeloX402Status): CeloPaymentRequirements {
+  const chain = railChain(status)
   const usdc = chain.contracts.usdc
   if (!usdc) throw new Error(`chain ${chain.id} has no USDC contract in the registry`)
   return {
     scheme: 'exact',
     network: chain.caip2,
+    amount: usdcUnits(chain, CELO_TOOL_PRICES_USD[tool]).toString(),
     asset: usdc,
-    payTo: status.payTo,
-    maxAmountRequired: usdcUnits(chain, CELO_TOOL_PRICES_USD[tool]).toString(),
-    resource: `/api/celo/tools/${tool}`,
-    description: `${CELO_TOOL_CARDS[tool].description} Settled in USDC on ${chain.name} via the Celo x402 facilitator.`,
-    mimeType: 'application/json',
-    maxTimeoutSeconds: 600,
+    payTo: status.payTo as string,
+    maxTimeoutSeconds: CELO_MAX_TIMEOUT_SECONDS,
     extra: { ...USDC_EIP712_DOMAIN },
   }
 }
 
-/** The full 402 body: x402 v2 challenge + the tool's calling contract, so a probing
- *  GET shows a buyer everything needed to pay and call correctly. */
-export function celoChallenge(tool: CeloToolName, status: CeloX402Status, verifyError?: string) {
+/**
+ * What the facilitator verifies and settles against: x402 v1 requirements with the registry slug
+ * as the network, the only shape api.x402.celo.org accepted when this rail was built (see the
+ * wire-shape note in celoServeTool). Field for field, in the same order, the object this rail has
+ * always sent it, v1 names and relative resource included; it is derived from the v2 entry above,
+ * so the price, asset and payTo a buyer is quoted and the ones the facilitator checks cannot differ.
+ */
+export function celoFacilitatorRequirements(tool: CeloToolName, status: CeloX402Status) {
+  const chain = railChain(status)
+  const r = celoToolRequirements(tool, status)
+  return {
+    scheme: r.scheme,
+    network: chain.id,
+    asset: r.asset,
+    payTo: r.payTo,
+    maxAmountRequired: r.amount,
+    resource: celoToolPath(tool),
+    description: celoToolDescription(tool, chain),
+    mimeType: 'application/json' as const,
+    maxTimeoutSeconds: r.maxTimeoutSeconds,
+    extra: { ...r.extra },
+  }
+}
+
+/** The x402 v2 PaymentRequired object: what PAYMENT-REQUIRED carries, and what the 402 body leads with. */
+export type CeloPaymentRequired = {
+  x402Version: 2
+  error: string
+  resource: { url: string; description: string; mimeType: 'application/json' }
+  accepts: CeloPaymentRequirements[]
+}
+
+/**
+ * The PaymentRequired object for one tool. `error` is "payment required" when nothing was
+ * presented, and the reason when a payment was presented and refused.
+ */
+export function celoPaymentRequired(
+  tool: CeloToolName,
+  status: CeloX402Status,
+  opts: { origin?: string; refusal?: string } = {},
+): CeloPaymentRequired {
+  const chain = railChain(status)
   return {
     x402Version: 2,
-    error: 'payment required',
+    error: opts.refusal || 'payment required',
+    resource: { url: celoToolUrl(tool, opts.origin), description: celoToolDescription(tool, chain), mimeType: 'application/json' },
     accepts: [celoToolRequirements(tool, status)],
+  }
+}
+
+/** base64 of the JSON, the encoding the v2 HTTP transport uses for all three of its headers. */
+export function celoBase64Json(value: unknown): string {
+  return Buffer.from(JSON.stringify(value), 'utf8').toString('base64')
+}
+
+const CELO_PAYMENT_HOWTO =
+  'Sign an EIP-3009 TransferWithAuthorization for the accepts entry above (the token domain is in its extra), then send the same POST with header PAYMENT-SIGNATURE: base64(JSON of {x402Version:2, accepted:<that entry, unchanged>, payload:{signature, authorization}}), the x402 v2 payment payload. The x402 v1 header name X-PAYMENT is still accepted, and so is the earlier payload shape {x402Version:2, scheme:"exact", network, payload:{signature, authorization}}.'
+
+/**
+ * The full 402 body: the PaymentRequired object, then the tool's calling contract, so a probing
+ * client sees everything needed to pay and call correctly, and `verifyError` when a presented
+ * payment was refused (the field this rail's own page reads).
+ */
+export function celoChallenge(tool: CeloToolName, status: CeloX402Status, verifyError?: string, origin?: string) {
+  return {
+    ...celoPaymentRequired(tool, status, { origin, refusal: verifyError }),
     tool: {
       name: tool,
       priceUsd: CELO_TOOL_PRICES_USD[tool],
       ...CELO_TOOL_CARDS[tool],
-      method: `POST /api/celo/tools/${tool}`,
-      payment:
-        'Sign an EIP-3009 TransferWithAuthorization for the asset above (domain from `extra`), then POST with header X-PAYMENT: base64(JSON of {x402Version:2, scheme:"exact", network, payload:{signature, authorization}}).',
+      method: `POST ${celoToolPath(tool)}`,
+      payment: CELO_PAYMENT_HOWTO,
     },
     ...(verifyError ? { verifyError } : {}),
   }
+}
+
+/**
+ * A 402 as the route sends it: the challenge in the body, and the PaymentRequired object alone,
+ * base64, in the PAYMENT-REQUIRED header, where a stock v2 client reads it. The header carries
+ * the spec object and nothing else; the body adds the tool card.
+ */
+export function celoChallengeResponse(
+  tool: CeloToolName,
+  status: CeloX402Status,
+  opts: { origin?: string; refusal?: string } = {},
+): { httpStatus: 402; body: ReturnType<typeof celoChallenge>; headers: Record<string, string> } {
+  return {
+    httpStatus: 402,
+    body: celoChallenge(tool, status, opts.refusal, opts.origin),
+    headers: { 'PAYMENT-REQUIRED': celoBase64Json(celoPaymentRequired(tool, status, opts)) },
+  }
+}
+
+/**
+ * The buyer's payment, under either name: PAYMENT-SIGNATURE is the x402 v2 request header, and
+ * X-PAYMENT the v1 name this rail asked for until 2026-11-18, still read. The v2 name wins when a
+ * request carries both. node:http lower-cases incoming header names.
+ */
+export function celoPaymentHeader(headers: Record<string, string | string[] | undefined>): string {
+  const one = (v: string | string[] | undefined) => ((Array.isArray(v) ? v[0] : v) ?? '').trim()
+  return one(headers['payment-signature']) || one(headers['x-payment'])
+}
+
+/**
+ * A v2 payment names the offer it was signed for under `accepted`, and that has to be the one this
+ * resource asks for: the fields a reference x402 server compares, addresses in any case. Checked
+ * before the facilitator is asked anything, and the refusal names the field. Whether the signature
+ * pays exactly that is the facilitator's check, against the requirements built here.
+ */
+function acceptedMismatch(payment: Record<string, unknown>, req: CeloPaymentRequirements): string | null {
+  if (payment.x402Version !== 2) {
+    return `a payment that names accepted is x402 v2, and this one says x402Version ${JSON.stringify(payment.x402Version ?? null)}`
+  }
+  const a = payment.accepted
+  if (!a || typeof a !== 'object' || Array.isArray(a)) return 'accepted must be the accepts entry of this 402 that the payment was signed for'
+  const got = a as Record<string, unknown>
+  for (const field of ['scheme', 'network', 'amount', 'asset', 'payTo', 'maxTimeoutSeconds'] as const) {
+    const want = req[field]
+    const same =
+      field === 'asset' || field === 'payTo'
+        ? typeof got[field] === 'string' && (got[field] as string).toLowerCase() === String(want).toLowerCase()
+        : got[field] === want
+    if (!same) return `accepted.${field} is ${JSON.stringify(got[field] ?? null)}, and this resource asks for exactly ${JSON.stringify(want)}`
+  }
+  return null
 }
 
 // ── on-chain Celo reputation read (the extra value in reputation_score) ───────────
@@ -640,6 +805,8 @@ export type CeloToolInput = { agentId: string; txContext?: TxContext | null }
 
 /** Injectable dependencies so the whole redemption path unit-tests without network. */
 export type CeloServeDeps = {
+  /** Scheme and host the request reached, for the absolute resource URL in a fresh challenge. */
+  origin?: string
   fetchImpl?: typeof fetch
   persist?: (rec: CeloSettlementRecord) => Promise<void>
   handlers?: Partial<Record<CeloToolName, (input: CeloToolInput) => Promise<unknown>>>
@@ -795,16 +962,18 @@ async function facilitatorPost(
 }
 
 /**
- * The full paid-call path for one tool. Returns { httpStatus, body } so the route stays
+ * The full paid-call path for one tool. Returns { httpStatus, body, headers } so the route stays
  * a thin adapter. Outcomes, in order:
- *   402 - malformed X-PAYMENT, or the facilitator says the payment is invalid
- *         (fresh challenge + verifyError; the client fixes its payment and retries)
+ *   402 - a payment header that does not decode, a v2 payment whose `accepted` is not this
+ *         resource's offer, or the facilitator says the payment is invalid (fresh challenge +
+ *         verifyError, with PAYMENT-REQUIRED; the client fixes its payment and retries)
  *   502 - the facilitator failed or answered ambiguously (verify OR settle). The tool
  *         is NOT served and the payment is NOT resubmitted: a repeated settle could
  *         double-spend the buyer's authorization, so the client retries with a fresh one.
  *   500 - settle succeeded but the tool handler itself failed. The settlement is still
  *         recorded (it happened) and the body says exactly that.
  *   200 - settled and served; the settlement is durably recorded for /api/celo/proof.
+ * A settled answer (200, or the 500 after settlement) carries the v2 receipt in PAYMENT-RESPONSE.
  * The tool is asked about celoScopedAgentId(input.agentId): a bare token id is Celo's here.
  */
 export async function celoServeTool(
@@ -813,7 +982,7 @@ export async function celoServeTool(
   paymentHeader: string,
   status: CeloX402Status,
   deps: CeloServeDeps = {},
-): Promise<{ httpStatus: number; body: unknown }> {
+): Promise<{ httpStatus: number; body: unknown; headers?: Record<string, string> }> {
   const fetchImpl = deps.fetchImpl ?? fetch
   const persist = deps.persist ?? persistCeloSettlement
   const env = deps.env ?? process.env
@@ -836,17 +1005,17 @@ export async function celoServeTool(
   // whichever chain's token of that number the shared resolver would match first.
   const asked: CeloToolInput = { ...input, agentId: celoScopedAgentId(input.agentId, chain) }
 
-  // 1. Decode the X-PAYMENT header (base64 JSON, x402 v2 exact payload).
+  // A refused payment gets a fresh challenge naming why, in the body and in PAYMENT-REQUIRED.
+  const refuse = (reason: string) => celoChallengeResponse(tool, status, { origin: deps.origin, refusal: reason })
+
+  // 1. Decode the payment header (base64 JSON): an x402 v2 PaymentPayload, or the earlier flat shape.
   let paymentPayload: Record<string, unknown>
   try {
     const decoded = Buffer.from(paymentHeader, 'base64').toString('utf8')
     paymentPayload = JSON.parse(decoded) as Record<string, unknown>
-    if (typeof paymentPayload !== 'object' || paymentPayload === null) throw new Error('not an object')
+    if (typeof paymentPayload !== 'object' || paymentPayload === null || Array.isArray(paymentPayload)) throw new Error('not an object')
   } catch {
-    return {
-      httpStatus: 402,
-      body: celoChallenge(tool, status, 'malformed X-PAYMENT header: expected base64-encoded x402 v2 JSON payload'),
-    }
+    return refuse('malformed payment header (PAYMENT-SIGNATURE or X-PAYMENT): expected base64 of an x402 v2 payment payload in JSON')
   }
   const authorization =
     (paymentPayload.payload as Record<string, unknown> | undefined)?.authorization as
@@ -863,8 +1032,20 @@ export async function celoServeTool(
   // "unsupported_scheme". So we normalize OUR client-facing v2 payload to the v1 slug
   // shape here, at the facilitator boundary, and nowhere else: the public 402
   // challenge stays v2/CAIP-2.
-  const v1Payload = { ...paymentPayload, x402Version: 1, network: chain.id }
-  const v1Requirements = { ...requirements, network: chain.id }
+  // Two client shapes reach this point, and both become the same facilitator body. A v2
+  // PaymentPayload names its offer under `accepted` (checked against this resource first) and
+  // carries scheme and network only there, so its v1 form is built from its parts. The earlier
+  // flat shape ({x402Version, scheme, network, payload}) is converted exactly as it always was.
+  // For the same signature the two produce byte-identical /verify and /settle bodies.
+  let v1Payload: Record<string, unknown>
+  if ('accepted' in paymentPayload) {
+    const mismatch = acceptedMismatch(paymentPayload, requirements)
+    if (mismatch) return refuse(mismatch)
+    v1Payload = { x402Version: 1, scheme: requirements.scheme, network: chain.id, payload: paymentPayload.payload }
+  } else {
+    v1Payload = { ...paymentPayload, x402Version: 1, network: chain.id }
+  }
+  const v1Requirements = celoFacilitatorRequirements(tool, status)
   let verify: { status: number; json: Record<string, unknown> | null }
   try {
     verify = await facilitatorPost(fetchImpl, `${status.facilitator}/verify`, {
@@ -883,7 +1064,13 @@ export async function celoServeTool(
     }
   }
   const isValid = verify.json?.isValid === true || verify.json?.valid === true
-  if (verify.status !== 200 || !verify.json) {
+  // The live facilitator refuses a payment with HTTP 400 and a verdict, { isValid: false,
+  // invalidReason } (read 2026-11-18 with an unfunded test key: insufficient_funds, and
+  // recipient_mismatch for a wrong payee). That is a payment the buyer has to fix, so it is the
+  // 402 below, as x402 maps a failed verification, and not a facilitator failure to retry.
+  // Any other status that is not a 200 still is one.
+  const refusedOn400 = verify.status === 400 && (verify.json?.isValid === false || verify.json?.valid === false)
+  if ((verify.status !== 200 && !refusedOn400) || !verify.json) {
     return {
       httpStatus: 502,
       body: {
@@ -898,7 +1085,7 @@ export async function celoServeTool(
       (typeof verify.json.invalidReason === 'string' && verify.json.invalidReason) ||
       (typeof verify.json.reason === 'string' && verify.json.reason) ||
       'payment did not verify'
-    return { httpStatus: 402, body: celoChallenge(tool, status, reason) }
+    return refuse(reason)
   }
 
   // 3. /settle - the facilitator broadcasts the EIP-3009 transfer. X-API-Key is OUR
@@ -942,6 +1129,22 @@ export async function celoServeTool(
         : {}),
     }
 
+    // The v2 receipt: the SettlementResponse fields the spec defines, base64, beside the fuller
+    // settlement object the body carries. `transaction` is the empty string only when no hash is
+    // known (a confirmation that named none, or a read-back the facilitator's record could not
+    // name); the body's confirmedBy says which party confirmed the payment. `amount` is what the
+    // signed authorization moves, the units EIP-3009 transfers exactly.
+    const value = typeof authorization?.value === 'string' && /^\d+$/.test(authorization.value) ? authorization.value : undefined
+    const headers = {
+      'PAYMENT-RESPONSE': celoBase64Json({
+        success: true,
+        transaction: s.settleTx ?? '',
+        network: status.network,
+        ...(payer ? { payer } : {}),
+        ...(value ? { amount: value } : {}),
+      }),
+    }
+
     const handler = deps.handlers?.[tool] ?? defaultHandlers(status)[tool]
     try {
       const answer = await handler(asked)
@@ -956,6 +1159,7 @@ export async function celoServeTool(
           settlement,
           result,
         },
+        headers,
       }
     } catch (e) {
       return {
@@ -966,6 +1170,7 @@ export async function celoServeTool(
           settlement,
           note: 'the payment DID settle and is recorded in /api/celo/proof; contact the operator with the settledAt timestamp',
         },
+        headers,
       }
     }
   }

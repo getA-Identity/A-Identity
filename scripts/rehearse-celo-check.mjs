@@ -198,7 +198,7 @@ await ctx.addInitScript(() => {
 })
 
 // Preview only serves static files, so stand in for the Vercel rewrite and forward the backend
-// paths to the live backend. The X-PAYMENT header travels with the request headers.
+// paths to the live backend. The PAYMENT-SIGNATURE header travels with the request headers.
 if (!argBase) {
   const forward = async (route, request) => {
     const url = request.url().replace(BASE, BACKEND)

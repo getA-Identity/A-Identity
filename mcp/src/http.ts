@@ -33,7 +33,7 @@ import { oauthEnabled, verifyAccessToken } from './oauth.js'
 import { SESSION_COOKIE, mcpCallerFor, parseCookies, publicAgents, readBody, sendJson, type RouteCtx } from './http/shared.js'
 import { handleAuthRoutes } from './http/auth-routes.js'
 import { handlePublicRoutes } from './http/public-routes.js'
-import { handleCeloRoutes } from './http/celo-routes.js'
+import { applyCeloToolCors, handleCeloRoutes } from './http/celo-routes.js'
 import { handleX402ThreeKRoutes } from './http/x402-3009-routes.js'
 import { handleX402StellarRoutes } from './http/x402-stellar-routes.js'
 import { handleX402AlgorandRoutes } from './http/x402-algorand-routes.js'
@@ -115,6 +115,11 @@ const server = http.createServer(async (req, res) => {
   // cross-origin script unless they are exposed; the body carries the same object, the
   // headers are what v2 clients read first.
   res.setHeader('Access-Control-Expose-Headers', 'PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-PAYMENT-RESPONSE')
+  // The Celo paid tools, and their preflight, answer any origin with no credentials: an x402
+  // buyer there is any agent or page, and its credential is the signed payment header, never a
+  // cookie. Every other route keeps the allowlist above. The path is cut from the raw target
+  // with no URL parse, so nothing here can throw.
+  applyCeloToolCors((req.url ?? '/').split('?')[0], res)
 
   if (req.method === 'OPTIONS') { res.writeHead(204).end(); return }
 
