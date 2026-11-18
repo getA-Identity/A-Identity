@@ -235,11 +235,13 @@ Recorded here because it is the case the guidance above exists for.
     they are retired in place. The same day our oracle validator revoked the feedback it had written
     for each (Base tx `0x8f75a0630fdf317240209e1aeda7c82af697e0d80a9d9740822d03e7cbae5adc`,
     Arbitrum One tx `0xa20cbe45f5d856fbac1ad8dfd701c02070a1e94b9925576f8ba5e2c7618d9bdc`).
-  - *`public/.well-known/agent-card.json`* no longer lists #1259 or #73232 in `registrations`, and
-    lists #849980 again, with the founder's wallet as its owner. A note at the top of the card says
-    that #1259 and #73232 are not ours, because someone else holds the same key, and that the card
-    does not vouch for them, although their tokenURIs still point at the card. The proof pages list
-    both as former agents, never as ours.
+  - *`public/.well-known/agent-card.json`* no longer lists #1259 or #73232 in `registrations`.
+    Since 2026-11-18 it lists Robinhood Chain testnet #0, with the founder's wallet as its owner, and
+    not #849980: the card is the ERC-8004 registration file of the agents whose tokenURI points at it,
+    and #849980's tokenURI is its own inline Meridian metadata, so it is ours but a different agent.
+    A note in the card says so, and says that #1259 and #73232 are not ours, because someone else
+    holds the same key, and that the card does not vouch for them, although their tokenURIs still
+    point at the card. The proof pages list both as former agents, never as ours.
 
 ## Known limitations
 

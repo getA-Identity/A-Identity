@@ -319,7 +319,9 @@ test('the homepage ring and the agent card advertise only agents A-Identity hold
     }
     if (p.agent) {
       assert.ok(ringHas(p.chain, p.agent.tokenId), `the ring has no card for our agent ${p.chain} #${p.agent.tokenId}`)
-      // A registration the card shares with the ledger names the owner the ledger names (Arc testnet #849980 since 2026-11-17).
+      // A registration the card shares with the ledger names the owner the ledger names (Robinhood Chain testnet #0 since
+      // 2026-11-17). Arc testnet #849980 is ours too but is no registration of the card: its tokenURI is its own Meridian
+      // metadata, so it is a different agent (public-copy.test.ts holds that).
       const reg = regs.find((r) => r.chain === caip2 && idOf(r) === p.agent!.tokenId)
       if (reg?.owner) {
         ownersCompared += 1

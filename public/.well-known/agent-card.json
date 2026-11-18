@@ -200,7 +200,7 @@
     }
   ],
   "supportsAuthenticatedExtendedCard": false,
-  "note": "ERC-8004 agents #1259 (Arbitrum One) and #73232 (Base) were registered by A-Identity but are held by the former operating wallet, which A-Identity retired on 2026-11-11, so A-Identity does not control them alone. They are not ours and this card does not vouch for them, although their tokenURIs still point here. Our oracle validator revoked its feedback for both on 2026-11-17 (the transactions are in the provenance ledger at https://a-identity.xyz/proof). Never pay or fund their owner or their agent wallet.",
+  "note": "ERC-8004 agents #1259 (Arbitrum One) and #73232 (Base) were registered by A-Identity but are held by the former operating wallet, which A-Identity retired on 2026-11-11, so A-Identity does not control them alone. They are not ours and this card does not vouch for them, although their tokenURIs still point here. Our oracle validator revoked its feedback for both on 2026-11-17 (the transactions are in the provenance ledger at https://a-identity.xyz/proof). Never pay or fund their owner or their agent wallet. Arc testnet agent #849980 (Meridian) is ours, held by the founder's wallet since 2026-11-17, but it is a different agent: its tokenURI is its own inline metadata, not this file, so it is not one of this agent's registrations.",
   "services": [
     {
       "name": "web",
@@ -214,7 +214,8 @@
     {
       "name": "A2A",
       "endpoint": "https://a-identity.xyz/.well-known/agent-card.json",
-      "version": "1.0",
+      "version": "0.3.0",
+      "description": "This file, read as an A2A agent card. It validates against the A2A 0.3.0 AgentCard schema, the version named here. It is for discovery only: A-Identity serves no A2A message endpoint. The skills it lists are HTTP tools at the x402 interface in supportedInterfaces (POST /tools/<skill>), and four of them are also sold on Celo at the celo- services in this list.",
       "skills": [
         "verify_agent",
         "reputation_score",
@@ -298,15 +299,15 @@
       "note": "ERC-8004 IdentityRegistry on Celo mainnet; the identity behind the first-party Celo x402 rail. Registered 2026-08-09 and held since 2026-11-11 by 0xCB88...1bdf, the wallet that also holds agent #0 on Arc Mainnet and on Robinhood Chain. Its first holder, 0xF43F...742D, is retired: never pay or fund it."
     },
     {
-      "chain": "eip155:5042002",
-      "agentId": 849980,
-      "agentRegistry": "eip155:5042002:0x8004A818BFB912233c491871b3d84c89A494BD9e",
-      "caip": "eip155:5042002:0x8004A818BFB912233c491871b3d84c89A494BD9e/849980",
+      "chain": "eip155:46630",
+      "agentId": 0,
+      "agentRegistry": "eip155:46630:0x8004A818BFB912233c491871b3d84c89A494BD9e",
+      "caip": "eip155:46630:0x8004A818BFB912233c491871b3d84c89A494BD9e/0",
       "registry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
       "owner": "0xCB8824ffAF30687E36374C08eC52298b62871bdf",
-      "tx": "0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54",
-      "explorer": "https://explorer.testnet.arc.io/tx/0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54",
-      "note": "ERC-8004 IdentityRegistry on Circle Arc testnet, the Arc registry family rather than the canonical mainnet address. Agent #849980 (Meridian) is the phase-1 showcase agent, registered 2026-07-10 by the former operating wallet 0xd305...ed36 and moved on 2026-11-17 to 0xCB88...1bdf, the founder's wallet (transferFrom tx 0x477d96e3...). The move cleared its agent wallet, so its 2026-07-10 KYA attestation through Arc's ValidationRegistry is about a wallet it no longer declares, and the same day our oracle validator revoked the feedback it had written for it (revokeFeedback tx 0x258a4521...). Testnet: no real money."
+      "tx": "0x20918ec68186bd4aaee7c36d33d0383f1bc6a2bc921e72e3b812d034da5212fd",
+      "explorer": "https://explorer.testnet.chain.robinhood.com/tx/0x20918ec68186bd4aaee7c36d33d0383f1bc6a2bc921e72e3b812d034da5212fd",
+      "note": "ERC-8004 IdentityRegistry on Robinhood Chain testnet, the rehearsal network, at the testnet family address Arc testnet also uses. Token #0 is ours: registered 2026-08-11 by the former operating wallet 0xd305...ed36 and moved on 2026-11-17 to 0xCB88...1bdf, the founder's wallet (transferFrom tx 0x1d7a948c...), a move that cleared its agent wallet. Its tokenURI points back at this card. Testnet: no real money."
     }
   ]
 }

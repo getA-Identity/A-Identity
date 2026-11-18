@@ -6,6 +6,7 @@ import type { ChainDescriptor } from '../chains/types.js'
 import { clearDomainCache, eip712DomainSeparator } from '../x402-3009/domain.js'
 import { preflight, type Fetched, type Refused } from './safe-get.js'
 import { RETIRED_COMPROMISED, SWEEP_RECIPIENTS } from '../chains/retired.js'
+import { PROVENANCE } from '../chains/provenance.js'
 import {
   cardClaims,
   documentedTokensOf,
@@ -241,6 +242,28 @@ test('cardClaims: both registration shapes, and a file that lists someone else',
   const onCelo = { caip2: celo.caip2, registry: celo.contracts.identityRegistry as string }
   assert.equal(cardClaims(ours, { ...onCelo, tokenId: '9759' }), 'claims')
   assert.equal(cardClaims(ours, { ...onCelo, tokenId: '1' }), 'does_not_claim')
+  // And it claims exactly the agents of ours whose token points at it, testnets included (Robinhood Chain testnet #0),
+  // and not Arc testnet #849980, whose tokenURI is its own Meridian metadata, nor a former agent (Base #73232, Arbitrum
+  // One #1259), so the bidirectional check a buyer or an explorer runs holds in both directions.
+  const SELF = 'https://a-identity.xyz/.well-known/agent-card.json'
+  const on = (id: string) => {
+    const c = getChainById(id) as ChainDescriptor
+    return { caip2: c.caip2, registry: c.contracts.identityRegistry as string }
+  }
+  let claimed = 0
+  for (const p of PROVENANCE) {
+    if (p.agent) {
+      const expected = p.agent.tokenUri === SELF ? 'claims' : 'does_not_claim'
+      if (expected === 'claims') claimed += 1
+      assert.equal(cardClaims(ours, { ...on(p.chain), tokenId: p.agent.tokenId }), expected, `our agent ${p.chain} #${p.agent.tokenId}`)
+    }
+    if (p.formerAgent) assert.equal(cardClaims(ours, { ...on(p.chain), tokenId: p.formerAgent.tokenId }), 'does_not_claim', `former agent ${p.chain} #${p.formerAgent.tokenId}`)
+  }
+  assert.equal(cardClaims(ours, { ...on('rhchain-testnet'), tokenId: '0' }), 'claims')
+  assert.equal(cardClaims(ours, { ...on('arc'), tokenId: '849980' }), 'does_not_claim')
+  // Every other registration is one of those agents; the X Layer one is the oracle's OKX.AI listing, which no ledger entry records.
+  const xlayer = on('xlayer').caip2
+  assert.equal(claimed, ours.registrations.filter((r) => r.chain !== xlayer).length, 'the card registers a token that is no agent of ours in the ledger')
 })
 
 test('readChallenge: the v2 header wins, the v1 body still reads', () => {

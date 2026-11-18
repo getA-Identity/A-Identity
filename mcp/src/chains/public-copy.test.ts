@@ -100,53 +100,77 @@ test('README names the registry address of every wired chain that has one', () =
   }
 })
 
-test('the agent card advertises every agent the provenance ledger records, and is a valid ERC-8004 registration file', async () => {
+test('the agent card registers exactly our agents whose tokenURI is the card, and is a valid ERC-8004 registration file and A2A 0.3.0 card', async () => {
   const { PROVENANCE } = await import('./provenance.js')
   const { CELO_TOOLS } = await import('../celo-x402.js')
   type Registration = { chain?: string; agentId?: unknown; agentRegistry?: unknown; caip?: string; registry?: string }
-  type Service = { name?: unknown; endpoint?: unknown; version?: unknown; skills?: unknown }
+  type Service = { name?: unknown; endpoint?: unknown; version?: unknown; description?: unknown; skills?: unknown }
+  type Skill = { id?: unknown; name?: unknown; description?: unknown; tags?: unknown }
   const card = JSON.parse(repo('public/.well-known/agent-card.json')) as {
     type?: unknown
     name?: unknown
     description?: unknown
+    url?: unknown
+    version?: unknown
+    protocolVersion?: unknown
+    capabilities?: unknown
+    defaultInputModes?: unknown
+    defaultOutputModes?: unknown
     image?: unknown
     active?: unknown
     x402Support?: unknown
     supportedTrust?: unknown
-    protocolVersion?: string
-    provider?: { url?: string }
-    skills?: { id: string }[]
+    note?: string
+    provider?: { organization?: unknown; url?: string }
+    skills?: Skill[]
     services?: Service[]
     registrations?: Registration[]
   }
   const regs = card.registrations ?? []
-  // Our agents only. A formerAgent (provenance.ts) is one A-Identity registered that a retired address still holds: it is
-  // never required here, because the card advertises what we vouch for.
+  const site = card.provider?.url ?? ''
+  assert.match(site, /^https:\/\//)
+  // Where this file is served: the tokenURI of every agent it is the registration file of.
+  const self = `${site}/.well-known/agent-card.json`
+
+  // Held to the ledger, testnets included. A registration says "this token is this agent", and explorers check it both
+  // ways (8004scan's profile: a registration MUST match the on-chain agent and registry that point to this file). So every
+  // agent of ours whose tokenURI is this file is registered here, and an agent of ours whose tokenURI is other metadata is
+  // not: Arc testnet #849980 (Meridian) carries its own inline JSON, so it is a different agent, and the note says why it
+  // is absent. A formerAgent (provenance.ts), one A-Identity registered that a retired address still holds, is never
+  // registered here either (retired.test.ts), because the card advertises what we vouch for.
   for (const p of PROVENANCE) {
-    if (!p.agent) continue
+    const agent = p.agent
+    if (!agent) continue
     const chain = CHAINS.find((c) => c.id === p.chain)!
-    if (chain.testnet) continue
-    const hit = regs.find((r) => r.chain === chain.caip2)
-    assert.ok(hit, `agent-card.json advertises no registration on ${chain.caip2}, but the ledger records agent #${p.agent.tokenId} there`)
-    assert.equal(
-      hit.registry?.toLowerCase(),
-      chain.contracts.identityRegistry?.toLowerCase(),
-      `agent-card.json names the wrong registry for ${chain.caip2}`,
-    )
-    assert.equal(hit.agentId, Number(p.agent.tokenId), `agent-card.json names the wrong agentId for ${chain.caip2}`)
+    const what = `${chain.caip2} #${agent.tokenId}`
+    const hit = regs.find((r) => r.chain === chain.caip2 && String(r.agentId) === agent.tokenId)
+    if (agent.tokenUri !== self) {
+      assert.equal(hit, undefined, `agent-card.json registers ${what}, whose tokenURI is other metadata, so it is a different agent`)
+      assert.ok(card.note?.includes(`#${agent.tokenId}`), `the card's note does not say why ${what}, ours, is not registered`)
+      continue
+    }
+    assert.ok(hit, `agent-card.json does not register ${what}, whose tokenURI the ledger records as this file`)
+    assert.equal(hit.registry?.toLowerCase(), chain.contracts.identityRegistry?.toLowerCase(), `agent-card.json names the wrong registry for ${what}`)
+    assert.equal(hit.agentId, Number(agent.tokenId), `agent-card.json writes the agentId of ${what} as ${JSON.stringify(hit.agentId)}`)
+  }
+  // On a chain where the ledger records our agent, the card registers that agent and no other token: Robinhood Chain #1
+  // carries this file's URL too, minted by someone else (the ledger's caveats). X Layer #6271 is in no ledger entry: it is
+  // the oracle's OKX.AI listing, whose file OKX.AI hosts.
+  for (const r of regs) {
+    const ours = PROVENANCE.find((p) => p.agent && CHAINS.find((c) => c.id === p.chain)?.caip2 === r.chain)?.agent
+    if (ours) assert.equal(String(r.agentId), ours.tokenId, `agent-card.json registers ${r.chain} #${String(r.agentId)}, but our agent there is #${ours.tokenId}`)
   }
 
-  // The card is also the ERC-8004 registration file (EIP-8004 registration-v1) that Arc Mainnet #0, Robinhood Chain #0 and
-  // Celo #9759 resolve to, and indexers read it as one. Until 2026-11-18 it had no type and no agentRegistry in any
-  // registration, which 8004scan flagged (WA001, WA012), and no services, so the QuickNode explorer listed it unconfigured.
+  // The card is also the ERC-8004 registration file (EIP-8004 registration-v1) that Arc Mainnet #0, Robinhood Chain #0,
+  // Celo #9759 and Robinhood Chain testnet #0 resolve to, and indexers read it as one. Until 2026-11-18 it had no type and
+  // no agentRegistry in any registration, which 8004scan flagged (WA001, WA012), and no services, so the QuickNode
+  // explorer listed it unconfigured.
   assert.equal(card.type, 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1')
   for (const [field, value] of [['name', card.name], ['description', card.description]] as const) {
     assert.ok(typeof value === 'string' && value.trim().length > 0, `the registration file has no ${field}`)
   }
   assert.equal(card.active, true, 'active is the boolean true')
   assert.ok(card.x402Support === undefined || typeof card.x402Support === 'boolean', 'x402Support, when present, is a boolean')
-  const site = card.provider?.url ?? ''
-  assert.match(site, /^https:\/\//)
 
   // The image is a square PNG of at least 512 px on our own site, and the file is in public/, so the link cannot rot unseen.
   assert.ok(typeof card.image === 'string' && card.image.startsWith(`${site}/`), 'the image is an absolute URL on our site')
@@ -181,9 +205,14 @@ test('the agent card advertises every agent the provenance ledger records, and i
   assert.equal(service('web')?.endpoint, site)
   const serverCard = JSON.parse(repo('public/.well-known/mcp/server-card.json')) as { endpoint: string; protocolVersion: string }
   assert.deepEqual([service('MCP')?.endpoint, service('MCP')?.version], [serverCard.endpoint, serverCard.protocolVersion], 'the MCP service is the server card endpoint at its protocol version')
-  // A2A points at this very file, the one Celo #9759 resolves to, at the card's own protocol version and with its skills.
-  assert.equal(service('A2A')?.endpoint, PROVENANCE.find((p) => p.chain === 'celo')?.agent?.tokenUri)
-  assert.equal(service('A2A')?.version, card.protocolVersion)
+  // A2A points at this very file, the one Celo #9759 resolves to, with its skills. Its version is 0.3.0, the A2A AgentCard
+  // schema the file validates against (and 8004scan's standard value), not the "1.0" of the card's own protocolVersion: an
+  // A2A 1.0 interface needs protocolBinding and protocolVersion, and the card's supportedInterfaces are its MCP and x402
+  // endpoints, not A2A bindings. There is no A2A message endpoint, and the service says so.
+  assert.equal(service('A2A')?.endpoint, self)
+  assert.equal(PROVENANCE.find((p) => p.chain === 'celo')?.agent?.tokenUri, self, 'Celo #9759 resolves to this file')
+  assert.equal(service('A2A')?.version, '0.3.0')
+  assert.match(String(service('A2A')?.description), /for discovery only: A-Identity serves no A2A message endpoint/)
   assert.deepEqual(service('A2A')?.skills, (card.skills ?? []).map((s) => s.id))
   // The Celo check page is a real route, and the paid Celo tools are listed exactly, in the rail's order.
   assert.equal(service('celo-check')?.endpoint, `${site}/check/celo`)
@@ -195,6 +224,23 @@ test('the agent card advertises every agent the provenance ledger records, and i
   )
   // The agent wallet is read on chain (setAgentWallet); declaring one in the file is deprecated (8004scan WA083).
   assert.equal(services.some((s) => s.name === 'agentWallet'), false)
+
+  // The same file stays a valid A2A 0.3.0 AgentCard: the nine fields that schema requires, with its types, and every skill
+  // with the four it requires. Nothing else holds this, and the next edits to this file (x402Support, a partner field)
+  // must not drop or retype any of them.
+  const text = (v: unknown) => typeof v === 'string' && v.trim().length > 0
+  const texts = (v: unknown) => Array.isArray(v) && v.length > 0 && v.every(text)
+  for (const f of ['name', 'description', 'url', 'version', 'protocolVersion'] as const) assert.ok(text(card[f]), `A2A: ${f} is a non-empty string`)
+  assert.match(String(card.url), /^https:\/\//)
+  assert.ok(typeof card.capabilities === 'object' && card.capabilities !== null && !Array.isArray(card.capabilities), 'A2A: capabilities is an object')
+  for (const f of ['defaultInputModes', 'defaultOutputModes'] as const) assert.ok(texts(card[f]), `A2A: ${f} is a non-empty list of media types`)
+  assert.ok(Array.isArray(card.skills) && card.skills.length > 0, 'A2A: skills is a non-empty list')
+  for (const s of card.skills) {
+    for (const f of ['id', 'name', 'description'] as const) assert.ok(text(s[f]), `A2A: a skill has no ${f}`)
+    assert.ok(texts(s.tags), `A2A: skill ${String(s.id)} has no tags`)
+  }
+  // A2A makes the provider optional but requires both of its fields, and this test reads the site from it, so it is here.
+  assert.ok(text(card.provider?.organization) && text(card.provider?.url), 'A2A: the provider has an organization and a url')
 })
 
 test('.env.example documents every per-chain env var the registry declares', () => {
