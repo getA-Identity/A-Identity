@@ -394,8 +394,9 @@ so KYA is not anchored on-chain here.
 
 Our agent is [**#9759**](https://celoscan.io/nft/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432/9759),
 and the four trust tools sell here over the first-party x402 facilitator Celo runs, not
-one of ours. Every payment so far came from our own buyer wallet and is labeled internal
-at [/celo-proof](https://a-identity.xyz/celo-proof). Celo has a ValidationRegistry proxy
+one of ours. Every payment so far came from a wallet of ours and is labeled internal
+at [/celo-proof](https://a-identity.xyz/celo-proof): 426 from our buyer wallet on 2026-08-09
+and one from the founder's own wallet on 2026-11-18. Celo has a ValidationRegistry proxy
 that we do not wire, so KYA is not anchored on-chain there either.
 
 ### Celo Sepolia, `eip155:11142220` - beta

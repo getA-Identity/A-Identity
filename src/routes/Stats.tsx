@@ -201,13 +201,13 @@ function logPhrase(label: string, lead = false): string {
 function splitSentence(src: ChainSource): string {
   if (src.splitScope === 'chain' && src.internal != null) {
     const ext = src.external ?? Math.max(0, src.count - src.internal)
-    return `${int(src.internal)} of these are internal, real payments from our own buyer wallet run to exercise the rail, not third-party demand; ${int(ext)} came from a wallet that is not ours. Labelled, not filtered out: the money moved either way.`
+    return `${int(src.internal)} of these are internal, real payments from our own wallets, run to exercise the rail, not third-party demand; ${int(ext)} came from a wallet that is not ours. Labelled, not filtered out: the money moved either way.`
   }
   if (src.splitScope === 'inferred' && src.internal != null) {
     const all = src.external === 0 ? 'internal' : 'external'
     const why =
       all === 'internal'
-        ? `: ${src.count === 1 ? 'a real payment' : 'real payments'} from our own buyer wallet, run to exercise the rail, not third-party demand`
+        ? `: ${src.count === 1 ? 'a real payment' : 'real payments'} from our own wallets, run to exercise the rail, not third-party demand`
         : ''
     return `${logPhrase(src.label, true)} labels every one of its rows ${all}, and that covers the ${int(src.count)} ${rowsWord(src.count)} on this chain${why}. Labelled, not filtered out.`
   }
