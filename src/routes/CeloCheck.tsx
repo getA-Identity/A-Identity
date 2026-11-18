@@ -13,7 +13,6 @@ import { payStepLabel, useEvmPayer } from '../components/app/wallet/PayWallet'
 import { apiFetch, readJson } from '../lib/api'
 import {
   CHECK_TOOL,
-  PAYMENT_HEADER,
   STATUS_PATH,
   addressUrl,
   formatUsd,
@@ -438,10 +437,12 @@ export default function CeloCheck() {
         const res = await apiFetch(toolPath(TOOL), { retries: 2, timeoutMs: 15_000, credentials: 'omit' })
         return { status: res.status, body: await readJson(res) }
       },
-      post: async (header, body) => {
+      // `name` is the header the answering rail reads: PAYMENT-SIGNATURE, or X-PAYMENT while a
+      // deploy still has the backend from before x402 v2 answering (paymentHeaderName).
+      post: async (header, body, name) => {
         const res = await apiFetch(toolPath(TOOL), {
           method: 'POST',
-          headers: { 'content-type': 'application/json', [PAYMENT_HEADER]: header },
+          headers: { 'content-type': 'application/json', [name]: header },
           body,
           timeoutMs: 90_000,
           credentials: 'omit',
@@ -668,9 +669,10 @@ export default function CeloCheck() {
               <p className="text-[15px] leading-relaxed text-foreground/75">
                 The same check is an x402 v2 call. A request without a payment returns the 402 with the terms, in the PAYMENT-REQUIRED
                 header and the body; a POST with a PAYMENT-SIGNATURE header (base64 of the x402 v2 payment payload) and a JSON body naming
-                the agentId returns the verdict once the facilitator settles, with the receipt in PAYMENT-RESPONSE. The older X-PAYMENT
-                header is still accepted. A bare token id is read as Celo's, the same as its CAIP id: each chain's registry numbers its
-                own agents.
+                the agentId returns the verdict once the facilitator settles, with the receipt and its settlement hash in PAYMENT-RESPONSE
+                whenever that hash is known. A settlement the facilitator refuses while your authorization stays unspent on-chain is a
+                402 whose PAYMENT-RESPONSE says success false: nothing was charged. The older X-PAYMENT header is still accepted. A bare
+                token id is read as Celo's, the same as its CAIP id: each chain's registry numbers its own agents.
               </p>
               <div className="mt-4 space-y-3">
                 <CopyBlock title="The terms" subtitle="GET, no key, a 402 in JSON" text={`curl -s ${TOOL_API}`} />

@@ -33,6 +33,14 @@ export const toolPath = (tool: CeloTool) => `/api/celo/tools/${tool}`
  */
 export const PAYMENT_HEADER = 'PAYMENT-SIGNATURE'
 
+/**
+ * TRANSITIONAL: the header a rail from before the x402 v2 change reads, and the only one. The page
+ * sends the payment there, in the earlier flat shape, only when the quote came from such a rail
+ * (see Terms.accepted): the site and the backend deploy apart, so for a few minutes after a push
+ * the new page can meet the old backend. Remove it with the backend's transitional price name.
+ */
+export const LEGACY_PAYMENT_HEADER = 'X-PAYMENT'
+
 /** Native USDC on Celo has 6 decimals, like every Circle USDC; the quote's units are read in them. */
 export const USDC_DECIMALS = 6
 
@@ -162,8 +170,14 @@ export type Terms = {
   validSeconds: number
   /** The token's EIP-712 domain, as the 402 carries it. */
   domain: { name: string; version: string }
-  /** The accepts entry these terms were read from, sent back unchanged as `accepted` (x402 v2). */
-  accepted: Record<string, unknown>
+  /**
+   * The accepts entry these terms were read from, sent back as `accepted` (x402 v2): the entry as
+   * quoted, less the transitional v1 price name the backend adds to the body for one release, so
+   * it is the entry the PAYMENT-REQUIRED header carries. Null when the quote names its price only
+   * under that v1 name: the rail answering is the one from before the v2 change (a deploy in
+   * progress), which reads the payment only from X-PAYMENT, in the earlier flat shape.
+   */
+  accepted: Record<string, unknown> | null
 }
 
 /**
@@ -193,11 +207,18 @@ export function readTerms(a: { tool: CeloTool; status: RailStatus; expectedNetwo
   }
   const priceUsd = a.status.prices[a.tool]
   if (typeof priceUsd !== 'number' || !(priceUsd > 0)) throw new PayRefusal(`The rail publishes no price for ${a.tool}.`)
-  // x402 v2 names the price `amount`, in atomic units of the asset.
-  if (typeof r.amount !== 'string' || !/^\d+$/.test(r.amount)) throw new PayRefusal('The quote names no amount.')
-  const amount = BigInt(r.amount)
+  // x402 v2 names the price `amount`, in atomic units of the asset. A rail from before the v2
+  // change named it maxAmountRequired, and only that (see Terms.accepted); for one release the
+  // current rail's body carries both, equal, and two names that disagree are no quote at all.
+  const v2 = r.amount !== undefined
+  const named = v2 ? r.amount : r.maxAmountRequired
+  if (typeof named !== 'string' || !/^\d+$/.test(named)) throw new PayRefusal('The quote names no amount.')
+  const amount = BigInt(named)
   if (amount !== usdcUnits(priceUsd)) {
     throw new PayRefusal(`The quote asks for ${formatUsdc(amount)} USDC; the published price is ${formatUsd(priceUsd)}.`)
+  }
+  if (v2 && r.maxAmountRequired !== undefined && r.maxAmountRequired !== named) {
+    throw new PayRefusal('The quote names two different amounts.')
   }
   const chainId = Number(/^eip155:(\d+)$/.exec(a.expectedNetwork)?.[1])
   if (!Number.isFinite(chainId)) throw new PayRefusal(`${a.expectedNetwork} is not an EVM network id.`)
@@ -216,7 +237,7 @@ export function readTerms(a: { tool: CeloTool; status: RailStatus; expectedNetwo
     amountUsd: priceUsd,
     validSeconds,
     domain: { name: extra.name, version: extra.version },
-    accepted: r,
+    accepted: v2 ? Object.fromEntries(Object.entries(r).filter(([k]) => k !== 'maxAmountRequired')) : null,
   }
 }
 
@@ -301,13 +322,24 @@ export function typedDataFor(terms: Terms, auth: Authorization) {
 }
 
 /**
- * The PAYMENT-SIGNATURE header: base64 of the x402 v2 payment payload, the offer it pays under
- * `accepted` exactly as the 402 quoted it and the signed authorization under `payload`. Encoded
- * from UTF-8 bytes, the way the x402 reference client does it.
+ * The payment header's value: base64 of the x402 v2 payment payload, the offer it pays under
+ * `accepted` (Terms.accepted) and the signed authorization under `payload`. Encoded from UTF-8
+ * bytes, the way the x402 reference client does it. For a rail from before the v2 change (no
+ * `accepted`), the earlier flat shape this page sent until 2026-11-18, the one that rail reads.
  */
 export function paymentHeader(terms: Terms, auth: Authorization, signature: string): string {
-  const json = JSON.stringify({ x402Version: 2, accepted: terms.accepted, payload: { signature, authorization: auth } })
+  const payload = { signature, authorization: auth }
+  const json = JSON.stringify(
+    terms.accepted
+      ? { x402Version: 2, accepted: terms.accepted, payload }
+      : { x402Version: 2, scheme: 'exact', network: terms.network, payload },
+  )
   return btoa(Array.from(new TextEncoder().encode(json), (b) => String.fromCharCode(b)).join(''))
+}
+
+/** The request header paymentHeader() goes in: PAYMENT-SIGNATURE, or X-PAYMENT for a rail from before the v2 change. */
+export function paymentHeaderName(terms: Terms): string {
+  return terms.accepted ? PAYMENT_HEADER : LEGACY_PAYMENT_HEADER
 }
 
 // ---- what came back ----
@@ -390,6 +422,12 @@ export function readAnswer(httpStatus: number, body: unknown, payTo: string): En
   }
   const error = str(b.error) ?? ''
   if (httpStatus === 400) return { kind: 'stopped', stop: { kind: 'refusal', text: error || 'the server did not accept the input' } }
+  // The facilitator refused to settle and the server read the authorization as unspent on-chain:
+  // the x402 v2 "Payment Failed" 402. Told apart from a refused payment's 402 by its error, so the
+  // reason shown is the facilitator's and not "the payment did not verify".
+  if (httpStatus === 402 && error === 'celo facilitator settle failed' && b.charged === false) {
+    return { kind: 'stopped', stop: { kind: 'settle_failed', reason: str(b.reason) ?? 'the facilitator did not settle' } }
+  }
   if (httpStatus === 402) return { kind: 'stopped', stop: { kind: 'refused', reason: str(b.verifyError) ?? 'the payment did not verify' } }
   if (httpStatus === 501) return { kind: 'stopped', stop: { kind: 'unavailable', reason: 'the Celo rail is not configured on the server' } }
   // The rail is holding off on settlements (the facilitator refused to settle for us): nothing was attempted.
@@ -465,8 +503,8 @@ export async function purchase(a: {
   wallet: PayWallet
   /** GET the tool's endpoint: the 402 with the terms. */
   quote: () => Promise<{ status: number; body: unknown }>
-  /** POST the tool's endpoint with the payment in PAYMENT_HEADER and the JSON body. One send, never retried. */
-  post: (header: string, body: string) => Promise<{ status: number; body: unknown }>
+  /** POST the tool's endpoint with the payment `header` under the header `name` (paymentHeaderName) and the JSON body. One send, never retried. */
+  post: (header: string, body: string, name: string) => Promise<{ status: number; body: unknown }>
   randomBytes: () => Uint8Array
   /** Unix seconds now. */
   now: () => number
@@ -524,7 +562,7 @@ export async function purchase(a: {
   a.step('confirming')
   let res: { status: number; body: unknown }
   try {
-    res = await a.post(paymentHeader(terms, auth, signature), JSON.stringify({ agentId: a.agentId }))
+    res = await a.post(paymentHeader(terms, auth, signature), JSON.stringify({ agentId: a.agentId }), paymentHeaderName(terms))
   } catch {
     // The signed payment left the page and no answer came back: the server may have settled it.
     return { kind: 'stopped', stop: { kind: 'ambiguous', payTo: terms.payTo } }

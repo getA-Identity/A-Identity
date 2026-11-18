@@ -479,10 +479,19 @@ const CELO_PAYMENT_HOWTO =
  * The full 402 body: the PaymentRequired object, then the tool's calling contract, so a probing
  * client sees everything needed to pay and call correctly, and `verifyError` when a presented
  * payment was refused (the field this rail's own page reads).
+ *
+ * TRANSITIONAL, for one release: each accepts entry in the BODY also names the price under the
+ * x402 v1 name maxAmountRequired, equal to amount. A /check/celo tab loaded before the v2 change
+ * reads the price under that name and would otherwise refuse every quote until it is reloaded.
+ * The PAYMENT-REQUIRED header, which v2 clients read first, carries the pure v2 object. A v2
+ * payment that echoes the field back under `accepted` still matches (acceptedMismatch compares the
+ * v2 fields only). Remove it in the release after this one.
  */
 export function celoChallenge(tool: CeloToolName, status: CeloX402Status, verifyError?: string, origin?: string) {
+  const required = celoPaymentRequired(tool, status, { origin, refusal: verifyError })
   return {
-    ...celoPaymentRequired(tool, status, { origin, refusal: verifyError }),
+    ...required,
+    accepts: required.accepts.map((entry) => ({ ...entry, maxAmountRequired: entry.amount })),
     tool: {
       name: tool,
       priceUsd: CELO_TOOL_PRICES_USD[tool],
@@ -497,7 +506,8 @@ export function celoChallenge(tool: CeloToolName, status: CeloX402Status, verify
 /**
  * A 402 as the route sends it: the challenge in the body, and the PaymentRequired object alone,
  * base64, in the PAYMENT-REQUIRED header, where a stock v2 client reads it. The header carries
- * the spec object and nothing else; the body adds the tool card.
+ * the spec object and nothing else; the body adds the tool card (and, for one release, the v1
+ * price name in each accepts entry: see celoChallenge).
  */
 export function celoChallengeResponse(
   tool: CeloToolName,
@@ -966,14 +976,18 @@ async function facilitatorPost(
  * a thin adapter. Outcomes, in order:
  *   402 - a payment header that does not decode, a v2 payment whose `accepted` is not this
  *         resource's offer, or the facilitator says the payment is invalid (fresh challenge +
- *         verifyError, with PAYMENT-REQUIRED; the client fixes its payment and retries)
+ *         verifyError, with PAYMENT-REQUIRED; the client fixes its payment and retries).
+ *         Also a settlement the facilitator refused outright while the chain shows the
+ *         authorization unspent: PAYMENT-RESPONSE with success false, a fresh PAYMENT-REQUIRED,
+ *         and charged: false in the body.
  *   502 - the facilitator failed or answered ambiguously (verify OR settle). The tool
  *         is NOT served and the payment is NOT resubmitted: a repeated settle could
  *         double-spend the buyer's authorization, so the client retries with a fresh one.
  *   500 - settle succeeded but the tool handler itself failed. The settlement is still
  *         recorded (it happened) and the body says exactly that.
  *   200 - settled and served; the settlement is durably recorded for /api/celo/proof.
- * A settled answer (200, or the 500 after settlement) carries the v2 receipt in PAYMENT-RESPONSE.
+ * A settled answer (200, or the 500 after settlement) carries the v2 receipt in PAYMENT-RESPONSE
+ * when its transaction hash is known.
  * The tool is asked about celoScopedAgentId(input.agentId): a bare token id is Celo's here.
  */
 export async function celoServeTool(
@@ -1130,20 +1144,26 @@ export async function celoServeTool(
     }
 
     // The v2 receipt: the SettlementResponse fields the spec defines, base64, beside the fuller
-    // settlement object the body carries. `transaction` is the empty string only when no hash is
-    // known (a confirmation that named none, or a read-back the facilitator's record could not
-    // name); the body's confirmedBy says which party confirmed the payment. `amount` is what the
-    // signed authorization moves, the units EIP-3009 transfers exactly.
+    // settlement object the body carries. It is sent only with the transaction hash. The spec reads
+    // an empty `transaction` as "no transaction was broadcast" (x402-specification-v2.md 5.3.2),
+    // which a settled EIP-3009 payment never is, so a confirmation that named no hash, or a
+    // read-back the facilitator's record could not name, gets no PAYMENT-RESPONSE: the body's
+    // settlement says it settled and who confirmed it (confirmedBy). The hash has to be one (32
+    // bytes, hex) to go in a receipt. `amount` is what the signed authorization moves, the units
+    // EIP-3009 transfers exactly.
     const value = typeof authorization?.value === 'string' && /^\d+$/.test(authorization.value) ? authorization.value : undefined
-    const headers = {
-      'PAYMENT-RESPONSE': celoBase64Json({
-        success: true,
-        transaction: s.settleTx ?? '',
-        network: status.network,
-        ...(payer ? { payer } : {}),
-        ...(value ? { amount: value } : {}),
-      }),
-    }
+    const receiptTx = s.settleTx && /^0x[0-9a-fA-F]{64}$/.test(s.settleTx) ? s.settleTx : undefined
+    const headers: Record<string, string> = receiptTx
+      ? {
+          'PAYMENT-RESPONSE': celoBase64Json({
+            success: true,
+            transaction: receiptTx,
+            network: status.network,
+            ...(payer ? { payer } : {}),
+            ...(value ? { amount: value } : {}),
+          }),
+        }
+      : {}
 
     const handler = deps.handlers?.[tool] ?? defaultHandlers(status)[tool]
     try {
@@ -1226,6 +1246,73 @@ export async function celoServeTool(
           used === false
             ? `the facilitator refused before broadcasting and the buyer's authorization is unspent on-chain: nothing was charged and nothing was served. ${TOP_UP_NOTE}`
             : `the facilitator refused to settle; the chain could not be read to confirm that nothing moved, so check the payTo address on the explorer. ${TOP_UP_NOTE}`,
+      },
+    }
+  }
+  // A settlement that failed outright: the facilitator answered with a verdict (HTTP 200 or 4xx,
+  // success false), named no transaction it broadcast and no pending one, and the chain shows the
+  // buyer's nonce unspent. x402 v2 maps that to a 402 ("Payment Failed | 402 | Payment verification
+  // or settlement failed", in the HTTP transport spec linked at "the 402 challenge" above), whose
+  // failure example, like the reference server's settlement-failure response, carries
+  // PAYMENT-RESPONSE { success: false, errorReason, transaction: "", network, payer }. A fresh
+  // PAYMENT-REQUIRED rides along, since the buyer may pay again with a new authorization. Only this
+  // case: a timeout, a facilitator 5xx, or an answer that names a broadcast or pending transaction
+  // is no verdict that nothing was broadcast, so those stay the 502s below with no receipt and no
+  // fresh price. A failure receipt there could send a stock client to pay again while the first
+  // transfer may still land.
+  const broadcastNamed = typeof said?.transaction === 'string' && said.transaction.startsWith('0x')
+  const pending = said?.errorReason === 'settlement_pending' || said?.error === 'settlement_pending'
+  const refusedOutright =
+    settleError === null &&
+    settle !== null &&
+    (settle.status === 200 || (settle.status >= 400 && settle.status < 500)) &&
+    (said?.success === false || said?.settled === false) &&
+    !broadcastNamed &&
+    !pending
+  if (used === false && refusedOutright) {
+    // A spec error code ("insufficient_funds", "invalid_exact_evm_payload_authorization_valid_before")
+    // when the facilitator gave one; the full sentence stays in the body's reason.
+    const errorReason =
+      [said?.errorReason, said?.error].find((v): v is string => typeof v === 'string' && /^[a-z][a-z0-9_]{0,99}$/.test(v)) ??
+      'unexpected_settle_error'
+    return {
+      httpStatus: 402,
+      body: {
+        error: 'celo facilitator settle failed',
+        reason,
+        charged: false,
+        note: "the facilitator refused to settle and the buyer's authorization is unspent on-chain, so nothing was charged. The tool was not served and this payment was not resubmitted; retry with a fresh payment.",
+      },
+      headers: {
+        'PAYMENT-RESPONSE': celoBase64Json({
+          success: false,
+          errorReason,
+          transaction: '',
+          network: status.network,
+          ...(payer ? { payer } : {}),
+        }),
+        'PAYMENT-REQUIRED': celoBase64Json(
+          celoPaymentRequired(tool, status, {
+            origin: deps.origin,
+            refusal: `settlement failed (${errorReason}); the authorization is unspent on-chain, so nothing was charged. Pay again with a fresh authorization.`,
+          }),
+        ),
+      },
+    }
+  }
+  // settlement_pending is not a failure: the facilitator broadcast the transfer and could not see it
+  // confirm, and the spec calls it non-terminal ("the transaction may still confirm on chain"). An
+  // unspent nonce read a moment later says only that it has not landed yet, so nothing here may say
+  // that nothing was charged.
+  if (pending) {
+    return {
+      httpStatus: 502,
+      body: {
+        error: 'celo facilitator settle failed',
+        reason,
+        charged: 'unknown',
+        ...(broadcastNamed ? { tx: said?.transaction } : {}),
+        note: 'settlement is PENDING and the money may still move: the facilitator broadcast the transfer and could not confirm it, and a pending transfer can still land. The tool was NOT served and this payment was NOT resubmitted (that could double-settle). Check the payTo address on the explorer before retrying, and retry only with a FRESH payment.',
       },
     }
   }

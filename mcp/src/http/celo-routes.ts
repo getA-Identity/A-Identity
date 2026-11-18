@@ -41,13 +41,21 @@ export const CELO_TOOL_PATH = /^\/api\/celo\/tools\/([a-z_]+)$/
 /**
  * The CORS a Celo paid tool route answers with. Any origin may call it, because the buyer is any
  * agent or page and its credential is the signed payment in a request header, never a cookie or a
- * session: so no credentials. The request headers a payment needs are allowed, and the v2
+ * session: so no credentials. The request headers a paid call carries are allowed, and the v2
  * challenge and receipt headers are exposed, since a browser hides response headers from
  * cross-origin script unless they are listed. This rail sends no other payment header.
+ *
+ * Allowed, besides Content-Type and the payment under either name: Access-Control-Expose-Headers
+ * as a REQUEST header. The reference browser clients set it on their paid retry (@x402/fetch, read
+ * at 2.18.0 and 2.29.0, and @x402/axios send "PAYMENT-RESPONSE,X-PAYMENT-RESPONSE" in it; the v1
+ * x402-fetch sends "X-PAYMENT-RESPONSE"). It is not CORS-safelisted, so a browser names it in the
+ * preflight, and a preflight that does not allow it stops the paid POST before it is sent. The
+ * response headers those clients read are PAYMENT-REQUIRED and PAYMENT-RESPONSE, both exposed, and
+ * X-PAYMENT-RESPONSE only when PAYMENT-RESPONSE is missing; this rail never sends that one.
  */
 export const CELO_TOOL_CORS: Readonly<Record<string, string>> = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type, PAYMENT-SIGNATURE, X-PAYMENT',
+  'Access-Control-Allow-Headers': 'Content-Type, PAYMENT-SIGNATURE, X-PAYMENT, Access-Control-Expose-Headers',
   'Access-Control-Expose-Headers': 'PAYMENT-REQUIRED, PAYMENT-RESPONSE',
 }
 

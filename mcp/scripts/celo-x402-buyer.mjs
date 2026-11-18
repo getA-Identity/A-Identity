@@ -19,7 +19,9 @@
  *       { x402Version: 2, resource, accepted: <the accepts entry, unchanged>,
  *         payload: { signature, authorization: { from, to, value, validAfter,
  *                                                validBefore, nonce } } })
- *  4. A settled answer carries the receipt base64 in the PAYMENT-RESPONSE header.
+ *  4. A settled answer carries the receipt base64 in the PAYMENT-RESPONSE header, whenever the
+ *     settlement hash is known. A settlement the facilitator refuses while the authorization
+ *     stays unspent on-chain is a 402 whose PAYMENT-RESPONSE says success false: nothing moved.
  *
  * Usage:
  *   node --env-file=.env scripts/celo-x402-buyer.mjs \
