@@ -198,7 +198,7 @@
     }
   ],
   "supportsAuthenticatedExtendedCard": false,
-  "note": "ERC-8004 agents #1259 (Arbitrum One) and #73232 (Base) were registered by A-Identity and are still held by the former operating wallet, an address A-Identity retired on 2026-11-11 because someone else holds its key, so A-Identity does not control them alone. They are not ours and this card does not vouch for them, although their tokenURIs still point here. Our oracle validator revoked the feedback it had written on chain for both on 2026-11-17 (revokeFeedback txs 0xa20cbe45... on Arbitrum One and 0x8f75a063... on Base; the full hashes are in the provenance ledger at https://a-identity.xyz/proof), and A-Identity decided that day not to try to move them. Never pay or fund their owner or their agent wallet.",
+  "note": "ERC-8004 agents #1259 (Arbitrum One) and #73232 (Base) were registered by A-Identity but are held by the former operating wallet, which A-Identity retired on 2026-11-11, so A-Identity does not control them alone. They are not ours and this card does not vouch for them, although their tokenURIs still point here. Our oracle validator revoked its feedback for both on 2026-11-17 (the transactions are in the provenance ledger at https://a-identity.xyz/proof). Never pay or fund their owner or their agent wallet.",
   "registrations": [
     {
       "chain": "eip155:5042",
@@ -235,7 +235,7 @@
       "owner": "0xCB8824ffAF30687E36374C08eC52298b62871bdf",
       "tx": "0x0a821026621e5b35ff5602f81348b276b0d0f1b61a3892365658295fc5bcb22e",
       "explorer": "https://celoscan.io/nft/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432/9759",
-      "note": "ERC-8004 IdentityRegistry on Celo mainnet; the identity behind the first-party Celo x402 rail. Registered 2026-08-09 by the Celo payTo wallet of the time, 0xF43F...742D. On 2026-11-11 it moved to 0xCB88...1bdf, the wallet a person holds that also holds agent #0 on Arc Mainnet and on Robinhood Chain, because 0xF43F comes from the same seed as 0xd305...ed36; one block after it moved, someone else used 0xF43F's key to take its CELO. A-Identity retired both addresses that day: neither is A-Identity's, so never pay or fund either."
+      "note": "ERC-8004 IdentityRegistry on Celo mainnet; the identity behind the first-party Celo x402 rail. Registered 2026-08-09 and held since 2026-11-11 by 0xCB88...1bdf, the wallet that also holds agent #0 on Arc Mainnet and on Robinhood Chain. Its first holder, 0xF43F...742D, is retired: never pay or fund it."
     },
     {
       "chain": "eip155:5042002",
