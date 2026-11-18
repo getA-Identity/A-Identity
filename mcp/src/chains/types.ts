@@ -55,6 +55,13 @@ export interface ChainContracts {
    */
   selfAgentRegistry?: string
   /**
+   * The canonical Multicall3 contract (mds1/multicall), for batched READS in one eth_call.
+   * Set only where eth_getCode found it, never assumed from it being "on every chain". Today
+   * it serves one read: which Self Agent IDs a wallet holds, which the registry above cannot
+   * answer by itself because it is not enumerable (self-agent-id.ts). Never sent a transaction.
+   */
+  multicall3?: string
+  /**
    * Circle CCTP V2 on this chain. EVM chains carry TokenMessengerV2 and
    * MessageTransmitterV2 (Circle deploys both at one address on every EVM chain);
    * Stellar carries TokenMessengerMinter, MessageTransmitter and the CctpForwarder that a

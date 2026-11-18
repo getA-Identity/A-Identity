@@ -29,6 +29,13 @@ import { evmChainIdFromCaip2, isValidCaip2 } from './caip.js'
  */
 const CREATE2_FACTORY = '0x4e59b44847B379578588920cA78FbF26c0B4956C'
 
+/**
+ * The canonical Multicall3 (mds1/multicall), for batched reads only. Named per chain, and only
+ * where a live eth_getCode found it: Celo and Celo Sepolia on 2026-11-18 (3808 bytes on each,
+ * one code hash). The one read it serves is the Self Agent ID holder scan in self-agent-id.ts.
+ */
+const MULTICALL3 = '0xcA11bde05977b3631167028862bE2a173976CA11'
+
 export const CHAINS: ChainDescriptor[] = [
   // Order is the DISPLAY order everywhere downstream (console, landing, manifest,
   // llms buckets), set deliberately on 2026-08-30: Arc, Stellar and Algorand lead as
@@ -1091,6 +1098,9 @@ export const CHAINS: ChainDescriptor[] = [
       // agent 1 (hasHumanProof true, isProofFresh true, agentIdToAgentKey -> agentKeyToAgentId
       // round trip, sameHuman(1,1) true, sameHuman(1,2) false). Read-only for us.
       selfAgentRegistry: '0xaC3DF9ABf80d0F5c020C06B04Cced27763355944',
+      // eth_getCode 2026-11-18: 3808 bytes. One aggregate3 eth_call read ownerOf(1..260) on
+      // the Self registry above in about 300 ms, which is how a linked-mode holder is found.
+      multicall3: MULTICALL3,
     },
     confirmations: 3,
     // cUSD was rebranded USDm (same contract, 0x765DE816845861e75A25fCA122bb6898B8B1282a).
@@ -1136,6 +1146,8 @@ export const CHAINS: ChainDescriptor[] = [
       // with the same reads as mainnet; here sameHuman(1,2) is true because mock documents
       // share a nullifier, which is exactly why testnet reads are labeled testnet.
       selfAgentRegistry: '0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379',
+      // eth_getCode 2026-11-18: 3808 bytes, with the same keccak256 as the code on Celo mainnet.
+      multicall3: MULTICALL3,
     },
     confirmations: 3,
     stablecoins: ['USDC'],

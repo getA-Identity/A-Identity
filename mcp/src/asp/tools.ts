@@ -18,6 +18,10 @@
  * nearTargetOf). It is answered by A-Identity's NEAR verdict engine (../near-check/check.ts),
  * the same engine the NEAR SDK runs, and mapped into these same outputs with no field added
  * (../near-check/trust.ts says where each part goes).
+ *
+ * The Self Agent ID read behind `human_proof` also knows Self's linked mode for an ERC-8004
+ * agent on Celo (selfLinkedIdentity): a Self Agent ID held by the agent's owner, or keyed by
+ * its ERC-8004 agent wallet. Same fields, same prices, and every other target reads as before.
  */
 import { createIdentityProvider, isSafePublicHttpUrl } from '../erc8004.js'
 import { ARC_CHAIN, nearTargetOf, type NearTarget } from '../chains/index.js'
@@ -32,7 +36,7 @@ import {
   nearReputationBasis,
 } from '../near-check/trust.js'
 import { readValidationOn } from '../validation-registry.js'
-import { readHumanProofFor, sameHumanOn, type HumanProofRead } from '../self-agent-id.js'
+import { readHumanProofFor, sameHumanOn, supportsHumanProof, type HumanProofRead, type LinkedIdentity } from '../self-agent-id.js'
 import { computeAgentReputation, type ReputationResult } from '../reputation.js'
 import { addressInQuery, recordNamedBy } from '../agent-query.js'
 import {
@@ -317,9 +321,11 @@ async function gather(agentId: string, deps: GatherDeps = {}): Promise<Bundle> {
   // registry on Celo. Timeout-guarded like every other on-chain read behind a paid call, and
   // informational in risk_check: it is surfaced, not scored, so a registry outage or an
   // agent that never went through Self cannot flip a verdict on its own. counterparty_check
-  // is the one place it becomes a signal, through sameHuman.
+  // is the one place it becomes a signal, through sameHuman. For an ERC-8004 agent on Celo the
+  // lookup also tries its ERC-8004 agent wallet as a key and reads Self's linked mode through
+  // its owner (see selfLinkedIdentity); every other agent gets the agent-key lookup it always got.
   const humanProof: Bundle['humanProof'] = await withTimeout(
-    (deps.readHumanProof ?? readHumanProofFor)(anchorChain, selfLookupCandidates(platform, identity, address ?? q)),
+    (deps.readHumanProof ?? readHumanProofFor)(anchorChain, selfLookupCandidates(platform, identity, address ?? q), { erc8004: selfLinkedIdentity(identity, anchorChain) }),
     RPC_TIMEOUT_MS,
     null,
   )
@@ -452,6 +458,26 @@ export function selfLookupCandidates(
     if (!out.includes(a)) out.push(a)
   }
   return out
+}
+
+/**
+ * The ERC-8004 identity that Self's linked mode is read through, or null when there is none to
+ * read. In linked mode the Self Agent ID is held by the human's wallet and the agent key is a
+ * separate address, so an agent whose owner holds one is missed by the candidates above.
+ *
+ * Scoped by founder decision on 2026-11-18 (CLAUDE.md): an ERC-8004 agent whose identity is on
+ * a chain with a Self registry (Celo, Celo Sepolia), resolved in full (a partial identity has no
+ * token id), and on the chain the lookup is anchored on, because a token of the same number on
+ * another chain is another agent. Everything else gets null, which leaves the lookup exactly as
+ * it was. Pure, so it is unit-testable.
+ */
+export function selfLinkedIdentity(
+  identity: { chain: string; tokenId: number; owner?: string | null; partial?: boolean } | null,
+  anchorChain: string,
+): LinkedIdentity | null {
+  if (!identity || identity.partial || identity.chain !== anchorChain || !supportsHumanProof(identity.chain)) return null
+  if (typeof identity.owner !== 'string' || !isAddress(identity.owner) || !Number.isSafeInteger(identity.tokenId) || identity.tokenId < 0) return null
+  return { chain: identity.chain, tokenId: BigInt(identity.tokenId), owner: identity.owner.toLowerCase() }
 }
 
 /**

@@ -35,6 +35,14 @@ public/llms-full.txt, public/.well-known/ (agent card, MCP server card, agent sk
   NEAR testnet targets only (near:testnet:<id> or a bare name ending in .testnet, the last
   branch of asp/tools.ts gather()), with schemas, prices and every older target form
   unchanged; asp/payee-forms.test.ts holds the older forms to their old answers.
+  A second exception, by founder decision on 2026-11-18: the trust tools' Self Agent ID
+  lookup may read Self's linked mode (a Self Agent ID held by an ERC-8004 agent's owner, or
+  keyed by its agentWallet) for Celo agents only: an ERC-8004 identity on Celo or Celo
+  Sepolia (the chains whose descriptor names a Self registry), resolved in full and on the
+  chain the lookup is anchored on (asp/tools.ts selfLinkedIdentity). Schemas, prices and
+  every older target form stay unchanged, an agent key that matched before answers exactly
+  as before, and the answer says what was found without claiming an agent key it did not
+  verify; mcp/src/self-agent-id.test.ts holds each mode and a failed read to its answer.
 
 ## Structure (see mcp/README.md "Module map" for the full version)
 

@@ -225,6 +225,14 @@ export const MULTICALL3_FROM_ABI = [
  * nullifier is a scoped per-human identifier that is public on-chain but is still hashed
  * before it leaves this codebase. Verified against Celo mainnet and Celo Sepolia with real
  * reads on 2026-09-09 (see the registry comment on `selfAgentRegistry`).
+ *
+ * The last three are the holder side, for Self's linked mode, where the Self Agent ID NFT is
+ * held by the human's wallet and the agent key is a separate address. The registry is a
+ * soulbound ERC-721 without the enumerable extension, so balanceOf says how many IDs a wallet
+ * holds and ownerOf, read across the ids, says which. Read on Celo mainnet on 2026-11-18:
+ * balanceOf(0x9478...9d15) = 1, ownerOf(197) = that wallet, agentIdToAgentKey(197) a
+ * different address; the deployed implementation dispatches all three (its bytecode carries
+ * their selectors, and no tokenOfOwnerByIndex or totalSupply).
  */
 export const SELF_AGENT_REGISTRY_ABI = [
   { type: 'function', name: 'agentKeyToAgentId', stateMutability: 'view', inputs: [{ name: 'agentKey', type: 'bytes32' }], outputs: [{ type: 'uint256' }] },
@@ -236,6 +244,19 @@ export const SELF_AGENT_REGISTRY_ABI = [
   { type: 'function', name: 'getProofProvider', stateMutability: 'view', inputs: [{ name: 'agentId', type: 'uint256' }], outputs: [{ type: 'address' }] },
   { type: 'function', name: 'sameHuman', stateMutability: 'view', inputs: [{ name: 'agentIdA', type: 'uint256' }, { name: 'agentIdB', type: 'uint256' }], outputs: [{ type: 'bool' }] },
   { type: 'function', name: 'maxAgentsPerHuman', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
+  { type: 'function', name: 'balanceOf', stateMutability: 'view', inputs: [{ name: 'owner', type: 'address' }], outputs: [{ type: 'uint256' }] },
+  { type: 'function', name: 'ownerOf', stateMutability: 'view', inputs: [{ name: 'tokenId', type: 'uint256' }], outputs: [{ type: 'address' }] },
+  { type: 'function', name: 'agentIdToAgentKey', stateMutability: 'view', inputs: [{ name: 'agentId', type: 'uint256' }], outputs: [{ type: 'bytes32' }] },
+] as const
+
+/**
+ * ERC-8004 IdentityRegistry `getAgentWallet`: the wallet an agent declares in the registry
+ * (the zero address when none is set, as after a transfer). Read on the Celo registry on
+ * 2026-11-18: getAgentWallet(9687) returned a wallet that is not its owner, and
+ * getAgentWallet(9907) its owner.
+ */
+export const ERC8004_AGENT_WALLET_ABI = [
+  { type: 'function', name: 'getAgentWallet', stateMutability: 'view', inputs: [{ name: 'agentId', type: 'uint256' }], outputs: [{ type: 'address' }] },
 ] as const
 
 export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const
