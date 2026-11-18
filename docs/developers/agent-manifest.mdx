@@ -30,6 +30,21 @@ control. The `interaction` block spells out the agent-to-agent path (verify, the
 settle over x402) and the agent-to-human path (the agent proposes, a person
 approves, then it settles).
 
+## The Card Is Also An ERC-8004 Registration File
+
+Our agents #0 on Arc Mainnet, #0 on Robinhood Chain and #9759 on Celo point their tokenURI
+at `/.well-known/agent-card.json`, so the same file is their ERC-8004 registration file
+(`registration-v1`) as well as the A2A card. Besides the A2A fields it carries:
+
+| Field | What It Says |
+| --- | --- |
+| `type` | `https://eips.ethereum.org/EIPS/eip-8004#registration-v1` |
+| `image` | The A-Identity mark, a square PNG |
+| `services` | The web app, the MCP endpoint, this A2A card, the Celo check page and the four paid Celo tools |
+| `active` | `true` |
+| `supportedTrust` | `reputation` |
+| `registrations` | Each registration as a numeric `agentId` and an `agentRegistry` written `{namespace}:{chainId}:{registry}` |
+
 ## What We Deliberately Do Not Declare
 
 The A2A agent card at `/.well-known/agent-card.json` tracks A2A 1.0 and lists only

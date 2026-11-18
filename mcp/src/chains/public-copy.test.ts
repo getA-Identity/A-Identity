@@ -100,10 +100,24 @@ test('README names the registry address of every wired chain that has one', () =
   }
 })
 
-test('the agent card advertises every agent the provenance ledger records', async () => {
+test('the agent card advertises every agent the provenance ledger records, and is a valid ERC-8004 registration file', async () => {
   const { PROVENANCE } = await import('./provenance.js')
+  const { CELO_TOOLS } = await import('../celo-x402.js')
+  type Registration = { chain?: string; agentId?: unknown; agentRegistry?: unknown; caip?: string; registry?: string }
+  type Service = { name?: unknown; endpoint?: unknown; version?: unknown; skills?: unknown }
   const card = JSON.parse(repo('public/.well-known/agent-card.json')) as {
-    registrations?: { chain?: string; registry?: string }[]
+    type?: unknown
+    name?: unknown
+    description?: unknown
+    image?: unknown
+    active?: unknown
+    x402Support?: unknown
+    supportedTrust?: unknown
+    protocolVersion?: string
+    provider?: { url?: string }
+    skills?: { id: string }[]
+    services?: Service[]
+    registrations?: Registration[]
   }
   const regs = card.registrations ?? []
   // Our agents only. A formerAgent (provenance.ts) is one A-Identity registered that a retired address still holds: it is
@@ -119,7 +133,68 @@ test('the agent card advertises every agent the provenance ledger records', asyn
       chain.contracts.identityRegistry?.toLowerCase(),
       `agent-card.json names the wrong registry for ${chain.caip2}`,
     )
+    assert.equal(hit.agentId, Number(p.agent.tokenId), `agent-card.json names the wrong agentId for ${chain.caip2}`)
   }
+
+  // The card is also the ERC-8004 registration file (EIP-8004 registration-v1) that Arc Mainnet #0, Robinhood Chain #0 and
+  // Celo #9759 resolve to, and indexers read it as one. Until 2026-11-18 it had no type and no agentRegistry in any
+  // registration, which 8004scan flagged (WA001, WA012), and no services, so the QuickNode explorer listed it unconfigured.
+  assert.equal(card.type, 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1')
+  for (const [field, value] of [['name', card.name], ['description', card.description]] as const) {
+    assert.ok(typeof value === 'string' && value.trim().length > 0, `the registration file has no ${field}`)
+  }
+  assert.equal(card.active, true, 'active is the boolean true')
+  assert.ok(card.x402Support === undefined || typeof card.x402Support === 'boolean', 'x402Support, when present, is a boolean')
+  const site = card.provider?.url ?? ''
+  assert.match(site, /^https:\/\//)
+
+  // The image is a square PNG of at least 512 px on our own site, and the file is in public/, so the link cannot rot unseen.
+  assert.ok(typeof card.image === 'string' && card.image.startsWith(`${site}/`), 'the image is an absolute URL on our site')
+  const png = readFileSync(fileURLToPath(new URL(`../../../public${new URL(card.image).pathname}`, import.meta.url)))
+  assert.equal(png.subarray(1, 4).toString('latin1'), 'PNG', 'the image is a PNG')
+  const [width, height] = [png.readUInt32BE(16), png.readUInt32BE(20)]
+  assert.ok(width === height && width >= 512, `the image is ${width}x${height}; explorers want a square of 512 px or more`)
+
+  // Trust models from the set the spec and 8004scan know.
+  const TRUST = ['reputation', 'crypto-economic', 'tee-attestation', 'social-graph']
+  assert.ok(Array.isArray(card.supportedTrust) && card.supportedTrust.length > 0, 'supportedTrust is a non-empty list')
+  for (const t of card.supportedTrust) assert.ok(TRUST.includes(t), `supportedTrust names an unknown trust model: ${t}`)
+
+  // Every registration carries a numeric agentId and an agentRegistry that names the chain and registry its own fields name.
+  // agentRegistry is the form cardClaims (evm-pay-check) and mintTxHint (erc8004.ts) read before the chain and registry fields.
+  assert.ok(regs.length > 0, 'the registration file lists no registration')
+  for (const r of regs) {
+    assert.ok(typeof r.agentId === 'number' && Number.isSafeInteger(r.agentId) && r.agentId >= 0, `${r.chain}: agentId is a non-negative integer`)
+    assert.match(String(r.agentRegistry), /^[a-z][-a-z0-9]{0,31}:[0-9]+:0x[0-9a-fA-F]{40}$/, `${r.chain}: agentRegistry is {namespace}:{chainId}:{registry}`)
+    assert.equal(r.agentRegistry, `${r.chain}:${r.registry}`, `${r.chain}: agentRegistry disagrees with chain and registry`)
+    assert.equal(r.caip, `${r.agentRegistry}/${r.agentId}`, `${r.chain}: caip disagrees with agentRegistry and agentId`)
+  }
+
+  // Indexers key services by name, so a name appears once, and every endpoint is an https URL.
+  const services = card.services ?? []
+  const names = services.map((s) => String(s.name).toLowerCase())
+  assert.equal(new Set(names).size, names.length, `two services share a name: ${names.join(', ')}`)
+  for (const s of services) {
+    assert.ok(typeof s.name === 'string' && s.name.length > 0 && typeof s.endpoint === 'string' && /^https:\/\//.test(s.endpoint), `service ${String(s.name)} has no https endpoint`)
+  }
+  const service = (name: string) => services.find((s) => s.name === name)
+  assert.equal(service('web')?.endpoint, site)
+  const serverCard = JSON.parse(repo('public/.well-known/mcp/server-card.json')) as { endpoint: string; protocolVersion: string }
+  assert.deepEqual([service('MCP')?.endpoint, service('MCP')?.version], [serverCard.endpoint, serverCard.protocolVersion], 'the MCP service is the server card endpoint at its protocol version')
+  // A2A points at this very file, the one Celo #9759 resolves to, at the card's own protocol version and with its skills.
+  assert.equal(service('A2A')?.endpoint, PROVENANCE.find((p) => p.chain === 'celo')?.agent?.tokenUri)
+  assert.equal(service('A2A')?.version, card.protocolVersion)
+  assert.deepEqual(service('A2A')?.skills, (card.skills ?? []).map((s) => s.id))
+  // The Celo check page is a real route, and the paid Celo tools are listed exactly, in the rail's order.
+  assert.equal(service('celo-check')?.endpoint, `${site}/check/celo`)
+  assert.match(repo('src/App.tsx'), /path="\/check\/celo"/)
+  const tools = `${site}/api/celo/tools/`
+  assert.deepEqual(
+    services.map((s) => String(s.endpoint)).filter((e) => e.startsWith(tools)).map((e) => e.slice(tools.length)),
+    [...CELO_TOOLS],
+  )
+  // The agent wallet is read on chain (setAgentWallet); declaring one in the file is deprecated (8004scan WA083).
+  assert.equal(services.some((s) => s.name === 'agentWallet'), false)
 })
 
 test('.env.example documents every per-chain env var the registry declares', () => {

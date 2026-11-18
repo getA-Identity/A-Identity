@@ -1,5 +1,6 @@
 import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { getChainById } from '../chains/registry.js'
 import type { ChainDescriptor } from '../chains/types.js'
 import { clearDomainCache, eip712DomainSeparator } from '../x402-3009/domain.js'
@@ -227,6 +228,19 @@ test('cardClaims: both registration shapes, and a file that lists someone else',
   assert.equal(cardClaims({ registrations: [{ chain: RH.caip2, registry: REGISTRY, agentId: '0' }] }, { ...want, tokenId: '1' }), 'does_not_claim')
   assert.equal(cardClaims({ registrations: [] }, want), 'unconfirmed')
   assert.equal(cardClaims(null, want), 'unconfirmed')
+
+  // Our own registration file, read the way a buyer's check reads anyone's: it claims every id it lists in the ERC-8004
+  // form it publishes (agentRegistry, read before chain and registry), Celo #9759 among them, and no id it does not list.
+  const ours = JSON.parse(readFileSync(new URL('../../../public/.well-known/agent-card.json', import.meta.url), 'utf8')) as {
+    registrations: { chain: string; registry: string; agentId: number }[]
+  }
+  for (const r of ours.registrations) {
+    assert.equal(cardClaims(ours, { caip2: r.chain, registry: r.registry, tokenId: String(r.agentId) }), 'claims', `${r.chain} #${r.agentId}`)
+  }
+  const celo = getChainById('celo') as ChainDescriptor
+  const onCelo = { caip2: celo.caip2, registry: celo.contracts.identityRegistry as string }
+  assert.equal(cardClaims(ours, { ...onCelo, tokenId: '9759' }), 'claims')
+  assert.equal(cardClaims(ours, { ...onCelo, tokenId: '1' }), 'does_not_claim')
 })
 
 test('readChallenge: the v2 header wins, the v1 body still reads', () => {

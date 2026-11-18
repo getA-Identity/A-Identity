@@ -1,4 +1,5 @@
 {
+  "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
   "protocolVersion": "1.0",
   "name": "A-Identity Trust Oracle",
   "description": "Before one AI agent pays another, it calls A-Identity to verify the counterparty. Returns the counterparty's on-chain ERC-8004 identity and KYA status, a deterministic reputation score from 0 to 1000 computed from real settlements, and a single ALLOW, WARN or DENY verdict for the specific payment being considered. Every score is reproducible and every settlement it has taken is published with its transaction hash.",
@@ -6,6 +7,7 @@
   "url": "https://a-identity.xyz",
   "documentationUrl": "https://a-identity.xyz/llms-full.txt",
   "iconUrl": "https://a-identity.xyz/favicon.png",
+  "image": "https://a-identity.xyz/logo/mark-1024.png",
   "preferredTransport": "JSONRPC",
   "supportedInterfaces": [
     {
@@ -199,10 +201,65 @@
   ],
   "supportsAuthenticatedExtendedCard": false,
   "note": "ERC-8004 agents #1259 (Arbitrum One) and #73232 (Base) were registered by A-Identity but are held by the former operating wallet, which A-Identity retired on 2026-11-11, so A-Identity does not control them alone. They are not ours and this card does not vouch for them, although their tokenURIs still point here. Our oracle validator revoked its feedback for both on 2026-11-17 (the transactions are in the provenance ledger at https://a-identity.xyz/proof). Never pay or fund their owner or their agent wallet.",
+  "services": [
+    {
+      "name": "web",
+      "endpoint": "https://a-identity.xyz"
+    },
+    {
+      "name": "MCP",
+      "endpoint": "https://a-identity.xyz/mcp",
+      "version": "2025-06-18"
+    },
+    {
+      "name": "A2A",
+      "endpoint": "https://a-identity.xyz/.well-known/agent-card.json",
+      "version": "1.0",
+      "skills": [
+        "verify_agent",
+        "reputation_score",
+        "risk_check",
+        "counterparty_check",
+        "guardrail_check",
+        "agent_passport",
+        "trust_preview"
+      ]
+    },
+    {
+      "name": "celo-check",
+      "endpoint": "https://a-identity.xyz/check/celo",
+      "description": "A web page where a person buys one risk_check on Celo mainnet from their own browser wallet. The wallet signs one EIP-3009 authorization in USDC and sends no transaction, and the answer is ALLOW, WARN or DENY with its reasons and the settlement hash."
+    },
+    {
+      "name": "celo-verify_agent",
+      "endpoint": "https://a-identity.xyz/api/celo/tools/verify_agent",
+      "description": "The verify_agent skill, sold per call in USDC on Celo mainnet over x402. A GET answers HTTP 402 with the price and the address to pay, and a paid POST returns the answer."
+    },
+    {
+      "name": "celo-reputation_score",
+      "endpoint": "https://a-identity.xyz/api/celo/tools/reputation_score",
+      "description": "The reputation_score skill, sold per call in USDC on Celo mainnet over x402. A GET answers HTTP 402 with the price and the address to pay, and a paid POST returns the answer."
+    },
+    {
+      "name": "celo-risk_check",
+      "endpoint": "https://a-identity.xyz/api/celo/tools/risk_check",
+      "description": "The risk_check skill, sold per call in USDC on Celo mainnet over x402. A GET answers HTTP 402 with the price and the address to pay, and a paid POST returns the answer."
+    },
+    {
+      "name": "celo-agent_passport",
+      "endpoint": "https://a-identity.xyz/api/celo/tools/agent_passport",
+      "description": "The agent_passport skill, sold per call in USDC on Celo mainnet over x402. A GET answers HTTP 402 with the price and the address to pay, and a paid POST returns the answer."
+    }
+  ],
+  "active": true,
+  "supportedTrust": [
+    "reputation"
+  ],
   "registrations": [
     {
       "chain": "eip155:5042",
-      "agentId": "0",
+      "agentId": 0,
+      "agentRegistry": "eip155:5042:0x8004a169fb4a3325136eb29fa0ceb6d2e539a432",
       "caip": "eip155:5042:0x8004a169fb4a3325136eb29fa0ceb6d2e539a432/0",
       "registry": "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432",
       "owner": "0xCB8824ffAF30687E36374C08eC52298b62871bdf",
@@ -212,14 +269,16 @@
     },
     {
       "chain": "eip155:196",
-      "agentId": "6271",
+      "agentId": 6271,
+      "agentRegistry": "eip155:196:0x8004a169fb4a3325136eb29fa0ceb6d2e539a432",
       "caip": "eip155:196:0x8004a169fb4a3325136eb29fa0ceb6d2e539a432/6271",
       "registry": "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432",
       "note": "OKX.AI ERC-8004 IdentityRegistry on X Layer mainnet; the paid Trust Oracle was listed here until OKX.AI delisted it on 2026-09-26."
     },
     {
       "chain": "eip155:4663",
-      "agentId": "0",
+      "agentId": 0,
+      "agentRegistry": "eip155:4663:0x8004a169fb4a3325136eb29fa0ceb6d2e539a432",
       "caip": "eip155:4663:0x8004a169fb4a3325136eb29fa0ceb6d2e539a432/0",
       "registry": "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432",
       "owner": "0xCB8824ffAF30687E36374C08eC52298b62871bdf",
@@ -229,7 +288,8 @@
     },
     {
       "chain": "eip155:42220",
-      "agentId": "9759",
+      "agentId": 9759,
+      "agentRegistry": "eip155:42220:0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
       "caip": "eip155:42220:0x8004A169FB4a3325136EB29fA0ceB6D2e539a432/9759",
       "registry": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
       "owner": "0xCB8824ffAF30687E36374C08eC52298b62871bdf",
@@ -239,7 +299,8 @@
     },
     {
       "chain": "eip155:5042002",
-      "agentId": "849980",
+      "agentId": 849980,
+      "agentRegistry": "eip155:5042002:0x8004A818BFB912233c491871b3d84c89A494BD9e",
       "caip": "eip155:5042002:0x8004A818BFB912233c491871b3d84c89A494BD9e/849980",
       "registry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
       "owner": "0xCB8824ffAF30687E36374C08eC52298b62871bdf",

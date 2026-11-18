@@ -302,25 +302,34 @@ test('the homepage ring and the agent card advertise only agents A-Identity hold
   const ring = readFileSync(join(REPO, 'src/components/sections/AgentRing.tsx'), 'utf8')
   const card = JSON.parse(readFileSync(join(REPO, 'public/.well-known/agent-card.json'), 'utf8')) as {
     note?: string
-    registrations?: { chain?: string; agentId?: string; owner?: string }[]
+    registrations?: { chain?: string; agentId?: number | string; owner?: string }[]
   }
   const regs = card.registrations ?? []
+  // The card writes agentId as a number, the way ERC-8004 does; the ledger keeps token ids as strings.
+  const idOf = (r: { agentId?: number | string }) => String(r.agentId)
   const ringHas = (chain: string, tokenId: string) => new RegExp(`chain: '${chain}',\\s*tokenId: '${tokenId}'`).test(ring)
+  let ownersCompared = 0
   for (const p of PROVENANCE) {
     const caip2 = getChainById(p.chain)!.caip2
     if (p.formerAgent) {
       const id = p.formerAgent.tokenId
       assert.equal(ringHas(p.chain, id), false, `the ring still has a card for former agent ${p.chain} #${id}`)
-      assert.equal(regs.some((r) => r.chain === caip2 && r.agentId === id), false, `the agent card still registers former agent ${caip2} #${id}`)
+      assert.equal(regs.some((r) => r.chain === caip2 && idOf(r) === id), false, `the agent card still registers former agent ${caip2} #${id}`)
       assert.ok(card.note?.includes(`#${id}`), `the agent card's note does not name former agent #${id}`)
     }
     if (p.agent) {
       assert.ok(ringHas(p.chain, p.agent.tokenId), `the ring has no card for our agent ${p.chain} #${p.agent.tokenId}`)
       // A registration the card shares with the ledger names the owner the ledger names (Arc testnet #849980 since 2026-11-17).
-      const reg = regs.find((r) => r.chain === caip2 && r.agentId === p.agent!.tokenId)
-      if (reg?.owner) assert.equal(reg.owner.toLowerCase(), p.agent.owner.toLowerCase(), `the agent card and the ledger disagree on who holds ${caip2} #${p.agent.tokenId}`)
+      const reg = regs.find((r) => r.chain === caip2 && idOf(r) === p.agent!.tokenId)
+      if (reg?.owner) {
+        ownersCompared += 1
+        assert.equal(reg.owner.toLowerCase(), p.agent.owner.toLowerCase(), `the agent card and the ledger disagree on who holds ${caip2} #${p.agent.tokenId}`)
+      }
     }
   }
+  // Every registration that names an owner was held to the ledger above, so a change in how the card writes an id cannot
+  // quietly turn the owner check off.
+  assert.equal(ownersCompared, regs.filter((r) => r.owner).length, 'a registration in the agent card names an owner but matches no agent in the ledger')
   for (const r of regs) assert.equal(isRetired(r.owner), false, `the agent card registers ${r.chain} #${r.agentId} under a retired owner`)
   assert.match(card.note ?? '', /so A-Identity does not control them alone\. They are not ours and this card does not vouch for them/)
   assert.doesNotMatch(card.note ?? '', /no longer controls/)
