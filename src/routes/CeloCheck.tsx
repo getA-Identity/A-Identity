@@ -236,6 +236,16 @@ function StopBox({ stop }: { stop: Stop }) {
           <TxLink tx={stop.tx} />
         </>
       )}
+      {/* The transaction the facilitator named and did not confirm: where to look before paying again. */}
+      {stop.kind === 'unconfirmed' && (
+        <>
+          {' '}
+          <a href={txUrl(EXPLORER, stop.tx)} target="_blank" rel="noopener noreferrer" className="font-semibold text-accent hover:underline">
+            Open the transaction on Celoscan
+          </a>
+          .
+        </>
+      )}
       {stop.kind === 'ambiguous' && (
         <>
           {' '}
@@ -670,9 +680,13 @@ export default function CeloCheck() {
                 The same check is an x402 v2 call. A request without a payment returns the 402 with the terms, in the PAYMENT-REQUIRED
                 header and the body; a POST with a PAYMENT-SIGNATURE header (base64 of the x402 v2 payment payload) and a JSON body naming
                 the agentId returns the verdict once the facilitator settles, with the receipt and its settlement hash in PAYMENT-RESPONSE
-                whenever that hash is known. A settlement the facilitator refuses while your authorization stays unspent on-chain is a
-                402 whose PAYMENT-RESPONSE says success false: nothing was charged. The older X-PAYMENT header is still accepted. A bare
-                token id is read as Celo's, the same as its CAIP id: each chain's registry numbers its own agents.
+                whenever that hash is known. A settlement the facilitator refuses before broadcasting anything (HTTP 200 or 4xx,
+                success false, no transaction named) while your authorization stays unspent on-chain is a 402 whose PAYMENT-RESPONSE
+                says success false: nothing was charged. A facilitator 5xx, a timeout, a pending settlement, a refusal that names a
+                transaction or a refusal we could not check on-chain is a 502 with no PAYMENT-RESPONSE: its body says charged false or
+                unknown and, when the facilitator named one, the transaction to check on Celoscan before you pay again. The older
+                X-PAYMENT header is still accepted. A bare token id is read as Celo's, the same as its CAIP id: each chain's registry
+                numbers its own agents.
               </p>
               <div className="mt-4 space-y-3">
                 <CopyBlock title="The terms" subtitle="GET, no key, a 402 in JSON" text={`curl -s ${TOOL_API}`} />

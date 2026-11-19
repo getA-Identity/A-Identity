@@ -20,8 +20,13 @@
  *         payload: { signature, authorization: { from, to, value, validAfter,
  *                                                validBefore, nonce } } })
  *  4. A settled answer carries the receipt base64 in the PAYMENT-RESPONSE header, whenever the
- *     settlement hash is known. A settlement the facilitator refuses while the authorization
+ *     settlement hash is known. A settlement the facilitator refuses before broadcasting
+ *     anything (HTTP 200 or 4xx, success false, no transaction named) while the authorization
  *     stays unspent on-chain is a 402 whose PAYMENT-RESPONSE says success false: nothing moved.
+ *     A facilitator 5xx, a timeout, a pending settlement, a refusal that names a transaction or
+ *     a refusal the server could not check on-chain is a 502 with no PAYMENT-RESPONSE: the
+ *     body's `charged` says false or 'unknown', and its `tx`, when the facilitator named one, is
+ *     the transaction to look up on the explorer before paying again.
  *
  * Usage:
  *   node --env-file=.env scripts/celo-x402-buyer.mjs \

@@ -1314,12 +1314,13 @@ test('a settle failure with the authorization unspent says nothing was charged; 
   assert.match((await run(jsonRes(400, EXPIRED), false)).body.reason, /expired before it was settled/, 'the facilitator sentence stays in the body')
   // Not a verdict that nothing was broadcast, or the chain could not be read: the 502s above, with
   // no receipt and no fresh price. A pending settlement is non-terminal (the spec: it "may still
-  // confirm on chain"), so an unspent nonce does not make it a payment that never happened.
+  // confirm on chain"), so an unspent nonce does not make it a payment that never happened, and
+  // neither does it make one of a transfer the facilitator names as broadcast.
   const PENDING_TX = '0x' + 'aa'.repeat(32)
   for (const [answer, used, charged] of [
     [jsonRes(400, EXPIRED), null, 'unknown'],
     [jsonRes(200, { success: false, errorReason: 'settlement_pending', transaction: PENDING_TX }), false, 'unknown'],
-    [jsonRes(400, { success: false, error: 'invalid_transaction_state', transaction: PENDING_TX }), false, false],
+    [jsonRes(400, { success: false, error: 'invalid_transaction_state', transaction: PENDING_TX }), false, 'unknown'],
     [jsonRes(503, { success: false, error: 'unexpected_settle_error' }), false, false],
     [jsonRes(400, { error: 'bad request' }), false, false],
   ] as const) {
@@ -1334,6 +1335,31 @@ test('a settle failure with the authorization unspent says nothing was charged; 
   assert.match(pendingAnswer.body.note, /PENDING and the money may still move/)
   assert.doesNotMatch(pendingAnswer.body.note, /nothing was charged/)
   assert.equal((pendingAnswer.body as { tx?: string }).tx, PENDING_TX, 'the hash to look up on the explorer')
+  // A refusal that names a transaction and is not pending (invalid_transaction_state with a hash, a
+  // 5xx that carries one) leaves the same open question: the named transfer may still land after the
+  // nonce reads unspent, or while the chain cannot be read. Its body says the money is unknown, names
+  // the hash, and sends the buyer to that transaction before paying again; never "nothing was charged".
+  const NAMED_TX = '0x' + 'bb'.repeat(32)
+  for (const [answer, used] of [
+    [jsonRes(400, { success: false, error: 'invalid_transaction_state', transaction: NAMED_TX }), false],
+    [jsonRes(200, { success: false, errorReason: 'invalid_transaction_state', transaction: NAMED_TX }), false],
+    [jsonRes(500, { success: false, error: 'unexpected_settle_error', transaction: NAMED_TX }), false],
+    [jsonRes(400, { success: false, error: 'invalid_transaction_state', transaction: NAMED_TX }), null],
+  ] as const) {
+    const label = `${JSON.stringify(await answer.json())} with the nonce ${String(used)}`
+    const named = await run(answer, used)
+    assert.equal(named.status, 502, label)
+    assert.equal(named.body.error, 'celo facilitator settle failed', label)
+    assert.equal(named.body.charged, 'unknown', label)
+    assert.equal((named.body as { tx?: string }).tx, NAMED_TX, `${label}: the hash to look up on the explorer`)
+    assert.match(named.body.note, /^settlement is UNCONFIRMED and the money may still move/, label)
+    assert.ok(named.body.note.includes(`named transaction ${NAMED_TX}`), `${label}: the note names the transaction`)
+    assert.match(named.body.note, /Check that transaction on the explorer before paying again/, label)
+    assert.doesNotMatch(named.body.note, /nothing was charged/, label)
+    assert.equal(named.headers['PAYMENT-RESPONSE'], undefined, `${label}: no receipt`)
+    assert.equal(named.headers['PAYMENT-REQUIRED'], undefined, `${label}: and no fresh price`)
+  }
+  assert.equal((await run(jsonRes(400, { success: false, error: 'invalid_transaction_state', transaction: NAMED_TX }), false)).body.reason, 'invalid_transaction_state', "the facilitator's error stays in the body as the reason")
 
   // Over the route, the 402 and both its headers reach the wire.
   const onWire = await route('POST', '/api/celo/tools/risk_check', {

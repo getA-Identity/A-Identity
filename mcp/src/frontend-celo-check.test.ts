@@ -602,23 +602,40 @@ test('every ending says what happened to the money, and only the true ones say n
     network: celo.caip2,
     payload: { signature: '0x' + '11'.repeat(65), authorization: { from: buyer.address, to: payTo, value: '5000', validAfter: '0', validBefore: String(NOW + 600), nonce: '0x' + '22'.repeat(32) } },
   })).toString('base64')
-  const settleRefused = await celoServeTool(TOOL, { agentId: '#9759' }, flatPayment, serverStatus, {
-    fetchImpl: (async (url: string | URL | Request) =>
-      String(url).endsWith('/verify')
-        ? new Response(JSON.stringify({ isValid: true }), { status: 200 })
-        : new Response(JSON.stringify({ success: false, transaction: '', error: 'insufficient_funds', errorMessage: 'the payer holds too little USDC' }), { status: 400 })) as typeof fetch,
-    authorizationUsed: async () => false,
-    persist: async () => {
-      throw new Error('nothing may be recorded')
-    },
-    env: { CELO_X402_API_KEY: 'test-key' } as NodeJS.ProcessEnv,
-  })
+  /** The real server's answer when the facilitator settles with `answer` and the chain reads the nonce unspent. */
+  const settleAnswered = (httpStatus: number, answer: Record<string, unknown>) =>
+    celoServeTool(TOOL, { agentId: '#9759' }, flatPayment, serverStatus, {
+      fetchImpl: (async (url: string | URL | Request) =>
+        String(url).endsWith('/verify')
+          ? new Response(JSON.stringify({ isValid: true }), { status: 200 })
+          : new Response(JSON.stringify(answer), { status: httpStatus })) as typeof fetch,
+      authorizationUsed: async () => false,
+      persist: async () => {
+        throw new Error('nothing may be recorded')
+      },
+      env: { CELO_X402_API_KEY: 'test-key' } as NodeJS.ProcessEnv,
+    })
+  const settleRefused = await settleAnswered(400, { success: false, transaction: '', error: 'insufficient_funds', errorMessage: 'the payer holds too little USDC' })
   assert.equal(settleRefused.httpStatus, 402)
   assert.ok(settleRefused.headers?.['PAYMENT-RESPONSE'], 'with the v2 failure receipt')
+  // A refusal that names a transaction, and a pending settlement, while the nonce still reads unspent:
+  // the named transfer may still land, so the server answers the 502 with no receipt, the money
+  // unknown and the hash, and the page reads it as a payment that might have been charged.
+  const NAMED_TX = '0x' + 'cd'.repeat(32)
+  const settleUnconfirmed = await settleAnswered(400, { success: false, error: 'invalid_transaction_state', transaction: NAMED_TX })
+  const settlePending = await settleAnswered(200, { success: false, errorReason: 'settlement_pending', transaction: NAMED_TX })
+  for (const named of [settleUnconfirmed, settlePending]) {
+    assert.equal(named.httpStatus, 502)
+    assert.equal((named.body as { charged?: unknown }).charged, 'unknown')
+    assert.equal((named.body as { tx?: unknown }).tx, NAMED_TX)
+    assert.equal(named.headers?.['PAYMENT-RESPONSE'], undefined, 'no receipt for a transfer that may still land')
+  }
   const cases: { status: number; body: unknown; kind: string; charged: 'no' | 'maybe' | 'yes' }[] = [
     { status: 400, body: { error: 'agentId required' }, kind: 'refusal', charged: 'no' },
     { status: 402, body: challenge, kind: 'refused', charged: 'no' },
     { status: settleRefused.httpStatus, body: settleRefused.body, kind: 'settle_failed', charged: 'no' },
+    { status: settleUnconfirmed.httpStatus, body: settleUnconfirmed.body, kind: 'unconfirmed', charged: 'maybe' },
+    { status: settlePending.httpStatus, body: settlePending.body, kind: 'unconfirmed', charged: 'maybe' },
     { status: 501, body: { error: 'celo x402 not configured' }, kind: 'unavailable', charged: 'no' },
     { status: 502, body: { error: 'celo facilitator verify failed', reason: 'facilitator answered 503' }, kind: 'unavailable', charged: 'no' },
     { status: 502, body: { error: 'celo facilitator settle failed', reason: 'timeout', charged: 'unknown' }, kind: 'ambiguous', charged: 'maybe' },
@@ -651,6 +668,22 @@ test('every ending says what happened to the money, and only the true ones say n
   const refusedEnd = p.readAnswer(settleRefused.httpStatus, settleRefused.body, payTo)
   assert.ok(refusedEnd.kind === 'stopped')
   assert.match(p.stopText(refusedEnd.stop), /^The facilitator did not complete the payment: the payer holds too little USDC\. .*Nothing was charged\.$/)
+  // The named transaction is what the page sends the buyer to, in the sentence and as the stop's tx.
+  const unconfirmedEnd = p.readAnswer(settleUnconfirmed.httpStatus, settleUnconfirmed.body, payTo)
+  assert.ok(unconfirmedEnd.kind === 'stopped')
+  assert.deepEqual(unconfirmedEnd.stop, { kind: 'unconfirmed', tx: NAMED_TX })
+  const unconfirmedText = p.stopText(unconfirmedEnd.stop)
+  assert.match(unconfirmedText, /^Your payment might have been charged: /)
+  assert.ok(unconfirmedText.includes(`named transaction ${NAMED_TX}`), unconfirmedText)
+  assert.match(unconfirmedText, /Check this transaction on the explorer before paying again\.$/)
+  // A body that names a transaction is a maybe whatever else it says; a hash that is not one is not
+  // linked, and that maybe points at the payee instead.
+  const contradictory = p.readAnswer(502, { error: 'celo facilitator settle failed', reason: 'x', charged: false, tx: NAMED_TX }, payTo)
+  assert.ok(contradictory.kind === 'stopped')
+  assert.deepEqual(contradictory.stop, { kind: 'unconfirmed', tx: NAMED_TX })
+  const malformed = p.readAnswer(502, { error: 'celo facilitator settle failed', reason: 'x', charged: 'unknown', tx: '0x1234' }, payTo)
+  assert.ok(malformed.kind === 'stopped')
+  assert.deepEqual(malformed.stop, { kind: 'ambiguous', payTo })
   assert.match(p.stopText({ kind: 'cancelled' }), /^Payment cancelled\. Nothing was charged\.$/)
   // No wallet in the browser ends in a sentence that says what to do, not a spinner, and nothing moved.
   assert.match(p.stopText({ kind: 'no_wallet' }), /^No EVM wallet was found in this browser\. .*Nothing was charged\.$/)
@@ -702,6 +735,16 @@ test('the Celo pay check is routed, in the sitemap, smoked and published for age
   assert.match(page, /post: async \(header, body, name\) => \{[\s\S]*?\[name\]: header/, 'the page sends the payment under the name purchase() gives it')
   assert.doesNotMatch(page, /'X-PAYMENT'/, 'and never picks a header name itself')
   assert.equal((page.match(/apiFetch\(toolPath\(TOOL\),[\s\S]*?credentials: 'omit'/g) ?? []).length, 2, 'the quote and the paid call omit credentials')
+  assert.match(page, /stop\.kind === 'unconfirmed' && \([\s\S]*?txUrl\(EXPLORER, stop\.tx\)/, 'the unconfirmed ending links the transaction it names')
+  // Only a refusal made before anything is broadcast is the 402 with a failure receipt. Every copy that
+  // tells an agent how the rail answers says so, and names the 502 for the rest.
+  const flat = (s: string) => s.replace(/\n\s*(?:\*\s*)?/g, ' ').replace(/\s+/g, ' ')
+  for (const rel of ['src/routes/CeloCheck.tsx', 'public/llms.txt', 'mcp/scripts/celo-x402-buyer.mjs']) {
+    const said = flat(repo(rel))
+    assert.match(said, /refuses before broadcasting anything \(HTTP 200 or 4xx, success false, no transaction named\)/, rel)
+    assert.match(said, /a refusal that names a transaction or a refusal (?:we|the server) could not check on-chain is a 502 with no PAYMENT-RESPONSE/, rel)
+    assert.doesNotMatch(said, /refuses while (?:your|the) authorization stays unspent on-chain is a 402/, rel)
+  }
   const lib = repo('src/lib/celo/x402pay.ts')
   assert.doesNotMatch(lib, /^import (?!type )/m, 'the pay module has no runtime imports, so this suite can load it')
   assert.doesNotMatch(lib, /0x[0-9a-fA-F]{40}/, 'no address is typed into the pay module')

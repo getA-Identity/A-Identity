@@ -376,6 +376,11 @@ export type Stop =
   | { kind: 'paused'; reason: string; until: string | null }
   /** The facilitator did not settle, and the server read the authorization as unspent on-chain. */
   | { kind: 'settle_failed'; reason: string }
+  /**
+   * The facilitator named the transfer it broadcast and did not confirm that it settled (a pending
+   * settlement, or a refusal that names a transaction): the money may have moved, and `tx` says.
+   */
+  | { kind: 'unconfirmed'; tx: string }
   | { kind: 'ambiguous'; payTo: string }
   | { kind: 'paid_unreadable'; tx: string | null }
   | { kind: 'unexpected'; status: number }
@@ -435,7 +440,11 @@ export function readAnswer(httpStatus: number, body: unknown, payTo: string): En
   if (httpStatus === 502) {
     const reason = str(b.reason) ?? (error || 'the facilitator did not answer')
     if (/settle/i.test(error)) {
-      // After a failed settle the server reads the chain: an unspent authorization is a
+      // A transaction the facilitator named and did not confirm can still land, so a body that
+      // names one is read as a maybe whatever else it says, pointed at that transaction.
+      const tx = str(b.tx)
+      if (tx && /^0x[0-9a-fA-F]{64}$/.test(tx)) return { kind: 'stopped', stop: { kind: 'unconfirmed', tx } }
+      // Otherwise the server read the chain after the failed settle: an unspent authorization is a
       // payment that never happened; anything else stays the honest maybe.
       if (b.charged === false) return { kind: 'stopped', stop: { kind: 'settle_failed', reason } }
       return { kind: 'stopped', stop: { kind: 'ambiguous', payTo } }
@@ -465,6 +474,8 @@ export function stopText(stop: Stop): string {
       return `Settlement is paused on our side: ${stop.reason}. ${stop.until ? `It is tried again after ${stop.until}. ` : ''}Nothing was charged.`
     case 'settle_failed':
       return `The facilitator did not complete the payment: ${stop.reason}. Your authorization is unspent on-chain. Nothing was charged.`
+    case 'unconfirmed':
+      return `Your payment might have been charged: the facilitator named transaction ${stop.tx} but did not confirm that it settled, and it can still go through. Check this transaction on the explorer before paying again.`
     case 'ambiguous':
       return `The facilitator did not answer in time, and your payment may still have gone through. Check ${stop.payTo} on the explorer before paying again.`
     case 'paid_unreadable':
@@ -477,7 +488,8 @@ export function stopText(stop: Stop): string {
 }
 
 /** Endings after which this screen does not offer the same payment again: money may be out. */
-export const moneyMayBeOut = (stop: Stop) => stop.kind === 'ambiguous' || stop.kind === 'paid_unreadable' || stop.kind === 'unexpected'
+export const moneyMayBeOut = (stop: Stop) =>
+  stop.kind === 'ambiguous' || stop.kind === 'unconfirmed' || stop.kind === 'paid_unreadable' || stop.kind === 'unexpected'
 
 // ---- one purchase, step by step ----
 

@@ -983,6 +983,9 @@ async function facilitatorPost(
  *   502 - the facilitator failed or answered ambiguously (verify OR settle). The tool
  *         is NOT served and the payment is NOT resubmitted: a repeated settle could
  *         double-spend the buyer's authorization, so the client retries with a fresh one.
+ *         After a failed settle the body's `charged` is false (the authorization reads
+ *         unspent on-chain, and the facilitator named no transaction and no pending one)
+ *         or 'unknown', with `tx` when the facilitator named the transfer to check.
  *   500 - settle succeeded but the tool handler itself failed. The settlement is still
  *         recorded (it happened) and the body says exactly that.
  *   200 - settled and served; the settlement is durably recorded for /api/celo/proof.
@@ -1260,14 +1263,15 @@ export async function celoServeTool(
   // is no verdict that nothing was broadcast, so those stay the 502s below with no receipt and no
   // fresh price. A failure receipt there could send a stock client to pay again while the first
   // transfer may still land.
-  const broadcastNamed = typeof said?.transaction === 'string' && said.transaction.startsWith('0x')
+  // The transaction the facilitator says it broadcast, when it names one.
+  const namedTx = typeof said?.transaction === 'string' && said.transaction.startsWith('0x') ? said.transaction : null
   const pending = said?.errorReason === 'settlement_pending' || said?.error === 'settlement_pending'
   const refusedOutright =
     settleError === null &&
     settle !== null &&
     (settle.status === 200 || (settle.status >= 400 && settle.status < 500)) &&
     (said?.success === false || said?.settled === false) &&
-    !broadcastNamed &&
+    namedTx === null &&
     !pending
   if (used === false && refusedOutright) {
     // A spec error code ("insufficient_funds", "invalid_exact_evm_payload_authorization_valid_before")
@@ -1311,8 +1315,26 @@ export async function celoServeTool(
         error: 'celo facilitator settle failed',
         reason,
         charged: 'unknown',
-        ...(broadcastNamed ? { tx: said?.transaction } : {}),
+        ...(namedTx ? { tx: namedTx } : {}),
         note: 'settlement is PENDING and the money may still move: the facilitator broadcast the transfer and could not confirm it, and a pending transfer can still land. The tool was NOT served and this payment was NOT resubmitted (that could double-settle). Check the payTo address on the explorer before retrying, and retry only with a FRESH payment.',
+      },
+    }
+  }
+  // An answer that names a transaction and is not pending (success false with
+  // invalid_transaction_state and a hash, or a 5xx that carries one) is no verdict that nothing
+  // moved either: the facilitator says it broadcast that transfer, and a broadcast transfer can still
+  // land after the buyer's nonce reads unspent, or while the chain cannot be read at all. So it is
+  // the conservative answer, whatever the nonce read said: the 502 with no receipt and no fresh
+  // price, the money unknown, and the hash to look up before paying again. Never "nothing was charged".
+  if (namedTx) {
+    return {
+      httpStatus: 502,
+      body: {
+        error: 'celo facilitator settle failed',
+        reason,
+        charged: 'unknown',
+        tx: namedTx,
+        note: `settlement is UNCONFIRMED and the money may still move: the facilitator named transaction ${namedTx} without confirming that it settled, and a broadcast transfer can still land even while the buyer's authorization reads unspent. The tool was NOT served and this payment was NOT resubmitted (that could double-settle). Check that transaction on the explorer before paying again, and retry only with a FRESH payment.`,
       },
     }
   }
