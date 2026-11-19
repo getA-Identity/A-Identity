@@ -88,7 +88,7 @@ jobs:
       # Node 20, the same version ci.yml and soroban.yml use. The npm that ships with it
       # is what resolves the lockfiles in this repository, so the audit reads the tree
       # the project actually installs.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
 
