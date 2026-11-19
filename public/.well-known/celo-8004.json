@@ -1,0 +1,34 @@
+{
+  "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+  "name": "A-Identity Trust Oracle",
+  "description": "Before one AI agent pays another, it calls A-Identity to check the counterparty: its on-chain ERC-8004 identity, a deterministic 0 to 1000 reputation computed from real settlements, and an ALLOW, WARN or DENY verdict for the specific payment. Where both sides hold a Self Agent ID it also says whether one human stands behind both. On Celo the trust tools are paid per call in USDC over x402, settled through the first-party Celo facilitator.",
+  "image": "https://a-identity.xyz/favicon.png",
+  "services": [
+    {
+      "name": "web",
+      "endpoint": "https://a-identity.xyz"
+    },
+    {
+      "name": "MCP",
+      "endpoint": "https://a-identity.xyz/mcp",
+      "version": "2025-06-18"
+    },
+    {
+      "name": "A2A",
+      "endpoint": "https://a-identity.xyz/.well-known/agent-card.json"
+    }
+  ],
+  "registrations": [
+    {
+      "agentId": 9759,
+      "agentRegistry": "eip155:42220:0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"
+    }
+  ],
+  "x402Support": false,
+  "active": true,
+  "supportedTrust": [
+    "reputation"
+  ],
+  "onAigora": true,
+  "via": "a-identity"
+}

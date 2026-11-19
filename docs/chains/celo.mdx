@@ -124,6 +124,28 @@ The answer is ALLOW, WARN or DENY with its reasons, the settlement hash on Celos
 line on [/proof/celo](https://a-identity.xyz/proof/celo). A deep link prefills the id and
 never pays on load: `https://a-identity.xyz/check/celo?q=eip155:42220:8004/9759`.
 
+## Listing on Aigora
+
+[Aigora](https://aigora.org) lists Celo agents by reading the canonical IdentityRegistry:
+an agent whose tokenURI document says `"onAigora": true` is listed, and `"via": "a-identity"`
+marks it as coming from us. Agent `#9759` gets its own ERC-8004 registration document for
+this, [/.well-known/celo-8004.json](https://a-identity.xyz/.well-known/celo-8004.json),
+because its current tokenURI is the shared A2A agent card, which is not a registration-v1
+document and which our agents on other chains also point at.
+
+Status: **prepared, not yet signed.** Listing takes one `setAgentURI(9759, ...)` from the
+wallet that holds the agent, signed by the person who holds it; no server of ours has
+that key or sends anything on its behalf. This read-only script checks the live owner, the live tokenURI and the served document against
+Aigora's blocking rules, and prints the exact call for the owner to sign:
+
+```bash
+cd mcp && npm run build && node scripts/celo-8004-aigora.mjs
+```
+
+The document does not claim x402 support yet. Aigora tests a claimed x402 endpoint live
+before it lists it, and our Celo tool routes do not pass that test today, so the claim waits
+for an endpoint that does.
+
 ## Where Celo fits
 
 Celo is the rail that proved the product works against someone else's facilitator, which
