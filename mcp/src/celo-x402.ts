@@ -71,6 +71,9 @@ let settlementPause: { since: Date; reason: string } | null = null
 
 const TOP_UP_NOTE =
   'Our settlement balance at the Celo facilitator (x402.celo.org) is empty, so it refuses to broadcast: nothing is served and nothing is charged until it is topped up. The rail answers 503 for 15 minutes after such a refusal, then tries again.'
+/** The same fact for an answer whose money question is still open: it must not say nothing was charged. */
+const TOP_UP_NOTE_UNREAD =
+  'Our settlement balance at the Celo facilitator (x402.celo.org) is empty, so it refuses to broadcast until it is topped up. The rail answers 503 for 15 minutes after such a refusal, then tries again.'
 
 export type CeloSettlementPause = { paused: false } | { paused: true; since: string; until: string; reason: string }
 
@@ -1248,7 +1251,7 @@ export async function celoServeTool(
         note:
           used === false
             ? `the facilitator refused before broadcasting and the buyer's authorization is unspent on-chain: nothing was charged and nothing was served. ${TOP_UP_NOTE}`
-            : `the facilitator refused to settle; the chain could not be read to confirm that nothing moved, so check the payTo address on the explorer. ${TOP_UP_NOTE}`,
+            : `the facilitator refused to settle; the chain could not be read to confirm that nothing moved, so check the payTo address on the explorer before paying again. ${TOP_UP_NOTE_UNREAD}`,
       },
     }
   }

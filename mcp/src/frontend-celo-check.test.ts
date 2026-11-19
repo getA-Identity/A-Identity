@@ -657,6 +657,9 @@ test('every ending says what happened to the money, and only the true ones say n
     assert.equal((paused.body as { charged?: unknown }).charged, charged)
     assert.equal(paused.headers?.['PAYMENT-RESPONSE'], undefined, 'a pause carries no receipt')
   }
+  // An unread pause leaves the money open, so its note must never also say that nothing was charged.
+  assert.doesNotMatch(String((creditsUnread.body as { note?: unknown }).note), /nothing (is|was) charged/)
+  assert.match(String((creditsUnspent.body as { note?: unknown }).note), /nothing was charged/)
   const cases: { status: number; body: unknown; kind: string; charged: 'no' | 'maybe' | 'yes' }[] = [
     { status: 400, body: { error: 'agentId required' }, kind: 'refusal', charged: 'no' },
     { status: 402, body: challenge, kind: 'refused', charged: 'no' },
