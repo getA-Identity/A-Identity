@@ -7,6 +7,7 @@ import { recoverTypedDataAddress } from 'viem'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import { getChainById } from './chains/registry.js'
 import {
+  _setCeloSettlementPauseForTests,
   celoChallenge,
   celoFacilitatorRequirements,
   celoPaymentRequired,
@@ -58,7 +59,7 @@ type RailStatus = {
   prices: Record<string, number>
   pause: { since: string; until: string; reason: string } | null
 }
-type Stop = { kind: string; text?: string; reason?: string; tx?: string | null; payTo?: string; status?: number; wallet?: string }
+type Stop = { kind: string; text?: string; reason?: string; until?: string | null; charged?: false | 'unknown'; tx?: string | null; payTo?: string; status?: number; wallet?: string }
 type Answer = { decision: string | null; risk: string | null; reasons: string[]; agentId: string; tx: string | null; payer: string | null; resolvedOn: string | null; raw: Record<string, unknown> }
 type End = { kind: 'paid'; answer: Answer } | { kind: 'stopped'; stop: Stop }
 type Auth = Record<string, string>
@@ -602,19 +603,28 @@ test('every ending says what happened to the money, and only the true ones say n
     network: celo.caip2,
     payload: { signature: '0x' + '11'.repeat(65), authorization: { from: buyer.address, to: payTo, value: '5000', validAfter: '0', validBefore: String(NOW + 600), nonce: '0x' + '22'.repeat(32) } },
   })).toString('base64')
-  /** The real server's answer when the facilitator settles with `answer` and the chain reads the nonce unspent. */
-  const settleAnswered = (httpStatus: number, answer: Record<string, unknown>) =>
-    celoServeTool(TOOL, { agentId: '#9759' }, flatPayment, serverStatus, {
-      fetchImpl: (async (url: string | URL | Request) =>
-        String(url).endsWith('/verify')
-          ? new Response(JSON.stringify({ isValid: true }), { status: 200 })
-          : new Response(JSON.stringify(answer), { status: httpStatus })) as typeof fetch,
-      authorizationUsed: async () => false,
-      persist: async () => {
-        throw new Error('nothing may be recorded')
-      },
-      env: { CELO_X402_API_KEY: 'test-key' } as NodeJS.ProcessEnv,
-    })
+  /**
+   * The real server's answer when the facilitator settles with `answer` and the chain reads the nonce
+   * as `used`: unspent unless said, and null for a chain that could not be read. A pause the answer
+   * arms is lifted after it, so no other call here meets it.
+   */
+  const settleAnswered = async (httpStatus: number, answer: Record<string, unknown>, used: boolean | null = false) => {
+    try {
+      return await celoServeTool(TOOL, { agentId: '#9759' }, flatPayment, serverStatus, {
+        fetchImpl: (async (url: string | URL | Request) =>
+          String(url).endsWith('/verify')
+            ? new Response(JSON.stringify({ isValid: true }), { status: 200 })
+            : new Response(JSON.stringify(answer), { status: httpStatus })) as typeof fetch,
+        authorizationUsed: async () => used,
+        persist: async () => {
+          throw new Error('nothing may be recorded')
+        },
+        env: { CELO_X402_API_KEY: 'test-key' } as NodeJS.ProcessEnv,
+      })
+    } finally {
+      _setCeloSettlementPauseForTests(null)
+    }
+  }
   const settleRefused = await settleAnswered(400, { success: false, transaction: '', error: 'insufficient_funds', errorMessage: 'the payer holds too little USDC' })
   assert.equal(settleRefused.httpStatus, 402)
   assert.ok(settleRefused.headers?.['PAYMENT-RESPONSE'], 'with the v2 failure receipt')
@@ -629,6 +639,23 @@ test('every ending says what happened to the money, and only the true ones say n
     assert.equal((named.body as { charged?: unknown }).charged, 'unknown')
     assert.equal((named.body as { tx?: unknown }).tx, NAMED_TX)
     assert.equal(named.headers?.['PAYMENT-RESPONSE'], undefined, 'no receipt for a transfer that may still land')
+  }
+  // The facilitator out of settlement credits, in its live answer of 2026-11-11: the rail pauses itself
+  // and answers 503 with no receipt. Its body says what the chain says of the nonce: unspent is nothing
+  // charged, and a chain that could not be read leaves the money unknown.
+  const OUT_OF_CREDITS = {
+    success: false,
+    transaction: '',
+    error: 'insufficient_credits',
+    errorMessage: 'Out of mainnet settlement funds (this settlement costs 1405 micro-USD). Top up at x402.celo.org.',
+  }
+  const creditsUnspent = await settleAnswered(402, OUT_OF_CREDITS)
+  const creditsUnread = await settleAnswered(402, OUT_OF_CREDITS, null)
+  for (const [paused, charged] of [[creditsUnspent, false], [creditsUnread, 'unknown']] as const) {
+    assert.equal(paused.httpStatus, 503)
+    assert.equal((paused.body as { error?: unknown }).error, 'celo settlement paused')
+    assert.equal((paused.body as { charged?: unknown }).charged, charged)
+    assert.equal(paused.headers?.['PAYMENT-RESPONSE'], undefined, 'a pause carries no receipt')
   }
   const cases: { status: number; body: unknown; kind: string; charged: 'no' | 'maybe' | 'yes' }[] = [
     { status: 400, body: { error: 'agentId required' }, kind: 'refusal', charged: 'no' },
@@ -652,6 +679,10 @@ test('every ending says what happened to the money, and only the true ones say n
       kind: 'paused',
       charged: 'no',
     },
+    { status: creditsUnspent.httpStatus, body: creditsUnspent.body, kind: 'paused', charged: 'no' },
+    { status: creditsUnread.httpStatus, body: creditsUnread.body, kind: 'paused', charged: 'maybe' },
+    // A 503 that is not the rail's pause (a proxy's, with no body) says nothing about the money.
+    { status: 503, body: {}, kind: 'unexpected', charged: 'maybe' },
     { status: 500, body: { error: 'tool execution failed after settlement', settlement: { settled: true, tx: SETTLE_TX } }, kind: 'paid_unreadable', charged: 'yes' },
     { status: 418, body: {}, kind: 'unexpected', charged: 'maybe' },
   ]
@@ -676,6 +707,21 @@ test('every ending says what happened to the money, and only the true ones say n
   assert.match(unconfirmedText, /^Your payment might have been charged: /)
   assert.ok(unconfirmedText.includes(`named transaction ${NAMED_TX}`), unconfirmedText)
   assert.match(unconfirmedText, /Check this transaction on the explorer before paying again\.$/)
+  // Out of credits with the nonce unspent, the pause says nothing was charged. With the chain unread it
+  // says the payment might have been charged and sends the buyer to the payee before paying again.
+  const creditsBody = creditsUnspent.body as { reason: string; until: string }
+  const unspentEnd = p.readAnswer(creditsUnspent.httpStatus, creditsUnspent.body, payTo)
+  assert.ok(unspentEnd.kind === 'stopped')
+  assert.deepEqual(unspentEnd.stop, { kind: 'paused', reason: creditsBody.reason, until: creditsBody.until, charged: false })
+  const unreadEnd = p.readAnswer(creditsUnread.httpStatus, creditsUnread.body, payTo)
+  assert.ok(unreadEnd.kind === 'stopped')
+  const unreadBody = creditsUnread.body as { reason: string; until: string }
+  assert.deepEqual(unreadEnd.stop, { kind: 'paused', reason: unreadBody.reason, until: unreadBody.until, charged: 'unknown', payTo })
+  const unreadText = p.stopText(unreadEnd.stop)
+  assert.match(unreadText, /^Settlement is paused on our side: Out of mainnet settlement funds .*Top up at x402\.celo\.org\. It is tried again after /)
+  assert.match(unreadText, /Your payment might have been charged: /)
+  assert.ok(unreadText.endsWith(`Check ${payTo} on the explorer before paying again.`), unreadText)
+  assert.doesNotMatch(unreadText, /Nothing was charged|\.\./, unreadText)
   // A body that names a transaction is a maybe whatever else it says; a hash that is not one is not
   // linked, and that maybe points at the payee instead.
   const contradictory = p.readAnswer(502, { error: 'celo facilitator settle failed', reason: 'x', charged: false, tx: NAMED_TX }, payTo)
@@ -736,14 +782,48 @@ test('the Celo pay check is routed, in the sitemap, smoked and published for age
   assert.doesNotMatch(page, /'X-PAYMENT'/, 'and never picks a header name itself')
   assert.equal((page.match(/apiFetch\(toolPath\(TOOL\),[\s\S]*?credentials: 'omit'/g) ?? []).length, 2, 'the quote and the paid call omit credentials')
   assert.match(page, /stop\.kind === 'unconfirmed' && \([\s\S]*?txUrl\(EXPLORER, stop\.tx\)/, 'the unconfirmed ending links the transaction it names')
+  assert.match(
+    page,
+    /\(stop\.kind === 'paused' && stop\.charged === 'unknown'\)\) && \([\s\S]*?addressUrl\(EXPLORER, stop\.payTo\)/,
+    'a pause that left the money unknown links the payee',
+  )
   // Only a refusal made before anything is broadcast is the 402 with a failure receipt. Every copy that
-  // tells an agent how the rail answers says so, and names the 502 for the rest.
+  // tells an agent how the rail answers says so in the same words, and names the rest: the terms except
+  // while paused, the 503 pause when the facilitator is out of settlement credits (the money unknown
+  // when the chain cannot be read), the 502 for every other failed settlement, and an authorization the
+  // chain shows spent, which is served as settled whatever the facilitator said.
   const flat = (s: string) => s.replace(/\n\s*(?:\*\s*)?/g, ' ').replace(/\s+/g, ' ')
   for (const rel of ['src/routes/CeloCheck.tsx', 'public/llms.txt', 'mcp/scripts/celo-x402-buyer.mjs']) {
     const said = flat(repo(rel))
-    assert.match(said, /refuses before broadcasting anything \(HTTP 200 or 4xx, success false, no transaction named\)/, rel)
-    assert.match(said, /a refusal that names a transaction or a refusal (?:we|the server) could not check on-chain is a 502 with no PAYMENT-RESPONSE/, rel)
+    assert.match(said, /without a payment [^.]*except while settlement is paused/, rel)
+    assert.match(said, /If the tool fails after the payment settled, the answer is a 500 whose body says it settled\./, rel)
+    assert.match(said, /A payment that does not verify gets a fresh 402 that says why, and a facilitator that cannot verify it at all is a 502; neither charges anything\./, rel)
+    assert.match(
+      said,
+      /refuses before broadcasting anything \(HTTP 200 or 4xx, success false, no transaction named\) while (?:your|the) authorization reads unspent on-chain is a 402 whose PAYMENT-RESPONSE says success false: nothing was charged\./,
+      rel,
+    )
+    assert.match(said, /out of settlement credits, the answer is a 503 "celo settlement paused" instead, with no PAYMENT-RESPONSE\./, rel)
+    assert.match(said, /Its body says charged false when (?:your|the) authorization reads unspent and charged unknown when the chain cannot be read\./, rel)
+    assert.match(said, /For about 15 minutes after that, every call, paid or not, gets a 503 "celo settlement paused" and is not charged\./, rel)
+    assert.match(
+      said,
+      /Every other failed settlement is a 502 with no PAYMENT-RESPONSE, such as a facilitator 5xx, a 4xx that is not a verdict, a timeout, a pending settlement, a refusal that names a transaction or a refusal (?:we|the server) could not check on-chain\./,
+      rel,
+    )
+    assert.match(
+      said,
+      /Its body says charged false or unknown and, when the facilitator named one, the transaction (?:\(`tx`\) )?to (?:check on Celoscan|look up on the explorer) before (?:you pay|paying) again\./,
+      rel,
+    )
+    assert.match(
+      said,
+      /If a settlement fails in any of these ways and the chain shows (?:your|the) authorization already spent, the payment went through and the call is served as settled: a 200, with the receipt when the hash is known\./,
+      rel,
+    )
     assert.doesNotMatch(said, /refuses while (?:your|the) authorization stays unspent on-chain is a 402/, rel)
+    // A pause can leave the money unknown, so no copy says a 503 charged nothing without saying when.
+    assert.doesNotMatch(said, /503[^.]*nothing (?:was|is) charged/i, rel)
   }
   const lib = repo('src/lib/celo/x402pay.ts')
   assert.doesNotMatch(lib, /^import (?!type )/m, 'the pay module has no runtime imports, so this suite can load it')
@@ -784,6 +864,7 @@ test('a paused rail is refused before the wallet is asked anything', async () =>
   })
   assert.ok(end && end.kind === 'stopped')
   assert.equal(end.stop.kind, 'paused')
+  assert.equal(end.stop.charged, false, 'stopped at the door, nothing was attempted')
   assert.match(p.stopText(end.stop), /paused/)
   assert.match(p.stopText(end.stop), /Nothing was charged\.$/)
   assert.equal(quoted, 0)

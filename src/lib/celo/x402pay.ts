@@ -372,8 +372,16 @@ export type Stop =
   | { kind: 'wallet'; wallet: string; text: string }
   | { kind: 'refused'; reason: string }
   | { kind: 'unavailable'; reason: string }
-  /** The rail is holding off on settlements; nothing was attempted. */
-  | { kind: 'paused'; reason: string; until: string | null }
+  /**
+   * The rail is holding off on settlements (the facilitator refused to settle for us). `charged` is
+   * false when nothing was attempted, or when the server read the authorization as unspent on-chain.
+   */
+  | { kind: 'paused'; reason: string; until: string | null; charged: false }
+  /**
+   * The same pause, answered to a payment the facilitator refused for want of credits while the
+   * server could not read the chain: the money may have moved, and `payTo` is where to look.
+   */
+  | { kind: 'paused'; reason: string; until: string | null; charged: 'unknown'; payTo: string }
   /** The facilitator did not settle, and the server read the authorization as unspent on-chain. */
   | { kind: 'settle_failed'; reason: string }
   /**
@@ -435,8 +443,19 @@ export function readAnswer(httpStatus: number, body: unknown, payTo: string): En
   }
   if (httpStatus === 402) return { kind: 'stopped', stop: { kind: 'refused', reason: str(b.verifyError) ?? 'the payment did not verify' } }
   if (httpStatus === 501) return { kind: 'stopped', stop: { kind: 'unavailable', reason: 'the Celo rail is not configured on the server' } }
-  // The rail is holding off on settlements (the facilitator refused to settle for us): nothing was attempted.
-  if (httpStatus === 503) return { kind: 'stopped', stop: { kind: 'paused', reason: str(b.reason) ?? (error || 'settlement is paused'), until: str(b.until) } }
+  // The rail is holding off on settlements (the facilitator refused to settle for us). Its 503 says
+  // what happened to this payment: charged false when it was not attempted or the authorization reads
+  // unspent on-chain, 'unknown' when the facilitator refused for want of credits and the chain could
+  // not be read. Only an explicit false is read as nothing charged. A 503 that is not the rail's pause
+  // (a proxy's, say) is no word on the money, so it falls through to the unexpected ending below.
+  if (httpStatus === 503 && error === 'celo settlement paused') {
+    const reason = str(b.reason) ?? 'settlement is paused'
+    const until = str(b.until)
+    return {
+      kind: 'stopped',
+      stop: b.charged === false ? { kind: 'paused', reason, until, charged: false } : { kind: 'paused', reason, until, charged: 'unknown', payTo },
+    }
+  }
   if (httpStatus === 502) {
     const reason = str(b.reason) ?? (error || 'the facilitator did not answer')
     if (/settle/i.test(error)) {
@@ -470,8 +489,12 @@ export function stopText(stop: Stop): string {
       return `The facilitator did not accept the payment: ${stop.reason}. Nothing was charged.`
     case 'unavailable':
       return `The check could not be made right now: ${stop.reason}. Nothing was charged.`
-    case 'paused':
-      return `Settlement is paused on our side: ${stop.reason}. ${stop.until ? `It is tried again after ${stop.until}. ` : ''}Nothing was charged.`
+    case 'paused': {
+      const head = `Settlement is paused on our side: ${sentence(stop.reason)} ${stop.until ? `It is tried again after ${stop.until}. ` : ''}`
+      return stop.charged === 'unknown'
+        ? `${head}Your payment might have been charged: the facilitator refused to settle it, and the chain could not be read to confirm that nothing moved. Check ${stop.payTo} on the explorer before paying again.`
+        : `${head}Nothing was charged.`
+    }
     case 'settle_failed':
       return `The facilitator did not complete the payment: ${stop.reason}. Your authorization is unspent on-chain. Nothing was charged.`
     case 'unconfirmed':
@@ -489,7 +512,11 @@ export function stopText(stop: Stop): string {
 
 /** Endings after which this screen does not offer the same payment again: money may be out. */
 export const moneyMayBeOut = (stop: Stop) =>
-  stop.kind === 'ambiguous' || stop.kind === 'unconfirmed' || stop.kind === 'paid_unreadable' || stop.kind === 'unexpected'
+  stop.kind === 'ambiguous' ||
+  stop.kind === 'unconfirmed' ||
+  stop.kind === 'paid_unreadable' ||
+  stop.kind === 'unexpected' ||
+  (stop.kind === 'paused' && stop.charged === 'unknown')
 
 // ---- one purchase, step by step ----
 
@@ -524,7 +551,7 @@ export async function purchase(a: {
   alive: () => boolean
 }): Promise<End | null> {
   // The rail says it is not settling right now: stop at the door, before the quote and the wallet.
-  if (a.status.pause) return { kind: 'stopped', stop: { kind: 'paused', reason: a.status.pause.reason, until: a.status.pause.until || null } }
+  if (a.status.pause) return { kind: 'stopped', stop: { kind: 'paused', reason: a.status.pause.reason, until: a.status.pause.until || null, charged: false } }
   a.step('quoting')
   let terms: Terms
   try {

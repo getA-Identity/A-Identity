@@ -246,7 +246,8 @@ function StopBox({ stop }: { stop: Stop }) {
           .
         </>
       )}
-      {stop.kind === 'ambiguous' && (
+      {/* No answer in time, or a pause whose payment the server could not read on-chain: the payee is where to look. */}
+      {(stop.kind === 'ambiguous' || (stop.kind === 'paused' && stop.charged === 'unknown')) && (
         <>
           {' '}
           <a href={addressUrl(EXPLORER, stop.payTo)} target="_blank" rel="noopener noreferrer" className="font-semibold text-accent hover:underline">
@@ -678,15 +679,25 @@ export default function CeloCheck() {
             <Fold title="For agents">
               <p className="text-[15px] leading-relaxed text-foreground/75">
                 The same check is an x402 v2 call. A request without a payment returns the 402 with the terms, in the PAYMENT-REQUIRED
-                header and the body; a POST with a PAYMENT-SIGNATURE header (base64 of the x402 v2 payment payload) and a JSON body naming
-                the agentId returns the verdict once the facilitator settles, with the receipt and its settlement hash in PAYMENT-RESPONSE
-                whenever that hash is known. A settlement the facilitator refuses before broadcasting anything (HTTP 200 or 4xx,
-                success false, no transaction named) while your authorization stays unspent on-chain is a 402 whose PAYMENT-RESPONSE
-                says success false: nothing was charged. A facilitator 5xx, a timeout, a pending settlement, a refusal that names a
-                transaction or a refusal we could not check on-chain is a 502 with no PAYMENT-RESPONSE: its body says charged false or
-                unknown and, when the facilitator named one, the transaction to check on Celoscan before you pay again. The older
-                X-PAYMENT header is still accepted. A bare token id is read as Celo's, the same as its CAIP id: each chain's registry
-                numbers its own agents.
+                header and the body, except while settlement is paused. A POST with a PAYMENT-SIGNATURE header (base64 of the x402 v2
+                payment payload) and a JSON body naming the agentId returns the verdict once the facilitator settles, with the receipt
+                and its settlement hash in PAYMENT-RESPONSE whenever that hash is known. If the tool fails after the payment settled, the
+                answer is a 500 whose body says it settled. The older X-PAYMENT header is still accepted. A bare token id is read as
+                Celo's, the same as its CAIP id: each chain's registry numbers its own agents.
+              </p>
+              <p className="mt-3 text-[15px] leading-relaxed text-foreground/75">
+                A payment that does not verify gets a fresh 402 that says why, and a facilitator that cannot verify it at all is a 502;
+                neither charges anything. A settlement the facilitator refuses before broadcasting anything (HTTP 200 or 4xx, success
+                false, no transaction named) while your authorization reads unspent on-chain is a 402 whose PAYMENT-RESPONSE says
+                success false: nothing was charged. When the facilitator says it is out of settlement credits, the answer is a 503
+                "celo settlement paused" instead, with no PAYMENT-RESPONSE. Its body says charged false when your authorization reads
+                unspent and charged unknown when the chain cannot be read. For about 15 minutes after that, every call, paid or not,
+                gets a 503 "celo settlement paused" and is not charged. Every other failed settlement is a 502 with no
+                PAYMENT-RESPONSE, such as a facilitator 5xx, a 4xx that is not a verdict, a timeout, a pending settlement, a refusal
+                that names a transaction or a refusal we could not check on-chain. Its body says charged false or unknown and, when the
+                facilitator named one, the transaction to check on Celoscan before you pay again. If a settlement fails in any of these
+                ways and the chain shows your authorization already spent, the payment went through and the call is served as settled:
+                a 200, with the receipt when the hash is known.
               </p>
               <div className="mt-4 space-y-3">
                 <CopyBlock title="The terms" subtitle="GET, no key, a 402 in JSON" text={`curl -s ${TOOL_API}`} />

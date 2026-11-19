@@ -7,7 +7,8 @@
  *
  * The x402 v2 HTTP transport (https://github.com/coinbase/x402/blob/main/specs/transports-v2/http.md):
  *  1. The 402 carries the PaymentRequired object base64 in the PAYMENT-REQUIRED header (the
- *     body carries the same fields too). Its accepts entry names scheme 'exact', the CAIP-2
+ *     body carries the same fields too). A request without a payment gets it, except while
+ *     settlement is paused (see 5). Its accepts entry names scheme 'exact', the CAIP-2
  *     network, `amount` in atomic units, asset, payTo, maxTimeoutSeconds and the token's
  *     EIP-712 domain in `extra` (read live from the Celo USDC contracts on 2026-08-09:
  *     name "USDC", version "2").
@@ -20,13 +21,24 @@
  *         payload: { signature, authorization: { from, to, value, validAfter,
  *                                                validBefore, nonce } } })
  *  4. A settled answer carries the receipt base64 in the PAYMENT-RESPONSE header, whenever the
- *     settlement hash is known. A settlement the facilitator refuses before broadcasting
- *     anything (HTTP 200 or 4xx, success false, no transaction named) while the authorization
- *     stays unspent on-chain is a 402 whose PAYMENT-RESPONSE says success false: nothing moved.
- *     A facilitator 5xx, a timeout, a pending settlement, a refusal that names a transaction or
- *     a refusal the server could not check on-chain is a 502 with no PAYMENT-RESPONSE: the
- *     body's `charged` says false or 'unknown', and its `tx`, when the facilitator named one, is
- *     the transaction to look up on the explorer before paying again.
+ *     settlement hash is known. If the tool fails after the payment settled, the answer is a
+ *     500 whose body says it settled.
+ *  5. A payment that does not verify gets a fresh 402 that says why, and a facilitator that
+ *     cannot verify it at all is a 502; neither charges anything. A settlement the facilitator
+ *     refuses before broadcasting anything (HTTP 200 or 4xx, success false, no transaction
+ *     named) while the authorization reads unspent on-chain is a 402 whose PAYMENT-RESPONSE
+ *     says success false: nothing was charged. When the facilitator says it is out of
+ *     settlement credits, the answer is a 503 "celo settlement paused" instead, with no
+ *     PAYMENT-RESPONSE. Its body says charged false when the authorization reads unspent and
+ *     charged unknown when the chain cannot be read. For about 15 minutes after that, every
+ *     call, paid or not, gets a 503 "celo settlement paused" and is not charged. Every other
+ *     failed settlement is a 502 with no PAYMENT-RESPONSE, such as a facilitator 5xx, a 4xx
+ *     that is not a verdict, a timeout, a pending settlement, a refusal that names a
+ *     transaction or a refusal the server could not check on-chain. Its body says charged
+ *     false or unknown and, when the facilitator named one, the transaction (`tx`) to look up
+ *     on the explorer before paying again. If a settlement fails in any of these ways and the
+ *     chain shows the authorization already spent, the payment went through and the call is
+ *     served as settled: a 200, with the receipt when the hash is known.
  *
  * Usage:
  *   node --env-file=.env scripts/celo-x402-buyer.mjs \
