@@ -284,18 +284,27 @@ the first one is tracked as an open audit finding rather than a settled decision
   the vulnerable 6.6.1, and `uuid` would need a major bump that breaks `jayson`. None of it
   is on a path we call, because we run no Solana adapter; that bounds the exposure without
   removing it. Re-check whenever Circle ships a new app-kit.
-- **New advisories open on main, read from Dependabot on 2026-11-16.** The line above that
-  says both HIGH advisories are gone was true when written; it is not now. One critical and
-  four high are open, and each has a fix or a replacement:
+- **New advisories on main, read from Dependabot on 2026-11-16, status as of 2026-11-21.** The
+  line above that says both HIGH advisories are gone was true when written; it is not now. One
+  critical and four high were open. Where each one stands:
   - *critical,* `wee_alloc` in `near/contracts/Cargo.lock`: unmaintained, with known memory
-    leaks and no fixed release. Closes by moving the NEAR contracts to another allocator.
-  - *high,* `zod` in `package-lock.json`, `mcp/package-lock.json` and `trust-mcp/package.json`:
-    validating an oversized constrained collection can exhaust memory, a denial of service on
-    any route that validates untrusted input. Fixed in 4.6.6.
-  - *high,* `decode-uri-component` in `package-lock.json`: quadratic work on runs of
-    percent-encoded input, also a denial of service. Fixed in 0.5.1.
-  None of them touches a key or a payment path. They are named here so the list of what is
-  open stays true until the bumps land.
+    leaks and no fixed release. Still open. near-sdk 5.30.1 turns it on through its default
+    features, as the wasm32 global allocator, so it closes by setting `default-features = false`
+    on near-sdk and building with Rust's own allocator. That changes the contract bytes, and
+    the deployed testnet and mainnet contracts keep the bytes they run until a redeploy.
+  - *high,* `zod` (GHSA-mrhx-c7xc-m3w5, fixed in 4.6.6): validating an oversized array can
+    exhaust memory. Every copy of ours is on 4.6.7: `mcp` and `trust-guard`, and `trust-mcp`
+    since 2026-11-21 (unreleased: the published 0.4.7 still declares zod 3). The copies left
+    on zod 3 are pinned by third-party packages (Circle's kits, OKX and x402 in `mcp`; the
+    wallet kits and the Coinbase CDP SDK in the frontend). Each is accepted with its reason and
+    a lapse date in `.github/workflows/security.yml`.
+  - *high,* `decode-uri-component` in `package-lock.json` (GHSA-qr28-fpjm-wq7f, fixed in
+    0.5.1): quadratic work on runs of percent-encoded input. No compatible fix: 0.5.1 is
+    ESM-only, and the one consumer, query-string 6 under Defly connect's WalletConnect v1,
+    loads it with `require` and calls the result as a function. Forcing it with an override
+    would break the Defly wallet connection. Accepted in `.github/workflows/security.yml`; the
+    input is the Defly session URI in the visitor's own tab.
+  None of them touches a key or a payment path.
 - **Postgres TLS verifies the server certificate** as of 2026-08-27. It did not before:
   `storage.ts` set `rejectUnauthorized: false` unconditionally, which keeps the encryption
   and discards the identity check, leaving the connection open to an active

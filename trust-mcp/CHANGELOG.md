@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Security
+
+- zod moves from ^3.25.76 to ^4.6.7, past GHSA-mrhx-c7xc-m3w5 (memory exhaustion when an
+  oversized array is validated; fixed in 4.6.6). Every tool keeps its name, its arguments and
+  their limits, and the server accepts and refuses the same calls. Two things a client can see
+  change: the advertised input schemas no longer carry `"additionalProperties": false`, though
+  extra arguments are still dropped before a tool runs, as before; and the text of a validation
+  error is zod 4's wording. Checked with @modelcontextprotocol/sdk 1.29.0, the lowest version
+  this package allows, and 1.32.2.
+
 ## 0.4.7 (2026-11-04)
 
 ### Changed
