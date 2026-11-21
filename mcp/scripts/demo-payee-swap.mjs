@@ -124,7 +124,12 @@ const ATTACKER = `vendor:northwind-billing-update-${run}`
 const INVOICE_USD = 120
 
 say('A-Identity: "our payment account changed" demo')
-say(`backend ${BASE}${child ? ' (booted by this script, empty environment: no keys, no database)' : ''}`)
+{
+  // Say which server answered and which commit it runs, so a recording shows what it was run against.
+  const h = await fetch(`${BASE}/health`).then((r) => r.json(), () => null)
+  const commit = h?.commitShort ? `, commit ${h.commitShort}` : ''
+  say(`server ${BASE}${child ? ` (a local copy booted by this script with no keys and no database${commit})` : ` (${commit.slice(2) || 'commit unknown'})`}`)
+}
 say('')
 say(`The company's real supplier:     ${SUPPLIER}`)
 say(`Poisoned invoice, lookalike:     ${LOOKALIKE}`)
@@ -183,7 +188,7 @@ try {
   check('the payment instruction is auto-approved inside the company\'s limits', ix1.status === 201 && ix1.json?.status === 'auto_approved', `${ix1.status} ${ix1.text.slice(0, 200)}`)
   const ex1 = await execute(ix1.json?.id)
   check(
-    'and it executes (simulated: this demo holds no key, and a vendor id has no on-chain address)',
+    'and it executes (simulated: the supplier is a vendor id with no on-chain address, so no money moves in this demo)',
     ex1.status === 200 && ex1.json?.status === 'executed_simulated',
     `${ex1.status} ${ex1.text.slice(0, 200)}`,
   )
@@ -300,7 +305,7 @@ if (failures.length === 0) {
 }
 say('')
 say('   What this does not show, said plainly:')
-say('   - Part 1 settles nothing for real: the allowed payment is simulated, because this run holds no key.')
+say('   - Part 1 settles nothing for real: the payees are vendor ids with no on-chain address, so the allowed payment is simulated.')
 say('   - In Part 1 the agent and its owner use the same session. The policy is enforced on the server, but an')
 say('     agent holding that session could also change the list or approve itself. In Part 2 it cannot: the')
 say('     agent\'s key is limited by the NEAR protocol. A separate, narrower agent credential for Web2 is not built yet.')
