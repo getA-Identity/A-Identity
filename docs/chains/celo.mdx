@@ -128,23 +128,34 @@ never pays on load: `https://a-identity.xyz/check/celo?q=eip155:42220:8004/9759`
 
 [Aigora](https://aigora.org) lists Celo agents by reading the canonical IdentityRegistry:
 an agent whose tokenURI document says `"onAigora": true` is listed, and `"via": "a-identity"`
-marks it as coming from us. Agent `#9759` gets its own ERC-8004 registration document for
+marks it as coming from us. Agent `#9759` has its own ERC-8004 registration document for
 this, [/.well-known/celo-8004.json](https://a-identity.xyz/.well-known/celo-8004.json),
-because its current tokenURI is the shared A2A agent card, which is not a registration-v1
+because its earlier tokenURI was the shared A2A agent card, which is not a registration-v1
 document and which our agents on other chains also point at.
 
-Status: **prepared, not yet signed.** Listing takes one `setAgentURI(9759, ...)` from the
-wallet that holds the agent, signed by the person who holds it; no server of ours has
-that key or sends anything on its behalf. This read-only script checks the live owner, the live tokenURI and the served document against
-Aigora's blocking rules, and prints the exact call for the owner to sign:
+Status: **listed.** The owner signed `setAgentURI(9759, ...)` from the wallet that holds the
+agent; no server of ours has that key or sends anything on its behalf. Read live on
+2026-11-22, `tokenURI(9759)` is the document above, and the profile is
+[aigora.org/services/42220_0x8004a169fb4a3325136eb29fa0ceb6d2e539a432_9759](https://aigora.org/services/42220_0x8004a169fb4a3325136eb29fa0ceb6d2e539a432_9759).
+The document carries the profile too: a square logo, a cover, the services with a
+description each and the price of the priced `risk_check` route, the OASF skills and domains,
+categories and our public links. The tokenURI is an https address, so editing the file needs
+no new transaction, but the profile shows the change only after Aigora reads the document
+again.
+
+This read-only script checks the live owner, the live tokenURI and the served document
+against Aigora's blocking rules, and prints the exact call for the owner to sign if the
+tokenURI ever points elsewhere:
 
 ```bash
 cd mcp && npm run build && node scripts/celo-8004-aigora.mjs
 ```
 
-The document does not claim x402 support yet. Aigora tests a claimed x402 endpoint live
-before it lists it, and our Celo tool routes do not pass that test today, so the claim waits
-for an endpoint that does.
+The document claims x402 support. Aigora tests every priced web endpoint of a document that
+claims it, live and unsigned: an HTTP 402 with an x402 v2 `exact` challenge in Celo USDC,
+CORS for Aigora's origin, and the agent's owner as payTo. That is why the priced web row is
+the `risk_check` route itself, and the browser check is listed without a price. The script
+above runs the same preflight on that route, so a claim is checked before it is deployed.
 
 ## Where Celo fits
 

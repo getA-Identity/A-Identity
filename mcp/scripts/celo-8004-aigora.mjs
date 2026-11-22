@@ -7,6 +7,8 @@
  *
  *   1. ownerOf(9759) and tokenURI(9759) on Celo's IdentityRegistry,
  *   2. the document served at CELO_8004_URI, checked against Aigora's blocking rules,
+ *   3. when the served or the repo document claims x402, Aigora's unsigned 402 preflight on
+ *      each priced web endpoint, sent from Aigora's origin (no payment, no signature),
  *
  * and, while the tokenURI still points elsewhere, prints the one setAgentURI call the owner
  * wallet has to sign: its target, its calldata and a cast line. It holds no key, signs nothing
@@ -17,11 +19,17 @@
  *
  * Exits 1 only when the served document would not list, so it can gate a deploy; otherwise 0.
  */
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { createPublicClient, http } from 'viem'
 
 import {
+  AIGORA_ORIGIN,
+  CELO_8004_FILE,
   CELO_8004_URI,
   aigoraRegistrationIssues,
+  aigoraX402ChallengeIssues,
+  x402PricedWebEndpoints,
   celoAgentId,
   celoChain,
   setAgentUriCall,
@@ -80,6 +88,40 @@ try {
 
 const issues = doc === null ? ['not_served'] : aigoraRegistrationIssues(doc)
 console.log(issues.length ? `Aigora rules      FAIL: ${issues.join(', ')}` : 'Aigora rules      pass')
+
+// An x402 claim is the one rule Aigora checks live: every priced web row must pass its unsigned
+// 402 preflight, from its own origin, with the registering wallet (the live owner) as payTo. The
+// repo copy is checked too, so a claim is proven before it is deployed. One OPTIONS and one
+// unsigned POST per endpoint: no payment, no signature.
+const local = JSON.parse(readFileSync(fileURLToPath(new URL(`../../${CELO_8004_FILE}`, import.meta.url)), 'utf8'))
+const claimed = new Set([
+  ...(local.x402Support === true ? x402PricedWebEndpoints(local) : []),
+  ...(doc?.x402Support === true ? x402PricedWebEndpoints(doc) : []),
+])
+for (const url of claimed) {
+  let found
+  if (!owner.ok) found = ['owner_unread']
+  else {
+    try {
+      const options = await fetch(url, {
+        method: 'OPTIONS',
+        redirect: 'manual',
+        headers: { Origin: AIGORA_ORIGIN, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type' },
+      })
+      const post = await fetch(url, {
+        method: 'POST',
+        redirect: 'manual',
+        headers: { Origin: AIGORA_ORIGIN, 'content-type': 'application/json' },
+        body: '{}',
+      })
+      found = aigoraX402ChallengeIssues({ url, registeringWallet: owner.v, options, post })
+    } catch (e) {
+      found = [`unreachable (${e instanceof Error ? e.message : e})`]
+    }
+  }
+  console.log(found.length ? `x402 preflight    FAIL ${url}: ${found.join(', ')}` : `x402 preflight    pass ${url}`)
+  if (found.length) issues.push(`x402_preflight_failed ${url}`)
+}
 
 if (tokenUri.ok && tokenUri.v === CELO_8004_URI) {
   console.log('\nDone on chain: the tokenURI already points at the registration. Aigora lists it after its next scan:')

@@ -2,20 +2,47 @@
   "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
   "name": "A-Identity Trust Oracle",
   "description": "Before one AI agent pays another, it calls A-Identity to check the counterparty: its on-chain ERC-8004 identity, a deterministic 0 to 1000 reputation computed from real settlements, and an ALLOW, WARN or DENY verdict for the specific payment. Where both sides hold a Self Agent ID it also says whether one human stands behind both. On Celo the trust tools are paid per call in USDC over x402, settled through the first-party Celo facilitator.",
-  "image": "https://a-identity.xyz/favicon.png",
+  "image": "https://a-identity.xyz/logo/avatar-1024.png",
+  "cover": "https://a-identity.xyz/og-image.png",
   "services": [
     {
       "name": "web",
-      "endpoint": "https://a-identity.xyz"
+      "endpoint": "https://a-identity.xyz/check/celo",
+      "description": "Check an ERC-8004 agent on Celo from a browser wallet: one risk_check, paid with a gasless USDC signature."
+    },
+    {
+      "name": "web",
+      "endpoint": "https://a-identity.xyz/api/celo/tools/risk_check",
+      "price": "0.005",
+      "description": "risk_check over x402 v2: POST the payee, get a 402 challenge, pay 0.005 USDC on Celo with an EIP-3009 signature, and get ALLOW, WARN or DENY with reasons."
     },
     {
       "name": "MCP",
       "endpoint": "https://a-identity.xyz/mcp",
-      "version": "2025-06-18"
+      "version": "2025-06-18",
+      "description": "Trust tools for agents: verify_agent, reputation_score, risk_check, counterparty_check and agent_passport."
     },
     {
       "name": "A2A",
-      "endpoint": "https://a-identity.xyz/.well-known/agent-card.json"
+      "endpoint": "https://a-identity.xyz/.well-known/agent-card.json",
+      "version": "1.0.0",
+      "description": "Agent card for agent-to-agent discovery."
+    },
+    {
+      "name": "OASF",
+      "endpoint": "https://github.com/agntcy/oasf/",
+      "version": "0.8.0",
+      "skills": [
+        "security_privacy/threat_detection",
+        "governance_compliance/compliance_assessment",
+        "tool_interaction/api_schema_understanding"
+      ],
+      "domains": [
+        "technology/blockchain",
+        "technology/security",
+        "trust_and_safety/risk_management",
+        "finance_and_business/finance"
+      ]
     }
   ],
   "registrations": [
@@ -24,10 +51,22 @@
       "agentRegistry": "eip155:42220:0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"
     }
   ],
-  "x402Support": false,
+  "x402Support": true,
   "active": true,
   "supportedTrust": [
     "reputation"
+  ],
+  "categories": [
+    "data",
+    "automation"
+  ],
+  "external_links": [
+    { "platform": "website", "url": "https://a-identity.xyz" },
+    { "platform": "x", "url": "https://x.com/ai_dentity" },
+    { "platform": "github", "url": "https://github.com/getA-Identity/A-Identity" },
+    { "platform": "discord", "url": "https://discord.gg/ak4rC3p7Tz" },
+    { "platform": "linkedin", "url": "https://www.linkedin.com/company/a-identity/" },
+    { "platform": "youtube", "url": "https://www.youtube.com/@A-identity-u9e9z" }
   ],
   "onAigora": true,
   "via": "a-identity"
