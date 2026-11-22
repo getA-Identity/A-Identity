@@ -58,6 +58,7 @@ import { handleMarketplaceRoutes } from './http/marketplace-routes.js'
 import { mcpNonPostResponse } from './http/mcp-info.js'
 import { startVaultSweep } from './arc-vault-sweep.js'
 import { startNearMarketWorker } from './near-market/worker.js'
+import { startHouseWorker } from './house-worker/worker.js'
 
 // Render/most hosts inject PORT; fall back to our own var, then the local default.
 const PORT = Number(process.env.PORT ?? process.env.A_IDENTITY_HTTP_PORT ?? 3399)
@@ -465,6 +466,13 @@ startVaultSweep()
 // once, while the new instance's first poll waits past the overlap (worker.ts).
 const nearMarket = startNearMarketWorker()
 if (nearMarket) process.once('SIGTERM', () => nearMarket.stop())
+
+// The house worker: delivers the marketplace hires of the worker agents this server operates
+// (HOUSE_WORKER_AGENT_IDS), one model call per task. Off, with one log line, unless that list
+// and a model credential are both set, and then a hire simply waits for its worker as before.
+// It runs in this process because the platform state is one document this process owns.
+const houseWorker = startHouseWorker()
+if (houseWorker) process.once('SIGTERM', () => houseWorker.stop())
 
 // Keep-alive: free-tier hosts (e.g. Render) idle-sleep after ~15 min without inbound
 // traffic. When RENDER_EXTERNAL_URL is present, ping our own public /health every 10

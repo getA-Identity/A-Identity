@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Check, ExternalLink, TrendingUp, Wallet, Info } from 'lucide-react'
 import { authHeaders } from '../../store/auth'
 import { apiFetch, readJson, explainError } from '../../lib/api'
+import { invalidatePlatformAgents } from '../../lib/platformAgents'
 import { Skeleton } from '../ui/skeleton'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip'
 import { Stat, StatBadge } from '../ui/stat'
@@ -64,7 +65,8 @@ export function CircleWalletPanel({ agentId }: { agentId: string }) {
       const res = await apiFetch('/api/agents/circle-wallet', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ agentId, fund: true }),
+        // primary: an agent with no wallet takes the hosted one as its wallet.
+        body: JSON.stringify({ agentId, fund: true, primary: true }),
         timeoutMs: 90_000, // Circle provisions + funds the wallet on-chain; can be slow
         onWaking: () => setErr('Waking up the backend (free tier)…'),
       })
@@ -76,6 +78,8 @@ export function CircleWalletPanel({ agentId }: { agentId: string }) {
       if (j.error) setErr(j.error)
       else setErr(null)
       await load()
+      // The agent may have just taken this wallet as its own: let every screen read it again.
+      invalidatePlatformAgents()
     } catch {
       setErr('Provisioning timed out. It runs on Circle + on-chain and can be slow, give it a moment and try again.')
     } finally {

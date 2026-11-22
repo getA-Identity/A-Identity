@@ -233,6 +233,86 @@ export function deliverTask(taskId: string, deliverable: string, caller?: string
   return task
 }
 
+// ── the house worker's side ─────────────────────────────────────────────────────────
+//
+// Some worker agents are operated by the platform itself. The operator names them in
+// HOUSE_WORKER_AGENT_IDS, and ../house-worker delivers their hires from inside this process.
+// Nothing here decides which agents those are: every function takes the set the worker was
+// started with, and a task hired from any other agent is refused, whatever the caller says.
+
+/** Funded tasks hired from one of the given agents, oldest first: the house worker's queue. */
+export function listFundedTasksForAgents(agentIds: ReadonlySet<string>): Task[] {
+  if (agentIds.size === 0) return []
+  return state.tasks
+    .filter((t) => t.status === 'funded' && agentIds.has(t.agentId))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+}
+
+/**
+ * The house worker delivers a result. The allowlist stands in for ownsAgent, and the row
+ * records that the platform delivered it and with which model, so a card can say so.
+ * funded -> delivered.
+ */
+export function deliverHouseTask(input: {
+  taskId: string
+  deliverable: string
+  model: string
+  allowedAgentIds: ReadonlySet<string>
+}): Task | { error: string } {
+  const task = state.tasks.find((t) => t.id === input.taskId)
+  if (!task) return { error: 'Unknown task' }
+  if (!input.allowedAgentIds.has(task.agentId)) return { error: 'Forbidden: the hired agent is not a house worker' }
+  const agent = state.agents.find((a) => a.id === task.agentId)
+  if (!agent) return { error: 'Unknown agent' }
+  const deliverable = String(input.deliverable ?? '').trim()
+  if (!deliverable) return { error: 'An empty result is not a delivery' }
+  if (!canTransition(task.status, 'delivered')) return { error: `Cannot deliver from status ${task.status}` }
+  task.deliverable = deliverable.slice(0, 5000)
+  task.deliveredBy = 'house'
+  task.deliveredAt = new Date().toISOString()
+  task.deliveryModel = String(input.model ?? '').slice(0, 80)
+  delete task.workerNote
+  transitionTask(task, 'delivered')
+  pushActivity(agent, `Delivered task ${task.id} (A-Identity house worker)`)
+  save(state)
+  return task
+}
+
+/**
+ * The house worker says why a task is still waiting and, when it tried, how many tries that
+ * makes. The task stays funded: a note is not a delivery, and the client can still refund it.
+ * A note that repeats the stored one writes nothing.
+ */
+export function noteHouseTask(input: {
+  taskId: string
+  note: string
+  /** The attempt count after this one. Left out when nothing was tried. */
+  attempts?: number
+  allowedAgentIds: ReadonlySet<string>
+}): Task | { error: string } {
+  const task = state.tasks.find((t) => t.id === input.taskId)
+  if (!task) return { error: 'Unknown task' }
+  if (!input.allowedAgentIds.has(task.agentId)) return { error: 'Forbidden: the hired agent is not a house worker' }
+  if (task.status !== 'funded') return { error: `Cannot note a task in status ${task.status}` }
+  const note = String(input.note ?? '').trim().slice(0, 300)
+  const attempts =
+    typeof input.attempts === 'number' && Number.isInteger(input.attempts) && input.attempts >= 0
+      ? Math.min(input.attempts, 99)
+      : task.workerAttempts
+  if (task.workerNote === note && task.workerAttempts === attempts) return task
+  task.workerNote = note
+  if (attempts !== undefined) task.workerAttempts = attempts
+  task.updatedAt = new Date().toISOString()
+  save(state)
+  return task
+}
+
+/** How many tasks the house worker delivered at or after `sinceIso`: its daily ceiling counts
+ *  these, read from the stored rows so a restart does not reset it. */
+export function countHouseDeliveriesSince(sinceIso: string): number {
+  return state.tasks.filter((t) => t.deliveredBy === 'house' && (t.deliveredAt ?? '') >= sinceIso).length
+}
+
 /**
  * The client approves and RELEASES the escrow: runs the real ERC-8183 lifecycle
  * (createJob -> fund -> submit -> complete), paying the worker. With a signer key it is a

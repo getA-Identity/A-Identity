@@ -27,10 +27,15 @@ single source of truth and a test fails the build if any other file disagrees:
   mainnet (since 2026-08-30). They settled in real Circle USDC on Arbitrum One until our
   EIP-3009 rail paused there on 2026-11-11, and in real USD₮0 on X Layer until OKX.AI
   delisted the oracle on 2026-09-26.
-- **We hold no user keys.** Agent wallet keys are generated in the browser
-  ([`src/components/app/agent/RegisterForm.tsx`](src/components/app/agent/RegisterForm.tsx));
-  the server only ever sees public addresses. That part of the old text was and remains
-  true, and it is the reason the key risk below is ours rather than our users'.
+- **We hold no private key of a user, and since 2026-11-22 that needs one qualification.**
+  An agent's wallet is one of two kinds. A key generated in the browser
+  ([`src/components/app/agent/RegisterForm.tsx`](src/components/app/agent/RegisterForm.tsx))
+  is seen only by its owner; the server only ever sees the public address. A hosted wallet,
+  the default for a new agent and on Arc testnet only, is a Circle developer-controlled
+  wallet: Circle holds the key and nobody is shown one, but this server can instruct
+  transfers from it through Circle's API, and does so for the payments the owner's limits
+  allow. That is custody by instruction, not non-custodial, and it cannot be exported. It
+  holds test USDC, and the key risk below is still ours rather than our users'.
 - **A human stays on the loop** for anything that deploys a contract or moves value above a
   policy ceiling.
 

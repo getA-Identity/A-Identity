@@ -231,9 +231,15 @@ export default function Settlements() {
         setError(explainError(res.status, j.error))
         return
       }
+      const typedPayee = payee.trim() !== ''
+      const made = await readJson<{ id?: string; status?: string }>(res).catch(() => ({}) as { id?: string; status?: string })
       setPayee('')
       setError(null)
       await load(agentId)
+      // Within the limits there is no question left to ask, so it settles now: that is what
+      // the auto-approve line promises. A payment over a limit stops in the queue and waits.
+      // Only for a payee somebody typed; the placeholder payee settles nowhere.
+      if (typedPayee && made.id && made.status === 'auto_approved') await act('execute', made.id)
     } catch {
       setError('Could not create the payment. The backend may be waking up, try again in a moment.')
     } finally {
@@ -490,8 +496,8 @@ export default function Settlements() {
           <div className="mt-4 flex items-start gap-3 rounded-2xl border border-accent/20 bg-accent/[0.05] p-4">
             <ShieldQuestion size={18} className="mt-0.5 shrink-0 text-accent" />
             <p className="text-sm leading-relaxed text-foreground/80">
-              Payments above your limits pause here for approval. Nothing settles on-chain until
-              it is approved and executed.{' '}
+              A payment within your limits settles right away. Anything above them pauses here
+              until you approve it, and nothing settles on-chain before that.{' '}
               {settledOnchain > 0 && (
                 <b className="text-foreground">
                   {settledOnchain} settled {settledWhere}.

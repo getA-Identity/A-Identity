@@ -68,6 +68,8 @@ export default function Dashboard() {
   const [settlements, setSettlements] = useState<number | null>(null)
   const [pending, setPending] = useState<number | null>(null)
   const [txTotal, setTxTotal] = useState<number | null>(null)
+  /** How many marketplace hires this account has made. Null until read. */
+  const [hires, setHires] = useState<number | null>(null)
   const [instructions, setInstructions] = useState<Ix[] | null>(null)
   const [policy, setPolicy] = useState<Policy | null>(null)
   const [agentTotal, setAgentTotal] = useState<number | null>(null)
@@ -105,6 +107,20 @@ export default function Dashboard() {
 
   // Follow the console-wide selection, falling back to the most demo-worthy agent.
   const agent = agents.find((a) => a.id === agentId) ?? pickPrimaryAgent(agents) ?? null
+
+  // Hires belong to the account, not to one agent, so they are read once.
+  useEffect(() => {
+    let active = true
+    apiFetch('/api/marketplace/tasks')
+      .then((r) => r.json())
+      .then((d: { tasks?: unknown[] }) => {
+        if (active) setHires(Array.isArray(d?.tasks) ? d.tasks.length : 0)
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
 
   useEffect(() => {
     if (!agent) return
@@ -175,7 +191,7 @@ export default function Dashboard() {
       icon: CreditCard,
     },
     {
-      label: 'Permissions',
+      label: 'Limits',
       detail: !p ? 'Not set' : p.frozen ? 'Frozen, all activity paused' : `Daily cap $${p.dailyCapUsd}`,
       ok: Boolean(p) && !p!.frozen,
       to: '/app/permissions',
@@ -225,14 +241,15 @@ export default function Dashboard() {
     },
     {
       label: 'Give it a wallet',
-      detail: 'The account your agent pays from.',
+      detail: 'A hosted wallet comes with a new agent. No key to save.',
       done: Boolean(agent?.walletAddress),
-      to: '/app/agent-id',
+      // An agent that exists gets its wallet on the Wallet page; a new one gets it while registering.
+      to: agent ? '/app/wallet' : '/app/agent-id',
       blockedBy: agent ? undefined : 'after step 1',
     },
     {
-      label: 'Fund it with testnet USDC',
-      detail: 'Free test USDC from faucet.circle.com.',
+      label: 'Fund it with test USDC',
+      detail: 'A hosted wallet starts with test USDC. For your own key, use faucet.circle.com.',
       done: (balance ?? 0) > 0,
       to: '/app/wallet',
       blockedBy: agent?.walletAddress ? undefined : 'after step 2',
@@ -250,6 +267,13 @@ export default function Dashboard() {
       done: (txTotal ?? 0) > 0,
       to: '/app/settlements',
       blockedBy: (balance ?? 0) > 0 ? undefined : 'after step 3',
+    },
+    {
+      label: 'Hire a skill',
+      detail: 'Pick a worker in the marketplace. The price waits in escrow until you approve the result.',
+      done: (hires ?? 0) > 0,
+      // The marketplace opens on its showcase; this step is about the hire list.
+      to: '/app/marketplace?tab=hire',
     },
   ]
   // Hide the checklist only once it is genuinely finished, and never flash it while the

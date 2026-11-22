@@ -213,6 +213,13 @@ export type PlatformAgent = {
   circleWalletId?: string
   circleWalletAddress?: string
   circleWalletExplorer?: string
+  /**
+   * The test USDC this agent's hosted wallet was created with, sent once from the Arc testnet
+   * signer, with its receipt. Set only after the transfer executed. The per-account and daily
+   * ceilings in platform/vault.ts are counted from these stored records, so a restart does not
+   * reset them.
+   */
+  starterFunding?: { address: string; amountUsd: number; txHash: string; explorerUrl: string; at: string }
   /** Owner-authorized auto-yield: idle balance above capUsd is earmarked for USYC
    *  (Circle's yield-bearing token). Off by default; the owner turns it on. */
   treasury?: { autoYieldEnabled: boolean; capUsd: number; authorizedAt?: string }

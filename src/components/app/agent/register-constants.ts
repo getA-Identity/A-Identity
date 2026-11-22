@@ -121,7 +121,7 @@ export type Step = (typeof STEPS)[number]
 export const STEP_META: { id: Step; label: string }[] = [
   { id: 'identity', label: 'Identity' },
   { id: 'capabilities', label: 'Capabilities' },
-  { id: 'permissions', label: 'Permissions' },
+  { id: 'permissions', label: 'Limits' },
   { id: 'wallet', label: 'Wallet' },
   { id: 'review', label: 'Review' },
 ]

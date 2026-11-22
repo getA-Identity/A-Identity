@@ -197,7 +197,7 @@ export default function Wallet() {
     <AppPage
       ambient
       title="Wallet"
-      description="Your agent's Arc wallet. Balance is read live from the Arc testnet; payments settle in real USDC. You set the limits in Permissions."
+      description="Your agent's Arc wallet. The balance is read live from Arc testnet, and you set what it may spend in Limits."
     >
       {error && (
         <div className="mt-6 rounded-2xl border border-warn/25 bg-warn/10 p-4 text-sm text-foreground/70">{error}</div>
@@ -315,11 +315,8 @@ export default function Wallet() {
                     </>
                   ) : (
                     <div className="mt-3 text-sm text-white/90">
-                      This agent has no wallet yet.
-                      <Link to="/app/agent-id" className="ml-1 font-semibold underline underline-offset-2">
-                        Create one in Agent ID
-                      </Link>
-                      .
+                      This agent has no wallet yet. Create a hosted one below: there is no key to save, and it
+                      starts with test USDC.
                     </div>
                   )}
                 </div>

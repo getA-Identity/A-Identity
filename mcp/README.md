@@ -130,6 +130,14 @@ Directories:
   name ending in `.testnet` and maps the verdict into the existing fields (`trust.ts`). Testnet
   only, read live, block-pinned, cached 60 s; the answer carries the CLI command that
   recomputes it. Nothing settles on NEAR through it.
+- `src/house-worker/` - delivers the marketplace hires of the worker agents this server
+  operates. `http.ts` starts it only when `HOUSE_WORKER_AGENT_IDS` and a model credential
+  (`ANTHROPIC_API_KEY`) are both set, and logs one line otherwise. It polls the platform state
+  for funded tasks of the named agents, does each with one model call (`work.ts`: translation,
+  data-analysis, code-review), and stores the result through `deliverHouseTask`, which marks the
+  row as delivered by the house worker and refuses any agent off the list. A declined, cut-off
+  or empty answer is never a delivery: the task keeps its escrow and gains a note the client
+  can act on. A daily ceiling bounds the model bill, and release and refund stay with the client.
 - `src/near-market/` - the worker behind A-Identity Guard for NEAR on the NEAR AI Agent Market
   (market.near.ai, handle `a-identity-guard`, 0.50 USD per hire, 1 hour SLA, polling, no webhook).
   `http.ts` starts it only when `MARKET_NEAR_AI_TOKEN` is set, and logs one line otherwise. It
@@ -249,7 +257,7 @@ npm run start        # MCP server on stdio
 npm run start:http   # the HTTP server (REST + /mcp). Reads config from process.env directly.
 npm run smoke        # spin up the MCP server + exercise every read-only tool
 npm run http-smoke   # exercise the tools over HTTP (server must be running)
-npm test             # tsc + node:test unit tests (2772 across 146 files, as of Nov 2026)
+npm test             # tsc + node:test unit tests (2811 across 148 files, as of Nov 2026)
 npm run e2e          # full end-to-end flow against a running server (E2E_BASE=...)
 ```
 
@@ -261,7 +269,7 @@ node --env-file=.env dist/http.js     # Node 20.6+
 ARC_SIGNER_KEY=0x<funded-key> node dist/http.js
 ```
 
-Tests: **2772 unit tests across 146 colocated `*.test.ts` files** (as of Nov 2026; `npm test`) +
+Tests: **2811 unit tests across 148 colocated `*.test.ts` files** (as of Nov 2026; `npm test`) +
 a full **E2E of about 67 checks** (`npm run e2e`) that adapts to signer presence: green with no
 signer key (live Arc reads; on-chain writes reported as prepared), with the real Arc write
 checks activating under a funded `ARC_SIGNER_KEY`. CI runs the no-signer path.

@@ -14,7 +14,7 @@ import {
 } from './vault-adapter.js'
 import { ARC_CHAIN, CHAINS, addressUrl, isAccountId } from '../chains/index.js'
 import type { ChainDescriptor } from '../chains/types.js'
-import { createAgentWallet, readCircleWallet } from '../circle-agent.js'
+import { createAgentWallet, readCircleWallet, circleEnabled } from '../circle-agent.js'
 import { chooseStellarVaultOwner } from '../stellar-vault.js'
 import { previewTreasury, startAutoYield, type TreasuryPreview, type TreasuryExecution } from '../treasury.js'
 
@@ -254,7 +254,9 @@ export async function provisionAgentVault(
     ? opts.ownerAddress
     : isAddr(opts.caller)
       ? opts.caller
-      : isAddr(agent.walletAddress ?? undefined)
+      : // A hosted wallet is moved through Circle's API and can sign no owner call, so a vault
+        // owned by it would have an owner nobody can act as. It is never the fallback.
+        isAddr(agent.walletAddress ?? undefined) && agent.walletAddress !== agent.circleWalletAddress
         ? (agent.walletAddress as string)
         : undefined
 
@@ -630,31 +632,124 @@ export async function syncVaultPolicy(agent: PlatformAgent, allowlistChanged = t
  */
 export async function provisionCircleWallet(
   agentId: string,
-  opts: { fund?: boolean; caller?: string } = {},
+  opts: {
+    fund?: boolean
+    caller?: string
+    /**
+     * Make the hosted wallet the agent's wallet when it has none. This is how an owner gets a
+     * wallet without ever holding a key: the address becomes agent.walletAddress, so the
+     * console shows its balance and other agents can pay it. An agent that already has a
+     * wallet keeps it, and the hosted one stays the second layer it always was.
+     */
+    primary?: boolean
+  } = {},
+  deps: { createWallet?: typeof createAgentWallet } = {},
 ) {
   const agent = state.agents.find((a) => a.id === agentId)
   if (!agent) return { error: 'Unknown agent' }
   if (!ownsAgent(agent, opts.caller)) return { error: 'Forbidden: not the agent owner' }
   if (agent.circleWalletId)
     return { error: 'Agent already has a Circle Agent Wallet', circleWalletId: agent.circleWalletId }
+  // Two clicks, or a retry after a slow answer, must not create two wallets and fund both.
+  const flight = `circle-wallet:${agent.id}`
+  if (inFlightAgentOps.has(flight)) return { error: 'A hosted wallet is already being created for this agent; wait for it to finish.' }
 
-  const res = await createAgentWallet(
-    { name: agent.name, refId: agent.id, fund: opts.fund ?? true },
-    process.env,
-  )
-  if (!res.provisioned) return { error: res.reason }
+  // Starter funding is the server signer's test USDC, so it is rationed: a ceiling per account
+  // and one per day. Past either the wallet is still created, empty, and the answer says why.
+  const refusal = opts.fund === false ? null : starterFundingRefusal(agent.owner)
+  const fund = (opts.fund ?? true) && !refusal
 
-  agent.circleWalletId = res.walletId
-  agent.circleWalletAddress = res.walletAddress
-  agent.circleWalletExplorer = res.explorerUrl
-  pushActivity(agent, `Circle Agent Wallet provisioned on Arc: ${short(res.walletAddress)}`)
-  save(state)
+  inFlightAgentOps.add(flight)
+  if (fund) pendingStarterUsd += STARTER_FUNDING_USD
+  try {
+    const res = await (deps.createWallet ?? createAgentWallet)({ name: agent.name, refId: agent.id, fund }, process.env)
+    if (!res.provisioned) return { error: res.reason }
+
+    agent.circleWalletId = res.walletId
+    agent.circleWalletAddress = res.walletAddress
+    agent.circleWalletExplorer = res.explorerUrl
+    const primary = Boolean(opts.primary) && !agent.walletAddress
+    if (primary) {
+      agent.walletAddress = res.walletAddress
+      if (!state.wallets.some((w) => w.address.toLowerCase() === res.walletAddress.toLowerCase())) {
+        state.wallets.push({ address: res.walletAddress, agentId: agent.id, chain: 'arc-testnet', createdAt: new Date().toISOString() })
+      }
+    }
+    if (res.funded && 'txHash' in res.funded) {
+      agent.starterFunding = {
+        address: res.walletAddress,
+        amountUsd: res.funded.amountUsd,
+        txHash: res.funded.txHash,
+        explorerUrl: res.funded.explorerUrl,
+        at: new Date().toISOString(),
+      }
+    }
+    pushActivity(agent, `Circle Agent Wallet provisioned on Arc: ${short(res.walletAddress)}${primary ? ' (the agent\'s wallet, hosted)' : ''}`)
+    if (agent.starterFunding) pushActivity(agent, `Starter funding: ${agent.starterFunding.amountUsd} test USDC arrived (tx ${short(agent.starterFunding.txHash)})`)
+    save(state)
+    return {
+      circleWalletId: res.walletId,
+      circleWalletAddress: res.walletAddress,
+      circleWalletExplorer: res.explorerUrl,
+      blockchain: res.blockchain,
+      primary,
+      walletAddress: agent.walletAddress,
+      funded:
+        refusal && (opts.fund ?? true)
+          ? { error: refusal }
+          : res.funded && 'error' in res.funded
+            ? // The signer could not send it (no key here, too little test USDC, or the chain did
+              // not answer). Said in words an owner can act on, with the cause kept beside it.
+              { error: STARTER_FUNDING_FAILED, detail: res.funded.error }
+            : res.funded,
+    }
+  } finally {
+    if (fund) pendingStarterUsd -= STARTER_FUNDING_USD
+    inFlightAgentOps.delete(flight)
+  }
+}
+
+const STARTER_FUNDING_FAILED = 'The starter funding could not be sent just now, so this wallet starts empty. Fund it from faucet.circle.com.'
+
+/** Test USDC a new hosted wallet starts with (the amount circle-agent.ts sends from the signer). */
+export const STARTER_FUNDING_USD = 0.5
+/** Funded hosted wallets per account. A further wallet is created empty. */
+export const STARTER_FUNDING_PER_OWNER = 2
+/** Starter funding sent across all accounts in one UTC day. Accounts are free to make, so this
+ *  is the ceiling that actually bounds what the signer gives away. */
+export const STARTER_FUNDING_DAILY_USD = 10
+
+/** Funding claimed by provisions still in flight, so two at once cannot both take the last slot. */
+let pendingStarterUsd = 0
+
+/** Why a new hosted wallet gets no starter funding, or null when it does. Read from the stored
+ *  records, so the ceilings survive a restart. */
+function starterFundingRefusal(owner: string | undefined): string | null {
+  const today = new Date().toISOString().slice(0, 10)
+  const funded = state.agents.filter((a) => a.starterFunding)
+  if (owner && funded.filter((a) => a.owner === owner).length >= STARTER_FUNDING_PER_OWNER) {
+    return `This account already received starter funding for ${STARTER_FUNDING_PER_OWNER} agents, so this wallet starts empty. Fund it from faucet.circle.com.`
+  }
+  const sentToday = funded.filter((a) => a.starterFunding!.at.slice(0, 10) === today).reduce((sum, a) => sum + a.starterFunding!.amountUsd, 0)
+  if (sentToday + pendingStarterUsd + STARTER_FUNDING_USD > STARTER_FUNDING_DAILY_USD + 1e-9) {
+    return 'Starter funding is used up for today, so this wallet starts empty. Fund it from faucet.circle.com, or create the next one after 00:00 UTC.'
+  }
+  return null
+}
+
+/**
+ * Whether an owner can be given a hosted wallet right now, and whether it would arrive funded.
+ * No network call: it reads the two credentials' presence and the stored funding records, so a
+ * registration form can decide what to offer before anything is created.
+ */
+export function hostedWalletStatus(caller?: string) {
+  const refusal = starterFundingRefusal(caller)
   return {
-    circleWalletId: res.walletId,
-    circleWalletAddress: res.walletAddress,
-    circleWalletExplorer: res.explorerUrl,
-    blockchain: res.blockchain,
-    funded: res.funded,
+    configured: circleEnabled(),
+    blockchain: 'ARC-TESTNET',
+    testnet: true,
+    custody: 'Circle holds the key (a developer-controlled wallet). This server can instruct transfers from it within the agent\'s limits, and nobody is shown a private key.',
+    starterFunding: { amountUsd: STARTER_FUNDING_USD, available: refusal === null, ...(refusal ? { reason: refusal } : {}) },
   }
 }
 

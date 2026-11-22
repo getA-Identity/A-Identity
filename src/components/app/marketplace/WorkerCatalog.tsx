@@ -46,6 +46,11 @@ type Task = {
   description: string
   status: 'open' | 'assigned' | 'funded' | 'delivered' | 'released' | 'disputed' | 'refunded' | 'cancelled'
   deliverable?: string
+  /** Set when A-Identity's own worker delivered it, with the model that wrote the result. */
+  deliveredBy?: 'house'
+  deliveryModel?: string
+  /** Why the worker has not delivered yet, in the worker's own words. */
+  workerNote?: string
   settlement?: 'onchain' | 'simulated'
   jobId?: string
   escrowExplorer?: string
@@ -75,7 +80,10 @@ function hireStage(t: Task, worker: string): { step: number; next: string; tone:
       return { step: 0, next: 'Waiting for bids. Accept one and its price locks in escrow.', tone: 'wait' }
     case 'assigned':
     case 'funded':
-      return { step: 1, next: `${usdc} is locked. Waiting for ${worker} to deliver.`, tone: 'wait' }
+      // When the worker said why it has not delivered, that is the thing to read.
+      return t.workerNote
+        ? { step: 1, next: t.workerNote, tone: 'act' }
+        : { step: 1, next: `${usdc} is locked. Waiting for ${worker} to deliver.`, tone: 'wait' }
     case 'delivered':
       return { step: 2, next: `${worker} delivered. Check the work, then pay or dispute.`, tone: 'act' }
     case 'disputed':
@@ -184,6 +192,18 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
     loadOpenTasks()
   }, [loadCatalog, loadTasks, loadOpenTasks])
 
+  // A hire whose money is locked is waiting on its worker. Read the list again every few
+  // seconds while one is, so the result appears on its row without a reload. Nothing polls
+  // once every hire has ended, or while the tab is in the background.
+  const awaitingWorker = tasks.some((t) => t.status === 'funded' || t.status === 'assigned')
+  useEffect(() => {
+    if (!awaitingWorker) return
+    const timer = window.setInterval(() => {
+      if (!document.hidden) loadTasks()
+    }, 4000)
+    return () => window.clearInterval(timer)
+  }, [awaitingWorker, loadTasks])
+
   const setBusyNote = (key: string, msg: string) => setNote((n) => ({ ...n, [key]: msg }))
 
   async function hire(svc: CatalogService) {
@@ -191,6 +211,34 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
     setBusy(key)
     setBusyNote(key, '')
     setHired(null)
+    const startedAt = Date.now()
+    // Locking the escrow can outlast the proxy in front of the backend, which then drops the
+    // answer while the hire goes on. So a dropped or gateway answer is not read as a failure:
+    // the list is asked whether the hire landed before anything is said about it.
+    const landedHire = async (): Promise<Task | null> => {
+      for (let attempt = 0; attempt < 10; attempt++) {
+        if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 5000))
+        try {
+          const res = await apiFetch('/api/marketplace/tasks')
+          const data = await readJson<{ tasks?: Task[] }>(res)
+          const found = (data.tasks ?? []).find(
+            (t) => t.agentId === svc.agentId && t.service === svc.service && Date.parse(t.createdAt) >= startedAt - 10_000,
+          )
+          if (found) return found
+        } catch {
+          /* keep looking until the attempts run out */
+        }
+        setBusyNote(key, 'Still locking the escrow on Arc...')
+      }
+      return null
+    }
+    const settle = async (task: Task) => {
+      setHiringKey(null)
+      setDesc('')
+      setBusyNote(key, '')
+      setHired({ key, task })
+      await loadTasks()
+    }
     try {
       const res = await apiFetch('/api/marketplace/hire', {
         method: 'POST',
@@ -201,18 +249,20 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
         timeoutMs: 90_000,
         onWaking: () => setBusyNote(key, 'Waking up the backend (free tier)...'),
       })
-      const data = await readJson<Task & { error?: string }>(res)
+      const data = await readJson<Task & { error?: string }>(res).catch(() => ({}) as Task & { error?: string })
       if (res.ok && data.id) {
-        setHiringKey(null)
-        setDesc('')
-        setBusyNote(key, '')
-        setHired({ key, task: data })
-        await loadTasks()
+        await settle(data)
+      } else if (res.status >= 502 && res.status <= 504) {
+        const landed = await landedHire()
+        if (landed) await settle(landed)
+        else setBusyNote(key, 'The hire did not go through. Nothing was locked; try again in a moment.')
       } else {
         setBusyNote(key, explainError(res.status, data.error))
       }
     } catch {
-      setBusyNote(key, 'Could not hire. The backend may be waking up; try again in a moment.')
+      const landed = await landedHire()
+      if (landed) await settle(landed)
+      else setBusyNote(key, 'The hire did not go through. Nothing was locked; try again in a moment.')
     } finally {
       setBusy(null)
     }
@@ -598,10 +648,14 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
 
                     {t.description && <p className="mt-1.5 text-xs text-foreground/50">Job: {t.description}</p>}
                     {t.deliverable && (
-                      <p className="mt-2 rounded-xl bg-foreground/5 px-3 py-2 text-xs text-foreground/70">
-                        <span className="font-semibold text-foreground/50">Delivered: </span>
-                        {t.deliverable.slice(0, 240)}
-                      </p>
+                      <div className="mt-2 rounded-xl bg-foreground/5 px-3 py-2.5">
+                        <div className="text-[11px] font-semibold text-foreground/50" title={t.deliveryModel ? `Written with ${t.deliveryModel}` : undefined}>
+                          {t.deliveredBy === 'house' ? 'Delivered by the A-Identity worker' : 'Delivered'}
+                        </div>
+                        <p className="mt-1 max-h-56 overflow-y-auto whitespace-pre-wrap break-words text-sm text-foreground/80">
+                          {t.deliverable}
+                        </p>
+                      </div>
                     )}
 
                     <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -623,6 +677,24 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
                       {/* The worker's side lives in the same list only for someone who hired
                           their own agent; the server refuses anyone else. Folded away so a
                           client is never asked to "deliver" their own order. */}
+                      {t.status === 'funded' && (
+                        <details className="w-full" open={Boolean(t.workerNote) || undefined}>
+                          <summary className="cursor-pointer text-xs font-semibold text-foreground/45 hover:text-foreground/70">
+                            Taking too long? Cancel and get a refund
+                          </summary>
+                          <div className="mt-2">
+                            <button
+                              type="button"
+                              onClick={() => taskAction(t.id, '/api/marketplace/dispute', { reason: 'Cancelled before delivery' })}
+                              disabled={busy === t.id}
+                              className="inline-flex items-center gap-1.5 rounded-full border border-warn/40 px-3 py-1.5 text-xs font-semibold text-warn hover:bg-warn/10 disabled:opacity-50"
+                            >
+                              {busy === t.id ? <Loader2 size={12} className="animate-spin" /> : null}
+                              {busy === t.id ? 'Working on Arc...' : `Cancel and refund ${t.priceUsd.toFixed(2)} USDC`}
+                            </button>
+                          </div>
+                        </details>
+                      )}
                       {t.status === 'funded' && (
                         <details className="w-full">
                           <summary className="cursor-pointer text-xs font-semibold text-foreground/45 hover:text-foreground/70">

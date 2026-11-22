@@ -73,6 +73,18 @@ export type Task = {
   status: TaskStatus
   /** What the worker submitted (a URI or short text reference), set on delivery. */
   deliverable?: string
+  /** Set when the platform's own worker delivered this task: the hired agent is one we operate
+   *  (named in HOUSE_WORKER_AGENT_IDS, see ./house-worker), and a card says so. */
+  deliveredBy?: 'house'
+  /** When a house delivery arrived, and the model that wrote it. */
+  deliveredAt?: string
+  deliveryModel?: string
+  /** Why the house worker has not delivered yet, in words a client can act on. Cleared on
+   *  delivery. */
+  workerNote?: string
+  /** How many times the house worker has tried this task. It stops at its limit, and the count
+   *  is stored so a restart does not start the count again. */
+  workerAttempts?: number
   /** The client's review, set on release. */
   review?: Review
   /** Bids from verified agents while the task is 'open' (before a worker is chosen). */

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Check, CheckCircle2, ChevronDown, Loader2, Terminal } from 'lucide-react'
 import { apiFetch, readJson, explainError } from '../../../lib/api'
 import { authHeaders } from '../../../store/auth'
@@ -9,18 +9,20 @@ import CopyBlock from '../CopyBlock'
 import { BACKEND_UNREACHABLE } from '../../../lib/mcpBase'
 import { CATEGORIES, MCP_ADD_CMD, REGISTER_CURL, STEP_META, STEPS, type Step } from './register-constants'
 import { logoErrorText, resizeLogoToDataUrl } from './logo-image'
-import RegisterSuccess from './RegisterSuccess'
+import RegisterSuccess, { type HostedWallet } from './RegisterSuccess'
 import IdentityStep from './steps/IdentityStep'
 import CapabilitiesStep from './steps/CapabilitiesStep'
 import PermissionsStep from './steps/PermissionsStep'
-import WalletStep from './steps/WalletStep'
+import WalletStep, { type HostedWalletStatus } from './steps/WalletStep'
 import ReviewStep from './steps/ReviewStep'
 
 /**
- * Full onboarding: identity details, capabilities, KYA permissions, a real Arc
- * testnet wallet (key shown once, never stored), then registration. The on-chain
- * anchor is queued for human approval; everything else happens for real against
- * the local platform backend.
+ * Full onboarding: identity details, capabilities, permissions, an Arc testnet wallet,
+ * then registration. The wallet is hosted by default when the server can create one:
+ * Circle holds its key, nobody is shown a private key, and it is created together with
+ * the agent. The other way is a key generated in this browser, shown once and never
+ * stored. The on-chain anchor is queued for human approval; everything else happens for
+ * real against the platform backend.
  */
 export default function RegisterForm({ onClose, onCreated }: { onClose: () => void; onCreated?: (id: string) => void }) {
   const [name, setName] = useState('')
@@ -51,6 +53,14 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
   const [showKey, setShowKey] = useState(false)
   const [copiedKey, setCopiedKey] = useState(false)
   const [keySaved, setKeySaved] = useState(false)
+  /** How the agent gets its wallet. Hosted needs no key and is created with the agent; it
+   *  becomes the default once the server says it can create one. */
+  const [walletMode, setWalletMode] = useState<'hosted' | 'own'>('own')
+  const [hostedStatus, setHostedStatus] = useState<HostedWalletStatus | null>(null)
+  /** The hosted wallet this registration created, and what became of its starter funding. */
+  const [hostedWallet, setHostedWallet] = useState<HostedWallet | null>(null)
+  const [hostedNote, setHostedNote] = useState<string | null>(null)
+  const [submitPhase, setSubmitPhase] = useState<'agent' | 'wallet'>('agent')
   const [copiedAddr, setCopiedAddr] = useState(false)
   const [fundBusy, setFundBusy] = useState(false)
   const [fundBal, setFundBal] = useState<number | null>(null)
@@ -64,6 +74,25 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
   const [kyaBusy, setKyaBusy] = useState(false)
   const [kya, setKya] = useState<{ verified: boolean; onchainTx?: string; onchainExplorer?: string } | null>(null)
   const [kyaNote, setKyaNote] = useState<string | null>(null)
+
+  // Ask once whether a hosted wallet can be created. When it can, it is the default, so the
+  // owner is never shown a private key. A failed read leaves the browser-key flow as it was.
+  useEffect(() => {
+    let active = true
+    apiFetch('/api/agents/circle-wallet/status')
+      .then((r) => (r.ok ? readJson<HostedWalletStatus>(r) : null))
+      .then((status) => {
+        if (!active || !status || typeof status.configured !== 'boolean') return
+        setHostedStatus(status)
+        if (status.configured) setWalletMode('hosted')
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
+  /** True when this registration will create a hosted wallet rather than use a browser key. */
+  const useHosted = !wallet && walletMode === 'hosted' && Boolean(hostedStatus?.configured)
 
   // Wizard position. The pane carousel shows the committed step; the indicator and
   // the Next/Back buttons act on the target step, same split the profile tabs use.
@@ -169,11 +198,50 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
     }
   }
 
+  /**
+   * Create the hosted wallet for an agent that now exists. The agent is registered whatever
+   * happens here, so a failure is a note on the outcome screen, never a failed registration.
+   * A slow answer is not read as a failure: the wallet is looked up before saying so.
+   */
+  const createHostedWallet = async (agentId: string) => {
+    type Created = { circleWalletAddress?: string; circleWalletExplorer?: string; funded?: HostedWallet['funded']; error?: string }
+    let reason = 'Its wallet could not be created just now. Open Wallet to create it.'
+    try {
+      const res = await apiFetch('/api/agents/circle-wallet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ agentId, primary: true }),
+        // Circle creates the wallet, then the starter funding is one Arc transfer.
+        timeoutMs: 60_000,
+      })
+      const made = await readJson<Created>(res)
+      if (res.ok && made.circleWalletAddress) {
+        setHostedWallet({ address: made.circleWalletAddress, explorer: made.circleWalletExplorer, funded: made.funded ?? null })
+        return
+      }
+      if (made.error) reason = explainError(res.status, made.error)
+    } catch {
+      /* fall through to the lookup below */
+    }
+    try {
+      const res = await apiFetch(`/api/agents/circle-wallet?agentId=${encodeURIComponent(agentId)}`, { headers: authHeaders() })
+      const found = await readJson<{ circleWalletAddress?: string }>(res)
+      if (res.ok && found.circleWalletAddress) {
+        setHostedWallet({ address: found.circleWalletAddress, funded: null })
+        return
+      }
+    } catch {
+      /* the note below says what is known */
+    }
+    setHostedNote(reason)
+  }
+
   const submit = async () => {
     if (!name.trim()) { setError('Give the agent a name.'); return }
     if (desc.trim().length < 20) { setError('Describe what this agent does (at least 20 characters), so it can appear in the Agent House showcase.'); return }
     if (wallet && !keySaved) { setError('Confirm you saved the private key before continuing.'); return }
     setSubmitBusy(true)
+    setSubmitPhase('agent')
     setError(null)
     try {
       const res = await apiFetch('/api/agents', {
@@ -199,6 +267,10 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
       const data = await readJson<{ agent?: { id: string }; error?: string }>(res)
       if (res.ok && data.agent) {
         setError(null)
+        if (useHosted) {
+          setSubmitPhase('wallet')
+          await createHostedWallet(data.agent.id)
+        }
         invalidatePlatformAgents() // a new agent joined the list; refresh every screen that lists agents
         onCreated?.(data.agent.id) // select it on the parent so it shows immediately
         setDone(data.agent.id)
@@ -333,6 +405,8 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
       <RegisterSuccess
         name={name}
         wallet={wallet}
+        hosted={hostedWallet}
+        hostedNote={hostedNote}
         kya={kya}
         kyaBusy={kyaBusy}
         kyaNote={kyaNote}
@@ -566,6 +640,9 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
 
           {shownStep === 'wallet' && (
             <WalletStep
+              mode={walletMode}
+              setMode={setWalletMode}
+              hosted={hostedStatus}
               wallet={wallet}
               walletBusy={walletBusy}
               createWallet={createWallet}
@@ -586,7 +663,7 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
 
           {shownStep === 'review' && (
             <ReviewStep
-              value={{ name, desc, category, caps, logoUrl, cardStyle, dailyCap, autoApprove, a2a, a2h, wallet }}
+              value={{ name, desc, category, caps, logoUrl, cardStyle, dailyCap, autoApprove, a2a, a2h, wallet, hostedWallet: useHosted }}
               label={label}
             />
           )}
@@ -619,7 +696,7 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
             onClick={submit}
             disabled={submitBusy || (!!wallet && !keySaved)}
           >
-            {submitBusy ? 'Registering...' : 'Pass KYA and register on Arc testnet'}
+            {submitBusy ? (submitPhase === 'wallet' ? 'Creating its wallet...' : 'Creating the agent...') : 'Create agent'}
           </Button>
         )}
       </div>

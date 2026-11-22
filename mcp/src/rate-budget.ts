@@ -102,6 +102,9 @@ export function rateBudget(method: string, pathname: string): { bucket: string; 
   // contract, not a call. Its own bucket, and a tighter one, because a burst of these
   // drains the signer faster than anything else here and each one is permanent.
   if (pathname === '/api/agents/vault') return { bucket: 'vault-deploy', max: 3, windowMs: 60_000 }
+  // Creating a hosted wallet makes a Circle wallet and, within its own ceilings, sends it test
+  // USDC from the signer. The same shape as a vault deploy, in its own bucket.
+  if (pathname === '/api/agents/circle-wallet') return { bucket: 'hosted-wallet', max: 3, windowMs: 60_000 }
   // The Soroban owner-signing pair. Neither spends our gas: `prepare` signs nothing and
   // `submit` broadcasts an envelope whose own source account pays the fee. What they DO
   // spend is our RPC budget, and they are the only endpoints here that will relay bytes a

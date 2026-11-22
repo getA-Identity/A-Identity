@@ -9,7 +9,7 @@
 import {
   recordWallet, assignWallet, getWalletBalance, createAgent, listPlatformAgents,
   updateAgentLogo, anchorAgentOnchain, provisionAgentVault, grantAgentSessionKey, getAgentVault,
-  provisionCircleWallet, getAgentCircleWallet, getAgentTreasury, startAgentAutoYield,
+  provisionCircleWallet, hostedWalletStatus, getAgentCircleWallet, getAgentTreasury, startAgentAutoYield,
   stopAgentAutoYield, startKyaChallenge, startClaimChallenge, verifyAgentClaim, verifyKya, revokeAgentKya, getAgentKya,
   agentReputation, agentPolicy, getUserProfile, updateUserAvatar, getUserWallets, linkUserWallet, unlinkUserWallet,
   startCirclePolicyChallenge, attestCirclePolicy, getCirclePolicyAttestation, circleAgentWalletFor,
@@ -266,11 +266,17 @@ export async function handleAgentRoutes(ctx: RouteCtx): Promise<boolean> {
   }
   // Provision a Circle Agent Wallet for an agent (hosted policy layer, credential-gated)
   if (req.method === 'POST' && url.pathname === '/api/agents/circle-wallet') {
-    const body = (await readBody(req).catch(() => null)) as { agentId?: string; fund?: boolean } | null
+    const body = (await readBody(req).catch(() => null)) as { agentId?: string; fund?: boolean; primary?: boolean } | null
     if (!body?.agentId) { sendJson(res, 400, { error: 'agentId required' }); return true }
-    const r = await provisionCircleWallet(body.agentId, { fund: body.fund, caller: callerId })
+    const r = await provisionCircleWallet(body.agentId, { fund: body.fund, primary: body.primary === true, caller: callerId })
     if ('error' in r && typeof r.error === 'string') { sendJson(res, errStatus(r.error), r); return true }
     sendJson(res, 200, r)
+    return true
+  }
+  // Whether a hosted wallet can be offered right now, and whether it would arrive funded. No
+  // network call and nothing about any agent: a registration form reads it before it asks.
+  if (req.method === 'GET' && url.pathname === '/api/agents/circle-wallet/status') {
+    sendJson(res, 200, hostedWalletStatus(callerId))
     return true
   }
   // Read an agent's live Circle Agent Wallet state + balances
