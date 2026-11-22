@@ -61,7 +61,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@stellar/stellar-base": "^15.0.0",
     "algosdk": "^3.7.0",
-    "zod": "^3.25.76"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
