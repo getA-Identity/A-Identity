@@ -46,7 +46,7 @@ jobs:
   contracts:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Pinned: the suite was written and its mutants were calibrated against this release.
       - uses: foundry-rs/foundry-toolchain@v1

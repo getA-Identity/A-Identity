@@ -61,7 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # rust-toolchain.toml pins the channel (1.95.0), the wasm32-unknown-unknown target and the
       # components, and rustup installs exactly that on the first cargo call in this directory,
@@ -130,7 +130,7 @@ jobs:
     steps:
       # The full history, not the default shallow clone: cargo-near clones the repository from
       # this checkout's .git (with libgit2) to get a pristine copy of HEAD to build from.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
