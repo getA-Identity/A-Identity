@@ -24,8 +24,12 @@ export type WorkOutcome =
 
 /** What a stored deliverable can hold (platform/tasks.ts slices at the same length). */
 export const MAX_DELIVERABLE_CHARS = 5000
-/** Room for the model to think and answer. Billing follows what is used, not this ceiling. */
-export const MAX_TOKENS = 16_000
+/**
+ * Room for the model to think and write an answer that fits a delivery (5000 characters is
+ * well under 2000 tokens). It is also the most one call can cost: the worker's daily ceiling
+ * counts calls, so the bill is bounded by that count times this.
+ */
+export const MAX_TOKENS = 8_000
 /** One job is one short request. Past this the call is abandoned and counted as a failed try. */
 export const REQUEST_TIMEOUT_MS = 120_000
 
@@ -72,8 +76,14 @@ const FALLBACK_BETA = 'server-side-fallback-2026-07-01'
 type CreateParams = Anthropic.Beta.Messages.MessageCreateParamsNonStreaming
 type Created = Anthropic.Beta.Messages.BetaMessage
 
-/** The one SDK call this module makes, as a function, so a test can stand in for it. */
-export type CreateMessage = (body: CreateParams, options: { timeout: number }) => Promise<Created>
+/**
+ * The one SDK call this module makes, as a function, so a test can stand in for it. The SDK's
+ * own retries are off: a retried timeout would hold the worker's single queue for minutes, and
+ * every retry is another billed call the ceilings would not see. The worker does the retrying,
+ * one counted call at a time.
+ */
+export type CreateMessage = (body: CreateParams, options: { timeout: number; maxRetries: number }) => Promise<Created>
+const CALL_OPTIONS = { timeout: REQUEST_TIMEOUT_MS, maxRetries: 0 } as const
 
 let shared: Anthropic | null = null
 const sdkCreate: CreateMessage = (body, options) => {
@@ -108,14 +118,14 @@ export async function runHouseSkill(
 
   let message: Created
   try {
-    message = await create(body, { timeout: REQUEST_TIMEOUT_MS })
+    message = await create(body, CALL_OPTIONS)
   } catch (e) {
     // A 400 says the request shape was refused, which is about an option and not about the
     // job: a model or an account that does not take the effort or fallback settings. The
     // plain request is tried once before the job is told it cannot be done.
     if (!(e instanceof Anthropic.BadRequestError)) return failure(e)
     try {
-      message = await create(plain, { timeout: REQUEST_TIMEOUT_MS })
+      message = await create(plain, CALL_OPTIONS)
     } catch (again) {
       return failure(again)
     }
@@ -152,10 +162,17 @@ function failure(e: unknown): WorkOutcome {
   if (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError) {
     return out('operator', 'the model credential was rejected')
   }
+  // The account cannot be charged: ours to fix, and no task should be given up over it.
+  if (e instanceof Anthropic.PaymentRequiredError) return out('operator', 'the model account cannot be charged')
   if (e instanceof Anthropic.RateLimitError) return out('operator', 'the model is rate limited')
   if (e instanceof Anthropic.NotFoundError) return out('operator', 'the configured model was not found')
-  if (e instanceof Anthropic.BadRequestError || e instanceof Anthropic.UnprocessableEntityError) {
+  if (e instanceof Anthropic.BadRequestError || e instanceof Anthropic.UnprocessableEntityError || e instanceof Anthropic.ContentTooLargeError) {
     return out('job', 'the model rejected the request')
+  }
+  // A call that ran out of time is about this job: counted as a try, so one slow job cannot
+  // sit at the head of the queue forever. Checked before the connection error it extends.
+  if (e instanceof Anthropic.APIConnectionTimeoutError || e instanceof Anthropic.RequestTimeoutError) {
+    return out('retry', 'the model took too long to answer')
   }
   if (e instanceof Anthropic.APIConnectionError) return out('operator', 'the model could not be reached')
   if (e instanceof Anthropic.APIError) {

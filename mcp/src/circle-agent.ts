@@ -105,7 +105,7 @@ export type CircleProvisioned = {
   explorerUrl: string
   /** Result of the optional top-up, funded from our Arc signer (Circle's faucet
    *  does not cover ARC-TESTNET). */
-  funded: { amountUsd: number; txHash: string; explorerUrl: string } | { error: string } | null
+  funded: { amountUsd: number; txHash: string; explorerUrl: string; unconfirmed?: true } | { error: string } | null
 }
 export type CircleUnavailable = { provisioned: false; reason: string }
 
@@ -156,9 +156,14 @@ async function fundFromSigner(
   address: string,
   amountUsd: number,
   env: NodeJS.ProcessEnv,
-): Promise<{ amountUsd: number; txHash: string; explorerUrl: string } | { error: string }> {
+): Promise<{ amountUsd: number; txHash: string; explorerUrl: string; unconfirmed?: true } | { error: string }> {
   const r = await payUsdcOnchain(address, amountUsd, env)
-  return r.executed ? { amountUsd, txHash: r.txHash, explorerUrl: r.explorerUrl } : { error: r.reason }
+  if (r.executed) return { amountUsd, txHash: r.txHash, explorerUrl: r.explorerUrl }
+  // Broadcast, with no receipt inside the wait: it may have landed. That is reported with its
+  // hash and never as a failure, so nobody is told to fund a wallet that is about to be
+  // funded, and whoever rations these transfers can count it.
+  if ('unconfirmed' in r && r.unconfirmed) return { amountUsd, txHash: r.txHash, explorerUrl: r.explorerUrl, unconfirmed: true }
+  return { error: r.reason }
 }
 
 // ── settlement (mirrors the vault result shape so executeInstruction is uniform) ──

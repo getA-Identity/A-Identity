@@ -15,6 +15,8 @@ import {
 import { ARC_CHAIN, CHAINS, addressUrl, isAccountId } from '../chains/index.js'
 import type { ChainDescriptor } from '../chains/types.js'
 import { createAgentWallet, readCircleWallet, circleEnabled } from '../circle-agent.js'
+import { buyerAddress } from '../nanopay.js'
+import { isRetired } from '../chains/retired.js'
 import { chooseStellarVaultOwner } from '../stellar-vault.js'
 import { previewTreasury, startAutoYield, type TreasuryPreview, type TreasuryExecution } from '../treasury.js'
 
@@ -265,11 +267,17 @@ export async function provisionAgentVault(
   // would not be human-controlled and a signer compromise could drain every vault. Refuse
   // rather than silently collapse the two roles.
   if (!ownerAddress) {
+    // A hosted wallet is the one case where "give the agent a wallet first" is no answer: it
+    // has one, and that one cannot sign an owner call. Say so, and say what does work.
+    const hosted = Boolean(agent.walletAddress) && agent.walletAddress === agent.circleWalletAddress
     return {
-      error:
-        'Provide an ownerAddress (a human/Safe wallet distinct from the server operator): ' +
-        'sign in with a wallet, pass ownerAddress, or give the agent a wallet first. The vault ' +
-        'owner (freeze/withdraw) must not be the same key that operates it.',
+      error: hosted
+        ? 'Provide an ownerAddress (a wallet you hold): this agent\'s wallet is hosted and can sign no owner call, ' +
+          'so it cannot own a vault. Pass ownerAddress, or deploy from your own wallet on the Arc vault page. The vault ' +
+          'owner (freeze/withdraw) must not be the same key that operates it.'
+        : 'Provide an ownerAddress (a human/Safe wallet distinct from the server operator): ' +
+          'sign in with a wallet, pass ownerAddress, or give the agent a wallet first. The vault ' +
+          'owner (freeze/withdraw) must not be the same key that operates it.',
     }
   }
 
@@ -660,7 +668,11 @@ export async function provisionCircleWallet(
   const fund = (opts.fund ?? true) && !refusal
 
   inFlightAgentOps.add(flight)
-  if (fund) pendingStarterUsd += STARTER_FUNDING_USD
+  const owner = agent.owner ?? ''
+  if (fund) {
+    pendingStarterUsd += STARTER_FUNDING_USD
+    pendingStarterByOwner.set(owner, (pendingStarterByOwner.get(owner) ?? 0) + 1)
+  }
   try {
     const res = await (deps.createWallet ?? createAgentWallet)({ name: agent.name, refId: agent.id, fund }, process.env)
     if (!res.provisioned) return { error: res.reason }
@@ -682,10 +694,19 @@ export async function provisionCircleWallet(
         txHash: res.funded.txHash,
         explorerUrl: res.funded.explorerUrl,
         at: new Date().toISOString(),
+        // Sent with no receipt yet. Kept, and counted, because it may have landed.
+        ...(res.funded.unconfirmed ? { unconfirmed: true as const } : {}),
       }
     }
     pushActivity(agent, `Circle Agent Wallet provisioned on Arc: ${short(res.walletAddress)}${primary ? ' (the agent\'s wallet, hosted)' : ''}`)
-    if (agent.starterFunding) pushActivity(agent, `Starter funding: ${agent.starterFunding.amountUsd} test USDC arrived (tx ${short(agent.starterFunding.txHash)})`)
+    if (agent.starterFunding) {
+      pushActivity(
+        agent,
+        agent.starterFunding.unconfirmed
+          ? `Starter funding: ${agent.starterFunding.amountUsd} test USDC was sent and is waiting for its receipt (tx ${short(agent.starterFunding.txHash)})`
+          : `Starter funding: ${agent.starterFunding.amountUsd} test USDC arrived (tx ${short(agent.starterFunding.txHash)})`,
+      )
+    }
     save(state)
     return {
       circleWalletId: res.walletId,
@@ -704,7 +725,12 @@ export async function provisionCircleWallet(
             : res.funded,
     }
   } finally {
-    if (fund) pendingStarterUsd -= STARTER_FUNDING_USD
+    if (fund) {
+      pendingStarterUsd -= STARTER_FUNDING_USD
+      const left = (pendingStarterByOwner.get(owner) ?? 1) - 1
+      if (left > 0) pendingStarterByOwner.set(owner, left)
+      else pendingStarterByOwner.delete(owner)
+    }
     inFlightAgentOps.delete(flight)
   }
 }
@@ -719,15 +745,17 @@ export const STARTER_FUNDING_PER_OWNER = 2
  *  is the ceiling that actually bounds what the signer gives away. */
 export const STARTER_FUNDING_DAILY_USD = 10
 
-/** Funding claimed by provisions still in flight, so two at once cannot both take the last slot. */
+/** Funding claimed by provisions still in flight, in total and per account, so requests made
+ *  at the same moment cannot each take the last slot of either ceiling. */
 let pendingStarterUsd = 0
+const pendingStarterByOwner = new Map<string, number>()
 
 /** Why a new hosted wallet gets no starter funding, or null when it does. Read from the stored
  *  records, so the ceilings survive a restart. */
 function starterFundingRefusal(owner: string | undefined): string | null {
   const today = new Date().toISOString().slice(0, 10)
   const funded = state.agents.filter((a) => a.starterFunding)
-  if (owner && funded.filter((a) => a.owner === owner).length >= STARTER_FUNDING_PER_OWNER) {
+  if (owner && funded.filter((a) => a.owner === owner).length + (pendingStarterByOwner.get(owner) ?? 0) >= STARTER_FUNDING_PER_OWNER) {
     return `This account already received starter funding for ${STARTER_FUNDING_PER_OWNER} agents, so this wallet starts empty. Fund it from faucet.circle.com.`
   }
   const sentToday = funded.filter((a) => a.starterFunding!.at.slice(0, 10) === today).reduce((sum, a) => sum + a.starterFunding!.amountUsd, 0)
@@ -738,12 +766,86 @@ function starterFundingRefusal(owner: string | undefined): string | null {
 }
 
 /**
+ * Starter funding for a wallet that did not get it when it was created: a key its owner holds,
+ * or a hosted wallet whose transfer could not go out at the time. Once per agent and once per
+ * address, inside the same two ceilings, and prepared-or-executed like every other transfer:
+ * with no signer the answer says nothing was sent, and nothing is recorded.
+ *
+ * It sends to the address on the agent's record and nowhere else, so the only thing a caller
+ * chooses is which of their own agents to fund.
+ */
+export async function sendStarterFunding(
+  agentId: string,
+  opts: { caller?: string } = {},
+  deps: { send?: typeof payUsdcOnchain; signerAddress?: () => Promise<string | null> } = {},
+) {
+  const agent = state.agents.find((a) => a.id === agentId)
+  if (!agent) return { error: 'Unknown agent' }
+  if (!ownsAgent(agent, opts.caller)) return { error: 'Forbidden: not the agent owner' }
+  const address = agent.walletAddress ?? ''
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address)) return { error: 'This agent has no wallet to fund yet. Give it one first.' }
+  // Already sent, confirmed or not: the same answer every time, and never a second transfer.
+  if (agent.starterFunding) return { walletAddress: address, already: true, funded: agent.starterFunding }
+  if (isRetired(address)) return { error: 'This address is retired and is never funded.' }
+  const lower = address.toLowerCase()
+  if (state.agents.some((a) => a.id !== agent.id && a.starterFunding?.address.toLowerCase() === lower)) {
+    return { walletAddress: address, funded: { error: 'This wallet already received starter funding through another agent.' } }
+  }
+  const signer = await (deps.signerAddress ?? (() => buyerAddress()))().catch(() => null)
+  if (signer && signer.toLowerCase() === lower) return { error: 'This address is the server signer and is not funded from itself.' }
+  const flight = `starter-funding:${agent.id}`
+  if (inFlightAgentOps.has(flight)) return { error: 'Starter funding is already being sent to this agent; wait for it to finish.' }
+
+  const refusal = starterFundingRefusal(agent.owner)
+  if (refusal) return { walletAddress: address, funded: { error: refusal } }
+
+  const owner = agent.owner ?? ''
+  inFlightAgentOps.add(flight)
+  pendingStarterUsd += STARTER_FUNDING_USD
+  pendingStarterByOwner.set(owner, (pendingStarterByOwner.get(owner) ?? 0) + 1)
+  try {
+    const r = await (deps.send ?? payUsdcOnchain)(address, STARTER_FUNDING_USD, process.env)
+    const sent = r.executed || ('unconfirmed' in r && r.unconfirmed)
+    if (!sent) return { walletAddress: address, funded: { error: STARTER_FUNDING_FAILED, detail: r.reason } }
+    agent.starterFunding = {
+      address,
+      amountUsd: STARTER_FUNDING_USD,
+      txHash: r.txHash,
+      explorerUrl: r.explorerUrl,
+      at: new Date().toISOString(),
+      // Sent with no receipt yet. Kept, and counted, because it may have landed.
+      ...(r.executed ? {} : { unconfirmed: true as const }),
+    }
+    pushActivity(
+      agent,
+      r.executed
+        ? `Starter funding: ${STARTER_FUNDING_USD} test USDC arrived (tx ${short(r.txHash)})`
+        : `Starter funding: ${STARTER_FUNDING_USD} test USDC was sent and is waiting for its receipt (tx ${short(r.txHash)})`,
+    )
+    save(state)
+    return { walletAddress: address, funded: agent.starterFunding }
+  } finally {
+    pendingStarterUsd -= STARTER_FUNDING_USD
+    const left = (pendingStarterByOwner.get(owner) ?? 1) - 1
+    if (left > 0) pendingStarterByOwner.set(owner, left)
+    else pendingStarterByOwner.delete(owner)
+    inFlightAgentOps.delete(flight)
+  }
+}
+
+/**
  * Whether an owner can be given a hosted wallet right now, and whether it would arrive funded.
  * No network call: it reads the two credentials' presence and the stored funding records, so a
  * registration form can decide what to offer before anything is created.
  */
-export function hostedWalletStatus(caller?: string) {
-  const refusal = starterFundingRefusal(caller)
+export async function hostedWalletStatus(caller?: string, deps: { signerAddress?: () => Promise<string | null> } = {}) {
+  // The funding comes from the Arc testnet signer. With no usable key there is none to send,
+  // and saying it is available would promise something the registration cannot keep. The key's
+  // balance is not read here: that is a network call, and the transfer says so if it is short.
+  const signer = await (deps.signerAddress ?? (() => buyerAddress()))().catch(() => null)
+  const refusal = signer
+    ? starterFundingRefusal(caller)
+    : 'Starter funding is not available on this server right now, so a new wallet starts empty. Fund it from faucet.circle.com.'
   return {
     configured: circleEnabled(),
     blockchain: 'ARC-TESTNET',

@@ -7,7 +7,7 @@ import { state, save, id, ownsAgent, pushActivity, short, type PlatformAgent } f
 import { isShowcase } from './feed.js'
 import {
   type Task, type TaskStatus, type Review, type Bid,
-  canTransition, normalizePriceUsd, normalizeDeadlineHours, deadlineFrom,
+  canTransition, isTerminal, normalizePriceUsd, normalizeDeadlineHours, deadlineFrom,
   sanitizeRating, aggregateRating, agentChainIds, serviceDescription,
   openTaskComplaint,
 } from '../marketplace.js'
@@ -43,9 +43,17 @@ function transitionTask(task: Task, to: TaskStatus): boolean {
  * the remaining roadmap piece). Release completes it via completeEscrowOnchain.
  */
 async function tryOnchainFund(task: Task, agent?: PlatformAgent): Promise<void> {
+  // Marked before the first await: the task is already in the list as `funded`, and the lock
+  // below takes seconds. Until it ends nothing may settle or work the task (see escrowLocking).
+  task.escrowLockingAt = new Date().toISOString()
   try {
     const esc = await fundEscrowOnchain({ budgetUsd: task.priceUsd, description: `A-Identity marketplace task ${task.id}: ${task.service}` })
-    if (esc.executed) {
+    if (esc.executed && isTerminal(task.status)) {
+      // Only reachable when a lock outlived its mark and the task was settled meanwhile. The
+      // job is funded and nothing points at it, so say where the money is instead of writing
+      // it onto a finished row.
+      console.error(`[marketplace] escrow job ${esc.jobId} locked after task ${task.id} was already ${task.status}: it stays funded until its expiry refund is claimed`)
+    } else if (esc.executed) {
       task.jobId = esc.jobId
       const fund = esc.steps.find((s) => s.step === 'fund') ?? esc.steps[esc.steps.length - 1]
       task.escrowTx = fund?.txHash
@@ -54,8 +62,27 @@ async function tryOnchainFund(task: Task, agent?: PlatformAgent): Promise<void> 
     }
   } catch {
     /* off-chain funded fallback - never blocks the hire */
+  } finally {
+    delete task.escrowLockingAt
   }
 }
+
+/** A lock mark older than this is read as left over from a process that ended mid-lock. Four
+ *  Arc transactions take seconds, and a mark that never cleared must not hold a task forever. */
+const ESCROW_LOCK_STALE_MS = 3 * 60_000
+
+/**
+ * True while a task's escrow lock is still running. Release and refund are refused then, and
+ * the house worker leaves the task alone, because the lock has not said yet which on-chain job
+ * (if any) holds the money: settling now would settle a different one.
+ */
+export function escrowLocking(task: Pick<Task, 'escrowLockingAt'>, now: number = Date.now()): boolean {
+  if (!task.escrowLockingAt) return false
+  const at = Date.parse(task.escrowLockingAt)
+  return Number.isFinite(at) && now - at < ESCROW_LOCK_STALE_MS
+}
+
+const STILL_LOCKING = 'The escrow for this hire is still locking on Arc. Try again in a moment.'
 
 /**
  * Hire a verified worker agent. Trusted-marketplace rule: only a KYA-verified agent can be
@@ -244,7 +271,7 @@ export function deliverTask(taskId: string, deliverable: string, caller?: string
 export function listFundedTasksForAgents(agentIds: ReadonlySet<string>): Task[] {
   if (agentIds.size === 0) return []
   return state.tasks
-    .filter((t) => t.status === 'funded' && agentIds.has(t.agentId))
+    .filter((t) => t.status === 'funded' && agentIds.has(t.agentId) && !escrowLocking(t))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
 }
 
@@ -307,10 +334,37 @@ export function noteHouseTask(input: {
   return task
 }
 
-/** How many tasks the house worker delivered at or after `sinceIso`: its daily ceiling counts
- *  these, read from the stored rows so a restart does not reset it. */
-export function countHouseDeliveriesSince(sinceIso: string): number {
-  return state.tasks.filter((t) => t.deliveredBy === 'house' && (t.deliveredAt ?? '') >= sinceIso).length
+/** The most model calls one task may ever take, whatever came of them. */
+export const HOUSE_CALLS_PER_TASK = 6
+
+/**
+ * The house worker records that it is about to call a model for a task. Written BEFORE the
+ * call, so a call that fails, is cut off or is thrown away still counts: it is billed either
+ * way, and the ceilings exist to bound the bill. Refused for a task that is no longer waiting,
+ * so a hire cancelled a moment ago costs nothing.
+ */
+export function claimHouseCall(input: { taskId: string; allowedAgentIds: ReadonlySet<string> }): Task | { error: string } {
+  const task = state.tasks.find((t) => t.id === input.taskId)
+  if (!task) return { error: 'Unknown task' }
+  if (!input.allowedAgentIds.has(task.agentId)) return { error: 'Forbidden: the hired agent is not a house worker' }
+  if (task.status !== 'funded') return { error: `Cannot work a task in status ${task.status}` }
+  if (escrowLocking(task)) return { error: STILL_LOCKING }
+  const calls = task.workerCalls ?? []
+  if (calls.length >= HOUSE_CALLS_PER_TASK) return { error: 'This task has used every model call it may take' }
+  task.workerCalls = [...calls, new Date().toISOString()]
+  save(state)
+  return task
+}
+
+/** Model calls the house worker made at or after `sinceIso`, for everyone or for one client.
+ *  Read from the stored rows, so a restart does not reset a ceiling. */
+export function countHouseCallsSince(sinceIso: string, client?: string): number {
+  let n = 0
+  for (const t of state.tasks) {
+    if (!t.workerCalls || (client !== undefined && t.client !== client)) continue
+    for (const at of t.workerCalls) if (at >= sinceIso) n++
+  }
+  return n
 }
 
 /**
@@ -332,6 +386,7 @@ export async function releaseTask(
   if (!task) return { error: 'Unknown task' }
   if (task.client !== caller) return { error: 'Forbidden: only the hiring client can release' }
   if (!canTransition(task.status, 'released')) return { error: `Cannot release from status ${task.status}` }
+  if (escrowLocking(task)) return { error: STILL_LOCKING }
   const agent = state.agents.find((a) => a.id === task.agentId)
 
   // Escrow was locked on-chain at hire (has a jobId): complete THAT job on-chain, no new job.
@@ -402,6 +457,7 @@ export async function disputeTask(taskId: string, reason: string, caller?: strin
   if (!task) return { error: 'Unknown task' }
   if (task.client !== caller) return { error: 'Forbidden: only the hiring client can dispute' }
   if (!canTransition(task.status, 'refunded')) return { error: `Cannot dispute from status ${task.status}` }
+  if (escrowLocking(task)) return { error: STILL_LOCKING }
   const agent = state.agents.find((a) => a.id === task.agentId)
 
   // Escrow locked on-chain at hire: reject the job on-chain (refunds the client in the same tx).
@@ -460,9 +516,10 @@ export function getTask(taskId: string, caller?: string): Task | { error: string
   return task
 }
 
-/** Tasks a client has opened (the "my hires" view). */
-export function listTasksForClient(caller?: string): Task[] {
-  return caller ? state.tasks.filter((t) => t.client === caller) : []
+/** Tasks a client has opened (the "my hires" view). Each row says whether its escrow is still
+ *  locking, decided here on the server's clock, so a page never has to compare clocks. */
+export function listTasksForClient(caller?: string): (Task & { escrowLocking: boolean })[] {
+  return caller ? state.tasks.filter((t) => t.client === caller).map((t) => ({ ...t, escrowLocking: escrowLocking(t) })) : []
 }
 
 /** Tasks assigned to an agent (the worker "my jobs" view). Owner-only. */

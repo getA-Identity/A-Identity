@@ -60,7 +60,9 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
   /** The hosted wallet this registration created, and what became of its starter funding. */
   const [hostedWallet, setHostedWallet] = useState<HostedWallet | null>(null)
   const [hostedNote, setHostedNote] = useState<string | null>(null)
-  const [submitPhase, setSubmitPhase] = useState<'agent' | 'wallet'>('agent')
+  /** What became of the starter funding for a wallet whose key the owner holds. */
+  const [ownFunding, setOwnFunding] = useState<HostedWallet['funded']>(null)
+  const [submitPhase, setSubmitPhase] = useState<'agent' | 'wallet' | 'funding'>('agent')
   const [copiedAddr, setCopiedAddr] = useState(false)
   const [fundBusy, setFundBusy] = useState(false)
   const [fundBal, setFundBal] = useState<number | null>(null)
@@ -206,6 +208,8 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
   const createHostedWallet = async (agentId: string) => {
     type Created = { circleWalletAddress?: string; circleWalletExplorer?: string; funded?: HostedWallet['funded']; error?: string }
     let reason = 'Its wallet could not be created just now. Open Wallet to create it.'
+    // True when the server answered the request itself, so a refusal is known to be final.
+    let gotAnswer = false
     try {
       const res = await apiFetch('/api/agents/circle-wallet', {
         method: 'POST',
@@ -215,6 +219,7 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
         timeoutMs: 60_000,
       })
       const made = await readJson<Created>(res)
+      gotAnswer = res.status < 500
       if (res.ok && made.circleWalletAddress) {
         setHostedWallet({ address: made.circleWalletAddress, explorer: made.circleWalletExplorer, funded: made.funded ?? null })
         return
@@ -223,17 +228,41 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
     } catch {
       /* fall through to the lookup below */
     }
-    try {
-      const res = await apiFetch(`/api/agents/circle-wallet?agentId=${encodeURIComponent(agentId)}`, { headers: authHeaders() })
-      const found = await readJson<{ circleWalletAddress?: string }>(res)
-      if (res.ok && found.circleWalletAddress) {
-        setHostedWallet({ address: found.circleWalletAddress, funded: null })
-        return
+    // The answer may have been dropped on the way back while the wallet was still being made.
+    // Look for it a few times before saying it was not created.
+    for (let attempt = 0; attempt < 6; attempt++) {
+      if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 5000))
+      try {
+        const res = await apiFetch(`/api/agents/circle-wallet?agentId=${encodeURIComponent(agentId)}`, { headers: authHeaders() })
+        const found = await readJson<{ circleWalletAddress?: string }>(res)
+        if (res.ok && found.circleWalletAddress) {
+          setHostedWallet({ address: found.circleWalletAddress, funded: null })
+          return
+        }
+        // A plain answer that there is none is final: nothing is still on its way.
+        if (res.ok && gotAnswer) break
+      } catch {
+        /* keep looking until the attempts run out */
       }
-    } catch {
-      /* the note below says what is known */
     }
     setHostedNote(reason)
+  }
+
+  /** Starter funding for a wallet whose key the owner holds, once the agent exists. Whatever
+   *  comes back is shown on the outcome screen, and the faucet stays available either way. */
+  const fundOwnWallet = async (agentId: string) => {
+    try {
+      const res = await apiFetch('/api/agents/starter-funding', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ agentId }),
+        timeoutMs: 60_000,
+      })
+      const sent = await readJson<{ funded?: HostedWallet['funded'] }>(res)
+      if (res.ok && sent.funded) setOwnFunding(sent.funded)
+    } catch {
+      /* nothing is known, so nothing is claimed: the outcome screen keeps the faucet link */
+    }
   }
 
   const submit = async () => {
@@ -270,6 +299,9 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
         if (useHosted) {
           setSubmitPhase('wallet')
           await createHostedWallet(data.agent.id)
+        } else if (wallet) {
+          setSubmitPhase('funding')
+          await fundOwnWallet(data.agent.id)
         }
         invalidatePlatformAgents() // a new agent joined the list; refresh every screen that lists agents
         onCreated?.(data.agent.id) // select it on the parent so it shows immediately
@@ -407,6 +439,7 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
         wallet={wallet}
         hosted={hostedWallet}
         hostedNote={hostedNote}
+        ownFunding={ownFunding}
         kya={kya}
         kyaBusy={kyaBusy}
         kyaNote={kyaNote}
@@ -696,7 +729,13 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
             onClick={submit}
             disabled={submitBusy || (!!wallet && !keySaved)}
           >
-            {submitBusy ? (submitPhase === 'wallet' ? 'Creating its wallet...' : 'Creating the agent...') : 'Create agent'}
+            {submitBusy
+              ? submitPhase === 'wallet'
+                ? 'Creating its wallet...'
+                : submitPhase === 'funding'
+                  ? 'Sending test USDC...'
+                  : 'Creating the agent...'
+              : 'Create agent'}
           </Button>
         )}
       </div>

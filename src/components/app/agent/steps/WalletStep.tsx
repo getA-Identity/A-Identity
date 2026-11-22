@@ -90,7 +90,7 @@ export default function WalletStep({
               </span>
               <span className="mt-1 block text-xs text-foreground/60">
                 Created with the agent. There is no key to save: Circle holds it, and A-Identity moves funds only
-                within the limits you set.
+                within the limits you set. The agent can pay and hire, but cannot be KYA verified or listed for hire.
               </span>
             </span>
           </button>
@@ -105,7 +105,8 @@ export default function WalletStep({
             <span>
               <span className="block text-sm font-semibold text-foreground">My own key</span>
               <span className="mt-1 block text-xs text-foreground/60">
-                Generated in this browser and shown once. You keep it, and nobody can recover it for you.
+                Generated in this browser and shown once. You keep it, and nobody can recover it for you. Needed to
+                verify the agent (KYA) and offer it for hire.
               </span>
             </span>
           </button>
@@ -203,6 +204,9 @@ export default function WalletStep({
             >
               Fund it with testnet USDC at faucet.circle.com
             </a>
+            <p className="mt-1 text-[11px] text-foreground/45">
+              When the agent is created it is also sent a little test USDC, while the daily allowance lasts.
+            </p>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <button
                 type="button"

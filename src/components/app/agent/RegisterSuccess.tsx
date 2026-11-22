@@ -7,7 +7,7 @@ import { OwlMascot } from '../../OwlMascot'
 export type HostedWallet = {
   address: string
   explorer?: string
-  funded: { amountUsd: number; txHash: string; explorerUrl: string } | { error: string; detail?: string } | null
+  funded: { amountUsd: number; txHash: string; explorerUrl: string; unconfirmed?: true } | { error: string; detail?: string } | null
 }
 
 /**
@@ -22,6 +22,7 @@ export default function RegisterSuccess({
   wallet,
   hosted,
   hostedNote,
+  ownFunding,
   kya,
   kyaBusy,
   kyaNote,
@@ -37,6 +38,9 @@ export default function RegisterSuccess({
   hosted: HostedWallet | null
   /** Why the hosted wallet was not created, when it was asked for and did not arrive. */
   hostedNote: string | null
+  /** What became of the starter funding for a wallet whose key the owner holds. Null when
+   *  nothing is known, and then nothing is said. */
+  ownFunding: HostedWallet['funded']
   kya: { verified: boolean; onchainTx?: string; onchainExplorer?: string } | null
   kyaBusy: boolean
   kyaNote: string | null
@@ -61,10 +65,26 @@ export default function RegisterSuccess({
       </div>
       <ul className="mt-3 flex flex-col gap-1.5 text-sm text-foreground/70">
         <li>Permissions set (daily cap, auto-approve).</li>
-        {hosted && <li>It has a hosted wallet, so it can pay within your limits now.</li>}
+        {hosted &&
+          (hosted.funded && 'txHash' in hosted.funded ? (
+            <li>It has a hosted wallet with test USDC, so it can pay within your limits.</li>
+          ) : (
+            <li>It has a hosted wallet. It needs test USDC before it can pay.</li>
+          ))}
         {hostedNote && <li>It has no wallet yet. {hostedNote}</li>}
         {wallet && (kya?.verified ? <li>KYA verified: wallet control proven.</li> : <li>KYA pending: prove the agent controls its wallet below.</li>)}
         {wallet && <li>Wallet {wallet.address.slice(0, 10)}... is assigned to it.</li>}
+        {wallet && ownFunding && 'txHash' in ownFunding && (
+          <li>
+            {ownFunding.unconfirmed
+              ? `${ownFunding.amountUsd} test USDC was sent to it and is waiting for the chain to confirm.`
+              : `${ownFunding.amountUsd} test USDC arrived in it.`}{' '}
+            <a href={ownFunding.explorerUrl} target="_blank" rel="noopener noreferrer" className="font-semibold text-usdc hover:underline">
+              View the transfer
+            </a>
+          </li>
+        )}
+        {wallet && ownFunding && 'error' in ownFunding && <li title={ownFunding.detail}>{ownFunding.error}</li>}
         {!anchored && <li>On-chain anchor is queued. Anchor it on Arc to mint a real ERC-8004 identity.</li>}
       </ul>
 
@@ -77,7 +97,9 @@ export default function RegisterSuccess({
           <div className="mt-1 break-all font-mono text-xs text-foreground/80">{hosted.address}</div>
           {hosted.funded && 'txHash' in hosted.funded ? (
             <p className="mt-2 text-xs text-ok">
-              {hosted.funded.amountUsd} test USDC arrived.{' '}
+              {hosted.funded.unconfirmed
+                ? `${hosted.funded.amountUsd} test USDC was sent and is waiting for the chain to confirm.`
+                : `${hosted.funded.amountUsd} test USDC arrived.`}{' '}
               <a href={hosted.funded.explorerUrl} target="_blank" rel="noopener noreferrer" className="font-semibold hover:underline">
                 View the transfer
               </a>
@@ -92,7 +114,8 @@ export default function RegisterSuccess({
           ) : null}
           <p className="mt-2 text-[11px] text-foreground/50">
             Circle holds this wallet's key and A-Identity moves funds only within the limits you set. It has no key of
-            its own to prove, so a KYA verified badge needs an agent registered with your own key.
+            its own to prove, so this agent cannot be KYA verified or listed for hire. That needs an agent registered
+            with your own key.
           </p>
         </div>
       )}

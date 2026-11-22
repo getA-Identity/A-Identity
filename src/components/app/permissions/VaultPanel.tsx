@@ -361,8 +361,9 @@ export default function VaultPanel({ agentId }: { agentId: string }) {
           {!onStellar && (
             <p className="text-[11px] text-foreground/50">
               This deploys on {CHAIN_BY_ID.arc.name} with test USDC: our server key deploys it, pays
-              the gas, funds it and is its operator, and the owner is your signed-in wallet (or the
-              agent's own wallet after an email sign-in). To deploy a vault on Arc Mainnet from your
+              the gas, funds it and is its operator, and the owner is your signed-in wallet (or, after
+              an email sign-in, the agent's wallet when you hold its key). A hosted wallet cannot own a
+              vault, because it can sign no owner call. To deploy a vault on Arc Mainnet from your
               own wallet, so the owner key and every owner signature stay yours and the operator is the key you paste, use the{' '}
               <Link to="/app/vault/arc?deploy=1" className="font-semibold text-accent underline underline-offset-2">
                 Arc vault panel

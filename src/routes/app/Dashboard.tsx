@@ -249,7 +249,7 @@ export default function Dashboard() {
     },
     {
       label: 'Fund it with test USDC',
-      detail: 'A hosted wallet starts with test USDC. For your own key, use faucet.circle.com.',
+      detail: 'A hosted wallet is sent test USDC when it is created, while the daily allowance lasts. Otherwise use faucet.circle.com.',
       done: (balance ?? 0) > 0,
       to: '/app/wallet',
       blockedBy: agent?.walletAddress ? undefined : 'after step 2',

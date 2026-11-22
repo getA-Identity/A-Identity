@@ -7,16 +7,17 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import Anthropic from '@anthropic-ai/sdk'
 import {
-  __resetPlatformStateForTests, createAgent,
-  listFundedTasksForAgents, deliverHouseTask, noteHouseTask, countHouseDeliveriesSince,
+  __resetPlatformStateForTests, createAgent, hireAgent, releaseTask, disputeTask,
+  listFundedTasksForAgents, deliverHouseTask, noteHouseTask, claimHouseCall, countHouseCallsSince,
+  escrowLocking, HOUSE_CALLS_PER_TASK,
 } from '../platform.js'
 import type { Task } from '../marketplace.js'
-import { houseWorkerConfig, DEFAULT_MODEL, DEFAULT_DAILY_LIMIT, MAX_DAILY_LIMIT } from './config.js'
+import { houseWorkerConfig, DEFAULT_MODEL, DEFAULT_DAILY_LIMIT, DEFAULT_CLIENT_DAILY_LIMIT, MAX_DAILY_LIMIT } from './config.js'
 import { runHouseSkill, houseSkill, MAX_DELIVERABLE_CHARS, type CreateMessage, type WorkOutcome } from './work.js'
 import {
   createHouseWorker, startHouseWorker,
   MAX_ATTEMPTS, MAX_TASK_AGE_MS, POLL_MS, BACKOFF_BASE_MS, RETRY_GAP_MS, RENDER_FIRST_POLL_MS, FIRST_POLL_MS,
-  LIMIT_NOTE, WAIT_NOTE, RETRY_NOTE, gaveUpNote,
+  LIMIT_NOTE, CLIENT_LIMIT_NOTE, WAIT_NOTE, RETRY_NOTE, gaveUpNote,
 } from './worker.js'
 
 // -- fixtures ----------------------------------------------------------------------------------
@@ -83,6 +84,7 @@ test('house worker: on with defaults, counting the entries it left out', () => {
   assert.deepEqual([...c.agentIds], ['agent_abc1', 'agent_abc2'])
   assert.equal(c.model, DEFAULT_MODEL)
   assert.equal(c.dailyLimit, DEFAULT_DAILY_LIMIT)
+  assert.equal(c.clientDailyLimit, DEFAULT_CLIENT_DAILY_LIMIT)
   assert.equal(c.ignored, 1)
 })
 
@@ -91,20 +93,29 @@ test('house worker: a malformed model or limit turns it off, and a huge limit is
   assert.equal(houseWorkerConfig({ ...base, HOUSE_WORKER_MODEL: 'a model; rm' }).on, false)
   assert.equal(houseWorkerConfig({ ...base, HOUSE_WORKER_DAILY_LIMIT: '0' }).on, false)
   assert.equal(houseWorkerConfig({ ...base, HOUSE_WORKER_DAILY_LIMIT: '2.5' }).on, false)
+  assert.equal(houseWorkerConfig({ ...base, HOUSE_WORKER_CLIENT_DAILY_LIMIT: 'many' }).on, false)
   const capped = houseWorkerConfig({ ...base, HOUSE_WORKER_DAILY_LIMIT: '999999', HOUSE_WORKER_MODEL: 'claude-sonnet-5-5' })
   assert.equal(capped.on && capped.dailyLimit, MAX_DAILY_LIMIT)
   assert.equal(capped.on && capped.model, 'claude-sonnet-5-5')
+  // One client never gets more than the whole day's allowance.
+  const tight = houseWorkerConfig({ ...base, HOUSE_WORKER_DAILY_LIMIT: '2', HOUSE_WORKER_CLIENT_DAILY_LIMIT: '9' })
+  assert.equal(tight.on && tight.clientDailyLimit, 2)
 })
 
 // -- the work ----------------------------------------------------------------------------------
 
 test('house work: a finished answer is the result, asked for with the skill prompt, low effort and the refusal fallback', async () => {
   let sent: Parameters<CreateMessage>[0] | undefined
-  const out = await runHouseSkill({ service: 'Translation', request: '  Translate "hi" into Turkish.  ', model: DEFAULT_MODEL }, async (body) => {
+  let options: Parameters<CreateMessage>[1] | undefined
+  const out = await runHouseSkill({ service: 'Translation', request: '  Translate "hi" into Turkish.  ', model: DEFAULT_MODEL }, async (body, opts) => {
     sent = body
+    options = opts
     return message({ content: [{ type: 'thinking', thinking: '' }, { type: 'text', text: ' Merhaba ' }] })
   })
   assert.deepEqual(out, { ok: true, text: 'Merhaba', model: DEFAULT_MODEL })
+  // The SDK's own retries are off: the worker retries, one counted call at a time.
+  assert.equal(options?.maxRetries, 0)
+  assert.ok(options && options.timeout > 0)
   assert.equal(sent?.model, DEFAULT_MODEL)
   assert.equal(sent?.system, houseSkill('translation')?.system)
   assert.deepEqual(sent?.messages, [{ role: 'user', content: 'Translate "hi" into Turkish.' }])
@@ -175,6 +186,11 @@ test('house work: API failures are sorted by who can fix them', async () => {
   assert.equal(await kind(apiError(529)), 'operator')
   assert.equal(await kind(new Anthropic.APIConnectionError({ message: 'down' })), 'operator')
   assert.equal(await kind(apiError(400)), 'job')
+  // The account cannot be charged: ours to fix, and no task is given up over it.
+  assert.equal(await kind(apiError(402)), 'operator')
+  // A call that ran out of time is a try of this job, so one slow job cannot hold the queue.
+  assert.equal(await kind(new Anthropic.APIConnectionTimeoutError({ message: 'timed out' })), 'retry')
+  assert.equal(await kind(apiError(408)), 'retry')
   // No credential could be resolved, or a stored one expired: our side, not the job's.
   assert.equal(await kind(new Anthropic.AnthropicError('the stored token has expired')), 'operator')
   assert.equal(await kind(new Error('boom')), 'retry')
@@ -255,20 +271,69 @@ test('house note: the task stays funded, the count is stored, and the tally coun
   assert.equal(task.workerAttempts, 2)
   assert.match((noteHouseTask({ taskId: fund(state.tasks, other.id).id, note: 'x', allowedAgentIds: allowed }) as { error: string }).error, /not a house worker/)
 
-  const since = new Date(Date.now() - 1000).toISOString()
-  assert.equal(countHouseDeliveriesSince(since), 0)
   deliverHouseTask({ taskId: task.id, deliverable: 'done', model: 'm', allowedAgentIds: allowed })
-  // A delivery by an agent's own owner is not ours and is not counted.
-  fund(state.tasks, other.id, { status: 'delivered', deliverable: 'theirs' })
-  assert.equal(countHouseDeliveriesSince(since), 1)
-  assert.equal(countHouseDeliveriesSince(new Date(Date.now() + 60_000).toISOString()), 0)
   assert.match((noteHouseTask({ taskId: task.id, note: 'late', allowedAgentIds: allowed }) as { error: string }).error, /Cannot note/)
+})
+
+test('house calls: each one is recorded before it is made, counted per client, and refused for a task that is not waiting', () => {
+  const { state, house, other } = seed()
+  const allowed = new Set([house.id])
+  const mine = fund(state.tasks, house.id, { client: 'a@example.test' })
+  const theirs = fund(state.tasks, house.id, { client: 'b@example.test' })
+  const since = new Date(Date.now() - 1000).toISOString()
+  assert.equal(countHouseCallsSince(since), 0)
+  assert.ok(!('error' in claimHouseCall({ taskId: mine.id, allowedAgentIds: allowed })))
+  assert.ok(!('error' in claimHouseCall({ taskId: mine.id, allowedAgentIds: allowed })))
+  assert.ok(!('error' in claimHouseCall({ taskId: theirs.id, allowedAgentIds: allowed })))
+  assert.equal(countHouseCallsSince(since), 3)
+  assert.equal(countHouseCallsSince(since, 'a@example.test'), 2)
+  assert.equal(countHouseCallsSince(since, 'b@example.test'), 1)
+  assert.equal(countHouseCallsSince(new Date(Date.now() + 60_000).toISOString()), 0)
+  // Off the list, already settled, still locking, or out of calls: no call is recorded.
+  assert.match((claimHouseCall({ taskId: fund(state.tasks, other.id).id, allowedAgentIds: allowed }) as { error: string }).error, /not a house worker/)
+  assert.match((claimHouseCall({ taskId: fund(state.tasks, house.id, { status: 'refunded' }).id, allowedAgentIds: allowed }) as { error: string }).error, /Cannot work/)
+  assert.match((claimHouseCall({ taskId: fund(state.tasks, house.id, { escrowLockingAt: new Date().toISOString() }).id, allowedAgentIds: allowed }) as { error: string }).error, /still locking/)
+  const spent = fund(state.tasks, house.id, { workerCalls: Array.from({ length: HOUSE_CALLS_PER_TASK }, () => '2020-01-01T00:00:00.000Z') })
+  assert.match((claimHouseCall({ taskId: spent.id, allowedAgentIds: allowed }) as { error: string }).error, /every model call/)
+  assert.equal(countHouseCallsSince(since), 3)
+})
+
+test('escrow lock: a hire is marked while its escrow locks, and nothing settles or works it until the lock ends', async () => {
+  const { state, house } = seed()
+  house.kya = 'verified'
+  house.services = [{ name: 'translation', priceUsd: 2, unit: 'per doc' }]
+  const client = 'client@example.test'
+  // The code before the first await runs at once: the task is in the list, funded and marked.
+  const hiring = hireAgent({ agentId: house.id, service: 'translation', priceUsd: 2, description: 'x', client })
+  const task = state.tasks[state.tasks.length - 1]
+  assert.equal(task.status, 'funded')
+  assert.equal(escrowLocking(task), true)
+  assert.deepEqual(listFundedTasksForAgents(new Set([house.id])), [], 'the worker does not see it yet')
+  await hiring
+  // The lock ended (here with no signer, so nothing was locked on chain): the mark is gone.
+  assert.equal(task.escrowLockingAt, undefined)
+  assert.equal(listFundedTasksForAgents(new Set([house.id])).length, 1)
+
+  // While a lock is running, neither way of settling goes through. Marked by hand here, so the
+  // check does not depend on how long a lock happens to take.
+  task.escrowLockingAt = new Date().toISOString()
+  assert.match((await disputeTask(task.id, 'x', client) as { error: string }).error, /still locking/)
+  assert.equal(task.status, 'funded')
+  // An owner can still deliver by hand during a lock. The payment waits for the lock even so.
+  task.status = 'delivered'
+  assert.match((await releaseTask(task.id, {}, client) as { error: string }).error, /still locking/)
+  assert.equal(task.status, 'delivered')
+  task.status = 'funded'
+  // A mark left behind by a process that ended mid-lock does not hold the task forever.
+  task.escrowLockingAt = new Date(Date.now() - 10 * 60_000).toISOString()
+  assert.equal(escrowLocking(task), false)
+  assert.equal(listFundedTasksForAgents(new Set([house.id])).length, 1)
 })
 
 // -- the loop ----------------------------------------------------------------------------------
 
 function worker(house: { id: string }, over: Partial<Parameters<typeof createHouseWorker>[0]> = {}) {
-  return createHouseWorker({ agentIds: new Set([house.id]), model: DEFAULT_MODEL, dailyLimit: 50, log: silent, ...over })
+  return createHouseWorker({ agentIds: new Set([house.id]), model: DEFAULT_MODEL, dailyLimit: 50, clientDailyLimit: 50, log: silent, ...over })
 }
 
 test('house loop: a hire of a house agent is delivered, and another agent\'s hire is left alone', async () => {
@@ -375,24 +440,83 @@ test('house loop: when our side is down the task is not blamed, the client is to
   assert.equal(first.workerNote, undefined)
 })
 
-test('house loop: the daily limit stops deliveries and says so on the waiting task', async () => {
+test('house ration: the day is counted in model calls, so a call that comes to nothing still counts', async () => {
   const { state, house } = seed()
-  const a = fund(state.tasks, house.id, { createdAt: new Date(Date.now() - 2000).toISOString() })
-  const b = fund(state.tasks, house.id)
+  const t0 = Date.now()
+  const a = fund(state.tasks, house.id, { createdAt: new Date(t0 - 3000).toISOString() })
+  const b = fund(state.tasks, house.id, { createdAt: new Date(t0 - 2000).toISOString() })
+  const c = fund(state.tasks, house.id, { createdAt: new Date(t0 - 1000).toISOString() })
   let calls = 0
   const w = worker(house, {
-    dailyLimit: 1,
+    dailyLimit: 2,
+    // Billed, and never a delivery: an answer too long to store.
+    work: async () => {
+      calls++
+      return { ok: false, kind: 'job', reason: 'the result was longer than a delivery can hold' }
+    },
+  })
+  const result = await w.tick()
+  assert.equal(result.delivered, 0)
+  assert.equal(calls, 2, 'two calls were made and both count, though nothing was delivered')
+  assert.equal(a.workerCalls?.length, 1)
+  assert.equal(b.workerCalls?.length, 1)
+  assert.equal(c.workerCalls, undefined)
+  assert.equal(c.workerNote, LIMIT_NOTE)
+  assert.equal(c.status, 'funded')
+  // The ceiling holds on the next polls too.
+  await w.tick()
+  assert.equal(calls, 2)
+})
+
+test('house ration: one client cannot use up the day for everyone', async () => {
+  const { state, house } = seed()
+  const t0 = Date.now()
+  const first = fund(state.tasks, house.id, { client: 'greedy@example.test', createdAt: new Date(t0 - 3000).toISOString() })
+  const second = fund(state.tasks, house.id, { client: 'greedy@example.test', createdAt: new Date(t0 - 2000).toISOString() })
+  const fair = fund(state.tasks, house.id, { client: 'fair@example.test', createdAt: new Date(t0 - 1000).toISOString() })
+  const w = worker(house, { clientDailyLimit: 1, work: async () => ok() })
+  const result = await w.tick()
+  assert.equal(result.delivered, 2)
+  assert.equal(first.status, 'delivered')
+  assert.equal(second.status, 'funded')
+  assert.equal(second.workerNote, CLIENT_LIMIT_NOTE)
+  assert.equal(second.workerCalls, undefined)
+  assert.equal(fair.status, 'delivered')
+})
+
+test('house loop: a task cancelled while an earlier one was being worked costs no call', async () => {
+  const { state, house } = seed()
+  const t0 = Date.now()
+  fund(state.tasks, house.id, { createdAt: new Date(t0 - 2000).toISOString() })
+  const cancelled = fund(state.tasks, house.id, { createdAt: new Date(t0 - 1000).toISOString() })
+  let calls = 0
+  const w = worker(house, {
+    work: async () => {
+      calls++
+      cancelled.status = 'refunded' // the client cancels the second while the first is being worked
+      return ok()
+    },
+  })
+  await w.tick()
+  assert.equal(calls, 1)
+  assert.equal(cancelled.workerCalls, undefined)
+})
+
+test('house loop: a task that has spent every call it may take is given up once, with a reason', async () => {
+  const { state, house } = seed()
+  const task = fund(state.tasks, house.id, { workerCalls: Array.from({ length: HOUSE_CALLS_PER_TASK }, () => new Date(Date.now() - 2 * 24 * 60 * 60_000).toISOString()) })
+  let calls = 0
+  const w = worker(house, {
     work: async () => {
       calls++
       return ok()
     },
   })
-  const result = await w.tick()
-  assert.equal(result.delivered, 1)
-  assert.equal(calls, 1)
-  assert.equal(a.status, 'delivered')
-  assert.equal(b.status, 'funded')
-  assert.equal(b.workerNote, LIMIT_NOTE)
+  await w.tick()
+  await w.tick()
+  assert.equal(calls, 0)
+  assert.equal(task.workerAttempts, MAX_ATTEMPTS)
+  assert.match(task.workerNote ?? '', /could not do this job/)
 })
 
 test('house loop: a hire older than its escrow is left to the client', async () => {

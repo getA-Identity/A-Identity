@@ -85,12 +85,23 @@ export type Task = {
   /** How many times the house worker has tried this task. It stops at its limit, and the count
    *  is stored so a restart does not start the count again. */
   workerAttempts?: number
+  /** When the house worker called a model for this task, one entry per call whatever came of
+   *  it. Its ceilings are counted from these, because a call is billed even when nothing is
+   *  delivered. */
+  workerCalls?: string[]
   /** The client's review, set on release. */
   review?: Review
   /** Bids from verified agents while the task is 'open' (before a worker is chosen). */
   bids?: Bid[]
   /** ERC-8183 on-chain job id this task's escrow is bound to (set once funded). */
   jobId?: string
+  /**
+   * Set while the escrow lock is running (four transactions at hire or at bid acceptance) and
+   * cleared when it ends. The task already reads `funded` during that time, so this is what
+   * stops it from being settled or worked early: a release that ran then would open a second
+   * escrow and leave the first one funded with nothing pointing at it.
+   */
+  escrowLockingAt?: string
   /** Escrow funding tx + release/refund txs, for the on-chain audit trail on arcscan. */
   escrowTx?: string
   escrowExplorer?: string

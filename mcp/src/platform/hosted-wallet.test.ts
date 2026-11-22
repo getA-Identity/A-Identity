@@ -7,12 +7,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  __resetPlatformStateForTests, createAgent, provisionCircleWallet, hostedWalletStatus, provisionAgentVault,
+  __resetPlatformStateForTests, createAgent, provisionCircleWallet, hostedWalletStatus, provisionAgentVault, sendStarterFunding,
 } from '../platform.js'
+import { retiredAddresses } from '../chains/retired.js'
 import { STARTER_FUNDING_USD, STARTER_FUNDING_PER_OWNER, STARTER_FUNDING_DAILY_USD } from './vault.js'
 
 const OWNER = 'owner@example.test'
 const HOSTED = '0x1111111111111111111111111111111111111111'
+const SIGNER = '0x3333333333333333333333333333333333333333'
 const OWN = '0x2222222222222222222222222222222222222222'
 
 function agentOf(owner = OWNER, walletAddress?: string) {
@@ -154,7 +156,7 @@ test('hosted wallet: starter funding stops at the daily ceiling, counted from st
   assert.ok(!('error' in r))
   assert.equal(asked[0].fund, false)
   assert.match((r.funded as { error: string }).error, /used up for today/)
-  assert.equal(hostedWalletStatus('late@example.test').starterFunding.available, false)
+  assert.equal((await hostedWalletStatus('late@example.test', { signerAddress: async () => SIGNER })).starterFunding.available, false)
 
   // Yesterday's funding does not count against today.
   for (const a of state.agents) if (a.starterFunding) a.starterFunding.at = '2020-01-01T00:00:00.000Z'
@@ -189,22 +191,165 @@ test('hosted wallet: a funding transfer that fails is said plainly, with its cau
   assert.equal(funded.detail, 'No ARC_SIGNER_KEY set.')
 })
 
-test('hosted wallet: the status says what it is before anything is created', () => {
+test('hosted wallet: the status says what it is before anything is created', async () => {
   __resetPlatformStateForTests()
   const keys = ['CIRCLE_API_KEY', 'CIRCLE_ENTITY_SECRET'] as const
   const saved = keys.map((k) => process.env[k])
+  const withSigner = { signerAddress: async () => SIGNER }
   try {
     for (const k of keys) delete process.env[k]
-    const off = hostedWalletStatus(OWNER)
+    const off = await hostedWalletStatus(OWNER, withSigner)
     assert.equal(off.configured, false)
     assert.equal(off.testnet, true)
     assert.deepEqual(off.starterFunding, { amountUsd: STARTER_FUNDING_USD, available: true })
     assert.match(off.custody, /Circle holds the key/)
     for (const k of keys) process.env[k] = 'set-for-a-test'
-    assert.equal(hostedWalletStatus(OWNER).configured, true)
+    assert.equal((await hostedWalletStatus(OWNER, withSigner)).configured, true)
+    // No usable signer means no funding to send, and the status does not promise any.
+    const noSigner = await hostedWalletStatus(OWNER, { signerAddress: async () => null })
+    assert.equal(noSigner.starterFunding.available, false)
+    assert.match(noSigner.starterFunding.reason ?? '', /not available on this server/)
+    const broken = await hostedWalletStatus(OWNER, { signerAddress: async () => { throw new Error('bad key') } })
+    assert.equal(broken.starterFunding.available, false)
   } finally {
     keys.forEach((k, i) => (saved[i] === undefined ? delete process.env[k] : (process.env[k] = saved[i])))
   }
+})
+
+test('hosted wallet: funding that was sent but not yet confirmed is kept, said as it is, and counted', async () => {
+  __resetPlatformStateForTests()
+  const pending: CreateWallet = async (input) => ({
+    ...(await circle().createWallet(input, process.env)),
+    funded: input.fund ? { amountUsd: STARTER_FUNDING_USD, txHash: `0x${'cd'.repeat(32)}`, explorerUrl: 'https://explorer.example.test/tx/0xcd', unconfirmed: true as const } : null,
+  })
+  const first = agentOf()
+  const r = await provisionCircleWallet(first.id, { caller: OWNER, primary: true }, { createWallet: pending })
+  assert.ok(!('error' in r))
+  // Not a failure: the money may have moved, so the owner is not told to fund it again.
+  assert.ok(r.funded && 'txHash' in r.funded && r.funded.unconfirmed === true)
+  assert.equal(first.starterFunding?.unconfirmed, true)
+  assert.match(first.activity[first.activity.length - 1].text, /waiting for its receipt/)
+  // It takes a slot of the per-account ceiling like a confirmed one.
+  await provisionCircleWallet(agentOf().id, { caller: OWNER, primary: true }, { createWallet: pending })
+  const third = await provisionCircleWallet(agentOf().id, { caller: OWNER, primary: true }, { createWallet: pending })
+  assert.ok(!('error' in third))
+  assert.match((third.funded as { error: string }).error, /already received starter funding/)
+})
+
+test('hosted wallet: requests made at the same moment cannot each take the last slot of the per-account ceiling', async () => {
+  __resetPlatformStateForTests()
+  const gates: (() => void)[] = []
+  const asked: boolean[] = []
+  const slow: CreateWallet = async (input) => {
+    asked.push(Boolean(input.fund))
+    await new Promise<void>((resolve) => gates.push(resolve))
+    return circle().createWallet(input, process.env)
+  }
+  const agents = Array.from({ length: STARTER_FUNDING_PER_OWNER + 1 }, () => agentOf())
+  const running = agents.map((a) => provisionCircleWallet(a.id, { caller: OWNER, primary: true }, { createWallet: slow }))
+  await new Promise((resolve) => setImmediate(resolve))
+  gates.forEach((open) => open())
+  const results = await Promise.all(running)
+  assert.ok(results.every((r) => !('error' in r)))
+  assert.equal(asked.filter(Boolean).length, STARTER_FUNDING_PER_OWNER, 'only as many as the ceiling allows were asked to fund')
+  assert.equal(agents.filter((a) => a.starterFunding).length, STARTER_FUNDING_PER_OWNER)
+})
+
+type Send = NonNullable<NonNullable<Parameters<typeof sendStarterFunding>[2]>['send']>
+const signerIs = { signerAddress: async () => SIGNER }
+
+/** A stand-in for the transfer that records what it was asked to send. */
+function sender(result: 'executed' | 'unconfirmed' | 'prepared' = 'executed') {
+  const sent: { to: string; amountUsd: number }[] = []
+  const send = (async (to: string, amountUsd: number) => {
+    sent.push({ to, amountUsd })
+    const txHash = `0x${'ef'.repeat(32)}`
+    const explorerUrl = 'https://explorer.example.test/tx/0xef'
+    if (result === 'executed') return { executed: true, txHash, explorerUrl }
+    if (result === 'unconfirmed') return { executed: false, reverted: false, unconfirmed: true, txHash, explorerUrl, reason: 'broadcast, no receipt yet' }
+    return { executed: false, contract: '0x0', function: 'transfer(address to, uint256 amount)', args: [to, String(amountUsd)], reason: 'No ARC_SIGNER_KEY set.' }
+  }) as unknown as Send
+  return { sent, send }
+}
+
+test('starter funding: a wallet whose owner holds the key is funded once, and only once', async () => {
+  __resetPlatformStateForTests()
+  const agent = agentOf(OWNER, OWN)
+  const { sent, send } = sender()
+  const first = await sendStarterFunding(agent.id, { caller: OWNER }, { send, ...signerIs })
+  assert.ok(!('error' in first))
+  assert.deepEqual(sent, [{ to: OWN, amountUsd: STARTER_FUNDING_USD }])
+  assert.equal(agent.starterFunding?.address, OWN)
+  assert.equal(agent.starterFunding?.unconfirmed, undefined)
+  assert.match(agent.activity[agent.activity.length - 1].text, /Starter funding: .* test USDC arrived/)
+  // Asked again: the same record comes back and nothing more is sent.
+  const again = await sendStarterFunding(agent.id, { caller: OWNER }, { send, ...signerIs })
+  assert.ok(!('error' in again) && again.already === true)
+  assert.equal(sent.length, 1)
+})
+
+test('starter funding: with no signer nothing is sent and nothing is recorded, so it can be asked again later', async () => {
+  __resetPlatformStateForTests()
+  const agent = agentOf(OWNER, OWN)
+  const none = sender('prepared')
+  const r = await sendStarterFunding(agent.id, { caller: OWNER }, { send: none.send, signerAddress: async () => null })
+  assert.ok(!('error' in r))
+  const funded = r.funded as { error: string; detail?: string }
+  assert.match(funded.error, /could not be sent just now/)
+  assert.equal(funded.detail, 'No ARC_SIGNER_KEY set.')
+  assert.equal(agent.starterFunding, undefined)
+  const later = sender()
+  const ok = await sendStarterFunding(agent.id, { caller: OWNER }, { send: later.send, ...signerIs })
+  assert.ok(!('error' in ok) && ok.funded && 'txHash' in ok.funded)
+  assert.equal(later.sent.length, 1)
+})
+
+test('starter funding: a transfer with no receipt yet is kept and never sent a second time', async () => {
+  __resetPlatformStateForTests()
+  const agent = agentOf(OWNER, OWN)
+  const { sent, send } = sender('unconfirmed')
+  const r = await sendStarterFunding(agent.id, { caller: OWNER }, { send, ...signerIs })
+  assert.ok(!('error' in r) && r.funded && 'txHash' in r.funded && r.funded.unconfirmed === true)
+  assert.equal(agent.starterFunding?.unconfirmed, true)
+  await sendStarterFunding(agent.id, { caller: OWNER }, { send, ...signerIs })
+  assert.equal(sent.length, 1)
+})
+
+test('starter funding: refused for someone else, for no wallet, for a reused, retired or signer address, and past the ceiling', async () => {
+  __resetPlatformStateForTests()
+  const { sent, send } = sender()
+  const deps = { send, ...signerIs }
+  const mine = agentOf(OWNER, OWN)
+  assert.match((await sendStarterFunding(mine.id, { caller: 'someone@example.test' }, deps) as { error: string }).error, /not the agent owner/)
+  assert.match((await sendStarterFunding(mine.id, {}, deps) as { error: string }).error, /not the agent owner/)
+  assert.match((await sendStarterFunding(agentOf().id, { caller: OWNER }, deps) as { error: string }).error, /no wallet to fund/)
+  assert.match((await sendStarterFunding(agentOf(OWNER, retiredAddresses()[0]).id, { caller: OWNER }, deps) as { error: string }).error, /retired/)
+  assert.match((await sendStarterFunding(agentOf(OWNER, SIGNER).id, { caller: OWNER }, deps) as { error: string }).error, /server signer/)
+  assert.equal(sent.length, 0)
+
+  await sendStarterFunding(mine.id, { caller: OWNER }, deps)
+  assert.equal(sent.length, 1)
+  // The same address under a second agent is not a second wallet.
+  const twin = await sendStarterFunding(agentOf(OWNER, OWN).id, { caller: OWNER }, deps)
+  assert.match(((twin as { funded: { error: string } }).funded).error, /already received starter funding through another agent/)
+  // The per-account ceiling is shared with hosted wallets.
+  await sendStarterFunding(agentOf(OWNER, '0x4444444444444444444444444444444444444444').id, { caller: OWNER }, deps)
+  const over = await sendStarterFunding(agentOf(OWNER, '0x5555555555555555555555555555555555555555').id, { caller: OWNER }, deps)
+  assert.match(((over as { funded: { error: string } }).funded).error, /already received starter funding for/)
+  assert.equal(sent.length, STARTER_FUNDING_PER_OWNER)
+})
+
+test('starter funding: a hosted wallet that started empty can be funded afterwards, once', async () => {
+  __resetPlatformStateForTests()
+  const agent = agentOf()
+  await provisionCircleWallet(agent.id, { caller: OWNER, primary: true }, {
+    createWallet: async (input) => ({ ...(await circle().createWallet(input, process.env)), funded: { error: 'No ARC_SIGNER_KEY set.' } }),
+  })
+  assert.equal(agent.starterFunding, undefined)
+  const { sent, send } = sender()
+  const r = await sendStarterFunding(agent.id, { caller: OWNER }, { send, ...signerIs })
+  assert.ok(!('error' in r) && r.funded && 'txHash' in r.funded)
+  assert.deepEqual(sent, [{ to: HOSTED, amountUsd: STARTER_FUNDING_USD }])
 })
 
 test('hosted wallet: it is never the owner of a vault, because it can sign no owner call', async () => {

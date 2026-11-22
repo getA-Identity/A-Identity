@@ -219,7 +219,16 @@ export type PlatformAgent = {
    * ceilings in platform/vault.ts are counted from these stored records, so a restart does not
    * reset them.
    */
-  starterFunding?: { address: string; amountUsd: number; txHash: string; explorerUrl: string; at: string }
+  starterFunding?: {
+    address: string
+    amountUsd: number
+    txHash: string
+    explorerUrl: string
+    at: string
+    /** The transfer was broadcast and no receipt arrived inside the wait. It still counts
+     *  against the ceilings: the money may have moved. */
+    unconfirmed?: true
+  }
   /** Owner-authorized auto-yield: idle balance above capUsd is earmarked for USYC
    *  (Circle's yield-bearing token). Off by default; the owner turns it on. */
   treasury?: { autoYieldEnabled: boolean; capUsd: number; authorizedAt?: string }

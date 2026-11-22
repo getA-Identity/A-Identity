@@ -15,7 +15,8 @@ import {
 } from 'lucide-react'
 
 import { BACKEND_UNREACHABLE } from '../../lib/mcpBase'
-import { apiFetch, readJson } from '../../lib/api'
+import { apiFetch, readJson, explainError } from '../../lib/api'
+import { authHeaders } from '../../store/auth'
 import { fetchPlatformAgents, subscribePlatformAgents } from '../../lib/platformAgents'
 import { pickPrimaryAgent } from '../../lib/pickAgent'
 import { short } from '../../lib/format'
@@ -166,6 +167,38 @@ export default function Wallet() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentId, agent?.walletAddress])
 
+  // Starter funding for a wallet that is still empty: sent once per agent by the server, inside
+  // its ceilings. The answer says what happened, and the faucet link stays for when it says no.
+  const [starterBusy, setStarterBusy] = useState(false)
+  const [starterNote, setStarterNote] = useState<string | null>(null)
+  const sendStarter = async () => {
+    if (!agent) return
+    setStarterBusy(true)
+    setStarterNote(null)
+    try {
+      const res = await apiFetch('/api/agents/starter-funding', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ agentId: agent.id }),
+        timeoutMs: 60_000,
+      })
+      const d = await readJson<{ error?: string; already?: boolean; funded?: { amountUsd?: number; unconfirmed?: boolean; error?: string } }>(res)
+      if (!res.ok) setStarterNote(explainError(res.status, d.error))
+      else if (d.funded?.error) setStarterNote(d.funded.error)
+      else if (d.funded?.unconfirmed) setStarterNote(`${d.funded.amountUsd} test USDC was sent and is waiting for the chain to confirm.`)
+      else if (d.already) setStarterNote('This wallet already received its starter funding.')
+      else setStarterNote(`${d.funded?.amountUsd} test USDC arrived.`)
+      await refresh(agent)
+    } catch {
+      setStarterNote('Could not send it just now. Try again in a moment, or use the faucet.')
+    } finally {
+      setStarterBusy(false)
+    }
+  }
+  useEffect(() => {
+    setStarterNote(null)
+  }, [agentId])
+
   const copy = () => {
     if (!agent?.walletAddress) return
     navigator.clipboard?.writeText(agent.walletAddress)
@@ -303,20 +336,30 @@ export default function Wallet() {
                       )}
 
                       {bal === 0 && (
-                        <a
-                          href={FAUCET}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mt-3 inline-block rounded-full bg-white/20 px-3 py-1.5 text-xs font-semibold backdrop-blur-sm transition-colors hover:bg-white/30"
-                        >
-                          Fund it with testnet USDC at faucet.circle.com
-                        </a>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={sendStarter}
+                            disabled={starterBusy}
+                            className="rounded-full bg-white/25 px-3 py-1.5 text-xs font-semibold backdrop-blur-sm transition-colors hover:bg-white/35 disabled:opacity-60"
+                          >
+                            {starterBusy ? 'Sending...' : 'Send test USDC'}
+                          </button>
+                          <a
+                            href={FAUCET}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold backdrop-blur-sm transition-colors hover:bg-white/20"
+                          >
+                            Or use faucet.circle.com
+                          </a>
+                        </div>
                       )}
+                      {starterNote && <p className="mt-2 text-xs text-white/90">{starterNote}</p>}
                     </>
                   ) : (
                     <div className="mt-3 text-sm text-white/90">
-                      This agent has no wallet yet. Create a hosted one below: there is no key to save, and it
-                      starts with test USDC.
+                      This agent has no wallet yet. Create a hosted one below: there is no key to save.
                     </div>
                   )}
                 </div>

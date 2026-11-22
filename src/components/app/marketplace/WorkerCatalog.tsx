@@ -51,6 +51,9 @@ type Task = {
   deliveryModel?: string
   /** Why the worker has not delivered yet, in the worker's own words. */
   workerNote?: string
+  /** True while the escrow lock is still running on chain, decided by the server. Until it
+   *  ends the hire can be neither paid nor cancelled. */
+  escrowLocking?: boolean
   settlement?: 'onchain' | 'simulated'
   jobId?: string
   escrowExplorer?: string
@@ -80,6 +83,7 @@ function hireStage(t: Task, worker: string): { step: number; next: string; tone:
       return { step: 0, next: 'Waiting for bids. Accept one and its price locks in escrow.', tone: 'wait' }
     case 'assigned':
     case 'funded':
+      if (t.escrowLocking) return { step: 0, next: `Locking ${usdc} in escrow on Arc. This takes up to a minute.`, tone: 'wait' }
       // When the worker said why it has not delivered, that is the thing to read.
       return t.workerNote
         ? { step: 1, next: t.workerNote, tone: 'act' }
@@ -195,14 +199,21 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
   // A hire whose money is locked is waiting on its worker. Read the list again every few
   // seconds while one is, so the result appears on its row without a reload. Nothing polls
   // once every hire has ended, or while the tab is in the background.
-  const awaitingWorker = tasks.some((t) => t.status === 'funded' || t.status === 'assigned')
+  // How often depends on how fresh the wait is: every few seconds while a hire is new, once a
+  // minute after ten minutes, and not at all for a hire nobody answered in a day.
+  const newestWait = tasks.reduce(
+    (latest, t) => (t.status === 'funded' || t.status === 'assigned' ? Math.max(latest, Date.parse(t.createdAt) || 0) : latest),
+    0,
+  )
+  const waitedMs = newestWait ? Date.now() - newestWait : Infinity
+  const pollMs = waitedMs < 10 * 60_000 ? 4000 : waitedMs < 24 * 60 * 60_000 ? 60_000 : 0
   useEffect(() => {
-    if (!awaitingWorker) return
+    if (!pollMs) return
     const timer = window.setInterval(() => {
       if (!document.hidden) loadTasks()
-    }, 4000)
+    }, pollMs)
     return () => window.clearInterval(timer)
-  }, [awaitingWorker, loadTasks])
+  }, [pollMs, loadTasks])
 
   const setBusyNote = (key: string, msg: string) => setNote((n) => ({ ...n, [key]: msg }))
 
@@ -211,23 +222,26 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
     setBusy(key)
     setBusyNote(key, '')
     setHired(null)
-    const startedAt = Date.now()
+    const readTasks = async (): Promise<Task[] | null> => {
+      try {
+        const res = await apiFetch('/api/marketplace/tasks')
+        const data = await readJson<{ tasks?: Task[] }>(res)
+        return res.ok && Array.isArray(data.tasks) ? data.tasks : null
+      } catch {
+        return null
+      }
+    }
+    // The hires this account already has, read before the request goes out. A hire that lands
+    // is then the one that was not in this list, with no clock compared to the server's.
+    const before = new Set(((await readTasks()) ?? tasks).map((t) => t.id))
     // Locking the escrow can outlast the proxy in front of the backend, which then drops the
     // answer while the hire goes on. So a dropped or gateway answer is not read as a failure:
     // the list is asked whether the hire landed before anything is said about it.
     const landedHire = async (): Promise<Task | null> => {
-      for (let attempt = 0; attempt < 10; attempt++) {
+      for (let attempt = 0; attempt < 12; attempt++) {
         if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 5000))
-        try {
-          const res = await apiFetch('/api/marketplace/tasks')
-          const data = await readJson<{ tasks?: Task[] }>(res)
-          const found = (data.tasks ?? []).find(
-            (t) => t.agentId === svc.agentId && t.service === svc.service && Date.parse(t.createdAt) >= startedAt - 10_000,
-          )
-          if (found) return found
-        } catch {
-          /* keep looking until the attempts run out */
-        }
+        const found = ((await readTasks()) ?? []).find((t) => !before.has(t.id) && t.agentId === svc.agentId && t.service === svc.service)
+        if (found) return found
         setBusyNote(key, 'Still locking the escrow on Arc...')
       }
       return null
@@ -255,14 +269,14 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
       } else if (res.status >= 502 && res.status <= 504) {
         const landed = await landedHire()
         if (landed) await settle(landed)
-        else setBusyNote(key, 'The hire did not go through. Nothing was locked; try again in a moment.')
+        else setBusyNote(key, 'No hire shows up yet. Look under Your hires in a minute before trying again, so you do not hire twice.')
       } else {
         setBusyNote(key, explainError(res.status, data.error))
       }
     } catch {
       const landed = await landedHire()
       if (landed) await settle(landed)
-      else setBusyNote(key, 'The hire did not go through. Nothing was locked; try again in a moment.')
+      else setBusyNote(key, 'No hire shows up yet. Look under Your hires in a minute before trying again, so you do not hire twice.')
     } finally {
       setBusy(null)
     }
@@ -677,7 +691,7 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
                       {/* The worker's side lives in the same list only for someone who hired
                           their own agent; the server refuses anyone else. Folded away so a
                           client is never asked to "deliver" their own order. */}
-                      {t.status === 'funded' && (
+                      {t.status === 'funded' && !t.escrowLocking && (
                         <details className="w-full" open={Boolean(t.workerNote) || undefined}>
                           <summary className="cursor-pointer text-xs font-semibold text-foreground/45 hover:text-foreground/70">
                             Taking too long? Cancel and get a refund
@@ -695,7 +709,7 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
                           </div>
                         </details>
                       )}
-                      {t.status === 'funded' && (
+                      {t.status === 'funded' && !t.escrowLocking && (
                         <details className="w-full">
                           <summary className="cursor-pointer text-xs font-semibold text-foreground/45 hover:text-foreground/70">
                             Are you the worker? Deliver the result

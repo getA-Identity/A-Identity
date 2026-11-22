@@ -70,13 +70,13 @@ export function CircleWalletPanel({ agentId }: { agentId: string }) {
         timeoutMs: 90_000, // Circle provisions + funds the wallet on-chain; can be slow
         onWaking: () => setErr('Waking up the backend (free tier)…'),
       })
-      const j = await readJson<{ error?: string }>(res)
+      const j = await readJson<{ error?: string; funded?: { error?: string } | null }>(res)
       if (!res.ok) {
         setErr(explainError(res.status, j.error))
         return
       }
-      if (j.error) setErr(j.error)
-      else setErr(null)
+      // The wallet exists either way. If its starter funding did not go out, say why.
+      setErr(j.error ?? j.funded?.error ?? null)
       await load()
       // The agent may have just taken this wallet as its own: let every screen read it again.
       invalidatePlatformAgents()
