@@ -104,7 +104,7 @@ jobs:
           SANDBOX_TESTS_PARALLEL: 2
         run: cargo test -p sandbox-tests
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
 
