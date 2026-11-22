@@ -160,8 +160,13 @@ const server = http.createServer(async (req, res) => {
     if (claims?.email) caller = { subject: claims.email.trim().toLowerCase(), method: 'email' }
   }
 
-  // The subject string used for ownership checks (email or wallet address).
-  const callerId = caller?.subject
+  // The subject string used for ownership checks (email or wallet address), taken from a
+  // VERIFIED session only. A guest token carries whatever email its bearer typed, so its
+  // subject proves nothing: read as an identity, a guest named after someone else's email or
+  // address passed every owner-only read (that account's agents, limits, vault, hosted wallet
+  // and payment history). Writes were already refused. A guest is still known through
+  // `caller`, and owns nothing, which is the same rule mcpCallerFor applies to POST /mcp.
+  const callerId = mcpCallerFor(caller)
 
   const ctx: RouteCtx = { req, res, url, caller, callerId }
 
