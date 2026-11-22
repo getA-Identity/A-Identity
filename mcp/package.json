@@ -37,7 +37,7 @@
     "@near-js/transactions": "2.5.1",
     "@near-js/utils": "2.5.1",
     "@stellar/stellar-sdk": "^16.3.0",
-    "@x402/core": "^2.18.0",
+    "@x402/core": "^2.31.0",
     "@x402/evm": "^2.18.0",
     "@x402/near": "2.18.0",
     "@zerodev/ecdsa-validator": "^5.4.9",
