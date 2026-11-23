@@ -381,6 +381,10 @@ export type Instruction = {
    */
   offchainAuditId?: string
   offchainAuditReason?: string
+  /** The UTC day on which the server signer paid this instruction on the direct rail, or sent
+   *  a payment for it that may still land. Counted against what the signer covers in a day
+   *  (the direct rail ceilings in platform/instructions.ts). Removed when nothing was sent. */
+  directPaidOn?: string
   createdAt: string
 }
 
