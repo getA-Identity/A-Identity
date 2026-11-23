@@ -215,6 +215,10 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
     return () => window.clearInterval(timer)
   }, [pollMs, loadTasks])
 
+  // The hire that just went through, as the list has it now, so the line under "Hired" follows
+  // the escrow lock instead of repeating what was true the moment the hire was made.
+  const hiredTask = hired ? (tasks.find((t) => t.id === hired.task.id) ?? hired.task) : null
+
   const setBusyNote = (key: string, msg: string) => setNote((n) => ({ ...n, [key]: msg }))
 
   async function hire(svc: CatalogService) {
@@ -232,12 +236,22 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
       }
     }
     // The hires this account already has, read before the request goes out. A hire that lands
-    // is then the one that was not in this list, with no clock compared to the server's.
-    const before = new Set(((await readTasks()) ?? tasks).map((t) => t.id))
+    // is then the one that was not in this list, with no clock compared to the server's. When
+    // that read fails there is no telling a new hire from an older one of the same service, so
+    // none is named afterwards: the page points at Your hires instead.
+    const read = await readTasks()
+    const before = read ? new Set(read.map((t) => t.id)) : null
+    const notSeen = before
+      ? 'No hire shows up yet. Look under Your hires in a minute before trying again, so you do not hire twice.'
+      : 'The answer did not come back, and this page cannot tell whether the hire went through. Look under Your hires in a minute before trying again, so you do not hire twice.'
     // Locking the escrow can outlast the proxy in front of the backend, which then drops the
     // answer while the hire goes on. So a dropped or gateway answer is not read as a failure:
     // the list is asked whether the hire landed before anything is said about it.
     const landedHire = async (): Promise<Task | null> => {
+      if (!before) {
+        void loadTasks()
+        return null
+      }
       for (let attempt = 0; attempt < 12; attempt++) {
         if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 5000))
         const found = ((await readTasks()) ?? []).find((t) => !before.has(t.id) && t.agentId === svc.agentId && t.service === svc.service)
@@ -269,14 +283,14 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
       } else if (res.status >= 502 && res.status <= 504) {
         const landed = await landedHire()
         if (landed) await settle(landed)
-        else setBusyNote(key, 'No hire shows up yet. Look under Your hires in a minute before trying again, so you do not hire twice.')
+        else setBusyNote(key, notSeen)
       } else {
         setBusyNote(key, explainError(res.status, data.error))
       }
     } catch {
       const landed = await landedHire()
       if (landed) await settle(landed)
-      else setBusyNote(key, 'No hire shows up yet. Look under Your hires in a minute before trying again, so you do not hire twice.')
+      else setBusyNote(key, notSeen)
     } finally {
       setBusy(null)
     }
@@ -586,10 +600,12 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
                     <CheckCircle2 size={14} /> Hired {svc.agentName}
                   </span>
                   <span>
-                    {hired.task.priceUsd.toFixed(2)} USDC is locked{hired.task.escrowExplorer ? ' on Arc' : ''}. It pays out when you approve.
+                    {hiredTask?.escrowLocking
+                      ? `Locking ${hiredTask.priceUsd.toFixed(2)} USDC in escrow on Arc. This takes up to a minute.`
+                      : `${(hiredTask ?? hired.task).priceUsd.toFixed(2)} USDC is locked${hiredTask?.escrowExplorer ? ' on Arc' : ''}. It pays out when you approve.`}
                   </span>
-                  {hired.task.escrowExplorer && (
-                    <a href={hired.task.escrowExplorer} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-usdc hover:underline">
+                  {hiredTask?.escrowExplorer && (
+                    <a href={hiredTask.escrowExplorer} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-usdc hover:underline">
                       See the escrow <ExternalLink size={11} />
                     </a>
                   )}
@@ -734,7 +750,7 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
                       )}
                       {/* Client side: one clear action (pay), with rating optional beside it and
                           the dispute folded one click away. */}
-                      {t.status === 'delivered' && (
+                      {t.status === 'delivered' && !t.escrowLocking && (
                         <>
                           <button
                             type="button"

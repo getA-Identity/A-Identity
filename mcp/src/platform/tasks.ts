@@ -46,6 +46,7 @@ async function tryOnchainFund(task: Task, agent?: PlatformAgent): Promise<void> 
   // Marked before the first await: the task is already in the list as `funded`, and the lock
   // below takes seconds. Until it ends nothing may settle or work the task (see escrowLocking).
   task.escrowLockingAt = new Date().toISOString()
+  locksInFlight.add(task.id)
   try {
     const esc = await fundEscrowOnchain({ budgetUsd: task.priceUsd, description: `A-Identity marketplace task ${task.id}: ${task.service}` })
     if (esc.executed && isTerminal(task.status)) {
@@ -59,16 +60,29 @@ async function tryOnchainFund(task: Task, agent?: PlatformAgent): Promise<void> 
       task.escrowTx = fund?.txHash
       task.escrowExplorer = fund?.explorerUrl
       if (agent) pushActivity(agent, `Escrow locked on-chain at hire (ERC-8183 job ${esc.jobId}, tx ${short(task.escrowTx ?? '')})`)
+    } else if ('unconfirmed' in esc && esc.unconfirmed) {
+      // A step was sent and no receipt came back in time. A job may end up funded with nothing
+      // here pointing at it, so the hash is logged for whoever has to find it.
+      console.error(`[marketplace] escrow lock for task ${task.id} ended unconfirmed (tx ${esc.txHash}): ${esc.reason}`)
     }
   } catch {
     /* off-chain funded fallback - never blocks the hire */
   } finally {
+    locksInFlight.delete(task.id)
     delete task.escrowLockingAt
   }
 }
 
-/** A lock mark older than this is read as left over from a process that ended mid-lock. Four
- *  Arc transactions take seconds, and a mark that never cleared must not hold a task forever. */
+/**
+ * The locks this process is running. A lock is four Arc transactions and each may wait minutes
+ * for its receipt, so no clock can say when one has ended: only the process running it knows,
+ * and for as long as it runs the task counts as locking, however long that takes.
+ */
+const locksInFlight = new Set<string>()
+
+/** A stored mark with no lock running here is left over from a process that ended mid-lock.
+ *  It is believed for this long, so a restart does not open the task the moment it is back,
+ *  and no longer, so a mark that nobody will clear cannot hold a task forever. */
 const ESCROW_LOCK_STALE_MS = 3 * 60_000
 
 /**
@@ -76,7 +90,8 @@ const ESCROW_LOCK_STALE_MS = 3 * 60_000
  * the house worker leaves the task alone, because the lock has not said yet which on-chain job
  * (if any) holds the money: settling now would settle a different one.
  */
-export function escrowLocking(task: Pick<Task, 'escrowLockingAt'>, now: number = Date.now()): boolean {
+export function escrowLocking(task: Pick<Task, 'escrowLockingAt'> & { id?: string }, now: number = Date.now()): boolean {
+  if (task.id !== undefined && locksInFlight.has(task.id)) return true
   if (!task.escrowLockingAt) return false
   const at = Date.parse(task.escrowLockingAt)
   return Number.isFinite(at) && now - at < ESCROW_LOCK_STALE_MS
@@ -356,13 +371,41 @@ export function claimHouseCall(input: { taskId: string; allowedAgentIds: Readonl
   return task
 }
 
-/** Model calls the house worker made at or after `sinceIso`, for everyone or for one client.
- *  Read from the stored rows, so a restart does not reset a ceiling. */
+/**
+ * The house worker gives back the call it recorded for a task, after a failure that was on the
+ * operator's side and not about the job.
+ *
+ * `billable: false` is for an answer that proves no model ran: the API turned the request away
+ * over the credential, the account or the rate. The record is removed, so the failure costs
+ * the task, its client and the day nothing, and the work goes on the moment the cause is fixed.
+ *
+ * `billable: true` is for a failure that may still have been billed: the service broke, or no
+ * answer came back. The call stops counting against the task and its client, who did nothing
+ * wrong, and keeps counting against the day, which is the ceiling that bounds the bill.
+ */
+export function releaseHouseCall(input: { taskId: string; billable: boolean; allowedAgentIds: ReadonlySet<string> }): Task | { error: string } {
+  const task = state.tasks.find((t) => t.id === input.taskId)
+  if (!task) return { error: 'Unknown task' }
+  if (!input.allowedAgentIds.has(task.agentId)) return { error: 'Forbidden: the hired agent is not a house worker' }
+  const calls = task.workerCalls ?? []
+  const last = calls[calls.length - 1]
+  if (last === undefined) return { error: 'This task has no recorded call to give back' }
+  task.workerCalls = calls.slice(0, -1)
+  if (input.billable) task.workerOutageCalls = [...(task.workerOutageCalls ?? []), last]
+  save(state)
+  return task
+}
+
+/** Model calls the house worker made at or after `sinceIso`. For everyone, that is every call
+ *  that may have been billed, the ones given back after an outage included. For one client it
+ *  is only the calls that count against a client. Read from the stored rows, so a restart does
+ *  not reset a ceiling. */
 export function countHouseCallsSince(sinceIso: string, client?: string): number {
   let n = 0
   for (const t of state.tasks) {
-    if (!t.workerCalls || (client !== undefined && t.client !== client)) continue
-    for (const at of t.workerCalls) if (at >= sinceIso) n++
+    if (client !== undefined && t.client !== client) continue
+    for (const at of t.workerCalls ?? []) if (at >= sinceIso) n++
+    if (client === undefined) for (const at of t.workerOutageCalls ?? []) if (at >= sinceIso) n++
   }
   return n
 }

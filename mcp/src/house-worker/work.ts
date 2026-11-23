@@ -19,8 +19,11 @@ export type WorkOutcome =
    * retry: this try produced nothing usable; another may.
    * operator: nothing is wrong with the job. The model, the network or our credential is, so
    * it does not count against the task.
+   *
+   * noCall: the API turned the request away before any model ran (the credential, the account
+   * or the rate), so the call is not billed and the worker can give its record back.
    */
-  | { ok: false; kind: 'job' | 'retry' | 'operator'; reason: string; /** For the server log only. */ detail?: string }
+  | { ok: false; kind: 'job' | 'retry' | 'operator'; reason: string; noCall?: true; /** For the server log only. */ detail?: string }
 
 /** What a stored deliverable can hold (platform/tasks.ts slices at the same length). */
 export const MAX_DELIVERABLE_CHARS = 5000
@@ -151,6 +154,9 @@ export async function runHouseSkill(
   return { ok: true, text, model: message.model }
 }
 
+/** How a 400 reads when it is about the account and not the request. */
+const ACCOUNT_REFUSAL = /credit balance|billing|organization/i
+
 /**
  * A failure, sorted by who can do something about it. Most specific class first. The reason is
  * for the client; the detail is the error's own name and message, for the server log, where
@@ -159,14 +165,20 @@ export async function runHouseSkill(
 function failure(e: unknown): WorkOutcome {
   const detail = e instanceof Error ? `${e.constructor.name}: ${e.message}`.slice(0, 300) : 'a non-error was thrown'
   const out = (kind: 'job' | 'retry' | 'operator', reason: string): WorkOutcome => ({ ok: false, kind, reason, detail })
+  // Turned away before any model ran, over something that is ours to fix: not billed, so the
+  // worker gives the call back and no task is given up over it.
+  const refused = (reason: string): WorkOutcome => ({ ok: false, kind: 'operator', reason, noCall: true, detail })
   if (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError) {
-    return out('operator', 'the model credential was rejected')
+    return refused('the model credential was rejected')
   }
-  // The account cannot be charged: ours to fix, and no task should be given up over it.
-  if (e instanceof Anthropic.PaymentRequiredError) return out('operator', 'the model account cannot be charged')
-  if (e instanceof Anthropic.RateLimitError) return out('operator', 'the model is rate limited')
-  if (e instanceof Anthropic.NotFoundError) return out('operator', 'the configured model was not found')
+  if (e instanceof Anthropic.PaymentRequiredError) return refused('the model account cannot be charged')
+  if (e instanceof Anthropic.RateLimitError) return refused('the model is rate limited')
+  if (e instanceof Anthropic.NotFoundError) return refused('the configured model was not found')
   if (e instanceof Anthropic.BadRequestError || e instanceof Anthropic.UnprocessableEntityError || e instanceof Anthropic.ContentTooLargeError) {
+    // An account that cannot be charged has also answered 400, in words about the account. That
+    // is not about the job either. Any other refusal of the plain request is: one malformed job
+    // is given up on its own, and it must not hold the queue the way an outage does.
+    if (ACCOUNT_REFUSAL.test(e.message)) return refused('the model account cannot be charged')
     return out('job', 'the model rejected the request')
   }
   // A call that ran out of time is about this job: counted as a try, so one slow job cannot

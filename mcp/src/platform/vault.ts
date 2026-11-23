@@ -662,10 +662,15 @@ export async function provisionCircleWallet(
   const flight = `circle-wallet:${agent.id}`
   if (inFlightAgentOps.has(flight)) return { error: 'A hosted wallet is already being created for this agent; wait for it to finish.' }
 
-  // Starter funding is the server signer's test USDC, so it is rationed: a ceiling per account
-  // and one per day. Past either the wallet is still created, empty, and the answer says why.
-  const refusal = opts.fund === false ? null : starterFundingRefusal(agent.owner)
-  const fund = (opts.fund ?? true) && !refusal
+  // Starter funding is the server signer's test USDC, so it is rationed: once per agent, a
+  // ceiling per account and one per day. Past any of them the wallet is still created, empty,
+  // and the answer says why. An agent that has a record, or a transfer on its way from the
+  // other path (sendStarterFunding), is not funded again: the ceilings and the once per address
+  // rule are read from that record, so a second transfer would be one nothing counts.
+  const wanted = opts.fund ?? true
+  const fundedBefore = Boolean(agent.starterFunding) || inFlightAgentOps.has(`starter-funding:${agent.id}`)
+  const refusal = !wanted ? null : fundedBefore ? STARTER_FUNDING_ONCE : starterFundingRefusal(agent.owner)
+  const fund = wanted && !refusal
 
   inFlightAgentOps.add(flight)
   const owner = agent.owner ?? ''
@@ -687,7 +692,8 @@ export async function provisionCircleWallet(
         state.wallets.push({ address: res.walletAddress, agentId: agent.id, chain: 'arc-testnet', createdAt: new Date().toISOString() })
       }
     }
-    if (res.funded && 'txHash' in res.funded) {
+    // Never written over a record the agent already has (see fundedBefore above).
+    if (res.funded && 'txHash' in res.funded && !agent.starterFunding) {
       agent.starterFunding = {
         address: res.walletAddress,
         amountUsd: res.funded.amountUsd,
@@ -716,7 +722,7 @@ export async function provisionCircleWallet(
       primary,
       walletAddress: agent.walletAddress,
       funded:
-        refusal && (opts.fund ?? true)
+        refusal
           ? { error: refusal }
           : res.funded && 'error' in res.funded
             ? // The signer could not send it (no key here, too little test USDC, or the chain did
@@ -736,6 +742,7 @@ export async function provisionCircleWallet(
 }
 
 const STARTER_FUNDING_FAILED = 'The starter funding could not be sent just now, so this wallet starts empty. Fund it from faucet.circle.com.'
+const STARTER_FUNDING_ONCE = 'Starter funding goes to an agent once, and this agent has its own, so this wallet starts empty. Fund it from faucet.circle.com.'
 
 /** Test USDC a new hosted wallet starts with (the amount circle-agent.ts sends from the signer). */
 export const STARTER_FUNDING_USD = 0.5
@@ -795,6 +802,9 @@ export async function sendStarterFunding(
   if (signer && signer.toLowerCase() === lower) return { error: 'This address is the server signer and is not funded from itself.' }
   const flight = `starter-funding:${agent.id}`
   if (inFlightAgentOps.has(flight)) return { error: 'Starter funding is already being sent to this agent; wait for it to finish.' }
+  // The other path that funds: a hosted wallet being created for this agent right now may be
+  // funded as it is made, and an agent is funded once.
+  if (inFlightAgentOps.has(`circle-wallet:${agent.id}`)) return { error: 'A hosted wallet is being created for this agent; wait for it to finish.' }
 
   const refusal = starterFundingRefusal(agent.owner)
   if (refusal) return { walletAddress: address, funded: { error: refusal } }

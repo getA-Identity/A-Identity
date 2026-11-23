@@ -89,6 +89,9 @@ export type Task = {
    *  it. Its ceilings are counted from these, because a call is billed even when nothing is
    *  delivered. */
   workerCalls?: string[]
+  /** Calls given back after a failure on the operator's side that may still have been billed
+   *  (platform/tasks.ts releaseHouseCall). They count against the day and nothing else. */
+  workerOutageCalls?: string[]
   /** The client's review, set on release. */
   review?: Review
   /** Bids from verified agents while the task is 'open' (before a worker is chosen). */

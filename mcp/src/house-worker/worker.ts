@@ -17,10 +17,15 @@
  * ceilings count those records, not deliveries. A call that fails, is cut off or is thrown
  * away is billed like any other, so it counts like any other: at most `dailyLimit` calls in
  * any 24 hours, at most `clientDailyLimit` of them for one client, and a fixed few per task.
+ * A failure that is ours and not the job's is the one thing handled apart. A call the API turns
+ * away before any model runs (the credential, the account, the rate) is not billed, so its
+ * record is given back and nothing is spent. A call that fails because the service or the
+ * network broke may have been billed: it keeps counting against the day, and stops counting
+ * against the task and its client, so an outage on our side cannot use up their share.
  *
  * Off, with one log line, unless both the list and a model credential are set (./config.ts).
  */
-import { listFundedTasksForAgents, deliverHouseTask, noteHouseTask, claimHouseCall, countHouseCallsSince, HOUSE_CALLS_PER_TASK } from '../platform.js'
+import { listFundedTasksForAgents, deliverHouseTask, noteHouseTask, claimHouseCall, releaseHouseCall, countHouseCallsSince, HOUSE_CALLS_PER_TASK } from '../platform.js'
 import { houseWorkerConfig } from './config.js'
 import { runHouseSkill, type WorkOutcome } from './work.js'
 
@@ -69,6 +74,7 @@ export type WorkerDeps = {
   deliver?: typeof deliverHouseTask
   note?: typeof noteHouseTask
   claimCall?: typeof claimHouseCall
+  releaseCall?: typeof releaseHouseCall
   callsSince?: typeof countHouseCallsSince
 }
 
@@ -87,6 +93,7 @@ export function createHouseWorker(deps: WorkerDeps): HouseWorker {
   const deliver = deps.deliver ?? deliverHouseTask
   const note = deps.note ?? noteHouseTask
   const claimCall = deps.claimCall ?? claimHouseCall
+  const releaseCall = deps.releaseCall ?? releaseHouseCall
   const callsSince = deps.callsSince ?? countHouseCallsSince
 
   let stopped = false
@@ -118,8 +125,8 @@ export function createHouseWorker(deps: WorkerDeps): HouseWorker {
         if ((task.workerAttempts ?? 0) >= MAX_ATTEMPTS) continue
         if ((retryAt.get(task.id) ?? 0) > now()) continue
         if ((task.workerCalls?.length ?? 0) >= HOUSE_CALLS_PER_TASK) {
-          // Every call it may take is spent without a result, most likely on a service that
-          // was down each time. Said once, and the task is left to its client.
+          // Every call it may take is spent without a result, on calls that were cut off
+          // before they could say how they ended. Said once, and the task is left to its client.
           say(task.id, gaveUpNote('it could not be completed'), MAX_ATTEMPTS)
           continue
         }
@@ -159,6 +166,9 @@ export function createHouseWorker(deps: WorkerDeps): HouseWorker {
             log(`delivered ${task.id} (${task.service}, ${outcome.text.length} characters, ${outcome.model})`)
           }
         } else if (outcome.kind === 'operator') {
+          // Ours, not the job's: the task and its client get the call back. It still counts
+          // against the day unless the answer proves that no model ran.
+          releaseCall({ taskId: task.id, billable: outcome.noCall !== true, allowedAgentIds: agentIds })
           failures++
           backoff = true
           say(task.id, WAIT_NOTE)

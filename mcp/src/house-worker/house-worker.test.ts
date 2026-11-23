@@ -8,7 +8,7 @@ import assert from 'node:assert/strict'
 import Anthropic from '@anthropic-ai/sdk'
 import {
   __resetPlatformStateForTests, createAgent, hireAgent, releaseTask, disputeTask,
-  listFundedTasksForAgents, deliverHouseTask, noteHouseTask, claimHouseCall, countHouseCallsSince,
+  listFundedTasksForAgents, deliverHouseTask, noteHouseTask, claimHouseCall, releaseHouseCall, countHouseCallsSince,
   escrowLocking, HOUSE_CALLS_PER_TASK,
 } from '../platform.js'
 import type { Task } from '../marketplace.js'
@@ -54,6 +54,8 @@ const apiError = (status: number) => Anthropic.APIError.generate(status, undefin
 
 const ok = (text = 'Gunaydin'): WorkOutcome => ({ ok: true, text, model: DEFAULT_MODEL })
 const silent = () => {}
+/** Calls a task was given back after an outage of ours that may still have been billed. */
+const outage = (t: Task) => t.workerOutageCalls?.length ?? 0
 
 // -- the switch --------------------------------------------------------------------------------
 
@@ -194,6 +196,21 @@ test('house work: API failures are sorted by who can fix them', async () => {
   // No credential could be resolved, or a stored one expired: our side, not the job's.
   assert.equal(await kind(new Anthropic.AnthropicError('the stored token has expired')), 'operator')
   assert.equal(await kind(new Error('boom')), 'retry')
+  // Turned away before any model ran, so the call is not billed: the outcome says so, and
+  // says it for nothing else.
+  const noCall = async (e: unknown) => {
+    const out = await run(e)
+    return !out.ok && out.noCall === true
+  }
+  for (const status of [401, 402, 403, 404, 429]) assert.equal(await noCall(apiError(status)), true, String(status))
+  assert.equal(await noCall(apiError(529)), false)
+  assert.equal(await noCall(new Anthropic.APIConnectionError({ message: 'down' })), false)
+  assert.equal(await noCall(new Anthropic.APIConnectionTimeoutError({ message: 'timed out' })), false)
+  assert.equal(await noCall(apiError(400)), false)
+  // An account that cannot be charged has answered 400 as well, in words about the account.
+  // That is ours to fix, so no job is given up over it.
+  const broke = await run(Anthropic.APIError.generate(400, undefined, 'Your credit balance is too low to access the API.', new Headers()))
+  assert.ok(!broke.ok && broke.kind === 'operator' && broke.noCall === true)
   // The reason is for the client and never carries the error's own text, which can hold a
   // request id. The detail does, and it goes to the server log only.
   const out = await run(Anthropic.APIError.generate(401, undefined, 'secret-looking detail', new Headers()))
@@ -298,6 +315,31 @@ test('house calls: each one is recorded before it is made, counted per client, a
   assert.equal(countHouseCallsSince(since), 3)
 })
 
+test('house calls: one given back after a failure of ours costs the task and its client nothing, and the day only when it may have been billed', () => {
+  const { state, house, other } = seed()
+  const allowed = new Set([house.id])
+  const task = fund(state.tasks, house.id, { client: 'a@example.test' })
+  const since = new Date(Date.now() - 1000).toISOString()
+  // Turned away before any model ran: the record is removed.
+  claimHouseCall({ taskId: task.id, allowedAgentIds: allowed })
+  assert.ok(!('error' in releaseHouseCall({ taskId: task.id, billable: false, allowedAgentIds: allowed })))
+  assert.deepEqual(task.workerCalls, [])
+  assert.equal(outage(task), 0)
+  assert.equal(countHouseCallsSince(since), 0)
+  // The service broke mid-call: it may have been billed, so the day still counts it.
+  claimHouseCall({ taskId: task.id, allowedAgentIds: allowed })
+  releaseHouseCall({ taskId: task.id, billable: true, allowedAgentIds: allowed })
+  assert.deepEqual(task.workerCalls, [])
+  assert.equal(outage(task), 1)
+  assert.equal(countHouseCallsSince(since), 1)
+  assert.equal(countHouseCallsSince(since, 'a@example.test'), 0)
+  // Nothing to give back, or not ours to touch.
+  assert.match((releaseHouseCall({ taskId: task.id, billable: false, allowedAgentIds: allowed }) as { error: string }).error, /no recorded call/)
+  const foreign = fund(state.tasks, other.id, { workerCalls: ['2020-01-01T00:00:00.000Z'] })
+  assert.match((releaseHouseCall({ taskId: foreign.id, billable: false, allowedAgentIds: allowed }) as { error: string }).error, /not a house worker/)
+  assert.equal(foreign.workerCalls?.length, 1)
+})
+
 test('escrow lock: a hire is marked while its escrow locks, and nothing settles or works it until the lock ends', async () => {
   const { state, house } = seed()
   house.kya = 'verified'
@@ -309,6 +351,11 @@ test('escrow lock: a hire is marked while its escrow locks, and nothing settles 
   assert.equal(task.status, 'funded')
   assert.equal(escrowLocking(task), true)
   assert.deepEqual(listFundedTasksForAgents(new Set([house.id])), [], 'the worker does not see it yet')
+  // A lock can outlast any clock: however old its mark reads, the task is locking for as long
+  // as this process is still running the lock.
+  task.escrowLockingAt = new Date(Date.now() - 10 * 60_000).toISOString()
+  assert.equal(escrowLocking(task), true)
+  assert.deepEqual(listFundedTasksForAgents(new Set([house.id])), [])
   await hiring
   // The lock ended (here with no signer, so nothing was locked on chain): the mark is gone.
   assert.equal(task.escrowLockingAt, undefined)
@@ -438,6 +485,33 @@ test('house loop: when our side is down the task is not blamed, the client is to
   assert.equal(r3.delivered, 2)
   assert.equal(w.nextDelayMs(r3), POLL_MS)
   assert.equal(first.workerNote, undefined)
+})
+
+test('house loop: an outage on our side uses up neither the task nor its client, however long it lasts', async () => {
+  const { state, house } = seed()
+  const task = fund(state.tasks, house.id)
+  let outcome: WorkOutcome = { ok: false, kind: 'operator', reason: 'the model account cannot be charged', noCall: true }
+  const w = worker(house, { dailyLimit: 4, clientDailyLimit: 2, work: async () => outcome })
+  // More failed polls than a task or a client may ever take calls.
+  for (let i = 0; i < HOUSE_CALLS_PER_TASK + 3; i++) assert.deepEqual(await w.tick(), { delivered: 0, backoff: true })
+  assert.deepEqual(task.workerCalls, [])
+  assert.equal(outage(task), 0)
+  assert.equal(task.workerNote, WAIT_NOTE)
+  assert.equal(task.workerAttempts, undefined)
+  // A failure that may have been billed counts against the day and nothing else.
+  outcome = { ok: false, kind: 'operator', reason: 'the model service failed (529)' }
+  for (let i = 0; i < 3; i++) await w.tick()
+  assert.deepEqual(task.workerCalls, [])
+  assert.equal(outage(task), 3)
+  assert.equal(task.workerAttempts, undefined)
+  // The cause is fixed: the same task is delivered, with the one call the day has left.
+  outcome = ok()
+  assert.equal((await w.tick()).delivered, 1)
+  assert.equal(task.status, 'delivered')
+  // And the day is then spent, for the next hire, by the calls that may have been billed.
+  const next = fund(state.tasks, house.id, { client: 'b@example.test' })
+  await w.tick()
+  assert.equal(next.workerNote, LIMIT_NOTE)
 })
 
 test('house ration: the day is counted in model calls, so a call that comes to nothing still counts', async () => {

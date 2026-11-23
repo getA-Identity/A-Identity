@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowUpRight,
@@ -171,8 +171,13 @@ export default function Wallet() {
   // its ceilings. The answer says what happened, and the faucet link stays for when it says no.
   const [starterBusy, setStarterBusy] = useState(false)
   const [starterNote, setStarterNote] = useState<string | null>(null)
+  // The agent on screen now. A send can take a minute, and its answer belongs to the agent it
+  // was sent for: if another one is open by then, nothing is written onto its page.
+  const shownAgentId = useRef(agentId)
   const sendStarter = async () => {
     if (!agent) return
+    const sentFor = agent.id
+    const stillShown = () => shownAgentId.current === sentFor
     setStarterBusy(true)
     setStarterNote(null)
     try {
@@ -183,19 +188,21 @@ export default function Wallet() {
         timeoutMs: 60_000,
       })
       const d = await readJson<{ error?: string; already?: boolean; funded?: { amountUsd?: number; unconfirmed?: boolean; error?: string } }>(res)
+      if (!stillShown()) return
       if (!res.ok) setStarterNote(explainError(res.status, d.error))
       else if (d.funded?.error) setStarterNote(d.funded.error)
       else if (d.funded?.unconfirmed) setStarterNote(`${d.funded.amountUsd} test USDC was sent and is waiting for the chain to confirm.`)
       else if (d.already) setStarterNote('This wallet already received its starter funding.')
       else setStarterNote(`${d.funded?.amountUsd} test USDC arrived.`)
-      await refresh(agent)
+      await refresh(agent, stillShown)
     } catch {
-      setStarterNote('Could not send it just now. Try again in a moment, or use the faucet.')
+      if (stillShown()) setStarterNote('Could not send it just now. Try again in a moment, or use the faucet.')
     } finally {
       setStarterBusy(false)
     }
   }
   useEffect(() => {
+    shownAgentId.current = agentId
     setStarterNote(null)
   }, [agentId])
 

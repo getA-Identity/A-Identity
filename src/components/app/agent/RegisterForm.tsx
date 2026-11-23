@@ -236,7 +236,7 @@ export default function RegisterForm({ onClose, onCreated }: { onClose: () => vo
         const res = await apiFetch(`/api/agents/circle-wallet?agentId=${encodeURIComponent(agentId)}`, { headers: authHeaders() })
         const found = await readJson<{ circleWalletAddress?: string }>(res)
         if (res.ok && found.circleWalletAddress) {
-          setHostedWallet({ address: found.circleWalletAddress, funded: null })
+          setHostedWallet({ address: found.circleWalletAddress, funded: null, fundingUnknown: true })
           return
         }
         // A plain answer that there is none is final: nothing is still on its way.

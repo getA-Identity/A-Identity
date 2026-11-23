@@ -8,6 +8,9 @@ export type HostedWallet = {
   address: string
   explorer?: string
   funded: { amountUsd: number; txHash: string; explorerUrl: string; unconfirmed?: true } | { error: string; detail?: string } | null
+  /** The wallet was found after the answer that created it was lost, so what became of its
+   *  starter funding is not known here. Nothing is claimed about it either way. */
+  fundingUnknown?: true
 }
 
 /**
@@ -67,7 +70,13 @@ export default function RegisterSuccess({
         <li>Permissions set (daily cap, auto-approve).</li>
         {hosted &&
           (hosted.funded && 'txHash' in hosted.funded ? (
-            <li>It has a hosted wallet with test USDC, so it can pay within your limits.</li>
+            hosted.funded.unconfirmed ? (
+              <li>It has a hosted wallet. Its test USDC was sent and is waiting for the chain to confirm.</li>
+            ) : (
+              <li>It has a hosted wallet with test USDC, so it can pay within your limits.</li>
+            )
+          ) : hosted.fundingUnknown ? (
+            <li>It has a hosted wallet. Open Wallet to see whether its test USDC arrived.</li>
           ) : (
             <li>It has a hosted wallet. It needs test USDC before it can pay.</li>
           ))}
@@ -110,6 +119,10 @@ export default function RegisterSuccess({
               <a href="https://faucet.circle.com" target="_blank" rel="noopener noreferrer" className="font-semibold hover:underline">
                 Open the faucet
               </a>
+            </p>
+          ) : hosted.fundingUnknown ? (
+            <p className="mt-2 text-xs text-foreground/60">
+              The answer about its starter funding did not come back. Open Wallet to see its balance.
             </p>
           ) : null}
           <p className="mt-2 text-[11px] text-foreground/50">

@@ -352,6 +352,70 @@ test('starter funding: a hosted wallet that started empty can be funded afterwar
   assert.deepEqual(sent, [{ to: HOSTED, amountUsd: STARTER_FUNDING_USD }])
 })
 
+test('starter funding: an agent is funded once across both paths, and its record is never replaced', async () => {
+  __resetPlatformStateForTests()
+  // The owner's own key was funded when the agent was made.
+  const agent = agentOf(OWNER, OWN)
+  const { sent, send } = sender()
+  await sendStarterFunding(agent.id, { caller: OWNER }, { send, ...signerIs })
+  const first = agent.starterFunding
+  assert.equal(first?.address, OWN)
+  // A hosted wallet added afterwards starts empty, says why, and leaves the record alone.
+  const { asked, createWallet } = circle()
+  const r = await provisionCircleWallet(agent.id, { caller: OWNER }, { createWallet })
+  assert.ok(!('error' in r))
+  assert.deepEqual(asked, [{ name: 'Hosted', fund: false }])
+  assert.match((r.funded as { error: string }).error, /goes to an agent once/)
+  assert.deepEqual(agent.starterFunding, first)
+  assert.equal(sent.length, 1)
+  // So the address still counts as funded, and a second agent naming it gets nothing.
+  const twin = agentOf(OWNER, OWN)
+  const again = await sendStarterFunding(twin.id, { caller: OWNER }, { send, ...signerIs })
+  assert.match(((again as { funded: { error: string } }).funded).error, /already received starter funding/)
+  assert.equal(sent.length, 1)
+})
+
+test('starter funding: the two paths cannot both fund one agent at the same moment', async () => {
+  __resetPlatformStateForTests()
+  // A hosted wallet is being created, and funded, while the owner asks for funding by hand.
+  const making = agentOf(OWNER, OWN)
+  let letCircleAnswer = () => {}
+  const held = new Promise<void>((resolve) => { letCircleAnswer = resolve })
+  const slow = circle()
+  const createWallet: CreateWallet = async (input) => {
+    await held
+    return slow.createWallet(input)
+  }
+  const provision = provisionCircleWallet(making.id, { caller: OWNER }, { createWallet })
+  const { sent, send } = sender()
+  const during = await sendStarterFunding(making.id, { caller: OWNER }, { send, ...signerIs })
+  assert.match((during as { error: string }).error, /hosted wallet is being created/)
+  assert.equal(sent.length, 0)
+  letCircleAnswer()
+  await provision
+  assert.equal(making.starterFunding?.address, HOSTED)
+
+  // The other way round: funding is on its way by hand while a hosted wallet is asked for.
+  const paying = agentOf('second@example.test', '0x4444444444444444444444444444444444444444')
+  let letTransferAnswer = () => {}
+  const pending = new Promise<void>((resolve) => { letTransferAnswer = resolve })
+  const slowSend = (async (to: string, amountUsd: number) => {
+    await pending
+    return send(to, amountUsd)
+  }) as unknown as Send
+  const funding = sendStarterFunding(paying.id, { caller: 'second@example.test' }, { send: slowSend, ...signerIs })
+  // Let it pass its checks and reach the transfer.
+  await new Promise((resolve) => setImmediate(resolve))
+  const second = circle('0x5555555555555555555555555555555555555555')
+  const r = await provisionCircleWallet(paying.id, { caller: 'second@example.test' }, { createWallet: second.createWallet })
+  assert.ok(!('error' in r))
+  assert.deepEqual(second.asked, [{ name: 'Hosted', fund: false }])
+  letTransferAnswer()
+  await funding
+  assert.equal(paying.starterFunding?.address, '0x4444444444444444444444444444444444444444')
+  assert.equal(sent.length, 1)
+})
+
 test('hosted wallet: it is never the owner of a vault, because it can sign no owner call', async () => {
   __resetPlatformStateForTests()
   const agent = agentOf()
