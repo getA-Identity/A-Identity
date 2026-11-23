@@ -2,10 +2,14 @@
  * A-Identity platform backend: agents, wallets, instructions, marketplace.
  *
  * The write side of the product, kept honest:
- *  - Wallets: a real keypair is generated with viem; the PRIVATE KEY IS RETURNED
- *    ONCE and never stored. We keep only the address. No custody.
+ *  - Wallets: two kinds. A keypair generated in the browser, whose private key this
+ *    server never sees: we keep only the address. Or a hosted wallet (a Circle
+ *    developer-controlled wallet, Arc testnet only): Circle holds the key, nobody is
+ *    shown one, and this server instructs transfers from it within the owner's limits.
  *  - Balances: read live from the Arc testnet RPC (native USDC, 18 decimals).
- *  - Funding: via the Circle faucet (faucet.circle.com); we link, a human clicks.
+ *  - Funding: a hosted wallet starts with a small amount of test USDC from the Arc
+ *    testnet signer, within a per-account and a daily ceiling. A browser-key wallet is
+ *    funded at the Circle faucet (faucet.circle.com); we link, a human clicks.
  *  - On-chain registration: prepared and queued. Broadcasting a transaction
  *    needs a funded key and a human, so it stays human-on-the-loop.
  *  - Instructions (pay / purchase / rental / batch): checked against the agent's
@@ -20,7 +24,7 @@ export { __resetPlatformStateForTests, initState, refreshPlatformState } from '.
 export { recordWallet, assignWallet, getWalletBalance, createAgent, listPlatformAgents, walletControlProven, formerlyProvenAddress, recordProvesAddress, recordAtAddress, recordHoldsEvidence, reputationForQuery, updateAgentLogo, anchorAgentOnchain, sanitizeLogoUrl, MAX_LOGO_DATA_URL_CHARS, getUserProfile, updateUserAvatar, getUserWallets, linkUserWallet, unlinkUserWallet, subjectsLinkedToWallet } from './platform/agents.js'
 export { startKyaChallenge, verifyKya, getAgentKya, revokeAgentKya, startClaimChallenge, verifyAgentClaim, markImportedAgent } from './platform/kya.js'
 export { startCirclePolicyChallenge, attestCirclePolicy, getCirclePolicyAttestation, circleAgentWalletFor, bandsFromPolicy, capBand, policyHashOf } from './platform/circle-policy.js'
-export { provisionAgentVault, getAgentCirclePolicyPlan, getAgentVault, grantAgentSessionKey, provisionCircleWallet, getAgentCircleWallet, getAgentTreasury, startAgentAutoYield, stopAgentAutoYield } from './platform/vault.js'
+export { provisionAgentVault, getAgentCirclePolicyPlan, getAgentVault, grantAgentSessionKey, provisionCircleWallet, hostedWalletStatus, sendStarterFunding, getAgentCircleWallet, getAgentTreasury, startAgentAutoYield, stopAgentAutoYield } from './platform/vault.js'
 export type { VaultSyncResult } from './platform/vault.js'
 export { sanitizeVelocity, updateAgentPermissions, agentPolicy } from './platform/permissions.js'
 export { getAgentActionPolicy, updateAgentActionPolicy, checkAgentAction, recordAuditOutcome, listAgentAudits, registerAgentFromManifest, agentRegistration, setBadgeVisibility, agentBadge, platformTraction, guardrailSelfCheck, agentGuardrailProfile } from './platform/guardrail.js'
@@ -29,5 +33,5 @@ export { agentReputation } from './platform/reputation.js'
 export { VELOCITY_COUNTED_STATUSES, countRecentActions, evaluateSpendPreflight, spendPreflight, createInstruction, rejectInstruction, approveInstruction, executeInstruction, listInstructions, listInstructionsForOwner, agentAccess, appLayerAudit, batchPaymentPlan, __setSettlementForTests } from './platform/instructions.js'
 export type { SpendPreflightCode, SpendPreflightVaultError, SpendPreflight } from './platform/instructions.js'
 export { followAgent, feedbackSummary, agentFeedback, addAgentFeedback, semanticSearchAgents, consumeSemanticQuota, marketplace, marketplaceLeaderboard, platformStats } from './platform/feed.js'
-export { hireAgent, postOpenTask, bidOnTask, acceptBid, listOpenTasks, deliverTask, releaseTask, disputeTask, getTask, listTasksForClient, listTasksForAgent, marketplaceCatalog } from './platform/tasks.js'
+export { hireAgent, postOpenTask, bidOnTask, acceptBid, listOpenTasks, deliverTask, releaseTask, disputeTask, getTask, listTasksForClient, listTasksForAgent, marketplaceCatalog, listFundedTasksForAgents, deliverHouseTask, noteHouseTask, claimHouseCall, releaseHouseCall, countHouseCallsSince, escrowLocking, HOUSE_CALLS_PER_TASK } from './platform/tasks.js'
 export { agentManifest, registerExternalAgent } from './platform/manifest.js'

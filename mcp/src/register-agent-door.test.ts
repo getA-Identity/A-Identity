@@ -7,6 +7,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import {
   __resetPlatformStateForTests,
+  agentAccess,
   agentManifest,
   checkAgentAction,
   createAgent,
@@ -411,6 +412,23 @@ test('mcpCallerFor hands the MCP hooks a verified subject only: no token and a g
   // OAuth callers reach http.ts as method 'email' (the issuer verified the address).
   assert.equal(mcpCallerFor({ subject: 'oauth@register-door.test', method: 'email' }), 'oauth@register-door.test', 'an OAuth token')
   assert.equal(mcpCallerFor({ subject: 'other@register-door.test', method: 'oauth' as never }), undefined, 'a method this build does not know is not verified')
+})
+
+test('http.ts takes the ownership subject from a verified session only, so a guest named after an account reads none of it', () => {
+  // POST /api/auth/login answers any typed email with a guest token, and the subject it carries
+  // is the typed string. Used as an identity it matched the real account's subject, and every
+  // owner-only read let it through: agents, limits, vault, hosted wallet, payment history.
+  const src = readFileSync(join(SRC, 'http.ts'), 'utf8')
+  const assigned = src.split('\n').filter((line) => /\bcallerId\s*=(?!=)/.test(line)).map((line) => line.trim())
+  assert.deepEqual(assigned, ['const callerId = mcpCallerFor(caller)'], 'callerId is derived once, from a verified session')
+
+  __resetPlatformStateForTests()
+  const owner = 'victim@register-door.test'
+  const agent = createAgent({ name: 'Private', description: '', category: 'Other', capabilities: [], permissions: {}, owner })
+  const guest = verifyToken(issueToken(owner, 'guest'))
+  assert.equal(guest?.subject, owner, 'the guest token does carry the typed address')
+  assert.equal(agentAccess(agent.id, mcpCallerFor(guest)), 'forbidden', 'and it reads nothing of the account it names')
+  assert.equal(agentAccess(agent.id, mcpCallerFor(verifyToken(issueToken(owner, 'email')))), 'ok', 'while the proven owner still does')
 })
 
 test('a task row with no client is still closed to a caller with no session', async () => {

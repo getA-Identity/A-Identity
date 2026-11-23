@@ -20,10 +20,12 @@ export default function ReviewStep({
     a2a: boolean
     a2h: boolean
     wallet: { address: string } | null
+    /** True when registering will create a hosted wallet, so there is no address to show yet. */
+    hostedWallet?: boolean
   }
   label: string
 }) {
-  const { name, desc, category, caps, logoUrl, cardStyle, dailyCap, autoApprove, a2a, a2h, wallet } = value
+  const { name, desc, category, caps, logoUrl, cardStyle, dailyCap, autoApprove, a2a, a2h, wallet, hostedWallet } = value
   return (
     <div>
       <div className={label}>Review, then register</div>
@@ -84,9 +86,13 @@ export default function ReviewStep({
           <div className="text-[11px] font-bold text-foreground/50">Wallet</div>
           {wallet ? (
             <div className="mt-0.5 break-all font-mono text-xs text-foreground">{wallet.address}</div>
+          ) : hostedWallet ? (
+            <p className="mt-0.5 text-xs text-foreground/55">
+              Hosted wallet on Arc testnet, created when you register. No key to save.
+            </p>
           ) : (
             <p className="mt-0.5 text-xs text-foreground/55">
-              None assigned. Go back to the Wallet step to create one, or attach one later.
+              None. Go back to the Wallet step to create one, or add a hosted wallet later from Wallet.
             </p>
           )}
         </div>

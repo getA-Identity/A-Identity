@@ -46,6 +46,14 @@ type Task = {
   description: string
   status: 'open' | 'assigned' | 'funded' | 'delivered' | 'released' | 'disputed' | 'refunded' | 'cancelled'
   deliverable?: string
+  /** Set when A-Identity's own worker delivered it, with the model that wrote the result. */
+  deliveredBy?: 'house'
+  deliveryModel?: string
+  /** Why the worker has not delivered yet, in the worker's own words. */
+  workerNote?: string
+  /** True while the escrow lock is still running on chain, decided by the server. Until it
+   *  ends the hire can be neither paid nor cancelled. */
+  escrowLocking?: boolean
   settlement?: 'onchain' | 'simulated'
   jobId?: string
   escrowExplorer?: string
@@ -65,25 +73,45 @@ type OpenTask = { id: string; service: string; budgetUsd: number; description: s
 
 /**
  * A hire, told as where the money is and what happens next. The three steps are the real
- * escrow order (locked, delivered, paid out), so a status word never needs decoding.
+ * escrow order (locked, delivered, released), so a status word never needs decoding.
+ *
+ * The last line says what the escrow did and points at the transaction, and nothing more: on
+ * testnet the platform's test wallet stands on both sides of the escrow, so "the worker was
+ * paid" is not something this page can show, while the release itself is.
  */
-const HIRE_STEPS = ['Locked', 'Delivered', 'Paid'] as const
+const HIRE_STEPS = ['Locked', 'Delivered', 'Released'] as const
 function hireStage(t: Task, worker: string): { step: number; next: string; tone: 'wait' | 'act' | 'ok' | 'muted' } {
   const usdc = `${t.priceUsd.toFixed(2)} USDC`
+  // Said only when there is a transaction to open: the link under the row is that proof.
+  const proof = t.escrowExplorer ? ' The transaction below is the proof.' : ''
   switch (t.status) {
     case 'open':
       return { step: 0, next: 'Waiting for bids. Accept one and its price locks in escrow.', tone: 'wait' }
     case 'assigned':
     case 'funded':
-      return { step: 1, next: `${usdc} is locked. Waiting for ${worker} to deliver.`, tone: 'wait' }
+      if (t.escrowLocking) return { step: 0, next: `Locking ${usdc} in escrow on Arc. This takes up to a minute.`, tone: 'wait' }
+      // When the worker said why it has not delivered, that is the thing to read.
+      return t.workerNote
+        ? { step: 1, next: t.workerNote, tone: 'act' }
+        : { step: 1, next: `${usdc} is locked. Waiting for ${worker} to deliver.`, tone: 'wait' }
     case 'delivered':
-      return { step: 2, next: `${worker} delivered. Check the work, then pay or dispute.`, tone: 'act' }
+      return { step: 2, next: `${worker} delivered. Check the work, then approve or dispute.`, tone: 'act' }
     case 'disputed':
       return { step: 2, next: 'Disputed. The refund is on its way back to you.', tone: 'wait' }
     case 'released':
-      return { step: 3, next: `Done. ${worker} was paid ${usdc}.`, tone: 'ok' }
+      if (t.settlement === 'simulated') {
+        return { step: 3, next: 'Done. Approved as a simulation: no signer is set here, so nothing moved on chain.', tone: 'ok' }
+      }
+      return t.settlement === 'onchain'
+        ? { step: 3, next: `Done. You approved, and the escrow released ${usdc} on Arc.${proof}`, tone: 'ok' }
+        : { step: 3, next: 'Done. You approved the work, and this hire is closed.', tone: 'ok' }
     case 'refunded':
-      return { step: 3, next: `Refunded. ${usdc} went back, ${worker} was not paid.`, tone: 'muted' }
+      if (t.settlement === 'simulated') {
+        return { step: 3, next: 'Refunded as a simulation: no signer is set here, so nothing moved on chain.', tone: 'muted' }
+      }
+      return t.settlement === 'onchain'
+        ? { step: 3, next: `Refunded. The escrow returned ${usdc} on Arc, and nothing was released for this job.${proof}`, tone: 'muted' }
+        : { step: 3, next: 'Refunded. Nothing was released for this job.', tone: 'muted' }
     case 'cancelled':
       return { step: 0, next: 'Cancelled. Nothing was charged.', tone: 'muted' }
   }
@@ -184,6 +212,29 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
     loadOpenTasks()
   }, [loadCatalog, loadTasks, loadOpenTasks])
 
+  // A hire whose money is locked is waiting on its worker. Read the list again every few
+  // seconds while one is, so the result appears on its row without a reload. Nothing polls
+  // once every hire has ended, or while the tab is in the background.
+  // How often depends on how fresh the wait is: every few seconds while a hire is new, once a
+  // minute after ten minutes, and not at all for a hire nobody answered in a day.
+  const newestWait = tasks.reduce(
+    (latest, t) => (t.status === 'funded' || t.status === 'assigned' ? Math.max(latest, Date.parse(t.createdAt) || 0) : latest),
+    0,
+  )
+  const waitedMs = newestWait ? Date.now() - newestWait : Infinity
+  const pollMs = waitedMs < 10 * 60_000 ? 4000 : waitedMs < 24 * 60 * 60_000 ? 60_000 : 0
+  useEffect(() => {
+    if (!pollMs) return
+    const timer = window.setInterval(() => {
+      if (!document.hidden) loadTasks()
+    }, pollMs)
+    return () => window.clearInterval(timer)
+  }, [pollMs, loadTasks])
+
+  // The hire that just went through, as the list has it now, so the line under "Hired" follows
+  // the escrow lock instead of repeating what was true the moment the hire was made.
+  const hiredTask = hired ? (tasks.find((t) => t.id === hired.task.id) ?? hired.task) : null
+
   const setBusyNote = (key: string, msg: string) => setNote((n) => ({ ...n, [key]: msg }))
 
   async function hire(svc: CatalogService) {
@@ -191,6 +242,47 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
     setBusy(key)
     setBusyNote(key, '')
     setHired(null)
+    const readTasks = async (): Promise<Task[] | null> => {
+      try {
+        const res = await apiFetch('/api/marketplace/tasks')
+        const data = await readJson<{ tasks?: Task[] }>(res)
+        return res.ok && Array.isArray(data.tasks) ? data.tasks : null
+      } catch {
+        return null
+      }
+    }
+    // The hires this account already has, read before the request goes out. A hire that lands
+    // is then the one that was not in this list, with no clock compared to the server's. When
+    // that read fails there is no telling a new hire from an older one of the same service, so
+    // none is named afterwards: the page points at Your hires instead.
+    const read = await readTasks()
+    const before = read ? new Set(read.map((t) => t.id)) : null
+    const notSeen = before
+      ? 'No hire shows up yet. Look under Your hires in a minute before trying again, so you do not hire twice.'
+      : 'The answer did not come back, and this page cannot tell whether the hire went through. Look under Your hires in a minute before trying again, so you do not hire twice.'
+    // Locking the escrow can outlast the proxy in front of the backend, which then drops the
+    // answer while the hire goes on. So a dropped or gateway answer is not read as a failure:
+    // the list is asked whether the hire landed before anything is said about it.
+    const landedHire = async (): Promise<Task | null> => {
+      if (!before) {
+        void loadTasks()
+        return null
+      }
+      for (let attempt = 0; attempt < 12; attempt++) {
+        if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 5000))
+        const found = ((await readTasks()) ?? []).find((t) => !before.has(t.id) && t.agentId === svc.agentId && t.service === svc.service)
+        if (found) return found
+        setBusyNote(key, 'Still locking the escrow on Arc...')
+      }
+      return null
+    }
+    const settle = async (task: Task) => {
+      setHiringKey(null)
+      setDesc('')
+      setBusyNote(key, '')
+      setHired({ key, task })
+      await loadTasks()
+    }
     try {
       const res = await apiFetch('/api/marketplace/hire', {
         method: 'POST',
@@ -201,18 +293,20 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
         timeoutMs: 90_000,
         onWaking: () => setBusyNote(key, 'Waking up the backend (free tier)...'),
       })
-      const data = await readJson<Task & { error?: string }>(res)
+      const data = await readJson<Task & { error?: string }>(res).catch(() => ({}) as Task & { error?: string })
       if (res.ok && data.id) {
-        setHiringKey(null)
-        setDesc('')
-        setBusyNote(key, '')
-        setHired({ key, task: data })
-        await loadTasks()
+        await settle(data)
+      } else if (res.status >= 502 && res.status <= 504) {
+        const landed = await landedHire()
+        if (landed) await settle(landed)
+        else setBusyNote(key, notSeen)
       } else {
         setBusyNote(key, explainError(res.status, data.error))
       }
     } catch {
-      setBusyNote(key, 'Could not hire. The backend may be waking up; try again in a moment.')
+      const landed = await landedHire()
+      if (landed) await settle(landed)
+      else setBusyNote(key, notSeen)
     } finally {
       setBusy(null)
     }
@@ -321,7 +415,7 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
           <p className="mt-1 max-w-xl text-sm text-foreground/55">Pay only for work you approve.</p>
           {/* The whole logic of a hire in three steps, in the order the escrow runs them. */}
           <ol className="mt-3 flex flex-wrap gap-2 text-xs text-foreground/70">
-            {['Describe the job', 'USDC waits in escrow', 'You approve, the worker is paid'].map((s, i) => (
+            {['Describe the job', 'USDC waits in escrow', 'You approve, the escrow releases it'].map((s, i) => (
               <li key={s} className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1">
                 <span className="grid h-4 w-4 place-items-center rounded-full bg-accent/15 text-[10px] font-bold text-accent">{i + 1}</span>
                 {s}
@@ -507,7 +601,7 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
                       {busy === key
                         ? 'Takes up to a minute on Arc. You can stay on this page.'
                         : desc.trim()
-                          ? `Held in escrow. ${svc.agentName} is paid only when you approve.`
+                          ? 'Held in escrow. It is released only when you approve.'
                           : 'Write what you need first.'}
                     </span>
                   </div>
@@ -522,10 +616,12 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
                     <CheckCircle2 size={14} /> Hired {svc.agentName}
                   </span>
                   <span>
-                    {hired.task.priceUsd.toFixed(2)} USDC is locked{hired.task.escrowExplorer ? ' on Arc' : ''}. It pays out when you approve.
+                    {hiredTask?.escrowLocking
+                      ? `Locking ${hiredTask.priceUsd.toFixed(2)} USDC in escrow on Arc. This takes up to a minute.`
+                      : `${(hiredTask ?? hired.task).priceUsd.toFixed(2)} USDC is locked${hiredTask?.escrowExplorer ? ' on Arc' : ''}. It is released when you approve.`}
                   </span>
-                  {hired.task.escrowExplorer && (
-                    <a href={hired.task.escrowExplorer} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-usdc hover:underline">
+                  {hiredTask?.escrowExplorer && (
+                    <a href={hiredTask.escrowExplorer} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-usdc hover:underline">
                       See the escrow <ExternalLink size={11} />
                     </a>
                   )}
@@ -598,10 +694,14 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
 
                     {t.description && <p className="mt-1.5 text-xs text-foreground/50">Job: {t.description}</p>}
                     {t.deliverable && (
-                      <p className="mt-2 rounded-xl bg-foreground/5 px-3 py-2 text-xs text-foreground/70">
-                        <span className="font-semibold text-foreground/50">Delivered: </span>
-                        {t.deliverable.slice(0, 240)}
-                      </p>
+                      <div className="mt-2 rounded-xl bg-foreground/5 px-3 py-2.5">
+                        <div className="text-[11px] font-semibold text-foreground/50" title={t.deliveryModel ? `Written with ${t.deliveryModel}` : undefined}>
+                          {t.deliveredBy === 'house' ? 'Delivered by the A-Identity worker' : 'Delivered'}
+                        </div>
+                        <p className="mt-1 max-h-56 overflow-y-auto whitespace-pre-wrap break-words text-sm text-foreground/80">
+                          {t.deliverable}
+                        </p>
+                      </div>
                     )}
 
                     <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -623,7 +723,25 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
                       {/* The worker's side lives in the same list only for someone who hired
                           their own agent; the server refuses anyone else. Folded away so a
                           client is never asked to "deliver" their own order. */}
-                      {t.status === 'funded' && (
+                      {t.status === 'funded' && !t.escrowLocking && (
+                        <details className="w-full" open={Boolean(t.workerNote) || undefined}>
+                          <summary className="cursor-pointer text-xs font-semibold text-foreground/45 hover:text-foreground/70">
+                            Taking too long? Cancel and get a refund
+                          </summary>
+                          <div className="mt-2">
+                            <button
+                              type="button"
+                              onClick={() => taskAction(t.id, '/api/marketplace/dispute', { reason: 'Cancelled before delivery' })}
+                              disabled={busy === t.id}
+                              className="inline-flex items-center gap-1.5 rounded-full border border-warn/40 px-3 py-1.5 text-xs font-semibold text-warn hover:bg-warn/10 disabled:opacity-50"
+                            >
+                              {busy === t.id ? <Loader2 size={12} className="animate-spin" /> : null}
+                              {busy === t.id ? 'Working on Arc...' : `Cancel and refund ${t.priceUsd.toFixed(2)} USDC`}
+                            </button>
+                          </div>
+                        </details>
+                      )}
+                      {t.status === 'funded' && !t.escrowLocking && (
                         <details className="w-full">
                           <summary className="cursor-pointer text-xs font-semibold text-foreground/45 hover:text-foreground/70">
                             Are you the worker? Deliver the result
@@ -648,7 +766,7 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
                       )}
                       {/* Client side: one clear action (pay), with rating optional beside it and
                           the dispute folded one click away. */}
-                      {t.status === 'delivered' && (
+                      {t.status === 'delivered' && !t.escrowLocking && (
                         <>
                           <button
                             type="button"
@@ -664,7 +782,7 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
                             className="inline-flex items-center gap-1.5 rounded-full bg-accent px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
                           >
                             {busy === t.id ? <Loader2 size={12} className="animate-spin" /> : null}
-                            {busy === t.id ? 'Paying on Arc...' : `Approve and pay ${t.priceUsd.toFixed(2)} USDC`}
+                            {busy === t.id ? 'Releasing on Arc...' : `Approve and release ${t.priceUsd.toFixed(2)} USDC`}
                           </button>
                           <select
                             value={reviewDraft[t.id]?.rating ?? ''}
@@ -724,7 +842,12 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 text-xs font-semibold text-usdc hover:underline"
                         >
-                          <ExternalLink size={12} /> Escrow on the Arc explorer
+                          <ExternalLink size={12} />{' '}
+                          {t.status === 'released'
+                            ? 'Proof: the release on the Arc explorer'
+                            : t.status === 'refunded'
+                              ? 'Proof: the refund on the Arc explorer'
+                              : 'Escrow on the Arc explorer'}
                         </a>
                       )}
                     </div>

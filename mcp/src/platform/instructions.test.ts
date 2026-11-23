@@ -6,6 +6,7 @@ import { createAgent } from './agents.js'
 import { vaultChainFor } from './vault-adapter.js'
 import {
   __setSettlementForTests, approveInstruction, createInstruction, executeInstruction, rejectInstruction, sessionKeyBound, UNCONFIRMED_REJECT_AFTER_MS,
+  DIRECT_RAIL_MAX_PAYMENT_USD, DIRECT_RAIL_DAILY_PER_OWNER_USD, DIRECT_RAIL_DAILY_USD,
 } from './instructions.js'
 import { circlePay, circleTransferStatus } from '../circle-agent.js'
 import { createEvmAdapter } from '../chains/evm/adapter.js'
@@ -827,6 +828,128 @@ test('a direct settlement with no receipt is unconfirmed, not "no signer, simula
     assert.equal(done.enforcedBy, 'server')
     assert.equal(done.unconfirmedTx, UNCONFIRMED_TX)
     assert.doesNotMatch(done.policyNote, /simulated/)
+  })
+})
+
+// ── what the server signer covers on the direct rail ─────────────────────────────────
+//
+// The direct rail pays from the server's own wallet, and an owner's limits are the owner's to
+// raise. These hold the ceilings that protect that wallet whatever an account sets.
+
+const DIRECT_SIGNER = '0x00000000000000000000000000000000000000aa'
+const signerIsSet = { directRailSigner: async () => DIRECT_SIGNER }
+
+function directAgent(owner = OWNER) {
+  return createAgent({
+    name: 'Direct Agent',
+    description: 'Seeded for the direct rail ceilings.',
+    category: 'Research',
+    capabilities: [],
+    // Limits far above anything the server covers: they are not what protects its wallet.
+    permissions: { dailyCapUsd: 1000, autoApproveUnderUsd: 100, agentToHuman: true },
+    owner,
+  })
+}
+
+/** A stand-in for the direct transfer that settles everything and records what it sent. */
+function directTransfers() {
+  const sent: number[] = []
+  const payUsdcWithMemo = (async (_to: string, amountUsd: number) => {
+    sent.push(amountUsd)
+    return { executed: true as const, txHash: `0x${String(sent.length).padStart(64, '0')}`, explorerUrl: 'https://example.test/tx/direct' }
+  }) as unknown as NonNullable<Parameters<typeof __setSettlementForTests>[0]['payUsdcWithMemo']>
+  return { sent, payUsdcWithMemo }
+}
+
+test('the direct rail: a payment larger than the server covers is not sent, and goes back to its owner with the reason', async () => {
+  __resetPlatformStateForTests()
+  const agent = directAgent()
+  const { sent, payUsdcWithMemo } = directTransfers()
+  await withSettlement({ payUsdcWithMemo, ...signerIsSet }, async () => {
+    const big = seedInstruction(agent, DIRECT_RAIL_MAX_PAYMENT_USD + 0.5)
+    assert.equal(big.status, 'auto_approved', 'inside the limits its owner set')
+    const refused = await executeInstruction(big.id, OWNER)
+    assert.ok(!('error' in refused))
+    assert.equal(refused.status, 'pending_approval')
+    assert.equal(refused.enforcedBy, 'server')
+    assert.match(refused.policyNote, /covers a direct payment of up to/)
+    assert.equal(refused.directPaidOn, undefined)
+    assert.deepEqual(sent, [])
+    assert.equal(dailySpent(agent), 0, 'nothing was sent, so nothing of its own cap is used')
+    // Exactly the ceiling is covered.
+    const paid = await executeInstruction(seedInstruction(agent, DIRECT_RAIL_MAX_PAYMENT_USD).id, OWNER)
+    assert.ok(!('error' in paid))
+    assert.equal(paid.status, 'executed_onchain')
+    assert.deepEqual(sent, [DIRECT_RAIL_MAX_PAYMENT_USD])
+  })
+  // With no signer nothing can be sent, so the same payment is the labeled simulation it always was.
+  const prepared = (async () => ({ executed: false as const, contract: '0x0', function: 'transfer(address to, uint256 amount)', args: [], reason: 'No signer.' })) as unknown as NonNullable<Parameters<typeof __setSettlementForTests>[0]['payUsdcWithMemo']>
+  await withSettlement({ payUsdcWithMemo: prepared, directRailSigner: async () => null }, async () => {
+    const simulated = await executeInstruction(seedInstruction(agent, DIRECT_RAIL_MAX_PAYMENT_USD + 0.5).id, OWNER)
+    assert.ok(!('error' in simulated))
+    assert.equal(simulated.status, 'executed_simulated')
+    assert.equal(simulated.directPaidOn, undefined)
+  })
+})
+
+test('the direct rail: one account cannot use up the day, and all accounts together stop at the daily ceiling', async () => {
+  __resetPlatformStateForTests()
+  const { sent, payUsdcWithMemo } = directTransfers()
+  const payAs = async (owner: string, amountUsd: number) => {
+    // A new agent each time: an account's share is counted across all of its agents.
+    const agent = directAgent(owner)
+    const ix = createInstruction({ agentId: agent.id, type: 'payment', amountUsd, payee: PAYEE, caller: owner })
+    assert.ok(!('error' in ix), `seed failed: ${JSON.stringify(ix)}`)
+    const done = await executeInstruction(ix.id, owner)
+    assert.ok(!('error' in done))
+    return done
+  }
+  await withSettlement({ payUsdcWithMemo, ...signerIsSet }, async () => {
+    const perOwner = DIRECT_RAIL_DAILY_PER_OWNER_USD / DIRECT_RAIL_MAX_PAYMENT_USD
+    for (let i = 0; i < perOwner; i++) assert.equal((await payAs('a@example.test', DIRECT_RAIL_MAX_PAYMENT_USD)).status, 'executed_onchain')
+    const over = await payAs('a@example.test', 0.01)
+    assert.equal(over.status, 'pending_approval')
+    assert.match(over.policyNote, /This account has reached/)
+    // Other accounts still pay, until every account together reaches the day's ceiling.
+    const others = (DIRECT_RAIL_DAILY_USD - DIRECT_RAIL_DAILY_PER_OWNER_USD) / DIRECT_RAIL_MAX_PAYMENT_USD
+    for (let i = 0; i < others; i++) assert.equal((await payAs(`other${i}@example.test`, DIRECT_RAIL_MAX_PAYMENT_USD)).status, 'executed_onchain')
+    const late = await payAs('late@example.test', 0.01)
+    assert.equal(late.status, 'pending_approval')
+    assert.match(late.policyNote, /server's wallet has reached/)
+    assert.equal(sent.length, perOwner + others)
+  })
+})
+
+test('the direct rail: a payment that reverted gives its share back, and one that may have landed keeps it', async () => {
+  __resetPlatformStateForTests()
+  const agent = directAgent()
+  const today = new Date().toISOString().slice(0, 10)
+  // Sent with no receipt: it may have landed, so it counts.
+  const held = seedInstruction(agent, DIRECT_RAIL_MAX_PAYMENT_USD)
+  await withSettlement({ payUsdcWithMemo: async () => unconfirmed(), ...signerIsSet }, async () => {
+    const done = await executeInstruction(held.id, OWNER)
+    assert.ok(!('error' in done))
+    assert.equal(done.status, 'pending_approval')
+    assert.equal(done.directPaidOn, today)
+  })
+  // Reverted: nothing moved, so its share is free again.
+  const failed = seedInstruction(agent, DIRECT_RAIL_MAX_PAYMENT_USD)
+  await withSettlement({ payUsdcWithMemo: async () => ({ executed: false as const, reverted: true as const, reason: 'no funds' }), ...signerIsSet }, async () => {
+    const done = await executeInstruction(failed.id, OWNER)
+    assert.ok(!('error' in done))
+    assert.equal(done.status, 'pending_approval')
+    assert.equal(done.directPaidOn, undefined)
+  })
+  // So one payment's worth of the account's day is left: the next goes out, the one after does not.
+  const { sent, payUsdcWithMemo } = directTransfers()
+  await withSettlement({ payUsdcWithMemo, ...signerIsSet }, async () => {
+    const next = await executeInstruction(seedInstruction(agent, DIRECT_RAIL_DAILY_PER_OWNER_USD - DIRECT_RAIL_MAX_PAYMENT_USD).id, OWNER)
+    assert.ok(!('error' in next))
+    assert.equal(next.status, 'executed_onchain')
+    const after = await executeInstruction(seedInstruction(agent, 0.5).id, OWNER)
+    assert.ok(!('error' in after))
+    assert.equal(after.status, 'pending_approval')
+    assert.equal(sent.length, 1)
   })
 })
 

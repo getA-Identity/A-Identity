@@ -58,6 +58,7 @@ import { handleMarketplaceRoutes } from './http/marketplace-routes.js'
 import { mcpNonPostResponse } from './http/mcp-info.js'
 import { startVaultSweep } from './arc-vault-sweep.js'
 import { startNearMarketWorker } from './near-market/worker.js'
+import { startHouseWorker } from './house-worker/worker.js'
 
 // Render/most hosts inject PORT; fall back to our own var, then the local default.
 const PORT = Number(process.env.PORT ?? process.env.A_IDENTITY_HTTP_PORT ?? 3399)
@@ -160,8 +161,13 @@ const server = http.createServer(async (req, res) => {
     if (claims?.email) caller = { subject: claims.email.trim().toLowerCase(), method: 'email' }
   }
 
-  // The subject string used for ownership checks (email or wallet address).
-  const callerId = caller?.subject
+  // The subject string used for ownership checks (email or wallet address), taken from a
+  // VERIFIED session only. A guest token carries whatever email its bearer typed, so its
+  // subject proves nothing: read as an identity, a guest named after someone else's email or
+  // address passed every owner-only read (that account's agents, limits, vault, hosted wallet
+  // and payment history). Writes were already refused. A guest is still known through
+  // `caller`, and owns nothing, which is the same rule mcpCallerFor applies to POST /mcp.
+  const callerId = mcpCallerFor(caller)
 
   const ctx: RouteCtx = { req, res, url, caller, callerId }
 
@@ -460,6 +466,13 @@ startVaultSweep()
 // once, while the new instance's first poll waits past the overlap (worker.ts).
 const nearMarket = startNearMarketWorker()
 if (nearMarket) process.once('SIGTERM', () => nearMarket.stop())
+
+// The house worker: delivers the marketplace hires of the worker agents this server operates
+// (HOUSE_WORKER_AGENT_IDS), one model call per task. Off, with one log line, unless that list
+// and a model credential are both set, and then a hire simply waits for its worker as before.
+// It runs in this process because the platform state is one document this process owns.
+const houseWorker = startHouseWorker()
+if (houseWorker) process.once('SIGTERM', () => houseWorker.stop())
 
 // Keep-alive: free-tier hosts (e.g. Render) idle-sleep after ~15 min without inbound
 // traffic. When RENDER_EXTERNAL_URL is present, ping our own public /health every 10

@@ -16,7 +16,7 @@ export const TOURS: Record<string, PageTour> = {
       {
         target: 'rail',
         title: 'Four things, always in view',
-        body: 'How your agent is doing, the checks it paid for, who it is, and what it may spend. Wallet, payments and the marketplace are under More.',
+        body: 'How your agent is doing, the checks it paid for, who it is, what it may spend, and the marketplace where it hires. Wallet and payments are under More.',
       },
       {
         target: 'status',

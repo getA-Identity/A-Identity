@@ -11,6 +11,7 @@ import { policyPay, policyOwnerPay, payUsdcWithMemoOnchain, payUsdcBatchOnchain,
 import type { MemoInput } from '../arc-contracts.js'
 import { randomUUID } from 'node:crypto'
 import { circlePay, circleTransferStatus, type CirclePayPending } from '../circle-agent.js'
+import { buyerAddress } from '../nanopay.js'
 import { vaultChainFor, vaultReceiptStatus, isEvmVault, payFromVault, readVaultPolicy } from './vault-adapter.js'
 import { isAccountId, type BroadcastHooks, type Unconfirmed } from '../chains/index.js'
 
@@ -408,6 +409,8 @@ export function createInstruction(input: {
 function returnToHuman(ix: Instruction, agent: PlatformAgent | undefined, amount: number, note: string, enforcedBy: Instruction['enforcedBy']) {
   if (agent) reverseSpend(agent, amount)
   delete ix.capHeldOn
+  // Nothing was sent, so nothing of the server signer's daily allowance was used either.
+  delete ix.directPaidOn
   ix.status = 'pending_approval'
   ix.enforcedBy = enforcedBy
   ix.policyNote = note
@@ -804,6 +807,52 @@ export function sessionKeyBound(
   return { live: true, expiry }
 }
 
+// -- what the server signer covers on the direct rail ---------------------------------------
+//
+// The direct rail pays from the server signer on an agent's behalf. The limits an owner sets
+// do not protect that wallet, because they are the owner's to raise: an account could set a
+// cap of a million and have the signer pay it out. So what the signer covers has ceilings of
+// its own, read from the stored instructions: one payment, one account in a UTC day, and every
+// account together in a UTC day. Past any of them nothing is sent and the instruction goes
+// back to its owner with the reason. A vault or a hosted wallet pays from the agent's own
+// funds, so neither is counted here.
+
+/** The largest single payment (or batch total) the server signer covers. */
+export const DIRECT_RAIL_MAX_PAYMENT_USD = 1
+/** What the server signer covers for one account in a UTC day. */
+export const DIRECT_RAIL_DAILY_PER_OWNER_USD = 2
+/** What the server signer covers for every account together in a UTC day. Accounts are free
+ *  to make, so this is the ceiling that actually bounds what the signer gives out. */
+export const DIRECT_RAIL_DAILY_USD = 10
+
+/** Why the server signer does not cover this payment, or null when it does. Counts what was
+ *  paid today and what was sent today and may still land, this instruction left out. */
+function directRailRefusal(ix: Instruction, agent: PlatformAgent | undefined, total: number): string | null {
+  const fmt = (n: number) => (n < 0.01 ? n.toFixed(4) : n.toFixed(2))
+  const elsewhere = 'An agent with its own funded vault or hosted wallet pays from there.'
+  if (total > DIRECT_RAIL_MAX_PAYMENT_USD + 1e-9) {
+    return `The server's wallet covers a direct payment of up to ${DIRECT_RAIL_MAX_PAYMENT_USD} USDC and this one is ${fmt(total)} USDC, so nothing was sent. ${elsewhere}`
+  }
+  const today = new Date().toISOString().slice(0, 10)
+  const owner = agent?.owner
+  const sameOwner = owner ? new Set(state.agents.filter((a) => a.owner === owner).map((a) => a.id)) : null
+  let all = 0
+  let mine = 0
+  for (const other of state.instructions) {
+    if (other.directPaidOn !== today || other.id === ix.id) continue
+    const paid = other.amountUsd * other.count
+    all += paid
+    if (sameOwner?.has(other.agentId)) mine += paid
+  }
+  if (sameOwner && mine + total > DIRECT_RAIL_DAILY_PER_OWNER_USD + 1e-9) {
+    return `This account has reached the ${DIRECT_RAIL_DAILY_PER_OWNER_USD} USDC a day that the server's wallet covers on direct payments, so nothing was sent. ${elsewhere} The allowance is back after 00:00 UTC.`
+  }
+  if (all + total > DIRECT_RAIL_DAILY_USD + 1e-9) {
+    return `The server's wallet has reached the ${DIRECT_RAIL_DAILY_USD} USDC a day it covers on direct payments, so nothing was sent. ${elsewhere} The allowance is back after 00:00 UTC.`
+  }
+  return null
+}
+
 /**
  * The chain calls executeInstruction makes, behind one indirection. Production always runs
  * REAL_SETTLEMENT; the seam exists so a unit test can exercise the executed / reverted
@@ -833,6 +882,9 @@ type SettlementBackend = {
   readVault: typeof readPolicyVault
   /** The chain-routed vault read, used for the session-key label off EVM. */
   readVaultPolicy: typeof readVaultPolicy
+  /** The address the direct rail would pay from, or null when no signer is configured and a
+   *  direct settlement can only be a labeled simulation. */
+  directRailSigner: () => Promise<string | null>
 }
 
 const REAL_SETTLEMENT: SettlementBackend = {
@@ -846,6 +898,7 @@ const REAL_SETTLEMENT: SettlementBackend = {
   payUsdcBatch: payUsdcBatchOnchain,
   readVault: readPolicyVault,
   readVaultPolicy,
+  directRailSigner: () => buyerAddress().then((a) => a ?? null).catch(() => null),
 }
 
 let settlement: SettlementBackend = REAL_SETTLEMENT
@@ -1209,6 +1262,21 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
   // indexable audit trail of WHY the agent paid. On a chain without a Memo precompile,
   // payUsdcWithMemoOnchain degrades cleanly to a bare transfer.
   if (settleTo) {
+    // The money on this rail is the server signer's, so it has ceilings of its own (see
+    // directRailRefusal). Asked only when a signer exists: without one nothing can be sent and
+    // the settlement below is a labeled simulation, which costs nobody anything. The claim is
+    // written before the send, with no await between the check and the write, so two payments
+    // at the same moment cannot both take the last of a ceiling.
+    if (await settlement.directRailSigner()) {
+      const refusal = directRailRefusal(ix, agent, total)
+      if (refusal) {
+        returnToHuman(ix, agent, total, refusal, 'server')
+        if (agent) pushActivity(agent, `Direct payment of ${fmt(total)} USDC to ${short(settleTo)} not sent: over what the server's wallet covers`)
+        save(state)
+        return ix
+      }
+      ix.directPaidOn = new Date().toISOString().slice(0, 10)
+    }
     // A `batch` instruction is `count` payments, not one payment of the total. Settle it
     // as `count` real USDC transfers in ONE atomic Arc tx (Multicall3From, allowFailure
     // false), so the chain shows what actually happened and either all of them land or
@@ -1299,6 +1367,8 @@ export async function executeInstruction(ixId: string, caller?: string): Promise
       save(state)
       return ix
     }
+    // Prepared and never sent: nothing of the signer's allowance was used.
+    delete ix.directPaidOn
     ix.policyNote = 'No signer configured; settlement simulated.'
   }
 

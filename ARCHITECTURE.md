@@ -107,6 +107,12 @@ A payment is checked in depth - a limit you set is enforced in **three** ways:
 `executeInstruction` routes a payment **vault → Circle → direct settlement**, each additive with a
 fallback, so one layer failing never fabricates a success.
 
+Direct settlement pays from the server signer's own wallet, so it has ceilings of its own, whatever
+limits an owner sets on the agent: 1 USDC for one payment, 2 USDC for one account in a UTC day and
+10 USDC for all accounts in a UTC day (`DIRECT_RAIL_*` in `mcp/src/platform/instructions.ts`). Past
+any of them nothing is sent and the instruction goes back to its owner with the reason. A vault or a
+hosted wallet pays from the agent's own funds and is not counted.
+
 ```mermaid
 flowchart TD
   I[Agent asks to pay] --> S{1. Server policy engine<br/>cap, ceiling, allowlist, freeze}
@@ -455,7 +461,7 @@ day it lands rather than the day someone remembers to add it.
   `/mcp` JSON-RPC for agents. Durable state via Postgres (`DATABASE_URL`), JSON-file fallback for dev.
 - **Auth** - wallet sign-in on the EVM, Stellar and Algorand families (EVM personal_sign, Stellar SEP-43 signMessage, an Algorand signed zero-value self-payment; mcp/src/wallet-proof.ts; NEAR, the registry's fourth family, has no wallet sign-in yet) + email magic link (Resend) are *verified*; a plain guest
   session is read-only. Agent ownership is bound to a verified identity.
-- **Tests / CI** - `node:test` unit suite: **2772 tests across 146 colocated `*.test.ts` files**
+- **Tests / CI** - `node:test` unit suite: **2830 tests across 148 colocated `*.test.ts` files**
   (as of Nov 2026; `npm test` in `mcp/`) + a full E2E (`mcp/e2e.mjs`) of about **67 checks** that
   adapts to signer presence: live reads always run, and the on-chain write checks (x402, ERC-8183
   escrow, Gateway, **Nanopayments settle**, **CCTP burn-and-mint**) activate with a funded

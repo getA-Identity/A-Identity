@@ -1,7 +1,7 @@
 # A-Identity
 
 [![CI](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/getA-Identity/A-Identity/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-2772%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
+[![Tests](https://img.shields.io/badge/tests-2830%20unit%20%2B%20E2E-brightgreen)](mcp/README.md#develop)
 [![npm: marketplace-sdk](https://img.shields.io/npm/v/%40a-identity%2Fmarketplace-sdk?label=marketplace-sdk)](https://www.npmjs.com/package/@a-identity/marketplace-sdk)
 [![npm: trust-guard](https://img.shields.io/npm/v/%40a-identity%2Ftrust-guard?label=trust-guard)](https://www.npmjs.com/package/@a-identity/trust-guard)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/getA-Identity/A-Identity)
@@ -266,7 +266,7 @@ our oracle validator revoked the feedback it had written for it on chain, so no 
 of ours stands for it now. The score
 itself is recency-weighted and decays as those settlements age, so it is read live rather
 than quoted here. Scoring is **deterministic and
-unit-tested** (2772 unit tests as of Nov 2026), reads on-chain live via viem, and is fully documented at
+unit-tested** (2830 unit tests as of Nov 2026), reads on-chain live via viem, and is fully documented at
 `GET /methodology`. This is our answer to "surface your rigor": every number is
 reproducible and every settlement is on-chain.
 
@@ -809,8 +809,9 @@ broadcast real transactions.
 
 ## Going live (testnet)
 
-1. **Fund a wallet:** create one in the app (Agent ID -> New agent -> Create
-   wallet; the keypair is generated in your browser), then get testnet USDC at
+1. **Fund a wallet:** create an agent in the app (Agent ID -> New agent). By default it
+   gets a hosted wallet that starts with 0.5 test USDC. Choose "My own key" instead and
+   the keypair is generated in your browser; fund that one at
    [faucet.circle.com](https://faucet.circle.com).
 2. **Enable real writes:** the backend reads `ARC_SIGNER_KEY` from `process.env`
    and does **not** auto-load a `.env` file. Start it with the key inline:
@@ -874,11 +875,14 @@ warm it through the proxy, so "waiting" doesn't help. This is handled in three l
 
 ## Human-on-the-loop
 
-A-Identity never custodies a key autonomously, never deploys a contract on its
-own, and never moves real value without an explicit human approval. Wallet keys
-are generated in the browser and never leave it - the server only ever sees the
-public address, and sign-in is by wallet signature (no passwords). This is a
-design rule, not an afterthought.
+A-Identity never holds a private key, never deploys a contract on its own, and never
+moves real value without an explicit human approval. A wallet key generated in the
+browser never leaves it: the server only ever sees the public address. A hosted agent
+wallet, the default for a new agent and on Arc testnet only, is a Circle
+developer-controlled wallet: Circle holds its key, and this server instructs transfers
+from it within the owner's limits, so that one is custody by instruction and we say so.
+Sign-in is by wallet signature or an email link (no passwords). This is a design rule,
+not an afterthought.
 
 ## Security posture
 

@@ -228,7 +228,7 @@ export default function Permissions() {
     <AppPage
       ambient
       width="form"
-      title="Permissions"
+      title="Limits"
       description="You are in control. Set what your agent can do, who it can pay, and how much it can spend per day. The policy engine enforces every rule here for real."
     >
       {error && (

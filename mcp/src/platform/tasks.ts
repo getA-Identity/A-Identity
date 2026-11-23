@@ -7,7 +7,7 @@ import { state, save, id, ownsAgent, pushActivity, short, type PlatformAgent } f
 import { isShowcase } from './feed.js'
 import {
   type Task, type TaskStatus, type Review, type Bid,
-  canTransition, normalizePriceUsd, normalizeDeadlineHours, deadlineFrom,
+  canTransition, isTerminal, normalizePriceUsd, normalizeDeadlineHours, deadlineFrom,
   sanitizeRating, aggregateRating, agentChainIds, serviceDescription,
   openTaskComplaint,
 } from '../marketplace.js'
@@ -43,19 +43,61 @@ function transitionTask(task: Task, to: TaskStatus): boolean {
  * the remaining roadmap piece). Release completes it via completeEscrowOnchain.
  */
 async function tryOnchainFund(task: Task, agent?: PlatformAgent): Promise<void> {
+  // Marked before the first await: the task is already in the list as `funded`, and the lock
+  // below takes seconds. Until it ends nothing may settle or work the task (see escrowLocking).
+  task.escrowLockingAt = new Date().toISOString()
+  locksInFlight.add(task.id)
   try {
     const esc = await fundEscrowOnchain({ budgetUsd: task.priceUsd, description: `A-Identity marketplace task ${task.id}: ${task.service}` })
-    if (esc.executed) {
+    if (esc.executed && isTerminal(task.status)) {
+      // Only reachable when a lock outlived its mark and the task was settled meanwhile. The
+      // job is funded and nothing points at it, so say where the money is instead of writing
+      // it onto a finished row.
+      console.error(`[marketplace] escrow job ${esc.jobId} locked after task ${task.id} was already ${task.status}: it stays funded until its expiry refund is claimed`)
+    } else if (esc.executed) {
       task.jobId = esc.jobId
       const fund = esc.steps.find((s) => s.step === 'fund') ?? esc.steps[esc.steps.length - 1]
       task.escrowTx = fund?.txHash
       task.escrowExplorer = fund?.explorerUrl
       if (agent) pushActivity(agent, `Escrow locked on-chain at hire (ERC-8183 job ${esc.jobId}, tx ${short(task.escrowTx ?? '')})`)
+    } else if ('unconfirmed' in esc && esc.unconfirmed) {
+      // A step was sent and no receipt came back in time. A job may end up funded with nothing
+      // here pointing at it, so the hash is logged for whoever has to find it.
+      console.error(`[marketplace] escrow lock for task ${task.id} ended unconfirmed (tx ${esc.txHash}): ${esc.reason}`)
     }
   } catch {
     /* off-chain funded fallback - never blocks the hire */
+  } finally {
+    locksInFlight.delete(task.id)
+    delete task.escrowLockingAt
   }
 }
+
+/**
+ * The locks this process is running. A lock is four Arc transactions and each may wait minutes
+ * for its receipt, so no clock can say when one has ended: only the process running it knows,
+ * and for as long as it runs the task counts as locking, however long that takes.
+ */
+const locksInFlight = new Set<string>()
+
+/** A stored mark with no lock running here is left over from a process that ended mid-lock.
+ *  It is believed for this long, so a restart does not open the task the moment it is back,
+ *  and no longer, so a mark that nobody will clear cannot hold a task forever. */
+const ESCROW_LOCK_STALE_MS = 3 * 60_000
+
+/**
+ * True while a task's escrow lock is still running. Release and refund are refused then, and
+ * the house worker leaves the task alone, because the lock has not said yet which on-chain job
+ * (if any) holds the money: settling now would settle a different one.
+ */
+export function escrowLocking(task: Pick<Task, 'escrowLockingAt'> & { id?: string }, now: number = Date.now()): boolean {
+  if (task.id !== undefined && locksInFlight.has(task.id)) return true
+  if (!task.escrowLockingAt) return false
+  const at = Date.parse(task.escrowLockingAt)
+  return Number.isFinite(at) && now - at < ESCROW_LOCK_STALE_MS
+}
+
+const STILL_LOCKING = 'The escrow for this hire is still locking on Arc. Try again in a moment.'
 
 /**
  * Hire a verified worker agent. Trusted-marketplace rule: only a KYA-verified agent can be
@@ -233,6 +275,141 @@ export function deliverTask(taskId: string, deliverable: string, caller?: string
   return task
 }
 
+// ── the house worker's side ─────────────────────────────────────────────────────────
+//
+// Some worker agents are operated by the platform itself. The operator names them in
+// HOUSE_WORKER_AGENT_IDS, and ../house-worker delivers their hires from inside this process.
+// Nothing here decides which agents those are: every function takes the set the worker was
+// started with, and a task hired from any other agent is refused, whatever the caller says.
+
+/** Funded tasks hired from one of the given agents, oldest first: the house worker's queue. */
+export function listFundedTasksForAgents(agentIds: ReadonlySet<string>): Task[] {
+  if (agentIds.size === 0) return []
+  return state.tasks
+    .filter((t) => t.status === 'funded' && agentIds.has(t.agentId) && !escrowLocking(t))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+}
+
+/**
+ * The house worker delivers a result. The allowlist stands in for ownsAgent, and the row
+ * records that the platform delivered it and with which model, so a card can say so.
+ * funded -> delivered.
+ */
+export function deliverHouseTask(input: {
+  taskId: string
+  deliverable: string
+  model: string
+  allowedAgentIds: ReadonlySet<string>
+}): Task | { error: string } {
+  const task = state.tasks.find((t) => t.id === input.taskId)
+  if (!task) return { error: 'Unknown task' }
+  if (!input.allowedAgentIds.has(task.agentId)) return { error: 'Forbidden: the hired agent is not a house worker' }
+  const agent = state.agents.find((a) => a.id === task.agentId)
+  if (!agent) return { error: 'Unknown agent' }
+  const deliverable = String(input.deliverable ?? '').trim()
+  if (!deliverable) return { error: 'An empty result is not a delivery' }
+  if (!canTransition(task.status, 'delivered')) return { error: `Cannot deliver from status ${task.status}` }
+  task.deliverable = deliverable.slice(0, 5000)
+  task.deliveredBy = 'house'
+  task.deliveredAt = new Date().toISOString()
+  task.deliveryModel = String(input.model ?? '').slice(0, 80)
+  delete task.workerNote
+  transitionTask(task, 'delivered')
+  pushActivity(agent, `Delivered task ${task.id} (A-Identity house worker)`)
+  save(state)
+  return task
+}
+
+/**
+ * The house worker says why a task is still waiting and, when it tried, how many tries that
+ * makes. The task stays funded: a note is not a delivery, and the client can still refund it.
+ * A note that repeats the stored one writes nothing.
+ */
+export function noteHouseTask(input: {
+  taskId: string
+  note: string
+  /** The attempt count after this one. Left out when nothing was tried. */
+  attempts?: number
+  allowedAgentIds: ReadonlySet<string>
+}): Task | { error: string } {
+  const task = state.tasks.find((t) => t.id === input.taskId)
+  if (!task) return { error: 'Unknown task' }
+  if (!input.allowedAgentIds.has(task.agentId)) return { error: 'Forbidden: the hired agent is not a house worker' }
+  if (task.status !== 'funded') return { error: `Cannot note a task in status ${task.status}` }
+  const note = String(input.note ?? '').trim().slice(0, 300)
+  const attempts =
+    typeof input.attempts === 'number' && Number.isInteger(input.attempts) && input.attempts >= 0
+      ? Math.min(input.attempts, 99)
+      : task.workerAttempts
+  if (task.workerNote === note && task.workerAttempts === attempts) return task
+  task.workerNote = note
+  if (attempts !== undefined) task.workerAttempts = attempts
+  task.updatedAt = new Date().toISOString()
+  save(state)
+  return task
+}
+
+/** The most model calls one task may ever take, whatever came of them. */
+export const HOUSE_CALLS_PER_TASK = 6
+
+/**
+ * The house worker records that it is about to call a model for a task. Written BEFORE the
+ * call, so a call that fails, is cut off or is thrown away still counts: it is billed either
+ * way, and the ceilings exist to bound the bill. Refused for a task that is no longer waiting,
+ * so a hire cancelled a moment ago costs nothing.
+ */
+export function claimHouseCall(input: { taskId: string; allowedAgentIds: ReadonlySet<string> }): Task | { error: string } {
+  const task = state.tasks.find((t) => t.id === input.taskId)
+  if (!task) return { error: 'Unknown task' }
+  if (!input.allowedAgentIds.has(task.agentId)) return { error: 'Forbidden: the hired agent is not a house worker' }
+  if (task.status !== 'funded') return { error: `Cannot work a task in status ${task.status}` }
+  if (escrowLocking(task)) return { error: STILL_LOCKING }
+  const calls = task.workerCalls ?? []
+  if (calls.length >= HOUSE_CALLS_PER_TASK) return { error: 'This task has used every model call it may take' }
+  task.workerCalls = [...calls, new Date().toISOString()]
+  save(state)
+  return task
+}
+
+/**
+ * The house worker gives back the call it recorded for a task, after a failure that was on the
+ * operator's side and not about the job.
+ *
+ * `billable: false` is for an answer that proves no model ran: the API turned the request away
+ * over the credential, the account or the rate. The record is removed, so the failure costs
+ * the task, its client and the day nothing, and the work goes on the moment the cause is fixed.
+ *
+ * `billable: true` is for a failure that may still have been billed: the service broke, or no
+ * answer came back. The call stops counting against the task and its client, who did nothing
+ * wrong, and keeps counting against the day, which is the ceiling that bounds the bill.
+ */
+export function releaseHouseCall(input: { taskId: string; billable: boolean; allowedAgentIds: ReadonlySet<string> }): Task | { error: string } {
+  const task = state.tasks.find((t) => t.id === input.taskId)
+  if (!task) return { error: 'Unknown task' }
+  if (!input.allowedAgentIds.has(task.agentId)) return { error: 'Forbidden: the hired agent is not a house worker' }
+  const calls = task.workerCalls ?? []
+  const last = calls[calls.length - 1]
+  if (last === undefined) return { error: 'This task has no recorded call to give back' }
+  task.workerCalls = calls.slice(0, -1)
+  if (input.billable) task.workerOutageCalls = [...(task.workerOutageCalls ?? []), last]
+  save(state)
+  return task
+}
+
+/** Model calls the house worker made at or after `sinceIso`. For everyone, that is every call
+ *  that may have been billed, the ones given back after an outage included. For one client it
+ *  is only the calls that count against a client. Read from the stored rows, so a restart does
+ *  not reset a ceiling. */
+export function countHouseCallsSince(sinceIso: string, client?: string): number {
+  let n = 0
+  for (const t of state.tasks) {
+    if (client !== undefined && t.client !== client) continue
+    for (const at of t.workerCalls ?? []) if (at >= sinceIso) n++
+    if (client === undefined) for (const at of t.workerOutageCalls ?? []) if (at >= sinceIso) n++
+  }
+  return n
+}
+
 /**
  * The client approves and RELEASES the escrow: runs the real ERC-8183 lifecycle
  * (createJob -> fund -> submit -> complete), paying the worker. With a signer key it is a
@@ -252,6 +429,7 @@ export async function releaseTask(
   if (!task) return { error: 'Unknown task' }
   if (task.client !== caller) return { error: 'Forbidden: only the hiring client can release' }
   if (!canTransition(task.status, 'released')) return { error: `Cannot release from status ${task.status}` }
+  if (escrowLocking(task)) return { error: STILL_LOCKING }
   const agent = state.agents.find((a) => a.id === task.agentId)
 
   // Escrow was locked on-chain at hire (has a jobId): complete THAT job on-chain, no new job.
@@ -322,6 +500,7 @@ export async function disputeTask(taskId: string, reason: string, caller?: strin
   if (!task) return { error: 'Unknown task' }
   if (task.client !== caller) return { error: 'Forbidden: only the hiring client can dispute' }
   if (!canTransition(task.status, 'refunded')) return { error: `Cannot dispute from status ${task.status}` }
+  if (escrowLocking(task)) return { error: STILL_LOCKING }
   const agent = state.agents.find((a) => a.id === task.agentId)
 
   // Escrow locked on-chain at hire: reject the job on-chain (refunds the client in the same tx).
@@ -380,9 +559,10 @@ export function getTask(taskId: string, caller?: string): Task | { error: string
   return task
 }
 
-/** Tasks a client has opened (the "my hires" view). */
-export function listTasksForClient(caller?: string): Task[] {
-  return caller ? state.tasks.filter((t) => t.client === caller) : []
+/** Tasks a client has opened (the "my hires" view). Each row says whether its escrow is still
+ *  locking, decided here on the server's clock, so a page never has to compare clocks. */
+export function listTasksForClient(caller?: string): (Task & { escrowLocking: boolean })[] {
+  return caller ? state.tasks.filter((t) => t.client === caller).map((t) => ({ ...t, escrowLocking: escrowLocking(t) })) : []
 }
 
 /** Tasks assigned to an agent (the worker "my jobs" view). Owner-only. */

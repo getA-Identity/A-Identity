@@ -1,16 +1,31 @@
-import { BadgeCheck, CheckCircle2 } from 'lucide-react'
+import { BadgeCheck, CheckCircle2, ShieldCheck } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { Button } from '../../ui/button'
 import { OwlMascot } from '../../OwlMascot'
 
+/** A hosted wallet created with the agent, and what became of its starter funding. */
+export type HostedWallet = {
+  address: string
+  explorer?: string
+  funded: { amountUsd: number; txHash: string; explorerUrl: string; unconfirmed?: true } | { error: string; detail?: string } | null
+  /** The wallet was found after the answer that created it was lost, so what became of its
+   *  starter funding is not known here. Nothing is claimed about it either way. */
+  fundingUnknown?: true
+}
+
 /**
  * The registered outcome card RegisterForm early-returns into: confirms the
- * new agent, then offers the two real follow-ups (anchor on Arc, prove wallet
- * control for KYA). Pure props component: every hook and async handler stays
- * in RegisterForm so the wizard's hook order never changes.
+ * new agent, shows the hosted wallet it was given (or the browser-key wallet),
+ * then offers the real follow-ups (anchor on Arc, and for a browser key, prove
+ * wallet control for KYA). Pure props component: every hook and async handler
+ * stays in RegisterForm so the wizard's hook order never changes.
  */
 export default function RegisterSuccess({
   name,
   wallet,
+  hosted,
+  hostedNote,
+  ownFunding,
   kya,
   kyaBusy,
   kyaNote,
@@ -23,6 +38,12 @@ export default function RegisterSuccess({
 }: {
   name: string
   wallet: { address: string } | null
+  hosted: HostedWallet | null
+  /** Why the hosted wallet was not created, when it was asked for and did not arrive. */
+  hostedNote: string | null
+  /** What became of the starter funding for a wallet whose key the owner holds. Null when
+   *  nothing is known, and then nothing is said. */
+  ownFunding: HostedWallet['funded']
   kya: { verified: boolean; onchainTx?: string; onchainExplorer?: string } | null
   kyaBusy: boolean
   kyaNote: string | null
@@ -47,14 +68,70 @@ export default function RegisterSuccess({
       </div>
       <ul className="mt-3 flex flex-col gap-1.5 text-sm text-foreground/70">
         <li>Permissions set (daily cap, auto-approve).</li>
-        {kya?.verified ? (
-          <li>KYA verified: wallet control proven.</li>
-        ) : (
-          <li>KYA pending: prove the agent controls its wallet below.</li>
-        )}
+        {hosted &&
+          (hosted.funded && 'txHash' in hosted.funded ? (
+            hosted.funded.unconfirmed ? (
+              <li>It has a hosted wallet. Its test USDC was sent and is waiting for the chain to confirm.</li>
+            ) : (
+              <li>It has a hosted wallet with test USDC, so it can pay within your limits.</li>
+            )
+          ) : hosted.fundingUnknown ? (
+            <li>It has a hosted wallet. Open Wallet to see whether its test USDC arrived.</li>
+          ) : (
+            <li>It has a hosted wallet. It needs test USDC before it can pay.</li>
+          ))}
+        {hostedNote && <li>It has no wallet yet. {hostedNote}</li>}
+        {wallet && (kya?.verified ? <li>KYA verified: wallet control proven.</li> : <li>KYA pending: prove the agent controls its wallet below.</li>)}
         {wallet && <li>Wallet {wallet.address.slice(0, 10)}... is assigned to it.</li>}
+        {wallet && ownFunding && 'txHash' in ownFunding && (
+          <li>
+            {ownFunding.unconfirmed
+              ? `${ownFunding.amountUsd} test USDC was sent to it and is waiting for the chain to confirm.`
+              : `${ownFunding.amountUsd} test USDC arrived in it.`}{' '}
+            <a href={ownFunding.explorerUrl} target="_blank" rel="noopener noreferrer" className="font-semibold text-usdc hover:underline">
+              View the transfer
+            </a>
+          </li>
+        )}
+        {wallet && ownFunding && 'error' in ownFunding && <li title={ownFunding.detail}>{ownFunding.error}</li>}
         {!anchored && <li>On-chain anchor is queued. Anchor it on Arc to mint a real ERC-8004 identity.</li>}
       </ul>
+
+      {/* The hosted wallet: its address, and whether the starter funding arrived */}
+      {hosted && (
+        <div className="mt-4 rounded-xl border border-border bg-card p-4">
+          <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <ShieldCheck size={16} className="text-accent" /> Hosted wallet on Arc testnet
+          </div>
+          <div className="mt-1 break-all font-mono text-xs text-foreground/80">{hosted.address}</div>
+          {hosted.funded && 'txHash' in hosted.funded ? (
+            <p className="mt-2 text-xs text-ok">
+              {hosted.funded.unconfirmed
+                ? `${hosted.funded.amountUsd} test USDC was sent and is waiting for the chain to confirm.`
+                : `${hosted.funded.amountUsd} test USDC arrived.`}{' '}
+              <a href={hosted.funded.explorerUrl} target="_blank" rel="noopener noreferrer" className="font-semibold hover:underline">
+                View the transfer
+              </a>
+            </p>
+          ) : hosted.funded && 'error' in hosted.funded ? (
+            <p className="mt-2 text-xs text-warn" title={hosted.funded.detail}>
+              {hosted.funded.error}{' '}
+              <a href="https://faucet.circle.com" target="_blank" rel="noopener noreferrer" className="font-semibold hover:underline">
+                Open the faucet
+              </a>
+            </p>
+          ) : hosted.fundingUnknown ? (
+            <p className="mt-2 text-xs text-foreground/60">
+              The answer about its starter funding did not come back. Open Wallet to see its balance.
+            </p>
+          ) : null}
+          <p className="mt-2 text-[11px] text-foreground/50">
+            Circle holds this wallet's key and A-Identity moves funds only within the limits you set. It has no key of
+            its own to prove, so this agent cannot be KYA verified or listed for hire. That needs an agent registered
+            with your own key.
+          </p>
+        </div>
+      )}
 
       {/* On-chain anchor: real ERC-8004 registration on Arc, human-triggered */}
       {anchored ? (
@@ -130,7 +207,7 @@ export default function RegisterSuccess({
 
       <div className="mt-4 flex gap-3">
         <Button asChild size="sm" className="text-sm">
-          <a href="/app/marketplace">See it in Agent House</a>
+          {hosted ? <Link to="/app/wallet">Open its wallet</Link> : <Link to="/app/marketplace">See it in Agent House</Link>}
         </Button>
         <button
           type="button"

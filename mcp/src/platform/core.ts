@@ -213,6 +213,22 @@ export type PlatformAgent = {
   circleWalletId?: string
   circleWalletAddress?: string
   circleWalletExplorer?: string
+  /**
+   * The test USDC this agent's hosted wallet was created with, sent once from the Arc testnet
+   * signer, with its receipt. Set only after the transfer executed. The per-account and daily
+   * ceilings in platform/vault.ts are counted from these stored records, so a restart does not
+   * reset them.
+   */
+  starterFunding?: {
+    address: string
+    amountUsd: number
+    txHash: string
+    explorerUrl: string
+    at: string
+    /** The transfer was broadcast and no receipt arrived inside the wait. It still counts
+     *  against the ceilings: the money may have moved. */
+    unconfirmed?: true
+  }
   /** Owner-authorized auto-yield: idle balance above capUsd is earmarked for USYC
    *  (Circle's yield-bearing token). Off by default; the owner turns it on. */
   treasury?: { autoYieldEnabled: boolean; capUsd: number; authorizedAt?: string }
@@ -365,6 +381,10 @@ export type Instruction = {
    */
   offchainAuditId?: string
   offchainAuditReason?: string
+  /** The UTC day on which the server signer paid this instruction on the direct rail, or sent
+   *  a payment for it that may still land. Counted against what the signer covers in a day
+   *  (the direct rail ceilings in platform/instructions.ts). Removed when nothing was sent. */
+  directPaidOn?: string
   createdAt: string
 }
 

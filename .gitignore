@@ -137,3 +137,7 @@ stellar-hackathon-turkiye/
 
 # Private context folder for AI agents (team notes, partner details). Never committed.
 .private/
+
+# Voice recordings for product videos, dropped at the repo root for editing. Local only.
+/concordium-voice.opus
+/*.opus

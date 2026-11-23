@@ -46,25 +46,26 @@ import { analyticsActive, track } from '../../lib/analytics'
 import '../../console.css'
 
 /**
- * The sidebar: four things on top, everything else under More.
+ * The sidebar: five things on top, everything else under More.
  *
  * The rail used to show all eight screens in three groups, which put the demo surfaces on
- * the same footing as the four things a person actually comes back for: how the agent is
- * doing, what it paid for, who it is, and what it may spend. Those stay in view; the rest
- * is one click away and opens by itself when you are on one of its screens.
+ * the same footing as the things a person actually comes back for: how the agent is
+ * doing, what it paid for, who it is, what it may spend, and where it hires. Those stay in
+ * view; the rest is one click away and opens by itself when you are on one of its screens.
  */
 const NAV = [
   { to: '/app', label: 'Overview', icon: LayoutDashboard, end: true },
   { to: '/app/checks', label: 'Checks', icon: Receipt, end: false },
   { to: '/app/agent-id', label: 'Agent ID', icon: Fingerprint, end: false },
   { to: '/app/permissions', label: 'Limits', icon: SlidersHorizontal, end: false },
+  // Hiring a skill is one of the first things a new account does, so it is not behind More.
+  { to: '/app/marketplace', label: 'Marketplace', icon: Store, end: false },
 ] as const
 
 const NAV_MORE = [
   { to: '/app/wallet', label: 'Wallet', icon: CreditCard },
   { to: '/app/settlements', label: 'Settlements', icon: ArrowLeftRight },
   { to: '/app/earnings', label: 'Earnings', icon: Coins },
-  { to: '/app/marketplace', label: 'Marketplace', icon: Store },
   // Public: reads any Stellar vault with no session. Owner actions ask for one when needed.
   { to: '/app/vault/stellar', label: 'Stellar vault', icon: Vault },
   // Public: reads any Arc vault with no session; deploy and owner actions are signed in the

@@ -16,6 +16,7 @@ import {
 } from '../marketplace.js'
 import { chargeAgentCreate, type VolumeCharge } from '../rate-budget.js'
 import { errStatus, readBody, sendJson, validAmount, type RouteCtx } from './shared.js'
+import { clientIpFromXff } from '../client-ip.js'
 
 export async function handleMarketplaceRoutes(ctx: RouteCtx): Promise<boolean> {
   const { req, res, url, callerId } = ctx
@@ -93,7 +94,10 @@ export async function handleMarketplaceRoutes(ctx: RouteCtx): Promise<boolean> {
     // Metered per signed-in caller, and per IP otherwise. The `viewer` tag used to sit in
     // this key, which meant the free tier could be reset by editing a query parameter: the
     // IP fallback the comment relied on was never reached for an anonymous caller.
-    const meterKey = callerId ?? (req.socket.remoteAddress || 'anon')
+    // The IP is the client's own, read through the proxy hops the way the rate limiter reads
+    // it. The socket's address is the proxy in front of us, which every visitor shares, so
+    // keying on it handed all of them one free tier between them.
+    const meterKey = callerId ?? (clientIpFromXff(req.headers['x-forwarded-for'], req.socket.remoteAddress) || 'anon')
     const quota = consumeSemanticQuota(meterKey)
     if (!quota.ok) {
       sendJson(res, 402, {
