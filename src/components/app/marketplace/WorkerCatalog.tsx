@@ -73,11 +73,17 @@ type OpenTask = { id: string; service: string; budgetUsd: number; description: s
 
 /**
  * A hire, told as where the money is and what happens next. The three steps are the real
- * escrow order (locked, delivered, paid out), so a status word never needs decoding.
+ * escrow order (locked, delivered, released), so a status word never needs decoding.
+ *
+ * The last line says what the escrow did and points at the transaction, and nothing more: on
+ * testnet the platform's test wallet stands on both sides of the escrow, so "the worker was
+ * paid" is not something this page can show, while the release itself is.
  */
-const HIRE_STEPS = ['Locked', 'Delivered', 'Paid'] as const
+const HIRE_STEPS = ['Locked', 'Delivered', 'Released'] as const
 function hireStage(t: Task, worker: string): { step: number; next: string; tone: 'wait' | 'act' | 'ok' | 'muted' } {
   const usdc = `${t.priceUsd.toFixed(2)} USDC`
+  // Said only when there is a transaction to open: the link under the row is that proof.
+  const proof = t.escrowExplorer ? ' The transaction below is the proof.' : ''
   switch (t.status) {
     case 'open':
       return { step: 0, next: 'Waiting for bids. Accept one and its price locks in escrow.', tone: 'wait' }
@@ -89,13 +95,23 @@ function hireStage(t: Task, worker: string): { step: number; next: string; tone:
         ? { step: 1, next: t.workerNote, tone: 'act' }
         : { step: 1, next: `${usdc} is locked. Waiting for ${worker} to deliver.`, tone: 'wait' }
     case 'delivered':
-      return { step: 2, next: `${worker} delivered. Check the work, then pay or dispute.`, tone: 'act' }
+      return { step: 2, next: `${worker} delivered. Check the work, then approve or dispute.`, tone: 'act' }
     case 'disputed':
       return { step: 2, next: 'Disputed. The refund is on its way back to you.', tone: 'wait' }
     case 'released':
-      return { step: 3, next: `Done. ${worker} was paid ${usdc}.`, tone: 'ok' }
+      if (t.settlement === 'simulated') {
+        return { step: 3, next: 'Done. Approved as a simulation: no signer is set here, so nothing moved on chain.', tone: 'ok' }
+      }
+      return t.settlement === 'onchain'
+        ? { step: 3, next: `Done. You approved, and the escrow released ${usdc} on Arc.${proof}`, tone: 'ok' }
+        : { step: 3, next: 'Done. You approved the work, and this hire is closed.', tone: 'ok' }
     case 'refunded':
-      return { step: 3, next: `Refunded. ${usdc} went back, ${worker} was not paid.`, tone: 'muted' }
+      if (t.settlement === 'simulated') {
+        return { step: 3, next: 'Refunded as a simulation: no signer is set here, so nothing moved on chain.', tone: 'muted' }
+      }
+      return t.settlement === 'onchain'
+        ? { step: 3, next: `Refunded. The escrow returned ${usdc} on Arc, and nothing was released for this job.${proof}`, tone: 'muted' }
+        : { step: 3, next: 'Refunded. Nothing was released for this job.', tone: 'muted' }
     case 'cancelled':
       return { step: 0, next: 'Cancelled. Nothing was charged.', tone: 'muted' }
   }
@@ -399,7 +415,7 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
           <p className="mt-1 max-w-xl text-sm text-foreground/55">Pay only for work you approve.</p>
           {/* The whole logic of a hire in three steps, in the order the escrow runs them. */}
           <ol className="mt-3 flex flex-wrap gap-2 text-xs text-foreground/70">
-            {['Describe the job', 'USDC waits in escrow', 'You approve, the worker is paid'].map((s, i) => (
+            {['Describe the job', 'USDC waits in escrow', 'You approve, the escrow releases it'].map((s, i) => (
               <li key={s} className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1">
                 <span className="grid h-4 w-4 place-items-center rounded-full bg-accent/15 text-[10px] font-bold text-accent">{i + 1}</span>
                 {s}
@@ -585,7 +601,7 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
                       {busy === key
                         ? 'Takes up to a minute on Arc. You can stay on this page.'
                         : desc.trim()
-                          ? `Held in escrow. ${svc.agentName} is paid only when you approve.`
+                          ? 'Held in escrow. It is released only when you approve.'
                           : 'Write what you need first.'}
                     </span>
                   </div>
@@ -602,7 +618,7 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
                   <span>
                     {hiredTask?.escrowLocking
                       ? `Locking ${hiredTask.priceUsd.toFixed(2)} USDC in escrow on Arc. This takes up to a minute.`
-                      : `${(hiredTask ?? hired.task).priceUsd.toFixed(2)} USDC is locked${hiredTask?.escrowExplorer ? ' on Arc' : ''}. It pays out when you approve.`}
+                      : `${(hiredTask ?? hired.task).priceUsd.toFixed(2)} USDC is locked${hiredTask?.escrowExplorer ? ' on Arc' : ''}. It is released when you approve.`}
                   </span>
                   {hiredTask?.escrowExplorer && (
                     <a href={hiredTask.escrowExplorer} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-usdc hover:underline">
@@ -766,7 +782,7 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
                             className="inline-flex items-center gap-1.5 rounded-full bg-accent px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
                           >
                             {busy === t.id ? <Loader2 size={12} className="animate-spin" /> : null}
-                            {busy === t.id ? 'Paying on Arc...' : `Approve and pay ${t.priceUsd.toFixed(2)} USDC`}
+                            {busy === t.id ? 'Releasing on Arc...' : `Approve and release ${t.priceUsd.toFixed(2)} USDC`}
                           </button>
                           <select
                             value={reviewDraft[t.id]?.rating ?? ''}
@@ -826,7 +842,12 @@ export default function WorkerCatalog({ preselect = null }: { preselect?: HirePr
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 text-xs font-semibold text-usdc hover:underline"
                         >
-                          <ExternalLink size={12} /> Escrow on the Arc explorer
+                          <ExternalLink size={12} />{' '}
+                          {t.status === 'released'
+                            ? 'Proof: the release on the Arc explorer'
+                            : t.status === 'refunded'
+                              ? 'Proof: the refund on the Arc explorer'
+                              : 'Escrow on the Arc explorer'}
                         </a>
                       )}
                     </div>
