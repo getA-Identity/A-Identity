@@ -27,7 +27,7 @@
  */
 import { listFundedTasksForAgents, deliverHouseTask, noteHouseTask, claimHouseCall, releaseHouseCall, countHouseCallsSince, HOUSE_CALLS_PER_TASK } from '../platform.js'
 import { houseWorkerConfig } from './config.js'
-import { runHouseSkill, type WorkOutcome } from './work.js'
+import { runHouseSkill, runHouseSkillOpenAI, type PostChat, type WorkOutcome } from './work.js'
 
 /** A hire shows up in the queue within one poll. */
 export const POLL_MS = 4_000
@@ -214,6 +214,8 @@ export type StartSeams = {
   log?: (line: string) => void
   now?: () => number
   work?: WorkerDeps['work']
+  /** Stands in for the HTTP call of the OpenAI-compatible path. */
+  postChat?: PostChat
   setTimer?: (run: () => void, ms: number) => { unref?: () => void }
 }
 
@@ -231,6 +233,13 @@ export function startHouseWorker(env: NodeJS.ProcessEnv = process.env, seams: St
       log(`off: ${config.reason}`)
       return null
     }
+    const provider = config.provider
+    // The Anthropic SDK unless the operator named another service (./config.ts).
+    const work: WorkerDeps['work'] | undefined =
+      seams.work ??
+      (provider.kind === 'openai-compatible'
+        ? (input) => runHouseSkillOpenAI({ ...input, baseUrl: provider.baseUrl, apiKey: provider.apiKey }, seams.postChat)
+        : undefined)
     const worker = createHouseWorker({
       agentIds: config.agentIds,
       model: config.model,
@@ -238,7 +247,7 @@ export function startHouseWorker(env: NodeJS.ProcessEnv = process.env, seams: St
       clientDailyLimit: config.clientDailyLimit,
       log,
       ...(seams.now ? { now: seams.now } : {}),
-      ...(seams.work ? { work: seams.work } : {}),
+      ...(work ? { work } : {}),
     })
     const setTimer = seams.setTimer ?? ((run: () => void, ms: number) => setTimeout(run, ms))
     let halted = false
@@ -258,7 +267,7 @@ export function startHouseWorker(env: NodeJS.ProcessEnv = process.env, seams: St
     const first = env.RENDER ? RENDER_FIRST_POLL_MS : FIRST_POLL_MS
     schedule(first)
     log(
-      `on: delivering hires for ${config.agentIds.size} worker agent(s) with ${config.model}, at most ${config.dailyLimit} model calls a day ` +
+      `on: delivering hires for ${config.agentIds.size} worker agent(s) with ${config.model}${provider.kind === 'openai-compatible' ? ` through ${provider.host}` : ''}, at most ${config.dailyLimit} model calls a day ` +
         `and ${config.clientDailyLimit} for one client, the first poll in ${Math.round(first / 1000)} s` +
         (config.ignored ? `; ${config.ignored} entry(ies) of HOUSE_WORKER_AGENT_IDS were not agent ids and are ignored` : ''),
     )

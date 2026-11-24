@@ -13,7 +13,7 @@ import {
 } from '../platform.js'
 import type { Task } from '../marketplace.js'
 import { houseWorkerConfig, DEFAULT_MODEL, DEFAULT_DAILY_LIMIT, DEFAULT_CLIENT_DAILY_LIMIT, MAX_DAILY_LIMIT } from './config.js'
-import { runHouseSkill, houseSkill, MAX_DELIVERABLE_CHARS, type CreateMessage, type WorkOutcome } from './work.js'
+import { runHouseSkill, runHouseSkillOpenAI, houseSkill, MAX_DELIVERABLE_CHARS, OPEN_MAX_TOKENS, type CreateMessage, type PostChat, type WorkOutcome } from './work.js'
 import {
   createHouseWorker, startHouseWorker,
   MAX_ATTEMPTS, MAX_TASK_AGE_MS, POLL_MS, BACKOFF_BASE_MS, RETRY_GAP_MS, RENDER_FIRST_POLL_MS, FIRST_POLL_MS,
@@ -238,6 +238,129 @@ test('house work: a request whose options are refused is tried once more as a pl
   const refused = await runHouseSkill({ service: 'translation', request: 'x', model: DEFAULT_MODEL }, never)
   assert.equal(!refused.ok && refused.kind, 'job')
   assert.equal(calls, 2)
+})
+
+// -- the other way to reach a model ------------------------------------------------------------
+//
+// An operator with no Anthropic account can name any service that speaks the OpenAI chat
+// completions shape. It is held to the same promises: nothing made up, the same sorting of
+// failures, and a key that goes to one host in one header and into no log.
+
+const OPEN_ENV = {
+  HOUSE_WORKER_OPENAI_BASE_URL: 'https://models.example.test/v1/',
+  HOUSE_WORKER_OPENAI_API_KEY: 'sk-test-not-real',
+  HOUSE_WORKER_MODEL: '@cf/meta/llama-3.3-70b-instruct',
+}
+const openInput = { service: 'translation', request: 'x', model: 'm-1', baseUrl: 'https://models.example.test/v1', apiKey: 'sk-test-not-real' }
+const chat = (over: Record<string, unknown> = {}) =>
+  JSON.stringify({ model: 'served-model', choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: 'Gunaydin' } }], ...over })
+
+test('house worker: another provider is on only with its URL, key and model, and it is the one used when named', () => {
+  const c = houseWorkerConfig({ HOUSE_WORKER_AGENT_IDS: 'agent_abc1', ANTHROPIC_API_KEY: 'k', ...OPEN_ENV })
+  assert.ok(c.on)
+  assert.deepEqual(c.provider, { kind: 'openai-compatible', baseUrl: 'https://models.example.test/v1', apiKey: 'sk-test-not-real', host: 'models.example.test' })
+  assert.equal(c.model, '@cf/meta/llama-3.3-70b-instruct')
+  // The Anthropic path is the default and reads as it did.
+  const a = houseWorkerConfig({ HOUSE_WORKER_AGENT_IDS: 'agent_abc1', ANTHROPIC_API_KEY: 'k' })
+  assert.ok(a.on && a.provider.kind === 'anthropic' && a.model === DEFAULT_MODEL)
+  const answer = (over: Record<string, string>) => {
+    const r = houseWorkerConfig({ HOUSE_WORKER_AGENT_IDS: 'agent_abc1', ...OPEN_ENV, ...over })
+    return r.on ? 'on' : r.reason
+  }
+  assert.match(answer({ HOUSE_WORKER_OPENAI_API_KEY: '' }), /HOUSE_WORKER_OPENAI_API_KEY is not/)
+  assert.match(answer({ HOUSE_WORKER_MODEL: '' }), /HOUSE_WORKER_MODEL is not/)
+  assert.match(answer({ HOUSE_WORKER_MODEL: 'has spaces' }), /not a model id/)
+  // Job text and the key only ever go to a plain https address.
+  for (const url of ['http://models.example.test/v1', 'https://user:pass@models.example.test/v1', 'https://models.example.test/v1?x=1', 'not a url']) {
+    assert.match(answer({ HOUSE_WORKER_OPENAI_BASE_URL: url }), /not a plain https URL/, url)
+  }
+  assert.equal(answer({ HOUSE_WORKER_OPENAI_BASE_URL: 'http://localhost:11434/v1' }), 'on')
+})
+
+test('house work, other provider: the job goes out as system and user messages with the key in one header, and a finished answer is the result', async () => {
+  const sent: { url: string; headers: Record<string, string>; body: Record<string, unknown> }[] = []
+  const post: PostChat = async (url, init) => {
+    sent.push({ url, headers: init.headers, body: JSON.parse(init.body) as Record<string, unknown> })
+    return { status: 200, text: chat() }
+  }
+  const out = await runHouseSkillOpenAI({ ...openInput, request: '  Translate "good morning" into Turkish.  ' }, post)
+  assert.deepEqual(out, { ok: true, text: 'Gunaydin', model: 'served-model' })
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0].url, 'https://models.example.test/v1/chat/completions')
+  assert.equal(sent[0].headers.Authorization, 'Bearer sk-test-not-real')
+  assert.equal(sent[0].body.model, 'm-1')
+  assert.equal(sent[0].body.max_tokens, OPEN_MAX_TOKENS)
+  const messages = sent[0].body.messages as { role: string; content: string }[]
+  assert.deepEqual(messages.map((m) => m.role), ['system', 'user'])
+  assert.equal(messages[0].content, houseSkill('translation')?.system)
+  assert.equal(messages[1].content, 'Translate "good morning" into Turkish.')
+  assert.ok(!JSON.stringify(sent[0].body).includes('sk-test-not-real'), 'the key is never in the body')
+  // An unknown service and an empty job never reach the provider.
+  let calls = 0
+  const never: PostChat = async () => {
+    calls++
+    return { status: 200, text: chat() }
+  }
+  assert.equal((await runHouseSkillOpenAI({ ...openInput, service: 'astrology' }, never)).ok, false)
+  assert.equal((await runHouseSkillOpenAI({ ...openInput, request: '   ' }, never)).ok, false)
+  assert.equal(calls, 0)
+})
+
+test('house work, other provider: a cut-off, declined, empty or oversized answer is never a result', async () => {
+  const run = (text: string) => runHouseSkillOpenAI(openInput, async () => ({ status: 200, text }))
+  const read = async (text: string) => {
+    const o = await run(text)
+    return o.ok ? 'ok' : `${o.kind}: ${o.reason}`
+  }
+  const choice = (finish_reason: string, content: unknown) => chat({ choices: [{ finish_reason, message: { content } }] })
+  assert.match(await read(choice('length', 'half an ans')), /^job: the answer did not fit/)
+  assert.match(await read(choice('content_filter', 'I cannot')), /^job: the model declined/)
+  assert.match(await read(choice('tool_calls', '')), /^retry: the model stopped before finishing/)
+  assert.match(await read(choice('stop', '   ')), /^retry: the model returned no text/)
+  assert.match(await read(chat({ choices: [] })), /^retry: the model returned no text/)
+  assert.match(await read('<html>gateway</html>'), /^retry: the model returned no text/)
+  assert.match(await read(choice('stop', 'x'.repeat(MAX_DELIVERABLE_CHARS + 1))), /^job: the result was longer/)
+  // Text given as parts is read too, and an answer that names no model keeps the one asked for.
+  const parts = await run(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: [{ type: 'text', text: 'Gun' }, { type: 'text', text: 'aydin' }] } }] }))
+  assert.deepEqual(parts, { ok: true, text: 'Gunaydin', model: 'm-1' })
+})
+
+test('house work, other provider: failures are sorted by who can fix them, and the key never reaches a log line', async () => {
+  const answer = (status: number, text = '{"error":{"message":"nope"}}') => runHouseSkillOpenAI(openInput, async () => ({ status, text }))
+  const sort = async (status: number, text?: string) => {
+    const o = await answer(status, text)
+    return o.ok ? 'ok' : `${o.kind}${o.noCall ? ' noCall' : ''}`
+  }
+  // Turned away before any model ran: ours to fix, and not billed.
+  for (const status of [401, 402, 403, 404, 429]) assert.equal(await sort(status), 'operator noCall', String(status))
+  assert.equal(await sort(500), 'operator')
+  assert.equal(await sort(529), 'operator')
+  assert.equal(await sort(408), 'retry')
+  assert.equal(await sort(409), 'retry')
+  assert.equal(await sort(400), 'job')
+  assert.equal(await sort(400, 'Your credit balance is too low.'), 'operator noCall')
+  // A refused option is tried once more as a plain request, and only then is it the job's.
+  const bodies: Record<string, unknown>[] = []
+  const picky: PostChat = async (_url, init) => {
+    const body = JSON.parse(init.body) as Record<string, unknown>
+    bodies.push(body)
+    return 'max_tokens' in body ? { status: 400, text: 'unknown parameter' } : { status: 200, text: chat() }
+  }
+  assert.equal((await runHouseSkillOpenAI(openInput, picky)).ok, true)
+  assert.deepEqual(bodies.map((b) => 'max_tokens' in b), [true, false])
+  // No answer at all: out of time is a try of this job, anything else is ours.
+  const thrown = async (e: Error) => {
+    const o = await runHouseSkillOpenAI(openInput, async () => {
+      throw e
+    })
+    return o.ok ? 'ok' : o.kind
+  }
+  assert.equal(await thrown(Object.assign(new Error('timed out'), { name: 'TimeoutError' })), 'retry')
+  assert.equal(await thrown(new TypeError('fetch failed')), 'operator')
+  // What goes to the server log never carries the key, even when the provider echoes it.
+  const echoed = await answer(401, 'invalid key sk-test-not-real')
+  assert.ok(!echoed.ok && echoed.detail?.includes('[key]') && !echoed.detail.includes('sk-test-not-real'))
+  assert.ok(!echoed.ok && !echoed.reason.includes('sk-test'))
 })
 
 // -- the platform side -------------------------------------------------------------------------
@@ -685,4 +808,31 @@ test('house worker start: off writes one line and schedules nothing; on waits pa
   const hosted = startHouseWorker({ ...env, RENDER: 'true' }, { log: silent, setTimer })
   assert.equal(timers[timers.length - 1].ms, RENDER_FIRST_POLL_MS)
   hosted?.stop()
+})
+
+test('house worker start: with another provider named, a hire is delivered through it and the key stays out of the log', async () => {
+  const { state, house } = seed()
+  const lines: string[] = []
+  const timers: { run: () => void; ms: number }[] = []
+  const setTimer = (run: () => void, ms: number) => {
+    timers.push({ run, ms })
+    return {}
+  }
+  const asked: string[] = []
+  const postChat: PostChat = async (url) => {
+    asked.push(url)
+    return { status: 200, text: chat() }
+  }
+  const started = startHouseWorker({ HOUSE_WORKER_AGENT_IDS: house.id, ...OPEN_ENV }, { log: (l) => lines.push(l), setTimer, postChat })
+  assert.ok(started)
+  assert.match(lines[0], /^on: delivering hires for 1 worker agent\(s\) with @cf\/meta\/llama-3\.3-70b-instruct through models\.example\.test/)
+  assert.ok(!lines.join('\n').includes('sk-test-not-real'))
+  const task = fund(state.tasks, house.id)
+  timers[0].run()
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(task.status, 'delivered')
+  assert.equal(task.deliverable, 'Gunaydin')
+  assert.equal(task.deliveryModel, 'served-model')
+  assert.deepEqual(asked, ['https://models.example.test/v1/chat/completions'])
+  started.stop()
 })

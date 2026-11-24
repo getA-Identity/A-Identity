@@ -9,6 +9,10 @@
  * The request text is whatever the client typed. It reaches the model as the user turn and
  * nothing else: no tool, no fetch and no file is reachable from here, so the worst a hostile
  * job description can do is get itself a strange answer.
+ *
+ * Two ways to reach a model, with the same outcomes. runHouseSkill uses the Anthropic SDK and
+ * is the default. runHouseSkillOpenAI posts the same job to any service that speaks the OpenAI
+ * chat completions shape, for an operator who has no Anthropic account (./config.ts).
  */
 import Anthropic from '@anthropic-ai/sdk'
 
@@ -197,4 +201,103 @@ function failure(e: unknown): WorkOutcome {
   // resolved, or a stored one has expired. Nothing is wrong with the job.
   if (e instanceof Anthropic.AnthropicError) return out('operator', 'the model credential could not be used')
   return out('retry', 'the work failed unexpectedly')
+}
+
+// -- any service that speaks the OpenAI chat completions shape -----------------------------------
+
+/** Room for a 5000 character answer in any script, without asking a small free tier for more
+ *  tokens a minute than it gives. */
+export const OPEN_MAX_TOKENS = 3000
+
+/** The one HTTP call this path makes, as a function, so a test can stand in for it. */
+export type PostChat = (url: string, init: { headers: Record<string, string>; body: string; timeoutMs: number }) => Promise<{ status: number; text: string }>
+
+const fetchChat: PostChat = async (url, init) => {
+  // No redirect is followed: the key goes to the host the operator named and nowhere else.
+  const res = await fetch(url, { method: 'POST', headers: init.headers, body: init.body, signal: AbortSignal.timeout(init.timeoutMs), redirect: 'error' })
+  return { status: res.status, text: (await res.text()).slice(0, 200_000) }
+}
+
+type ChatBody = { model: string; messages: { role: 'system' | 'user'; content: string }[]; max_tokens?: number }
+
+export async function runHouseSkillOpenAI(
+  input: { service: string; request: string; model: string; baseUrl: string; apiKey: string },
+  post: PostChat = fetchChat,
+): Promise<WorkOutcome> {
+  const skill = houseSkill(input.service)
+  if (!skill) return { ok: false, kind: 'job', reason: `this worker has no skill for the service "${String(input.service).slice(0, 60)}"` }
+  const request = String(input.request ?? '').trim()
+  if (!request) return { ok: false, kind: 'job', reason: 'the job has no description to work from' }
+
+  const url = `${input.baseUrl.replace(/\/+$/, '')}/chat/completions`
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${input.apiKey}` }
+  const plain: ChatBody = {
+    model: input.model,
+    messages: [
+      { role: 'system', content: skill.system },
+      { role: 'user', content: request },
+    ],
+  }
+  // The server log gets the status and the start of the answer, never the key.
+  const detailOf = (status: number, text: string) => `HTTP ${status}: ${text.slice(0, 240)}`.split(input.apiKey).join('[key]')
+  const fail = (kind: 'job' | 'retry' | 'operator', reason: string, detail: string, noCall = false): WorkOutcome => ({
+    ok: false, kind, reason, ...(noCall ? { noCall: true as const } : {}), detail,
+  })
+
+  let answer: { status: number; text: string }
+  try {
+    answer = await post(url, { headers, body: JSON.stringify({ ...plain, max_tokens: OPEN_MAX_TOKENS }), timeoutMs: REQUEST_TIMEOUT_MS })
+    // A 400 can be about an option this service does not take. The plain request is tried
+    // once before the job is told it cannot be done, as on the other path.
+    if (answer.status === 400) answer = await post(url, { headers, body: JSON.stringify(plain), timeoutMs: REQUEST_TIMEOUT_MS })
+  } catch (e) {
+    const name = e instanceof Error ? e.name : ''
+    const detail = (e instanceof Error ? `${e.name}: ${e.message}` : 'a non-error was thrown').slice(0, 240).split(input.apiKey).join('[key]')
+    // Out of time is about this job, as on the other path. Anything else never got an answer.
+    if (name === 'TimeoutError' || name === 'AbortError') return fail('retry', 'the model took too long to answer', detail)
+    return fail('operator', 'the model could not be reached', detail)
+  }
+
+  const { status, text } = answer
+  if (status !== 200) {
+    const detail = detailOf(status, text)
+    // Turned away before any model ran, over something that is ours to fix: nothing is billed.
+    if (status === 401 || status === 403) return fail('operator', 'the model credential was rejected', detail, true)
+    if (status === 402) return fail('operator', 'the model account cannot be charged', detail, true)
+    if (status === 429) return fail('operator', 'the model is rate limited', detail, true)
+    if (status === 404) return fail('operator', 'the configured model was not found', detail, true)
+    if (status === 400 || status === 413 || status === 422) {
+      if (ACCOUNT_REFUSAL.test(text)) return fail('operator', 'the model account cannot be charged', detail, true)
+      return fail('job', 'the model rejected the request', detail)
+    }
+    if (status === 408) return fail('retry', 'the model took too long to answer', detail)
+    if (status >= 500) return fail('operator', `the model service failed (${status})`, detail)
+    return fail('retry', `the model answered with an error (${status})`, detail)
+  }
+
+  let parsed: { model?: unknown; choices?: { finish_reason?: unknown; message?: { content?: unknown } }[] }
+  try {
+    parsed = JSON.parse(text) as typeof parsed
+  } catch {
+    return fail('retry', 'the model returned no text', 'the answer was not JSON')
+  }
+  const choice = parsed.choices?.[0]
+  const reason = typeof choice?.finish_reason === 'string' ? choice.finish_reason : ''
+  // Read why it stopped before reading what it wrote, as on the other path.
+  if (reason === 'content_filter') return { ok: false, kind: 'job', reason: 'the model declined this request' }
+  if (reason === 'length') return { ok: false, kind: 'job', reason: 'the answer did not fit in one reply' }
+  if (reason && reason !== 'stop') return { ok: false, kind: 'retry', reason: 'the model stopped before finishing' }
+  const content = choice?.message?.content
+  const written = (
+    typeof content === 'string'
+      ? content
+      : Array.isArray(content)
+        ? content.map((part) => (part && typeof part === 'object' && typeof (part as { text?: unknown }).text === 'string' ? (part as { text: string }).text : '')).join('')
+        : ''
+  ).trim()
+  if (!written) return { ok: false, kind: 'retry', reason: 'the model returned no text' }
+  if (written.length > MAX_DELIVERABLE_CHARS) {
+    return { ok: false, kind: 'job', reason: `the result was longer than a delivery can hold (${MAX_DELIVERABLE_CHARS} characters)` }
+  }
+  return { ok: true, text: written, model: (typeof parsed.model === 'string' && parsed.model ? parsed.model : input.model).slice(0, 80) }
 }
