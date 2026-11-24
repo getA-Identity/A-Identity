@@ -53,6 +53,33 @@ const addressUrl = (a: string) => `${ARC_EXPLORER}/address/${a}`
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
+/** The longest wallet name Circle takes is 50 characters. Counted in bytes here, which is inside
+ *  that limit however Circle counts a letter that takes more than one byte. */
+const CIRCLE_NAME_MAX_BYTES = 50
+
+/**
+ * The name a wallet gets in Circle's console. An agent's name is whatever its owner typed, and
+ * Circle answers "API parameter invalid" to a wallet name over 50 characters or with any of
+ * ( ) < > * ; { } in it (read 2026-11-24 by renaming one test wallet). Sent as typed, such a
+ * name left the agent with no hosted wallet at all. So the label keeps letters, digits, spaces
+ * and a few plain marks that Circle took in the same read, and stops at the limit. Only this
+ * label is trimmed: the agent keeps its own name, and refId carries the agent id either way.
+ */
+export function circleWalletName(name: string): string {
+  const plain = String(name ?? '')
+    .replace(/[^\p{L}\p{N} ._'&,:/+#@-]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  let out = ''
+  let bytes = 0
+  for (const ch of plain) {
+    bytes += Buffer.byteLength(ch, 'utf8')
+    if (bytes > CIRCLE_NAME_MAX_BYTES) break
+    out += ch
+  }
+  return out.trim() || 'A-Identity agent'
+}
+
 /** Circle takes a human-decimal token amount; clamp to USDC's 6 display decimals. */
 function usdAmount(n: number): string {
   const s = (Math.round(n * 1e6) / 1e6).toFixed(6)
@@ -128,7 +155,7 @@ export async function createAgentWallet(
       blockchains: [ARC_BLOCKCHAIN as never],
       count: 1,
       walletSetId,
-      metadata: [{ name: input.name, refId: input.refId }],
+      metadata: [{ name: circleWalletName(input.name), refId: input.refId }],
     })
     const w = res.data?.wallets?.[0]
     if (!w) return { provisioned: false, reason: 'Circle createWallets returned no wallet' }

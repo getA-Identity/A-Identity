@@ -11,6 +11,7 @@ import {
 } from '../platform.js'
 import { retiredAddresses } from '../chains/retired.js'
 import { STARTER_FUNDING_USD, STARTER_FUNDING_PER_OWNER, STARTER_FUNDING_DAILY_USD } from './vault.js'
+import { circleWalletName } from '../circle-agent.js'
 
 const OWNER = 'owner@example.test'
 const HOSTED = '0x1111111111111111111111111111111111111111'
@@ -425,4 +426,21 @@ test('hosted wallet: it is never the owner of a vault, because it can sign no ow
   const r = await provisionAgentVault(agent.id, { caller: OWNER })
   assert.match((r as { error: string }).error, /Provide an ownerAddress/)
   assert.equal(agent.vaultAddress, undefined)
+})
+
+test('hosted wallet: the name Circle is given is one it takes, whatever the owner typed', () => {
+  // The name that left a new account with no wallet on the live site, 2026-11-24.
+  assert.equal(circleWalletName('Rehearsal Buyer (A-Identity team)'), 'Rehearsal Buyer A-Identity team')
+  // Every mark Circle refused in that read goes, and what is left reads as one name.
+  assert.equal(circleWalletName('a <b> *c*; {d} (e)'), 'a b c d e')
+  // The marks it took stay, and so do letters of any alphabet.
+  assert.equal(circleWalletName("Maya's bot, v1.2 & co: buy/sell +1 #2 me@x a-b_c"), "Maya's bot, v1.2 & co: buy/sell +1 #2 me@x a-b_c")
+  assert.equal(circleWalletName('Meri\u00e7 ajan\u0131'), 'Meri\u00e7 ajan\u0131')
+  // Never longer than Circle takes, counted the strict way for letters of more than one byte.
+  assert.equal(circleWalletName('x'.repeat(80)), 'x'.repeat(50))
+  assert.equal(circleWalletName('\u00e7'.repeat(80)), '\u00e7'.repeat(25))
+  assert.equal(circleWalletName(`${'x'.repeat(49)} yz`), 'x'.repeat(49))
+  // A name with nothing left in it still gets a label, and the agent id rides in refId.
+  assert.equal(circleWalletName('(((())))'), 'A-Identity agent')
+  assert.equal(circleWalletName('   '), 'A-Identity agent')
 })
