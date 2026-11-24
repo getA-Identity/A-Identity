@@ -1045,6 +1045,9 @@ test('celoProof splits our own buyer wallet out as internal instead of letting i
 
   // Every recent row carries the flag, so the page can badge it without guessing.
   assert.deepEqual(proof.recent.map((r) => r.internal), [false, false, true, true])
+  // The outside rows come on their own as well, newest first, none of them internal.
+  assert.deepEqual(proof.recentExternal.map((r) => r.internal), [false, false])
+  assert.deepEqual(proof.recentExternal.map((r) => r.tx), proof.recent.filter((r) => !r.internal).map((r) => r.tx))
 
   // The co-founder's wallet and the founder's wallet that holds our facilitator account (listed
   // 2026-11-17) are ours too, in any spelling: a check either pays is never external demand.

@@ -1507,6 +1507,9 @@ export async function celoProof(
     retiredPayers: retiredPublic(),
     byTool,
     recent: all.slice(-50).reverse().map((r) => ({ ...r, internal: isInternal(r) })),
+    // The latest 50 payments from outside our wallets, newest first, so a page that watches for
+    // outside payments still sees them after a run of our own checks has filled `recent`.
+    recentExternal: all.filter((r) => !isInternal(r)).slice(-50).reverse().map((r) => ({ ...r, internal: false })),
     note: `Real settlements only, recorded at settle time and durable across restarts; totals cover the retained window (last ${CELO_SETTLEMENTS_CAP}). Zeros mean nothing has settled yet, not a mock.`,
     internalNote:
       'Settlements from wallets of ours are marked internal (our buyer wallets, the co-founder\'s wallet and the founder\'s wallet that holds our facilitator account; internalPayers lists every one): they are real on-chain payments used to exercise and demonstrate the rail, not third-party demand. They are labeled rather than hidden. A settlement from an address under retiredPayers is marked internal too: A-Identity retired those addresses because someone else holds their keys, so they are not ours, and what they paid is never counted as external demand.',
