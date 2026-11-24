@@ -40,6 +40,7 @@ const Algorand = lazy(() => import('./routes/Algorand'))
 const Check = lazy(() => import('./routes/Check'))
 const ChainCheck = lazy(() => import('./routes/ChainCheck'))
 const CeloCheck = lazy(() => import('./routes/CeloCheck'))
+const CeloPayment = lazy(() => import('./routes/CeloPayment'))
 const Arc = lazy(() => import('./routes/Arc'))
 const Stellar = lazy(() => import('./routes/Stellar'))
 const ProofIndex = lazy(() => import('./routes/ProofIndex'))
@@ -156,6 +157,7 @@ export default function App() {
         <Route path="/check/arbitrum" element={<ChainCheck slug="arbitrum" />} />
         {/* The paid check on Celo mainnet: the visitor's own EVM wallet signs one x402 payment. */}
         <Route path="/check/celo" element={<CeloCheck />} />
+        <Route path="/celo-payment" element={<CeloPayment />} />
         {/* Stellar: the passkey vault demo, run end to end on testnet by the visitor. */}
         <Route path="/stellar" element={<Stellar />} />
         <Route path="/architecture" element={<Architecture />} />
