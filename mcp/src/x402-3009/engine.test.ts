@@ -343,6 +343,7 @@ async function signedByContractWallet() {
  */
 function contractWalletClient(accepts: boolean) {
   const base = publicClient({})
+  const asked: { to?: string; data?: string }[] = []
   return {
     ...base,
     getChainId: async () => 4663,
@@ -351,12 +352,26 @@ function contractWalletClient(accepts: boolean) {
     // validator through an eth_call and reads a BOOL back, which is why the answer here is
     // an abi-encoded true/false rather than the 0x1626ba7e magic value the account returns
     // one layer further in.
-    call: async () => ({
-      data: (accepts
+    //
+    // The answer is given where a node gives it, on `request`. From viem 2.57.18 the
+    // verification runs viem's own `call` over the client's transport, so that CCIP-Read is
+    // off for it, and a `call` action on the client is never asked. Answered there, as this
+    // stub used to, the accepting wallet was refused, and the rejecting one was refused only
+    // because nothing answered at all. `asked` lets both tests show the chain was consulted.
+    request: async ({ method, params }: { method: string; params?: unknown[] }) => {
+      if (method !== 'eth_call') throw new Error(`unexpected request ${method}`)
+      asked.push((params?.[0] ?? {}) as { to?: string; data?: string })
+      return (accepts
         ? `0x${'0'.repeat(63)}1`
-        : `0x${'0'.repeat(64)}`) as `0x${string}`,
-    }),
+        : `0x${'0'.repeat(64)}`) as `0x${string}`
+    },
+    asked,
   }
+}
+
+/** The verdict came from the chain: an eth_call that names this wallet as the signer. */
+function askedAboutContractWallet(client: ReturnType<typeof contractWalletClient>): boolean {
+  return client.asked.some((c) => c.data?.includes(CONTRACT_WALLET.slice(2)) === true)
 }
 
 /**
@@ -373,23 +388,28 @@ function contractWalletClient(accepts: boolean) {
 test('a contract wallet verifies through ERC-1271 when the client can make calls', async () => {
   clearDomainCache()
   const { payload } = await signedByContractWallet()
+  const client = contractWalletClient(true)
   const r = await verifyPayment({
     chain, token, requirements: REQUIREMENTS, payload, limits: LIMITS,
-    deps: deps({ publicClient: contractWalletClient(true) }),
+    deps: deps({ publicClient: client }),
   })
   assert.equal(r.isValid, true, r.isValid ? '' : `refused: ${r.code} ${r.invalidReason}`)
   if (r.isValid) assert.equal(r.payer.toLowerCase(), CONTRACT_WALLET.toLowerCase())
+  assert.ok(askedAboutContractWallet(client), 'the chain was asked about this wallet')
 })
 
 test('a contract wallet that rejects the signature is still refused', async () => {
   clearDomainCache()
   const { payload } = await signedByContractWallet()
+  const client = contractWalletClient(false)
   const r = await verifyPayment({
     chain, token, requirements: REQUIREMENTS, payload, limits: LIMITS,
-    deps: deps({ publicClient: contractWalletClient(false) }),
+    deps: deps({ publicClient: client }),
   })
   assert.equal(r.isValid, false)
   if (!r.isValid) assert.equal(r.code, 'bad_signature')
+  // Refused by the chain's no, not by a call that never got an answer.
+  assert.ok(askedAboutContractWallet(client), 'the chain was asked about this wallet')
 })
 
 test('without a call-capable client an EOA still verifies, so the fallback is not a regression', async () => {
