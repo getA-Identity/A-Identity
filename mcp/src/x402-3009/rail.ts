@@ -887,7 +887,7 @@ export async function railProof(
     byTool,
     byNetwork,
     recent: rows.slice(-50).reverse().map(publicSettlementRow),
-    note: `Real settlements only, each recorded from an on-chain receipt plus a matching Transfer log. A broadcast with no receipt inside the window is counted as ambiguous until a later read across every RPC finds one, and the row then carries reconciledAt. A signed transaction no node ever took is counted as dropped: it moved nothing and cost no gas. Payments from our own buyer wallets are labeled internal, never hidden. A payment from an address under retiredPayers is counted as internal too, never as external demand: A-Identity retired those addresses because someone else holds their keys, and they are not ours. Older rows paid to such an address are history, kept as they were. Totals cover the retained window (last ${X402_SETTLEMENTS_CAP}).`,
+    note: `Real settlements only, each recorded from an on-chain receipt plus a matching Transfer log. A broadcast with no receipt inside the window is counted as ambiguous until a later read across every RPC finds one, and the row then carries reconciledAt. A signed transaction no node ever took is counted as dropped: it moved nothing and cost no gas. Payments from our own buyer wallets are labeled internal, never hidden. A payment from an address under retiredPayers is counted as internal too, never as external demand: A-Identity retired those addresses, and they are not ours. Older rows paid to such an address are history, kept as they were. Totals cover the retained window (last ${X402_SETTLEMENTS_CAP}).`,
   }
 }
 

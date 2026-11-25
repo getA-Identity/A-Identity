@@ -491,11 +491,12 @@ test('a check of a retired address or a sweep recipient answers dont_pay with th
       for (const chainId of ['rhchain', 'arbitrum']) {
         const r = ok(await check(spelled, w, web({}), chainId))
         assert.equal(r.verdict, 'dont_pay', `${spelled} on ${chainId}`)
-        assert.equal(r.headline, "Known compromised. Don't pay")
+        assert.equal(r.headline, "Flagged address. Don't pay")
         assert.deepEqual(codes(r), ['KNOWN_COMPROMISED'])
         assert.ok(r.reasons[0].text.includes(k.label))
-        assert.ok(r.reasons[0].text.includes(k.evidence), 'the evidence, with its transaction hashes, is in the answer')
-        assert.match(r.reasons[0].text, /0x[0-9a-f]{64}/)
+        assert.ok(r.reasons[0].text.includes(k.evidence), 'what A-Identity says of the address is in the answer')
+        assert.match(r.reasons[0].text, /A-Identity does not vouch for it\. Do not pay or fund it\.$/)
+        assert.doesNotMatch(r.reasons[0].text, /0x[0-9a-f]{64}|compromis|someone else|sweep/i, 'the answer gives no reason and names no transaction')
       }
     }
   }
@@ -506,10 +507,10 @@ test('an agent held by a retired address, and a challenge that pays one, answer 
   const held = ok(await check('#0', world({ agents: { '0': { owner: retired, uri: CARD } } })))
   assert.equal(held.verdict, 'dont_pay')
   assert.ok(codes(held).includes('KNOWN_COMPROMISED'))
-  assert.match(held.reasons.find((x) => x.code === 'KNOWN_COMPROMISED')!.text, /^This agent is held by a known-compromised address\./)
+  assert.match(held.reasons.find((x) => x.code === 'KNOWN_COMPROMISED')!.text, /^This agent is held by a flagged address\./)
   const pays = ok(await check(SELLER, world(), web({ [SELLER]: challenge(goodOffer({ payTo: RETIRED_COMPROMISED[1].address })) })))
   assert.equal(pays.verdict, 'dont_pay')
-  assert.equal(pays.headline, "Known compromised. Don't pay")
+  assert.equal(pays.headline, "Flagged address. Don't pay")
   assert.ok(codes(pays).includes('KNOWN_COMPROMISED'))
   assert.equal(pays.account, null, 'nothing about the payee is read: what is known is the answer')
   // Anyone else is answered as before.
@@ -529,9 +530,9 @@ test('a challenge that pays a retired address or a sweep recipient only on anoth
     for (const spelled of [k.address, k.address.toLowerCase()]) {
       const r = ok(await check(SELLER, world(), web({ [SELLER]: challenge(goodOffer({ network: 'eip155:137', payTo: spelled })) })))
       assert.equal(r.verdict, 'dont_pay', spelled)
-      assert.equal(r.headline, "Known compromised. Don't pay")
+      assert.equal(r.headline, "Flagged address. Don't pay")
       assert.deepEqual(codes(r), ['KNOWN_COMPROMISED', 'CHALLENGE_OTHER_CHAIN'])
-      assert.match(r.reasons[0].text, /^It pays a known-compromised address\./)
+      assert.match(r.reasons[0].text, /^It pays a flagged address\./)
       assert.ok(r.reasons[0].text.includes(k.label))
       assert.equal(r.challenge?.onThisChain, null)
     }
@@ -539,7 +540,7 @@ test('a challenge that pays a retired address or a sweep recipient only on anoth
   // Beside an honest offer on this chain, it still condemns the challenge: the seller names that payee.
   const mixed = ok(await check(SELLER, world(), web({ [SELLER]: challenge(goodOffer(), [goodOffer({ network: 'eip155:137', payTo: RETIRED_COMPROMISED[0].address })]) })))
   assert.equal(mixed.verdict, 'dont_pay')
-  assert.equal(mixed.headline, "Known compromised. Don't pay")
+  assert.equal(mixed.headline, "Flagged address. Don't pay")
   assert.ok(codes(mixed).includes('KNOWN_COMPROMISED'))
 })
 

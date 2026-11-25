@@ -16,7 +16,7 @@ descriptor exists so onboarding is a data edit, and nothing is deployed yet.
 
 | Chain | CAIP-2 | Status | What is deployed |
 | --- | --- | --- | --- |
-| [Arc Mainnet](/chains/arc#arc-mainnet) | `eip155:5042` | live | Agent #0 on the canonical ERC-8004 registry, an AgentSpendPolicy vault that held real USDC until it was emptied by the founder and retired on 2026-11-11 (its owner is the former operating wallet, an address A-Identity retired that day because someone else holds its key), x402 via our EIP-3009 facilitator and Circle Gateway nanopayments |
+| [Arc Mainnet](/chains/arc#arc-mainnet) | `eip155:5042` | live | Agent #0 on the canonical ERC-8004 registry, an AgentSpendPolicy vault that held real USDC until it was emptied by the founder and retired on 2026-11-11 (its owner is the former operating wallet, an address A-Identity retired that day), x402 via our EIP-3009 facilitator and Circle Gateway nanopayments |
 | [Circle Arc](/chains/arc) (testnet) | `eip155:5042002` | live | ERC-8004 identity, reputation and validation, ERC-8183 escrow, AgentSpendPolicy vaults, USDC |
 | [Stellar](/chains/stellar) | `stellar:pubnet` | live | An `AgentSpendPolicy` Soroban vault holding real Circle USDC under a 1 USDC daily cap, with a typed `DailyCapExceeded` refusal on the ledger; the Soroban x402 rail sells here too (first mainnet sale 2026-08-27, buyer signs an authorization entry and pays no fee). No ERC-8004 on either Stellar network: that standard is EVM-only |
 | [Stellar (testnet)](/chains/stellar) | `stellar:testnet` | beta | The same vault wasm plus the Soroban x402 rail end to end, in test money: the buyer signs an authorization entry and pays no fee |

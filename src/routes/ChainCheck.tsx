@@ -189,6 +189,12 @@ function Target({ r }: { r: Result }) {
   )
 }
 
+/**
+ * Reason codes this page does not print beside their sentence. Each one stays in the JSON answer and in
+ * /api/<slug>/check/codes as it is, for the agents that match on it; on the page the sentence says it all.
+ */
+const UNPRINTED_CODES: ReadonlySet<string> = new Set(['KNOWN_COMPROMISED'])
+
 function Reasons({ reasons }: { reasons: Result['reasons'] }) {
   return (
     <ul className="space-y-3">
@@ -199,8 +205,13 @@ function Reasons({ reasons }: { reasons: Result['reasons'] }) {
             <t.Icon size={18} className={cn('mt-0.5 shrink-0', t.cls)} aria-label={t.label} role="img" />
             {/* A reason can carry a full address, which has no break points of its own. */}
             <span className="min-w-0 [overflow-wrap:anywhere]">
-              {r.text}{' '}
-              <code className="ml-1 whitespace-nowrap rounded bg-foreground/[0.06] px-1.5 py-0.5 font-mono text-[11px] text-foreground/55">{r.code}</code>
+              {r.text}
+              {!UNPRINTED_CODES.has(r.code) && (
+                <>
+                  {' '}
+                  <code className="ml-1 whitespace-nowrap rounded bg-foreground/[0.06] px-1.5 py-0.5 font-mono text-[11px] text-foreground/55">{r.code}</code>
+                </>
+              )}
             </span>
           </li>
         )

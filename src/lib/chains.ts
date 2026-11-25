@@ -262,7 +262,7 @@ export const CHAINS: readonly Chain[] = [
       "identity": {
         "standard": "ERC-8004",
         "erc8004Native": true,
-        "note": "Canonical ERC-8004 identity + reputation registries are live here, deployed by their authors; agent #73232 was registered by A-Identity (minted 2026-08-27 UTC, tx 0xb428bf8e) and is still held by an address A-Identity retired on 2026-11-11 because someone else holds its key, so it is not ours any more (ownerOf/tokenURI read back live). TRAP BEFORE PASTING ADDRESSES: Arc's three registry addresses all have code on Base mainnet, 130 bytes each, which is minimal-proxy sized and delegates to a NON-canonical implementation. Same address, different contract. An eth_getCode check therefore answers yes here and means nothing; the canonical pair above was verified by reading each proxy's EIP-1967 implementation slot and matching the implementation code byte for byte against Arbitrum One (2026-08-28), not by observing that something is deployed."
+        "note": "Canonical ERC-8004 identity + reputation registries are live here, deployed by their authors; agent #73232 was registered by A-Identity (minted 2026-08-27 UTC, tx 0xb428bf8e) and is still held by an address A-Identity retired on 2026-11-11, so it is not ours any more (ownerOf/tokenURI read back live). TRAP BEFORE PASTING ADDRESSES: Arc's three registry addresses all have code on Base mainnet, 130 bytes each, which is minimal-proxy sized and delegates to a NON-canonical implementation. Same address, different contract. An eth_getCode check therefore answers yes here and means nothing; the canonical pair above was verified by reading each proxy's EIP-1967 implementation slot and matching the implementation code byte for byte against Arbitrum One (2026-08-28), not by observing that something is deployed."
       }
     },
     "identity": "ERC-8004",
@@ -349,7 +349,7 @@ export const CHAINS: readonly Chain[] = [
       "identity": {
         "standard": "ERC-8004",
         "erc8004Native": true,
-        "note": "Canonical ERC-8004 identity + reputation registries are live here (deployed by their authors, not by us); agent #1259 was registered by A-Identity and is still held by an address A-Identity retired on 2026-11-11 because someone else holds its key, so it is not ours any more. The family's ValidationRegistry is deployed here too (read live 2026-10-11) but not wired, so KYA is not anchored on-chain here."
+        "note": "Canonical ERC-8004 identity + reputation registries are live here (deployed by their authors, not by us); agent #1259 was registered by A-Identity and is still held by an address A-Identity retired on 2026-11-11, so it is not ours any more. The family's ValidationRegistry is deployed here too (read live 2026-10-11) but not wired, so KYA is not anchored on-chain here."
       }
     },
     "identity": "ERC-8004",

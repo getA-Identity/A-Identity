@@ -713,7 +713,7 @@ export function keyIsRevoked(s: VaultState): boolean {
 }
 
 const SESSION_KEY_EXPIRY_LABEL = 'sessionKeyExpiry is set and later than the current block time, or revoked by the owner'
-const OWNER_NOT_RETIRED_LABEL = 'owner() is not an address A-Identity retired as compromised'
+const OWNER_NOT_RETIRED_LABEL = 'owner() is not an address A-Identity retired'
 
 export function stateChecks(c: StateContext): Check[] {
   const out: Check[] = []
@@ -806,7 +806,7 @@ export function stateChecks(c: StateContext): Check[] {
     label: OWNER_NOT_RETIRED_LABEL,
     ok: !retired,
     detail: retired
-      ? `owner ${getAddress(s.owner)} is ${retired.label}, which A-Identity retired on ${retired.retiredOn} because someone else holds its key (chains/retired.ts)`
+      ? `owner ${getAddress(s.owner)} is ${retired.label}, which A-Identity retired on ${retired.retiredOn} (chains/retired.ts)`
       : `${getAddress(s.owner)} is none of the ${RETIRED_COMPROMISED.length} retired addresses`,
   })
   const ownerOurs = c.ours.byAddress.get(s.owner.toLowerCase())

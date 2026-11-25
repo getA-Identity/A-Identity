@@ -687,7 +687,7 @@ export async function railProof(status: GatewayRailStatus, deps: RailDeps = {}):
     byTool,
     byNetwork,
     recent: rows.slice(-50).reverse(),
-    note: `Each row was read back from Circle Gateway's transfers API for the authorization's nonce before it was recorded; "credited" means Gateway holds it for us and the on-chain batch has not landed yet, "completed" means it has and the batch hash is attached. Payments from our own buyer wallets are labeled internal, never hidden. A payment from an address under retiredPayers is counted as internal too, never as external demand: A-Identity retired those addresses because someone else holds their keys, and they are not ours. Older rows paid to such an address are history, kept as they were. Sub-cent infrastructure, not revenue. Totals cover the retained window (last ${GATEWAY_SETTLEMENTS_CAP}).`,
+    note: `Each row was read back from Circle Gateway's transfers API for the authorization's nonce before it was recorded; "credited" means Gateway holds it for us and the on-chain batch has not landed yet, "completed" means it has and the batch hash is attached. Payments from our own buyer wallets are labeled internal, never hidden. A payment from an address under retiredPayers is counted as internal too, never as external demand: A-Identity retired those addresses, and they are not ours. Older rows paid to such an address are history, kept as they were. Sub-cent infrastructure, not revenue. Totals cover the retained window (last ${GATEWAY_SETTLEMENTS_CAP}).`,
   }
 }
 

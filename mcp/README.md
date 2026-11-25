@@ -321,8 +321,7 @@ is none of our keys and none of the retired addresses (`mcp/src/chains/retired.t
 `dailyCap` and `autoApproveMax` are not 0, and the session key outlives the chain's current
 block time. Exit 0 admitted, 1 refused, 2 usage. The launch-day vault (deploy `0xabf41b6f`) is
 refused: its owner, `0xd305...ed36`, is on the retired list (`mcp/src/chains/retired.ts`). It is the
-former operating wallet, retired on 2026-11-11 because someone else holds its key, so it is not ours
-and never an owner that counts.
+former operating wallet, retired on 2026-11-11, so it is not ours and never an owner that counts.
 
 ### Rehearse the vault page on a real chain
 
@@ -370,7 +369,7 @@ settled Gateway check followed by a vault payment or a refusal. Milestone 1 need
 live in `src/arc-vtp-run.ts`, unit-tested with fakes. Status: it finished Milestone 1's 100 flows on Arc Mainnet on
 2026-11-02: 25 DENY and 75 ALLOW, all through the launch-day vault A-Identity deployed (retired on 2026-11-11, not
 ours any more), to payees that were ours when the flows ran: the 75 ALLOW flows paid our own agents, and the 25 DENY
-flows named the operating wallet of the time, an address A-Identity has since retired because someone else holds its key.
+flows named the operating wallet of the time, an address A-Identity has since retired.
 `/api/arc/season` is what says how many have run.
 
 ```bash
@@ -391,7 +390,7 @@ curl -s https://a-identity.xyz/api/arc/season | jq '.milestone1.checks | {count,
 
 `--allow` flows pay Simon, an agent in our own account, and expect ALLOW and a `Paid` transaction. `--deny` flows named the
 operating wallet of the time (the owner of agent #0 then, internal) and expected `TrustDenyError`, which is what its 25 flows got on 2026-11-01 and
-2026-11-02 UTC. A-Identity retired that wallet on 2026-11-11 because someone else holds its key, so there is no default
+2026-11-02 UTC. A-Identity retired that wallet on 2026-11-11, so there is no default
 DENY payee any more: `--deny` needs `--deny-payee <0x...>` and `--deny-agent <#n>`, and a retired address is refused as
 the payee. Milestone 1's 100 flows finished on 2026-11-02 and are not to be run again, and an off-platform payee has
 forecast WARN since the rule changed on 2026-11-04, so the plan refuses it. The historical run's totals were

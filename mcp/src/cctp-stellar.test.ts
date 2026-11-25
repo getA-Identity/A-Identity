@@ -305,7 +305,7 @@ test('Stellar -> EVM never mints to a retired address: refused before any Iris, 
       const { deps, log } = fakes()
       const out = await bridgeStellarToEvm({ from: 'stellar-testnet', to: 'arc', amountUsd: 0.15, recipient: spelled, execute: true }, deps)
       assert.ok('error' in out, JSON.stringify(out))
-      assert.equal(out.error, `recipient is ${r.label}, which A-Identity retired on ${r.retiredOn} because someone else holds its key: nothing is minted to it`)
+      assert.equal(out.error, `recipient is ${r.label}, which A-Identity retired on ${r.retiredOn}: nothing is minted to it`)
       assert.deepEqual([log.irisCalls, log.stellarInvokes.length, log.evmWrites.length], [0, 0, 0])
     }
   }

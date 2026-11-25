@@ -530,8 +530,7 @@ Live today:
   to 2027-01-15. It was funded by a CCTP V2 burn on Base that Circle's
   Forwarding Service minted here. Its owner is
   0xd305607510E0Db2c95807173c7A05BEA53c1ed36, the former operating wallet, which A-Identity
-  retired on 2026-11-11 because someone else holds its key (since at
-  least 2026-11-01), and the contract has no owner transfer, so the founder emptied it at
+  retired on 2026-11-11, and the contract has no owner transfer, so the founder emptied it at
   about 00:38 UTC on 2026-11-11 (withdraw tx 0xaa4714de...): it is retired and not ours. Agent #0
   moved at about the same time to the founder's wallet
   0xCB8824ffAF30687E36374C08eC52298b62871bdf, which a person holds (tx 0x651650cf...). The
@@ -586,7 +585,7 @@ Live today:
   implementation slot on both chains); agent **#73232** was registered by us on 2026-08-27 UTC
   through the production adapter and is still held by
   0xd305607510E0Db2c95807173c7A05BEA53c1ed36, the former operating wallet, which A-Identity
-  retired on 2026-11-11 because someone else holds its key, so it is not ours any more. x402
+  retired on 2026-11-11, so it is not ours any more. x402
   settled here in native Circle USDC
   (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`) through the same first-party EIP-3009
   facilitator that serves Arc Mainnet and Robinhood Chain, the signing domain proven against
@@ -614,7 +613,7 @@ Live today:
   2026-10-01 its agent key is a separate wallet from its owner key; its session key was renewed
   on 2026-11-08 to 2027-01-07. Its owner is
   0xd305607510E0Db2c95807173c7A05BEA53c1ed36, the former operating wallet, which A-Identity
-  retired on 2026-11-11 because someone else holds its key, and the
+  retired on 2026-11-11, and the
   contract has no owner transfer, so the founder emptied it at 22:10 UTC on 2026-11-10
   (withdraw tx 0xa67afdae...): it is retired and not ours. Agent #0 moved at the same time to the
   founder's wallet 0xCB8824ffAF30687E36374C08eC52298b62871bdf, which a person holds (tx
@@ -632,7 +631,7 @@ Live today:
   typed AboveAutoApprove refusal proven; since 2026-10-01 its agent key is a separate wallet
   from its owner key, renewed to 2026-11-15. It is retired and not ours: its owner is
   0xd305607510E0Db2c95807173c7A05BEA53c1ed36, the former operating wallet, which A-Identity
-  retired on 2026-11-11 because someone else holds its key, and the contract has no owner
+  retired on 2026-11-11, and the contract has no owner
   transfer. That owner can withdraw the 0.01 USDC the vault still held when read on 2026-11-14
   at any time, through withdraw() or ownerPay(), with no expiry; the agent key 0x8C8D...3349
   could pay it out through pay() only until its session key lapsed at 12:42:37 UTC on
@@ -665,7 +664,7 @@ Beta, wired and readable:
   `0x8004B663056A597Dffe9eCcC1965A193B7388713`, validation
   `0x8004Cb1BF31DAf7788923b405b754f57acEB4272`. Agent #0 here was registered by us and is
   ours again: on 2026-11-17 it moved from the former operating wallet, an address A-Identity
-  retired on 2026-11-11 because someone else holds its key, to the founder's wallet
+  retired on 2026-11-11, to the founder's wallet
   0xCB8824ffAF30687E36374C08eC52298b62871bdf, which a person holds (tx 0x1d7a948c...).
 - **Celo Sepolia** (`eip155:11142220`). The same identity and reputation addresses
   as Arc, plus testnet USDC and the Celo Sepolia x402 facilitator.
@@ -769,7 +768,7 @@ https://a-identity.xyz/.well-known/ai-agent-manifest.json
 - Circle Arc runs on both networks. Arc **Mainnet** (live since 2026-09-16) carries agent
   #0 and both x402 rails in real USDC; the launch-day spend vault A-Identity deployed there
   was emptied and retired on 2026-11-11: its owner is the former operating wallet, an
-  address A-Identity retired that day because someone else holds its key, so the vault is
+  address A-Identity retired that day, so the vault is
   not ours any more, and the contract has no owner transfer. Nearly all of it is self-funded and
   labeled internal; a few checks came from wallets off our internal lists and are labeled
   external. Live split: <https://a-identity.xyz/proof/arc>. Arc

@@ -348,7 +348,7 @@ test('a vault a retired address owns is refused by its own check in any case, wh
       const refusal = res.v.refusals[0]
       assert.equal(refusal.group, 'ownership')
       assert.equal(refusal.required, true)
-      assert.match(refusal.detail, new RegExp(`is ${r.label}, which A-Identity retired on ${r.retiredOn} because someone else holds its key`))
+      assert.match(refusal.detail, new RegExp(`is ${r.label}, which A-Identity retired on ${r.retiredOn} \\(chains/retired\\.ts\\)$`))
       assert.doesNotMatch(refusal.detail, /committed address of/)
       assert.equal(res.checks.find((c) => c.id === 'owner-not-ours')?.ok, true, 'it is refused as retired, never as ours')
     }

@@ -65,7 +65,7 @@ const revokedLine = (r: NonNullable<ReputationAttestation['revoked']>): string =
  * validator wrote it when the agent was ours, and revoked it on 2026-11-17.
  */
 const aboutAFormerAgent = (r: NonNullable<ReputationAttestation['revoked']>): string =>
-  `${revokedLine(r)} It is about an agent A-Identity registered that is still held by ${shortAddress(FORMER_OPERATING_WALLET.checksum)}, ${FORMER_OPERATING_WALLET.label}, which A-Identity retired on ${FORMER_OPERATING_WALLET.retiredOn} because someone else holds its key, so it is not ours and A-Identity does not vouch for it.`
+  `${revokedLine(r)} It is about an agent A-Identity registered that is still held by ${shortAddress(FORMER_OPERATING_WALLET.checksum)}, ${FORMER_OPERATING_WALLET.label}, which A-Identity retired on ${FORMER_OPERATING_WALLET.retiredOn}. It is not ours, and A-Identity does not vouch for it.`
 
 const MERIDIAN_REVOKED = revokedIn('arc', '0x258a45213695e716fdce2caff60bf32181f2207ef140477e6b3b809be011d6c0', 72685118, '2026-11-17')
 const ARBITRUM_1259_REVOKED = revokedIn('arbitrum', '0xa20cbe45f5d856fbac1ad8dfd701c02070a1e94b9925576f8ba5e2c7618d9bdc', 525042197, '2026-11-17')

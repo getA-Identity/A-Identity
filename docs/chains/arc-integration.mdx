@@ -308,8 +308,8 @@ returns a band and flags, no verdict and no reasons, and is rate limited.
     a go-ahead: hold the payment for a person, which is what `verifyThenPay` does by itself. The
     `settlement` block above is a real row from the proof log (a `verify_agent` call our own
     wallet paid on 2026-09-24, labeled internal there, to `0xd305...ed36`, the former operating
-    wallet, which A-Identity retired on 2026-11-11 because someone else holds its key; since
-    2026-11-11 `payTo` is the address in the challenge above); yours carries your payer and your
+    wallet, which A-Identity retired on 2026-11-11; since that day `payTo` is the address in
+    the challenge above); yours carries your payer and your
     tool. A fresh call comes back as `credited` with no `tx` until Gateway's on-chain batch
     lands, and the proof page upgrades the row to `completed` with the batch hash when it does.
 
@@ -426,7 +426,7 @@ first, for 0.005 USDC, from a Gateway balance. Checked on 2026-11-04:
 
 | Path | Status |
 | --- | --- |
-| Hosted routes | **Live.** They validate input and serve flow records. 100 flows have run on Arc Mainnet, all through the launch-day vault A-Identity deployed (retired on 2026-11-11, not ours any more), to payees that were ours when the flows ran, and labeled so: 75 `ALLOW` flows that the vault paid to our own agents, and 25 `DENY` flows stopped before signing, answered on 2026-11-01 and 2026-11-02 UTC under the rule of that day, which named the operating wallet of the time, an address A-Identity has since retired because someone else holds its key. Each is listed on [/proof/arc](https://a-identity.xyz/proof/arc). |
+| Hosted routes | **Live.** They validate input and serve flow records. 100 flows have run on Arc Mainnet, all through the launch-day vault A-Identity deployed (retired on 2026-11-11, not ours any more), to payees that were ours when the flows ran, and labeled so: 75 `ALLOW` flows that the vault paid to our own agents, and 25 `DENY` flows stopped before signing, answered on 2026-11-01 and 2026-11-02 UTC under the rule of that day, which named the operating wallet of the time, an address A-Identity has since retired. Each is listed on [/proof/arc](https://a-identity.xyz/proof/arc). |
 | MCP tools | **Live** on `https://a-identity.xyz/mcp`, which lists both. The stdio server does not carry them. |
 | SDK, `@a-identity/trust-guard` 0.4.0 | **On npm**, with the `/arc` entry point. An earlier build of this code ran our own 100 flows, on its `pay()` path. No outside team has run the published package yet. `ownerOnly`, `approvalUrl` and the hand-off of a payment above the ceiling or off the allowlist come with 0.5.0, which is in the repo and not on npm yet; the hosted route already answers with all of them. |
 
@@ -442,8 +442,8 @@ The check's payer defaults to the operator and can be a separate key. Our own fl
 through the launch-day vault we deployed, `0xe07819e6d28a5dfd5a9f4cd94dc6dc9aeeda4146`, whose
 owner is the former operating wallet and whose operator was our env-gated key, so they are not
 owner-held and are labeled internal. That vault is retired and not ours: A-Identity retired its
-owner on 2026-11-11 because someone else holds that key (since at least 2026-11-01), and the
-contract has no owner transfer, so the founder emptied it at about 00:38 UTC on 2026-11-11
+owner on 2026-11-11, and the contract has no owner transfer, so the founder emptied it at about
+00:38 UTC on 2026-11-11
 (withdraw tx `0xaa4714de40e7b0f47736b13df013e770fa52e569f3b5fc3568559194282913d1`). Do not fund it.
 
 **Five things the contract does that an owner should know.** Each is pinned by a test in
@@ -524,7 +524,7 @@ reputations come from our own demo payments, so they show the rule path, not ind
 | Meridian, `0x4e26Ae66840134Ac5979c56ba2509F3956b93431` | Our showcase agent, a platform agent holding Arc Mainnet ERC-8004 #4306 | `WARN`, reputation 469 (below 500), on 2026-11-02, and the same on the free read of 2026-11-04; this one moves with its reputation, so read the live answer |
 | `0xA65F35B21aB90D088c1197728cDd0563c1308735` | An agent on our platform named `test`, which we are not vouching for in any way | `DENY` by the rule, from the free reads on 2026-11-04 (`/api/reputation`: Sybil high, both of its 2 jobs hired by its own operator, reputation 90). The Sybil flag is the evidence: the low score alone would be `WARN`. No check was bought on it, so read the live answer, and do not pay it to see |
 
-Do not pay `0xd305...ed36` or `0xF43F...742D`: A-Identity retired both on 2026-11-11 because someone else holds their keys, and neither is A-Identity's. On Arc Mainnet, payments to A-Identity go to `0xCB8824ffAF30687E36374C08eC52298b62871bdf`.
+Do not pay or fund `0xd305...ed36` or `0xF43F...742D`: A-Identity retired both on 2026-11-11, neither is A-Identity's, and A-Identity does not vouch for either. On Arc Mainnet, payments to A-Identity go to `0xCB8824ffAF30687E36374C08eC52298b62871bdf`.
 
 A payee that holds no agent on Arc Mainnet passes the free checks, and the check is then bought for
 0.005 USDC. Unless it is an agent on our platform, the

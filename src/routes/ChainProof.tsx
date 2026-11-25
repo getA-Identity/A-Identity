@@ -862,8 +862,8 @@ export default function ChainProof() {
                     <>
                       <p className="mt-2 text-sm leading-relaxed text-foreground/55">
                         Read from {sales.source}. {sales.basis} Payments from our own wallets are labeled where the
-                        log records them, and so are payments from an address A-Identity retired because someone
-                        else holds its key: not ours, and never counted as external.
+                        log records them, and so are payments from an address A-Identity retired: not ours, and
+                        never counted as external.
                       </p>
                       {sales.counters.length > 0 && (
                         <div className="mt-4">

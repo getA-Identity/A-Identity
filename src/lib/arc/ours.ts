@@ -92,7 +92,7 @@ export const NOT_MY_VAULT = 'This is not my vault, and I cannot get this back.'
 export const NAMES_OUR_KEY = 'This contract names one of our keys as its owner; it is not in our ledger and we did not list it.'
 /** For a contract whose owner() is a retired address. Never "one of our keys": someone else holds it. */
 export const NAMES_RETIRED_KEY =
-  "This contract names a retired address as its owner: someone else holds that key, and it is not A-Identity's. Do not fund it."
+  "This contract names a retired address as its owner. That address is not A-Identity's, and A-Identity does not vouch for it. Do not fund this contract."
 
 /**
  * For a vault whose agent key (operator) is a retired address. The server deployed vaults for their owners
@@ -102,12 +102,12 @@ export const NAMES_RETIRED_KEY =
  * owner can make.
  */
 export function operatorRetiredLine(r: { label: string; retiredOn: string }, state: { frozen?: boolean; expired?: boolean } = {}): string {
-  const head = `This vault's agent key (operator) is ${r.label}, which A-Identity retired on ${r.retiredOn} because someone else holds its key`
+  const head = `This vault's agent key (operator) is ${r.label}, which A-Identity retired on ${r.retiredOn}. It is not A-Identity's, and A-Identity does not vouch for it`
   if (state.frozen) {
     return `${head}. It cannot pay while the vault is frozen, but it stays the agent key until you replace it. If you own this vault, set a new agent key you hold (setOperator) before you unfreeze it (setFrozen), or withdraw its USDC (withdraw).`
   }
   if (state.expired) {
     return `${head}. It cannot pay while its session key has lapsed, but it stays the agent key until you replace it. If you own this vault, set a new agent key you hold (setOperator) before you renew the session key (setSessionKeyExpiry), or freeze the vault (setFrozen) or withdraw its USDC (withdraw).`
   }
-  return `${head}, and that key can still pay from this vault within its limits. If you own this vault, cut it out now: set a new agent key you hold (setOperator), freeze the vault (setFrozen), or withdraw its USDC (withdraw).`
+  return `${head}, but that key can still pay from this vault within its limits. If you own this vault, cut it out now: set a new agent key you hold (setOperator), freeze the vault (setFrozen), or withdraw its USDC (withdraw).`
 }

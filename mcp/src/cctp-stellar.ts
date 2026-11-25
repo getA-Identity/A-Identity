@@ -622,7 +622,7 @@ export async function bridgeStellarToEvm(input: BridgeInput, deps: CctpDeps = {}
   // Nothing is ever minted to a retired address, whether it was passed in or came from a key.
   const retiredRecipient = retiredEntry(recipient)
   if (retiredRecipient) {
-    return { error: `recipient is ${retiredRecipient.label}, which A-Identity retired on ${retiredRecipient.retiredOn} because someone else holds its key: nothing is minted to it` }
+    return { error: `recipient is ${retiredRecipient.label}, which A-Identity retired on ${retiredRecipient.retiredOn}: nothing is minted to it` }
   }
   const host = irisHost(from.chain.testnet)
   const route = `${from.chain.name} -> ${to.chain.name}`

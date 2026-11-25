@@ -785,7 +785,7 @@ export const CHAINS: ChainDescriptor[] = [
       note:
         'Canonical ERC-8004 identity + reputation registries are live here, deployed by ' +
         'their authors; agent #73232 was registered by A-Identity (minted 2026-08-27 UTC, tx 0xb428bf8e) ' +
-        'and is still held by an address A-Identity retired on 2026-11-11 because someone else holds its key, ' +
+        'and is still held by an address A-Identity retired on 2026-11-11, ' +
         'so it is not ours any more (ownerOf/tokenURI read back live). TRAP BEFORE PASTING ADDRESSES: Arc\'s three registry ' +
         'addresses all have code on Base mainnet, 130 bytes each, which is minimal-proxy ' +
         'sized and delegates to a NON-canonical implementation. Same address, different ' +
@@ -1010,7 +1010,7 @@ export const CHAINS: ChainDescriptor[] = [
       // Verified 2026-08-13 with eth_getCode on three independent RPCs: the canonical
       // identity and reputation registries ARE already live here, deployed by the ERC-8004
       // authors. What is missing is ours, not theirs, so the note says which.
-      note: 'Canonical ERC-8004 identity + reputation registries are live here (deployed by their authors, not by us); agent #1259 was registered by A-Identity and is still held by an address A-Identity retired on 2026-11-11 because someone else holds its key, so it is not ours any more. The family\'s ValidationRegistry is deployed here too (read live 2026-10-11) but not wired, so KYA is not anchored on-chain here.',
+      note: 'Canonical ERC-8004 identity + reputation registries are live here (deployed by their authors, not by us); agent #1259 was registered by A-Identity and is still held by an address A-Identity retired on 2026-11-11, so it is not ours any more. The family\'s ValidationRegistry is deployed here too (read live 2026-10-11) but not wired, so KYA is not anchored on-chain here.',
     },
     payment: {
       x402: true,

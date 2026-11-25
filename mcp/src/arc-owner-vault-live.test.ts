@@ -234,9 +234,9 @@ test('a vault a retired address owns is refused for good and never stored, whate
     writeFileSync(stored.file!, JSON.stringify([row]))
     const skipped: { vault: string | null; reason: string }[] = []
     assert.deepEqual(await admittedVaultsFromStore(ours(), (x) => skipped.push(x), stored), [])
-    assert.deepEqual(skipped.map((x) => x.reason), ['its owner is an address A-Identity retired as compromised'])
+    assert.deepEqual(skipped.map((x) => x.reason), ['its owner is an address A-Identity retired'])
   }
-  assert.match(PLAIN_REFUSALS['owner-not-retired'], /retired on 2026-11-11 because someone else holds its key/)
+  assert.match(PLAIN_REFUSALS['owner-not-retired'], /retired on 2026-11-11\. A vault it owns cannot count\.$/)
 })
 
 test('a server without our key env admits nothing, says that is about the server, and GET says so before anyone deploys', async (t) => {
