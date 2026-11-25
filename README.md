@@ -43,8 +43,8 @@ per-request payments.
 > **Arc Mainnet is live.** Arc opened to the public on 2026-09-16 and A-Identity went live
 > on it the same day: agent #0, the first identity the canonical ERC-8004 registry on Arc
 > Mainnet ever minted, an AgentSpendPolicy
-> vault that held real USDC under a 1 USDC daily cap (emptied and retired on 2026-11-11, after its
-> owner key was found exposed; the contract has no owner transfer), and trust checks paid through both
+> vault that held real USDC under a 1 USDC daily cap (emptied and retired on 2026-11-11: its owner
+> is an address A-Identity retired, and the contract has no owner transfer), and trust checks paid through both
 > Circle Gateway nanopayments and our own EIP-3009 facilitator. Every receipt is at
 > [/arc](https://a-identity.xyz/arc) and [/proof/arc](https://a-identity.xyz/proof/arc);
 > the first payments were our own and are labeled internal.
@@ -260,7 +260,7 @@ paid by our own buyer wallet during the demo and seeding runs, and all listed at
 **Backed by real data, not an LLM guess:** the ERC-8004 agent we registered as our showcase,
 Meridian `#849980`, with a reputation earned from **3 real settlements**. It is ours again since
 2026-11-17, when it moved from the former operating wallet, an address A-Identity retired on
-2026-11-11 because someone else holds its key, to the founder's wallet. The move cleared its agent
+2026-11-11, to the founder's wallet. The move cleared its agent
 wallet, so its 2026-07-10 KYA attestation is about a wallet it no longer declares, and the same day
 our oracle validator revoked the feedback it had written for it on chain, so no reputation anchor
 of ours stands for it now. The score
@@ -376,8 +376,8 @@ agent **#0**, the registry's first mint:
 [tx `0x602ce85a…`](https://robinhoodchain.blockscout.com/tx/0x602ce85ad044836b39918311a3031dcd689e4be0d23aed9ed0ac9227d46ec79e)
 in block 34617892, tokenURI
 [`agent-card.json`](https://a-identity.xyz/.well-known/agent-card.json). Its owner was
-`0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, then the operating wallet (retired on 2026-11-11
-because someone else holds its key, and not A-Identity's), until 22:10 UTC on 2026-11-10, when
+`0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, then the operating wallet (retired on 2026-11-11,
+and not A-Identity's), until 22:10 UTC on 2026-11-10, when
 it moved to the founder's wallet `0xCB8824ffAF30687E36374C08eC52298b62871bdf`, which a person holds
 ([tx `0x228e69a4...`](https://robinhoodchain.blockscout.com/tx/0x228e69a4b5e047413f36a6c4f9473123e028ce3ee0dda3c82333b0580cda08c2)).
 The family's
@@ -417,8 +417,8 @@ that we do not wire, so KYA is not anchored on-chain there either.
 
 The canonical registries again, deployed by their authors rather than by us. We registered
 agent **#1259** ([mint tx](https://arbiscan.io/tx/0x23275840eb9a8b85a752769c113109a753f39b592236c85093cf94f6a517b2f3)),
-which is still held by the former operating wallet, an address A-Identity retired on 2026-11-11
-because someone else holds its key, so it is not ours any more, and paid calls settled in native Circle USDC through our own EIP-3009 facilitator
+which is still held by the former operating wallet, an address A-Identity retired on 2026-11-11,
+so it is not ours any more, and paid calls settled in native Circle USDC through our own EIP-3009 facilitator
 ([first settlement](https://arbiscan.io/tx/0x69abb8a9aacf57fa0c3d2d4cd711d4f631e3f90c97222441f9f3ecee06834744),
 0.015 USDC, block 494160024); since 2026-11-11 that rail is paused here until its new gas-only
 broadcaster has gas on Arbitrum One. The family's ValidationRegistry proxy has code here but we do
@@ -564,8 +564,8 @@ Every claim here is a transaction you can open on [the Arc testnet explorer](htt
   complete
   [`0x245f0ee7…`](https://explorer.testnet.arc.io/tx/0x245f0ee76a6d8dd21e8a14cbd1f489a3d80a1824113316f3b39c58c0e50f25e3)
 - **Circle Gateway** - USDC deposited on Arc, moved to Base Sepolia gaslessly and minted there to
-  the server signer of the time (`0xd305...ed36`, which A-Identity retired on 2026-11-11 because
-  someone else holds its key; not A-Identity's)
+  the server signer of the time (`0xd305...ed36`, which A-Identity retired on 2026-11-11; not
+  A-Identity's)
 
 ### On-chain policy vault - programmable money that enforces itself
 

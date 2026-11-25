@@ -46,12 +46,7 @@ export const RETIRED_COMPROMISED: readonly RetiredAddress[] = Object.freeze([
     label: 'the former operating wallet',
     retiredOn: '2026-11-11',
     metricCutoff: '2026-11-01T13:01:41Z',
-    evidence:
-      'Delegated through EIP-7702 to the sweeper 0x33bcd6304fc165ef0bb85bd5720bc677baae4ce7 by type-4 transactions from ' +
-      '0xd9D6FE80E840c190dD44fcc21dE58AA5fFd4894B that also took the ETH it held: on Arbitrum One in tx ' +
-      '0xafa4611a2b98fbaf8f1c53cdd55ad50774029cf22e810eb8890fd6f3e3ed504b (13:00:36 UTC on 2026-11-01) and on Base in tx ' +
-      '0x4ddc0bd7ac976287c16d6b2d39f0395dbd44049ad35d9ac3823e98ea9cb75d28 (13:01:41 UTC the same day). 0.001 ETH sent to it on ' +
-      'Arbitrum One was forwarded the same way in tx 0x3df4d8e83d491d4b8581692f5adc64788b0f5dccb975629864a1e8a9f8228f67 (2026-11-10).',
+    evidence: "A-Identity retired this address on 2026-11-11. It is not A-Identity's, and A-Identity does not vouch for it.",
   }),
   Object.freeze({
     address: '0xf43f43d8aee114a71b164e1f6214bc7625a5742d',
@@ -59,12 +54,7 @@ export const RETIRED_COMPROMISED: readonly RetiredAddress[] = Object.freeze([
     label: 'the former Celo pay-to',
     retiredOn: '2026-11-11',
     metricCutoff: '2026-11-01T13:01:41Z',
-    evidence:
-      'From the same seed as the former operating wallet. On Celo, tx 0x3ee846c8582dffb2bc91e41ec0c0cb8cc4ba5de184925e002a89487e13444f63 ' +
-      '(block 82459492, 2026-11-11) delegated it to the same sweeper and sent its 16.9404493575 CELO to ' +
-      '0xd9D6FE80E840c190dD44fcc21dE58AA5fFd4894B. On Ethereum it has been delegated since 2026-01-28 (tx ' +
-      '0x513ae029b3bc70aff96ce6724eb428241c778470f3661466e756d33179f85964) to an older sweeper that pays ' +
-      '0xd4a92e6763aae819473a1730aff5d2263180f6e5.',
+    evidence: "A-Identity retired this address on 2026-11-11. It is not A-Identity's, and A-Identity does not vouch for it.",
   }),
 ])
 
@@ -108,7 +98,7 @@ export function retiredPublic(): { address: string; label: string; retiredOn: st
 export function retiredPayToRefusal(name: string, address: string | null | undefined): string | null {
   const r = retiredEntry(address)
   return r
-    ? `${name} names ${r.label} (${shortAddress(r.checksum)}), which A-Identity retired on ${r.retiredOn} because someone else holds its key. Nothing is ever paid to it: set ${name} to a receiving address A-Identity holds.`
+    ? `${name} names ${r.label} (${shortAddress(r.checksum)}), which A-Identity retired on ${r.retiredOn}. Nothing is ever paid to it: set ${name} to a receiving address A-Identity holds.`
     : null
 }
 
@@ -121,20 +111,13 @@ export type SweepRecipient = { readonly address: string; readonly label: string;
 export const SWEEP_RECIPIENTS: readonly SweepRecipient[] = Object.freeze([
   Object.freeze({
     address: '0xd9d6fe80e840c190dd44fcc21de58aa5ffd4894b',
-    label: 'the recipient of the sweeper on the retired addresses',
-    evidence:
-      'The only destination of the sweeper 0x33bcd6304fc165ef0bb85bd5720bc677baae4ce7, hardcoded in its code. It received what was ' +
-      'taken from the retired addresses in tx 0xafa4611a2b98fbaf8f1c53cdd55ad50774029cf22e810eb8890fd6f3e3ed504b and ' +
-      '0x3df4d8e83d491d4b8581692f5adc64788b0f5dccb975629864a1e8a9f8228f67 on Arbitrum One, ' +
-      '0x4ddc0bd7ac976287c16d6b2d39f0395dbd44049ad35d9ac3823e98ea9cb75d28 on Base and ' +
-      '0x3ee846c8582dffb2bc91e41ec0c0cb8cc4ba5de184925e002a89487e13444f63 on Celo, and it passes funds on.',
+    label: 'an address linked to the two addresses A-Identity retired',
+    evidence: "It has never been A-Identity's, and A-Identity does not vouch for it.",
   }),
   Object.freeze({
     address: '0xd4a92e6763aae819473a1730aff5d2263180f6e5',
-    label: 'the recipient of an older sweeper on Ethereum',
-    evidence:
-      'It sent tx 0x513ae029b3bc70aff96ce6724eb428241c778470f3661466e756d33179f85964 on Ethereum on 2026-01-28, which delegated the ' +
-      'former Celo pay-to to a sweeper whose receiver() is this address.',
+    label: 'an address linked to an address A-Identity retired',
+    evidence: "It has never been A-Identity's, and A-Identity does not vouch for it.",
   }),
 ])
 

@@ -386,7 +386,7 @@ export const PLAIN_REFUSALS: Readonly<Record<string, string>> = {
   'vault-state': 'The vault could not be read just now. Try again in a minute.',
   'runtime-code': 'The code at this address is not the vault contract this page deploys.',
   'owner-sent-deploy': "The vault's owner is not the wallet that sent the deploy. A vault counts only when its owner deployed it from their own wallet.",
-  'owner-not-retired': "The vault's owner is an address A-Identity retired on 2026-11-11 because someone else holds its key. A vault it owns cannot count.",
+  'owner-not-retired': "The vault's owner is an address A-Identity retired on 2026-11-11. A vault it owns cannot count.",
   'owner-not-ours': "The vault's owner is a wallet A-Identity itself holds. Only vaults owned by someone else's wallet count.",
   'operator-set': "The vault's agent key is missing, or it is the same wallet as the owner. The limits only mean something when the agent has a key of its own.",
   usdc: 'The vault does not use the USDC of this network.',
@@ -476,7 +476,7 @@ const NOT_RECORDED = 'every check passed but the vault could not be recorded'
 const OWN_CHECK_UNFINISHED = 'our server could not finish its own safety check, so nothing was decided'
 const ROW_NOT_A_VAULT = 'the row does not name a vault, an owner and a deploy transaction'
 const ROW_OWNER_OURS = 'its owner is one of our keys'
-const ROW_OWNER_RETIRED = 'its owner is an address A-Identity retired as compromised'
+const ROW_OWNER_RETIRED = 'its owner is an address A-Identity retired'
 const logRouteFailure = (what: string, raw: unknown) => console.error(`[arc-vaults] ${what}:`, raw instanceof Error ? raw.message : raw)
 
 const ADMITTED_CHECKS =

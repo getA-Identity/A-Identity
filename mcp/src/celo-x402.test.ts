@@ -820,7 +820,7 @@ test('celoProof aggregates the injected store honestly, zeros included', async (
   // Settlements recorded before the 2026-11-11 switch stay attributed to the address they were paid to,
   // and the note says it is retired and not A-Identity's.
   assert.deepEqual(empty.previousPayTo.map((p) => [p.address, p.until]), [[FORMER_CELO_PAYTO.address, '2026-11-11T01:04:32Z']])
-  assert.match(empty.previousPayTo[0].note ?? '', /retired that day: someone else holds its key and it is not A-Identity's\. Do not pay it\./)
+  assert.match(empty.previousPayTo[0].note ?? '', /retired that day\. It is not A-Identity's, and A-Identity does not vouch for it\. Do not pay it\./)
   assert.equal(empty.totalSettlements, 0)
   assert.equal(empty.totalUsd, 0)
   assert.deepEqual(empty.byTool, {})

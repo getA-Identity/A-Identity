@@ -156,7 +156,7 @@ export async function x402PayTo(env: NodeJS.ProcessEnv = process.env): Promise<s
   const { privateKeyToAccount } = await import('viem/accounts')
   const address = privateKeyToAccount(key as `0x${string}`).address.toLowerCase()
   if (isRetired(address)) {
-    console.error('[x402] not configured: ARC_SIGNER_KEY derives an address A-Identity retired as compromised (chains/retired.ts), so it is no pay-to. Set X402_PAY_TO.')
+    console.error('[x402] not configured: ARC_SIGNER_KEY derives an address A-Identity retired (chains/retired.ts), so it is no pay-to. Set X402_PAY_TO.')
     return null
   }
   return address

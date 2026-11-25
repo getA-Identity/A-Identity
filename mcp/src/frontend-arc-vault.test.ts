@@ -1007,9 +1007,9 @@ test('a vault whose owner or agent key is a retired address says so, is never ca
     }
   }
   for (const other of [OWNER, VAULT, '', null, undefined]) assert.equal(ours.isRetiredKey(other), false, String(other))
-  assert.equal(ours.NAMES_RETIRED_KEY, "This contract names a retired address as its owner: someone else holds that key, and it is not A-Identity's. Do not fund it.")
+  assert.equal(ours.NAMES_RETIRED_KEY, "This contract names a retired address as its owner. That address is not A-Identity's, and A-Identity does not vouch for it. Do not fund this contract.")
   const cutItOut = ours.operatorRetiredLine(retiredPublic()[0])
-  assert.match(cutItOut, /^This vault's agent key \(operator\) is the former operating wallet, which A-Identity retired on 2026-11-11 because someone else holds its key/)
+  assert.match(cutItOut, /^This vault's agent key \(operator\) is the former operating wallet, which A-Identity retired on 2026-11-11\. It is not A-Identity's, and A-Identity does not vouch for it/)
   for (const call of ['setOperator', 'setFrozen', 'withdraw']) assert.ok(cutItOut.includes(`(${call})`), `the owner is told about ${call}`)
   assert.doesNotMatch(cutItOut, /\bours\b|one of our keys/i)
   // It says the key can pay only while that is true: a frozen vault or a lapsed session key stops it, and it stays the agent key.
@@ -1048,7 +1048,7 @@ test('a vault whose owner or agent key is a retired address says so, is never ca
   // The launch-day vault is labelled for what it is: deployed by A-Identity, retired, not ours.
   const kv = repo('src/lib/arc/known-vaults.ts')
   assert.match(kv, /export const OURS_LABEL = 'Deployed by A-Identity, retired on 2026-11-11, and not ours any more\.'/)
-  assert.match(kv, /export const OURS_DETAIL =\s*"Its owner is the former operating wallet, an address A-Identity retired that day because someone else holds its key/)
+  assert.match(kv, /export const OURS_DETAIL =\s*"Its owner is the former operating wallet, an address A-Identity retired that day\. That address is not A-Identity's, and A-Identity does not vouch for it\./)
   assert.doesNotMatch(kv, /our former|our operating/)
   assert.doesNotMatch(repo('src/components/app/arc/VaultPicker.tsx'), /Launch-day vault \(ours\)/)
 })

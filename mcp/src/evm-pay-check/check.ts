@@ -69,7 +69,7 @@ export const REASON_CODES = {
   CHALLENGE_SEVERAL_OFFERS: 'The 402 challenge offers more than one way to pay on this chain; the answer is about the riskiest.',
   PAYEE_IS_TOKEN_CONTRACT: 'The payee is a token contract, not a wallet; money sent there is usually stuck.',
   KNOWN_COMPROMISED:
-    'Someone else holds this key: the address is one A-Identity retired as compromised, or the recipient of the sweeper on such an address, so a payment to it goes to whoever holds those keys.',
+    "The address is one A-Identity retired, or one linked to them (chains/retired.ts). It is not A-Identity's, and A-Identity does not vouch for it. Never pay or fund it.",
 } as const
 export type ReasonCode = keyof typeof REASON_CODES
 export type Reason = { tone: ReasonTone; code: ReasonCode; text: string }
@@ -294,12 +294,9 @@ function compromisedReason(address: string | null | undefined, as: 'address' | '
   const known = knownCompromised(address)
   if (!known || !address) return null
   const who = shortAddress(address)
-  const what =
-    known.kind === 'retired'
-      ? `${who} is ${known.label}, an address A-Identity retired because someone else holds its key: it is not A-Identity's.`
-      : `${who} is ${known.label}: it receives what is taken from addresses whose keys someone else holds.`
-  const lead = as === 'holder' ? 'This agent is held by a known-compromised address. ' : as === 'payee' ? 'It pays a known-compromised address. ' : ''
-  return { tone: 'bad', code: 'KNOWN_COMPROMISED', text: `${lead}${what} Do not pay or fund it. Evidence: ${known.evidence}` }
+  const what = `${who} is ${known.label}.`
+  const lead = as === 'holder' ? 'This agent is held by a flagged address. ' : as === 'payee' ? 'It pays a flagged address. ' : ''
+  return { tone: 'bad', code: 'KNOWN_COMPROMISED', text: `${lead}${what} ${known.evidence} Do not pay or fund it.` }
 }
 const same = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a.toLowerCase() === b.toLowerCase()
 
@@ -889,7 +886,7 @@ async function decide(q: string, parsed: ParsedQuery, chain: ChainDescriptor, de
   const settlesIn = same(imitated.address, token.address)
   if (verdict === 'dont_pay' && out.token?.tier === 'impersonation') headline = `Not the real ${imitated.symbol}. Don't pay with it`
   else if (verdict === 'dont_pay' && out.token?.tier === 'same_symbol') headline = settlesIn ? `Not the ${imitated.symbol} ${chain.name} settles in` : `Not the real ${imitated.symbol}`
-  else if (reasons.some((r) => r.code === 'KNOWN_COMPROMISED')) headline = "Known compromised. Don't pay"
+  else if (reasons.some((r) => r.code === 'KNOWN_COMPROMISED')) headline = "Flagged address. Don't pay"
 
   return {
     query: q.trim(),

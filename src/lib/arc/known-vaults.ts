@@ -134,4 +134,4 @@ function knownFrom(proof: { networks?: ProofNetwork[] } | null, season: SeasonRe
 /** The label every view of the launch-day vault carries, word for word, wherever it appears. */
 export const OURS_LABEL = 'Deployed by A-Identity, retired on 2026-11-11, and not ours any more.'
 export const OURS_DETAIL =
-  "Its owner is the former operating wallet, an address A-Identity retired that day because someone else holds its key (since at least 2026-11-01), and this contract has no owner transfer, so the founder emptied it on 2026-11-11: do not send it USDC. View only here, and not counted as an owner-held vault."
+  "Its owner is the former operating wallet, an address A-Identity retired that day. That address is not A-Identity's, and A-Identity does not vouch for it. This contract has no owner transfer, so the founder emptied it on 2026-11-11: do not send it USDC. View only here, and not counted as an owner-held vault."

@@ -231,7 +231,7 @@ function evmVerifyLines(chains: ChainDescriptor[]): string[] {
   }
   if (chains.some((c) => c.contracts.identityRegistry && provenanceFor(c.id)?.formerAgent)) {
     lines.push(
-      'An agent A-Identity registered that a retired address still holds is listed as a former agent, never as ours: someone else holds that address\'s key. Who holds it is re-read live too, and we do not vouch for it.',
+      'An agent A-Identity registered that a retired address still holds is listed as a former agent, never as ours. Who holds it is re-read live too, and we do not vouch for it.',
     )
   }
 

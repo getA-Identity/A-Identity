@@ -66,7 +66,7 @@ export function retiredSignerRefusal(
     return null
   }
   const r = lookup(address)
-  return r ? `${name} holds the key of ${r.label}, which A-Identity retired on ${r.retiredOn} because someone else holds that key, so this server never signs with it.` : null
+  return r ? `${name} holds the key of ${r.label}, which A-Identity retired on ${r.retiredOn}, so this server never signs with it.` : null
 }
 
 /**

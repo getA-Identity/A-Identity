@@ -26,7 +26,7 @@ agent identity there, and settles paid trust calls there in USDG.
   paid trust calls settle here in USDG. Testnet (`46630`) is **beta**, and carries the
   full canonical ERC-8004 trio plus a deployed AgentSpendPolicy vault. Agent #0 on testnet
   is ours again: on 2026-11-17 it moved from the former operating wallet, an address
-  A-Identity retired on 2026-11-11 because someone else holds its key, to
+  A-Identity retired on 2026-11-11, to
   `0xCB8824ffAF30687E36374C08eC52298b62871bdf`, the founder's wallet (tx
   `0x1d7a948cabe05d5b7ad51040c4ef688599f9195caf9cc31809d544924472b989`). The vault on testnet
   is still owned by that retired address, so it is not ours any more.
@@ -126,12 +126,9 @@ USDG per payment for the agent key, and anything above is refused with the contr
 `AboveAutoApprove` error and left to the owner. Since 2026-10-01 the agent key
 (`0x8C8D...3349`) is a separate wallet from the owner key (`0xd305...ed36`), and its session key,
 renewed on 2026-11-08, runs to 2027-01-07. That agent key was also our buyer wallet until
-2026-11-17, when a new key took over that role as a precaution; it is still ours and not known to
-be compromised, and the vault held 0 USDG when read on 2026-11-17. The owner key is the former operating wallet, which
-A-Identity retired on 2026-11-11 because someone else holds its key (since at least
-2026-11-01); its key was off our servers by 2026-11-14 (see
-[SECURITY.md](https://github.com/getA-Identity/A-Identity/blob/main/SECURITY.md)), and the
-contract has no owner transfer, so the vault is retired. It was emptied at 22:10 UTC on 2026-11-10 (withdraw tx
+2026-11-17, when a new key took over that role; it is still ours, and the vault held 0 USDG when
+read on 2026-11-17. The owner key is the former operating wallet, which A-Identity retired on
+2026-11-11, and the contract has no owner transfer, so the vault is retired. It was emptied at 22:10 UTC on 2026-11-10 (withdraw tx
 `0xa67afdaec4cfe6fb8a8b851cc60b3a77ff66c1ba1e196ac489c3a69a3374041d`); do not fund it. The
 transactions are listed on [/proof/robinhood](https://a-identity.xyz/proof/robinhood).
 
