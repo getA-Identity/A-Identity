@@ -35,6 +35,13 @@ type Agent = {
 }
 
 /**
+ * Chains the registry carries but this console's Network list leaves out. Avalanche is
+ * `planned`: no registry is deployed there and no rail of ours is wired, so a row for it
+ * is a name with nothing behind it. It stays in the registry, so nothing else moves.
+ */
+const NETWORK_SCREEN_HIDDEN = new Set<string>(['avalanche'])
+
+/**
  * What one network row can honestly say under its status badge.
  *
  * Every non-Arc row used to read "no live agents yet", which was false for the three
@@ -414,7 +421,7 @@ export default function Dashboard() {
               which registries that chain carries, so none of them can claim more than
               the chain registry knows. */}
           <ul data-tour="network" className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-background/40">
-            {CHAINS.map((c) => (
+            {CHAINS.filter((c) => !NETWORK_SCREEN_HIDDEN.has(c.id)).map((c) => (
               <li key={c.id} className="flex items-center gap-3 px-3.5 py-2.5 transition-colors duration-[120ms] hover:bg-foreground/[0.02]">
                 <ChainLogo id={c.id} size={26} />
                 <div className="min-w-0 flex-1">
