@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { PROVENANCE, PROOF_RAILS, STELLAR_SOW2, artifactUrl, contractUrl, provenanceFor } from './provenance.js'
 import { CHAINS, getChainById } from './registry.js'
 import { OWNER_ADDRESS_RE, SETTLEMENT_ADDRESS_RE, SHAPE_NAME, TX_HASH_RE, isAccountId, isContractId } from './stellar/strkey.js'
-import { howToVerify, proofRailIndex, sow2Report } from './proof.js'
+import { howToVerify, matchesRecorded, proofRailIndex, sow2Report } from './proof.js'
 import { networkPassphrase } from './stellar/client.js'
 import { isRetired } from './retired.js'
 
@@ -101,11 +101,14 @@ test('no explorer URL is hand written in the ledger', () => {
   // Links must derive from the descriptor of the chain a transaction landed on. A typed
   // URL is how a proof page ends up pointing at the wrong chain's explorer, which is
   // exactly the bug this repo already shipped once on the public explorer page.
+  // The only URLs it may spell are the tokenURIs our agents carry, the registration files on our own
+  // site: the agent card, and since 2026-11-19 Celo's own file for #9759.
+  const TOKEN_URIS = ['https://a-identity.xyz/.well-known/agent-card.json', 'https://a-identity.xyz/.well-known/celo-8004.json']
   const src = readFileSync(fileURLToPath(new URL('../../src/chains/provenance.ts', import.meta.url)), 'utf8')
   const urls = src.match(/https?:\/\/[^\s'"`]+/g) ?? []
   for (const u of urls) {
     assert.ok(
-      u.includes('a-identity.xyz/.well-known/agent-card.json'),
+      TOKEN_URIS.includes(u),
       `provenance.ts contains a hand-written URL (${u}). Derive it with txUrl/addressUrl instead.`,
     )
   }
@@ -122,6 +125,13 @@ test('an agent entry parses to its own chain and token id', () => {
     assert.match(p.agent.owner, OWNER_ADDRESS_RE[chain.ecosystem])
     assert.ok(chain.contracts.identityRegistry, `${p.chain} records an agent but the descriptor has no identity registry`)
   }
+  // What the proof page's live re-read holds an entry to (matchesLedger, for an agent and a former agent alike): the
+  // holder, in any case, and the tokenURI. On 2026-11-19 Celo #9759 kept its owner and moved to other metadata, and the
+  // owner-only comparison went on calling the entry a match.
+  const recorded = { owner: `0x${'ab'.repeat(20)}`, tokenUri: 'https://a-identity.xyz/.well-known/agent-card.json' }
+  assert.equal(matchesRecorded({ owner: `0x${'AB'.repeat(20)}`, tokenUri: recorded.tokenUri }, recorded), true, 'the same holder in another case')
+  assert.equal(matchesRecorded({ ...recorded, tokenUri: 'https://a-identity.xyz/.well-known/celo-8004.json' }, recorded), false, 'the same holder, other metadata')
+  assert.equal(matchesRecorded({ ...recorded, owner: `0x${'cd'.repeat(20)}` }, recorded), false, 'another holder')
 })
 
 test('a former agent parses to its own chain and token id, is held by a retired address, and is never also our agent', () => {

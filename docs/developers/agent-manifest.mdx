@@ -32,10 +32,10 @@ approves, then it settles).
 
 ## The Card Is Also An ERC-8004 Registration File
 
-Our agents #0 on Arc Mainnet, #0 on Robinhood Chain, #9759 on Celo and #0 on Robinhood
-Chain testnet point their tokenURI at `/.well-known/agent-card.json`, so the same file is
-their ERC-8004 registration file (`registration-v1`) as well as the A2A card. Besides the
-A2A fields it carries:
+Our agents #0 on Arc Mainnet, #0 on Robinhood Chain and #0 on Robinhood Chain testnet
+point their tokenURI at `/.well-known/agent-card.json`, so the same file is their ERC-8004
+registration file (`registration-v1`) as well as the A2A card. Besides the A2A fields it
+carries:
 
 | Field | What It Says |
 | --- | --- |
@@ -44,13 +44,16 @@ A2A fields it carries:
 | `services` | The web app, the MCP endpoint, this A2A card, the Celo check page and the four paid Celo tools |
 | `active` | `true` |
 | `supportedTrust` | `reputation` |
-| `registrations` | Those four agents and X Layer #6271, each as a numeric `agentId` and an `agentRegistry` written `{namespace}:{chainId}:{registry}` |
+| `registrations` | Those three agents and X Layer #6271, each as a numeric `agentId` and an `agentRegistry` written `{namespace}:{chainId}:{registry}` |
 
 A registration says that a token is this agent, and explorers check it both ways, so the
 list holds the agents whose tokenURI is this file. X Layer #6271 is the one exception: it is
 the same oracle, listed on OKX.AI, and OKX.AI hosts its file. Arc testnet #849980 (Meridian)
 is ours too, but its tokenURI is its own inline metadata, so it is a different agent and is
-not listed.
+not listed. Celo #9759 is ours and is the same oracle, but since 2026-11-19 its tokenURI is
+Celo's own registration file,
+[/.well-known/celo-8004.json](https://a-identity.xyz/.well-known/celo-8004.json), so that
+file lists it and this one does not. Its `A2A` service points back at this card.
 
 The `A2A` service names version `0.3.0`, the A2A AgentCard schema the file validates
 against, although the card's own `protocolVersion` says `1.0`: an A2A 1.0 interface entry

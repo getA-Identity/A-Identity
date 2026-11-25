@@ -45,13 +45,13 @@ export type LiveCheck =
       /** Present when the entry records an agent. */
       owner?: string
       tokenUri?: string
-      /** Does the chain still say what the ledger says? */
+      /** Does the chain still say what the ledger says? True only when ownerOf AND tokenURI both match it. */
       matchesLedger?: boolean
       /**
        * Present when the entry records a former agent (provenance.ts FormerAgent): who holds it now,
        * re-read. Never a claim that it is ours: heldByRetired says whether a retired address still
-       * holds it, and matchesLedger whether that is still the address the ledger recorded. A read
-       * that failed leaves the rest of the check standing and says why in reason.
+       * holds it, and matchesLedger whether its holder and tokenURI are still what the ledger recorded.
+       * A read that failed leaves the rest of the check standing and says why in reason.
        */
       formerAgent?: { owner: string | null; tokenUri: string | null; heldByRetired: boolean | null; matchesLedger: boolean | null; reason?: string }
       /** `archived` marks a contract whose instance entry came back with a lapsed TTL. */
@@ -226,7 +226,7 @@ function evmVerifyLines(chains: ChainDescriptor[]): string[] {
 
   if (chains.some((c) => c.contracts.identityRegistry && provenanceFor(c.id)?.agent)) {
     lines.push(
-      'Every claim about an agent is re-read live when you load this page: ownerOf and tokenURI on the identity registry, at the current block. If ownerOf stopped matching what we recorded, this page would say so.',
+      'Every claim about an agent is re-read live when you load this page: ownerOf and tokenURI on the identity registry, at the current block. If either stopped matching what we recorded, this page would say so.',
     )
   }
   if (chains.some((c) => c.contracts.identityRegistry && provenanceFor(c.id)?.formerAgent)) {
@@ -531,6 +531,16 @@ export async function nearLiveCheck(
   }
 }
 
+/**
+ * Whether an ERC-8004 token read live is still what the ledger recorded: the same holder, in any case, AND the
+ * same tokenURI, character for character. The holder alone is not enough: a token keeps its owner when it is
+ * repointed at other metadata, as Celo #9759 was on 2026-11-19, and until 2026-11-25 the page then called the
+ * entry a match it had not checked. This is the matchesLedger of both the agent and a former agent.
+ */
+export function matchesRecorded(read: { owner: string; tokenUri: string }, recorded: { owner: string; tokenUri: string }): boolean {
+  return read.owner.toLowerCase() === recorded.owner.toLowerCase() && read.tokenUri === recorded.tokenUri
+}
+
 async function liveCheck(chain: ChainDescriptor, entry: ChainProvenance, env: NodeJS.ProcessEnv): Promise<LiveCheck> {
   const checkedAt = new Date().toISOString()
   // Branched, because the EVM path asked a Soroban RPC for eth_blockNumber and rendered the
@@ -594,7 +604,12 @@ async function liveCheck(chain: ChainDescriptor, entry: ChainProvenance, env: No
     const former = entry.formerAgent
     const formerAgent: NonNullable<Extract<LiveCheck, { reachable: true }>['formerAgent']> | undefined = former
       ? await readAgent(former.tokenId).then(
-          ([owner, tokenUri]) => ({ owner, tokenUri, heldByRetired: isRetired(owner), matchesLedger: owner.toLowerCase() === former.heldBy.toLowerCase() }),
+          ([owner, tokenUri]) => ({
+            owner,
+            tokenUri,
+            heldByRetired: isRetired(owner),
+            matchesLedger: matchesRecorded({ owner, tokenUri }, { owner: former.heldBy, tokenUri: former.tokenUri }),
+          }),
           (e: unknown) => ({ owner: null, tokenUri: null, heldByRetired: null, matchesLedger: null, reason: e instanceof Error ? e.message : String(e) }),
         )
       : undefined
@@ -608,7 +623,7 @@ async function liveCheck(chain: ChainDescriptor, entry: ChainProvenance, env: No
       blockNumber: blockNumber.toString(),
       owner,
       tokenUri,
-      matchesLedger: owner.toLowerCase() === entry.agent.owner.toLowerCase(),
+      matchesLedger: matchesRecorded({ owner, tokenUri }, entry.agent),
       ...(formerAgent ? { formerAgent } : {}),
       contracts,
     }

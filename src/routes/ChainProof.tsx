@@ -731,9 +731,9 @@ export default function ChainProof() {
                           <h3 className="text-sm font-semibold text-foreground">Agent #{net.agent.tokenId}</h3>
                           {net.live.reachable ? (
                             net.live.matchesLedger === undefined ? null : net.live.matchesLedger ? (
-                              <Chip tone="ok">re-read live: ownerOf matches</Chip>
+                              <Chip tone="ok">re-read live: ownerOf and tokenURI match</Chip>
                             ) : (
-                              <Chip tone="danger">re-read live: ownerOf no longer matches</Chip>
+                              <Chip tone="danger">re-read live: ownerOf or tokenURI no longer matches</Chip>
                             )
                           ) : (
                             <Chip tone="warn">chain unreachable right now</Chip>
