@@ -238,7 +238,7 @@ test('cardClaims: both registration shapes, and a file that lists someone else',
   for (const r of ours.registrations) {
     assert.equal(cardClaims(ours, { caip2: r.chain, registry: r.registry, tokenId: String(r.agentId) }), 'claims', `${r.chain} #${r.agentId}`)
   }
-  // Celo #9759 resolves to Celo's own registration file since its owner's setAgentURI of 2026-11-19, so that file claims
+  // Celo #9759 resolves to our Celo registration file since its owner's setAgentURI of 2026-11-19, so that file claims
   // it, in the agentRegistry form alone, and the card does not.
   const celo = getChainById('celo') as ChainDescriptor
   const onCelo = { caip2: celo.caip2, registry: celo.contracts.identityRegistry as string }

@@ -169,7 +169,7 @@ const formerAgentNote = (revokedIn: string): string =>
 // operating wallet's key, of which A-Identity still had a copy), so they are ours again.
 const FOUNDER = '0xCB8824ffAF30687E36374C08eC52298b62871bdf'
 const AGENT_CARD = 'https://a-identity.xyz/.well-known/agent-card.json'
-// Celo's own ERC-8004 registration file (chains/celo-8004.ts): the tokenURI of Celo #9759 since its owner
+// Our Celo ERC-8004 registration file (chains/celo-8004.ts): the tokenURI of Celo #9759 since its owner
 // repointed it on 2026-11-19 (setAgentURI, tx 0x887e2d6f). celo-8004.test.ts holds the two spellings together.
 const CELO_REGISTRATION = 'https://a-identity.xyz/.well-known/celo-8004.json'
 
@@ -1772,7 +1772,7 @@ export const PROVENANCE: ChainProvenance[] = [
   {
     chain: 'celo',
     summary:
-      'Agent #9759 on the canonical ERC-8004 IdentityRegistry, registered 2026-08-09 by 0xF43F...742D, the wallet that received Celo x402 payments until 2026-11-11, when the founder moved both the agent and the pay-to to 0xCB88...1bdf, a wallet a person holds; A-Identity retired 0xF43F...742D that day, and it is not ours. Since 2026-11-19 its tokenURI is Celo\'s own ERC-8004 registration file, celo-8004.json, rather than the agent card (setAgentURI from 0xCB88...1bdf, tx 0x887e2d6f). Payments here settle through the first-party facilitator Celo runs rather than a rail of ours, and this entry was added 2026-08-30, when an inventory found the registration recorded nowhere in the repo. The two settlement rows were added 2026-10-11, each from a receipt read that day.',
+      'Agent #9759 on the canonical ERC-8004 IdentityRegistry, registered 2026-08-09 by 0xF43F...742D, the wallet that received Celo x402 payments until 2026-11-11, when the founder moved both the agent and the pay-to to 0xCB88...1bdf, a wallet a person holds; A-Identity retired 0xF43F...742D that day, and it is not ours. Since 2026-11-19 its tokenURI is our Celo ERC-8004 registration file, celo-8004.json, rather than the agent card (setAgentURI from 0xCB88...1bdf, tx 0x887e2d6f). Payments here settle through the first-party facilitator Celo runs rather than a rail of ours, and this entry was added 2026-08-30, when an inventory found the registration recorded nowhere in the repo. The two settlement rows were added 2026-10-11, each from a receipt read that day.',
     agent: {
       tokenId: '9759',
       caip: 'eip155:42220:8004/9759',
@@ -1816,7 +1816,7 @@ export const PROVENANCE: ChainProvenance[] = [
       },
       {
         kind: 'mint',
-        label: 'Agent #9759 pointed at Celo\'s own registration file',
+        label: 'Agent #9759 pointed at our Celo registration file',
         txHash: '0x887e2d6f388ef27abd7b0db16e16e3ee9d9733c7ff759a6081d55150f976d6b6',
         onChain: 'celo',
         blockNumber: 83210072,
@@ -1826,7 +1826,7 @@ export const PROVENANCE: ChainProvenance[] = [
     ],
     caveats: [
       'Until 2026-11-11 the owner was the Celo payTo wallet 0xF43F...742D, not the wallet that owned every other EVM agent of ours: deliberate at registration time, but it made this identity and the payment recipient the same key. A-Identity retired the address on 2026-11-11; that day the agent moved to 0xCB88...1bdf, the wallet a person holds that also holds Arc Mainnet and Robinhood Chain agent #0, and this ledger recorded the move the same day, so the owner field above names 0xCB88...1bdf. Since the move the identity and the payment recipient are again one key, now one a person holds.',
-      'On 2026-11-19 the owner repointed #9759 from the agent card to celo-8004.json, Celo\'s own ERC-8004 registration file and the document Aigora lists it from (tx 0x887e2d6f, block 83210072). This ledger kept the agent card as the tokenURI until 2026-11-25, after a review on 2026-11-24 found the proof page still calling the entry a match: its live check compared ownerOf only. The ledger now records the file the token resolves to, and the live check compares ownerOf and tokenURI both.',
+      'On 2026-11-19 the owner repointed #9759 from the agent card to celo-8004.json, our Celo ERC-8004 registration file and the document Aigora lists it from (tx 0x887e2d6f, block 83210072). This ledger kept the agent card as the tokenURI until 2026-11-25, after a review on 2026-11-24 found the proof page still calling the entry a match: its live check compared ownerOf only. The ledger now records the file the token resolves to, and the live check compares ownerOf and tokenURI both.',
       'No reputation anchor exists for #9759 yet; the oracle validator has never written on this chain. getClients(9759) on the ReputationRegistry still returned an empty list on 2026-10-11.',
       'The x402 rail here is Celo\'s own first-party facilitator, not our EIP-3009 rail, so settlement receipts follow their format rather than ours.',
       'Every payment this rail took into the former payTo 0xF43F...742D (retired 2026-11-11) through 2026-10-11 was internal. Read from the explorer on 2026-10-11: it had received 501 USDC transferWithAuthorization payments, 0.975 USDC in all, every one from our buyer wallet 0x8c8d9cd1... and every one on 2026-08-09 between 13:16 and 14:42 UTC. Its only other USDC inflow was 1.806565 from a CELO swap it made itself, 1.2 of which it then sent to that same buyer wallet to fund the run. No outside wallet had sent it USDC by that read.',

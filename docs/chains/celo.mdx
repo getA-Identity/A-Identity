@@ -130,8 +130,8 @@ never pays on load: `https://a-identity.xyz/check/celo?q=eip155:42220:8004/9759`
 an agent whose tokenURI document says `"onAigora": true` is listed, and `"via": "a-identity"`
 marks it as coming from us. Agent `#9759` has its own ERC-8004 registration document for
 this, [/.well-known/celo-8004.json](https://a-identity.xyz/.well-known/celo-8004.json),
-because its earlier tokenURI was the shared A2A agent card, which is not a registration-v1
-document and which our agents on other chains also point at.
+because its earlier tokenURI was the agent card our agents on other chains share, and this
+file carries the Celo-only fields Aigora reads (`onAigora` and `via`) and the Celo x402 routes.
 
 Status: **listed.** The owner signed `setAgentURI(9759, ...)` from the wallet that holds the
 agent; no server of ours has that key or sends anything on its behalf. Read live on

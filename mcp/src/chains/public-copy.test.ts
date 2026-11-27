@@ -163,7 +163,7 @@ test('the agent card registers exactly our agents whose tokenURI is the card, an
 
   // The card is also the ERC-8004 registration file (EIP-8004 registration-v1) that Arc Mainnet #0, Robinhood Chain #0
   // and Robinhood Chain testnet #0 resolve to, and indexers read it as one (Celo #9759 resolved here too, until its owner
-  // pointed it at Celo's own registration file on 2026-11-19, so the loop above holds it out). Until 2026-11-18 it had no type and
+  // pointed it at our Celo registration file on 2026-11-19, so the loop above holds it out). Until 2026-11-18 it had no type and
   // no agentRegistry in any registration, which 8004scan flagged (WA001, WA012), and no services, so the QuickNode
   // explorer listed it unconfigured.
   assert.equal(card.type, 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1')
@@ -206,7 +206,7 @@ test('the agent card registers exactly our agents whose tokenURI is the card, an
   assert.equal(service('web')?.endpoint, site)
   const serverCard = JSON.parse(repo('public/.well-known/mcp/server-card.json')) as { endpoint: string; protocolVersion: string }
   assert.deepEqual([service('MCP')?.endpoint, service('MCP')?.version], [serverCard.endpoint, serverCard.protocolVersion], 'the MCP service is the server card endpoint at its protocol version')
-  // A2A points at this very file, with its skills. Celo #9759 resolves to Celo's own registration file, celo-8004.json
+  // A2A points at this very file, with its skills. Celo #9759 resolves to our Celo registration file, celo-8004.json
   // (on chain since 2026-11-19), and that file's A2A service points here, so an agent that starts from the Celo token
   // still reaches this card. Its version is 0.3.0, the A2A AgentCard
   // schema the file validates against (and 8004scan's standard value), not the "1.0" of the card's own protocolVersion: an

@@ -132,6 +132,13 @@ test('an agent entry parses to its own chain and token id', () => {
   assert.equal(matchesRecorded({ owner: `0x${'AB'.repeat(20)}`, tokenUri: recorded.tokenUri }, recorded), true, 'the same holder in another case')
   assert.equal(matchesRecorded({ ...recorded, tokenUri: 'https://a-identity.xyz/.well-known/celo-8004.json' }, recorded), false, 'the same holder, other metadata')
   assert.equal(matchesRecorded({ ...recorded, owner: `0x${'cd'.repeat(20)}` }, recorded), false, 'another holder')
+  // Both live comparisons in proof.ts go through matchesRecorded, so neither can slide back to an owner-only check,
+  // and the proof page compares the two values itself, since an older backend can still answer during a deploy.
+  const proofSrc = readFileSync(fileURLToPath(new URL('../../src/chains/proof.ts', import.meta.url)), 'utf8')
+  assert.equal(proofSrc.split('matchesLedger: matchesRecorded(').length - 1, 2, 'the agent and the former agent both compare with matchesRecorded')
+  assert.doesNotMatch(proofSrc, /matchesLedger: owner\.toLowerCase\(\)/, 'no owner-only comparison is left')
+  const pageSrc = readFileSync(fileURLToPath(new URL('../../../src/routes/ChainProof.tsx', import.meta.url)), 'utf8')
+  assert.match(pageSrc, /live\.tokenUri === agent\.tokenUri/, 'the proof page checks the tokenURI itself before it shows a green chip')
 })
 
 test('a former agent parses to its own chain and token id, is held by a retired address, and is never also our agent', () => {
