@@ -231,16 +231,21 @@ test('cardClaims: both registration shapes, and a file that lists someone else',
   assert.equal(cardClaims(null, want), 'unconfirmed')
 
   // Our own registration file, read the way a buyer's check reads anyone's: it claims every id it lists in the ERC-8004
-  // form it publishes (agentRegistry, read before chain and registry), Celo #9759 among them, and no id it does not list.
+  // form it publishes (agentRegistry, read before chain and registry), and no id it does not list.
   const ours = JSON.parse(readFileSync(new URL('../../../public/.well-known/agent-card.json', import.meta.url), 'utf8')) as {
     registrations: { chain: string; registry: string; agentId: number }[]
   }
   for (const r of ours.registrations) {
     assert.equal(cardClaims(ours, { caip2: r.chain, registry: r.registry, tokenId: String(r.agentId) }), 'claims', `${r.chain} #${r.agentId}`)
   }
+  // Celo #9759 resolves to our Celo registration file since its owner's setAgentURI of 2026-11-19, so that file claims
+  // it, in the agentRegistry form alone, and the card does not.
   const celo = getChainById('celo') as ChainDescriptor
   const onCelo = { caip2: celo.caip2, registry: celo.contracts.identityRegistry as string }
-  assert.equal(cardClaims(ours, { ...onCelo, tokenId: '9759' }), 'claims')
+  const celoFile = JSON.parse(readFileSync(new URL('../../../public/.well-known/celo-8004.json', import.meta.url), 'utf8')) as Record<string, unknown>
+  assert.equal(cardClaims(celoFile, { ...onCelo, tokenId: '9759' }), 'claims')
+  assert.equal(cardClaims(celoFile, { ...onCelo, tokenId: '1' }), 'does_not_claim')
+  assert.equal(cardClaims(ours, { ...onCelo, tokenId: '9759' }), 'does_not_claim')
   assert.equal(cardClaims(ours, { ...onCelo, tokenId: '1' }), 'does_not_claim')
   // And it claims exactly the agents of ours whose token points at it, testnets included (Robinhood Chain testnet #0),
   // and not Arc testnet #849980, whose tokenURI is its own Meridian metadata, nor a former agent (Base #73232, Arbitrum

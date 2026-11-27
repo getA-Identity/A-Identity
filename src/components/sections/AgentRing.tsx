@@ -41,8 +41,9 @@ export type OnchainAgent = {
    * Which of OUR agents this registration belongs to, taken from what the registration
    * itself carries rather than from how we would like to group them.
    *
-   * Arc Mainnet, Robinhood Chain, Celo and the Robinhood Chain rehearsal all point their
-   * tokenURI at https://a-identity.xyz/.well-known/agent-card.json, so they are one identity
+   * Arc Mainnet, Robinhood Chain and the Robinhood Chain rehearsal point their tokenURI at
+   * https://a-identity.xyz/.well-known/agent-card.json, and Celo (since 2026-11-19) at the same
+   * oracle's Celo registration file on our site, celo-8004.json, so they are one identity
    * registered in several places, and the two X Layer entries are that same oracle's
    * OKX.AI listings. Arc testnet #849980 points at its own inline Meridian metadata, so it
    * is a different agent, and the agent card does not list it among the oracle's

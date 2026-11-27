@@ -200,7 +200,7 @@
     }
   ],
   "supportsAuthenticatedExtendedCard": false,
-  "note": "ERC-8004 agents #1259 (Arbitrum One) and #73232 (Base) were registered by A-Identity but are held by the former operating wallet, which A-Identity retired on 2026-11-11. They are not ours and this card does not vouch for them, although their tokenURIs still point here. Our oracle validator revoked its feedback for both on 2026-11-17 (the transactions are in the provenance ledger at https://a-identity.xyz/proof). Never pay or fund their owner or their agent wallet. Arc testnet agent #849980 (Meridian) is ours, held by the founder's wallet since 2026-11-17, but it is a different agent: its tokenURI is its own inline metadata, not this file, so it is not one of this agent's registrations.",
+  "note": "ERC-8004 agents #1259 (Arbitrum One) and #73232 (Base) were registered by A-Identity but are held by the former operating wallet, which A-Identity retired on 2026-11-11. They are not ours and this card does not vouch for them, although their tokenURIs still point here. Our oracle validator revoked its feedback for both on 2026-11-17 (the transactions are in the provenance ledger at https://a-identity.xyz/proof). Never pay or fund their owner or their agent wallet. Arc testnet agent #849980 (Meridian) is ours, held by the founder's wallet since 2026-11-17, but it is a different agent: its tokenURI is its own inline metadata, not this file, so it is not one of this agent's registrations. Celo agent #9759 is ours too, held by the founder's wallet, but since 2026-11-19 its tokenURI is our Celo ERC-8004 registration file, https://a-identity.xyz/.well-known/celo-8004.json, which registers it, so it is listed there rather than here. Its first holder, 0xF43F...742D, is an address A-Identity retired on 2026-11-11: it is not A-Identity's, A-Identity does not vouch for it, and it must never be paid or funded.",
   "services": [
     {
       "name": "web",
@@ -286,17 +286,6 @@
       "tx": "0x602ce85ad044836b39918311a3031dcd689e4be0d23aed9ed0ac9227d46ec79e",
       "explorer": "https://robinhoodchain.blockscout.com/tx/0x602ce85ad044836b39918311a3031dcd689e4be0d23aed9ed0ac9227d46ec79e",
       "note": "ERC-8004 IdentityRegistry on Robinhood Chain mainnet, deployed by the ERC-8004 authors rather than by us. Token #0 is the registry's first mint and it is ours; its tokenURI points back at this card."
-    },
-    {
-      "chain": "eip155:42220",
-      "agentId": 9759,
-      "agentRegistry": "eip155:42220:0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
-      "caip": "eip155:42220:0x8004A169FB4a3325136EB29fA0ceB6D2e539a432/9759",
-      "registry": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
-      "owner": "0xCB8824ffAF30687E36374C08eC52298b62871bdf",
-      "tx": "0x0a821026621e5b35ff5602f81348b276b0d0f1b61a3892365658295fc5bcb22e",
-      "explorer": "https://celoscan.io/nft/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432/9759",
-      "note": "ERC-8004 IdentityRegistry on Celo mainnet; the identity behind the first-party Celo x402 rail. Registered 2026-08-09 and held since 2026-11-11 by 0xCB88...1bdf, the wallet that also holds agent #0 on Arc Mainnet and on Robinhood Chain. Its first holder, 0xF43F...742D, is retired: never pay or fund it."
     },
     {
       "chain": "eip155:46630",

@@ -41,6 +41,9 @@ test('the Celo registration lists on Aigora as ours, and names our agent on the 
   assert.equal(doc.active, true)
   assert.deepEqual(doc.registrations, [{ agentId: Number(celoAgentId()), agentRegistry: celoAgentRegistry() }])
   assert.equal(celoAgentId(), '9759')
+  // The token points here since its owner's setAgentURI of 2026-11-19, and the ledger records the URI the chain holds,
+  // so the proof page's live check, which compares tokenURI as well as ownerOf, matches only while that stays true.
+  assert.equal(provenanceFor('celo')?.agent?.tokenUri, CELO_8004_URI)
 })
 
 test('the Celo registration claims x402 only through priced web rows that are our Celo x402 routes', () => {

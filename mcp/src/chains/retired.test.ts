@@ -349,7 +349,7 @@ test('the proof page shows a former agent apart from our agent, never green, and
   const block = page.slice(start, page.indexOf('{/* Contracts, each with whether code is actually there right now. */}', start))
   assert.match(block, /Former agent #\{net\.formerAgent\.tokenId\}/)
   assert.match(block, /not ours: held by a retired address/)
-  assert.doesNotMatch(block, /tone="ok"|ownerOf matches|\/address\//, 'no green chip and no owner link for a former agent')
+  assert.doesNotMatch(block, /tone="ok"|ownerOf matches|ownerOf and tokenURI match|\/address\//, 'no green chip and no owner link for a former agent')
   // What a retired address paid is internal, never external, and the build knows the list as well as the backend does.
   assert.match(page, /import \{ ARC_LEDGER_RETIRED \} from '\.\.\/lib\/arc-ledger'/)
   assert.equal(page.split('|| retired.has(s.payer.toLowerCase())').length - 1, 2, 'both EVM logs count a retired payer as internal')
