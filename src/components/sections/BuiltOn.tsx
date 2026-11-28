@@ -216,7 +216,7 @@ const RAILS: Rail[] = [
     tileBg: '#ffffff',
     color: '#E84142',
     role: 'Where finality arrives before the agent asks again.',
-    detail: 'A planned C-Chain adapter: native Circle USDC and sub-second finality for burst settlement, with the same ERC-8004 passport and spend caps. The registry is not deployed there yet.',
+    detail: 'A planned C-Chain adapter: native Circle USDC and sub-second finality for burst settlement, with the same ERC-8004 passport and spend caps. The canonical ERC-8004 registries are already live there; we hold no agent on them yet and no rail of ours is wired.',
     chain: 'avalanche',
   },
 ]
