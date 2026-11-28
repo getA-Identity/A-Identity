@@ -53,6 +53,20 @@ const success = (events: string[], envelope = GASLESS_ENVELOPE) => ({
   envelopeXdr: xdr.TransactionEnvelope.fromXDR(envelope, 'base64'),
 })
 
+/** A real SDK 17 TransactionMeta v4 whose one operation carries these events. */
+const metaV4 = (events: xdr.ContractEvent[]) =>
+  xdr.TransactionMeta.v4(
+    new xdr.TransactionMetaV4({
+      ext: xdr.ExtensionPoint.v0(),
+      txChangesBefore: [],
+      operations: [new xdr.OperationMetaV2({ ext: xdr.ExtensionPoint.v0(), changes: [], events })],
+      txChangesAfter: [],
+      sorobanMeta: null,
+      events: [],
+      diagnosticEvents: [],
+    }),
+  )
+
 const deps = (byHash: Record<string, unknown>) => ({
   server: serverFor(byHash),
   timeoutMs: 50,
@@ -112,8 +126,8 @@ test('the authorization is checked before the amount, so a replay is named as a 
  */
 test('a CAP-67 memo-bearing transfer decodes to its amount, not to [object Object]', () => {
   const event = xdr.ContractEvent.fromXDR(MEMO_TRANSFER, 'base64')
-  const data = event.body().v0().data()
-  assert.equal(data.switch().name, 'scvMap', 'this fixture must be the map shape or it tests nothing')
+  const data = xdr.expectUnionVariant(event.body, 'v0').v0.data
+  assert.equal(data.type, 'scvMap', 'this fixture must be the map shape or it tests nothing')
   // Decoded through the same path confirm.ts uses.
   const tx = success([MEMO_TRANSFER]) as unknown as rpc.Api.GetSuccessfulTransactionResponse
   assert.ok(tx)
@@ -122,13 +136,13 @@ test('a CAP-67 memo-bearing transfer decodes to its amount, not to [object Objec
 test('the map shape is matched on amount just like the plain shape', async () => {
   // Read the fixture's own numbers so the test cannot drift from the bytes.
   const event = xdr.ContractEvent.fromXDR(MEMO_TRANSFER, 'base64')
-  const topics = event.body().v0().topics()
+  const topics = xdr.expectUnionVariant(event.body, 'v0').v0.topics
   const { scValToNative } = await import('@stellar/stellar-sdk')
   const from = String(scValToNative(topics[1]))
   const to = String(scValToNative(topics[2]))
   const { StrKey } = await import('@stellar/stellar-sdk')
-  const sac = StrKey.encodeContract(Buffer.from(event.contractId() as unknown as Uint8Array))
-  const data = scValToNative(event.body().v0().data()) as { amount: bigint; to_muxed_id?: string }
+  const sac = StrKey.encodeContract(event.contractId!.toBytes())
+  const data = scValToNative(xdr.expectUnionVariant(event.body, 'v0').v0.data) as { amount: bigint; to_muxed_id?: string }
 
   // The nonce check still applies, so this uses the envelope we have and expects the
   // authorization mismatch rather than a decode failure. What it proves is that the
@@ -344,15 +358,12 @@ test('an empty event list plus readable meta is a real answer about the transact
         ledger: 4148274,
         envelopeXdr: xdr.TransactionEnvelope.fromXDR(GASLESS_ENVELOPE, 'base64'),
         events: { contractEventsXdr: [] },
-        // A meta that parses as v4 and carries one operation with no events at all.
-        // `switch()` returns the NUMBER 4, because TransactionMeta is `switch (int v)` in
-        // the XDR. This mock used to return { name: 'transactionMetaV4' }, a shape the SDK
-        // never produces, and it passed while the production path could not read a single
-        // real meta. The enum-like shape is covered separately below, on purpose.
-        resultMetaXdr: {
-          switch: () => 4,
-          v4: () => ({ operations: () => [{ events: () => [] }] }),
-        },
+        // A meta that parses as v4 and carries one operation with no events at all, built
+        // with the SDK itself. This mock used to return { name: 'transactionMetaV4' }, a shape
+        // the SDK never produced, and it passed while the production path could not read a
+        // single real meta; then it returned SDK 16's number from `switch()`, which SDK 17
+        // no longer has. A real object cannot drift from the SDK that reads it.
+        resultMetaXdr: metaV4([]),
       },
     }),
     timeoutMs: 50,
@@ -396,19 +407,19 @@ test('no events from either source is our blindness, not a refusal', async () =>
  * still found, because resultMetaXdr cannot be dropped. Read off our real settlement
  * 3da74634 rather than a hand-built shape.
  *
- * Run over BOTH discriminant shapes, and the first one is the fix. `TransactionMeta` is
- * declared `switch (int v)`, so the SDK returns the number 4 and `.name` on it is undefined:
- * the old `meta.switch().name !== 'transactionMetaV4'` guard was therefore always true, this
- * fallback always returned null in production, and the only reason the suite was green is
- * that this very test mocked a shape the SDK cannot produce. A defence documented in the
- * file, asserted by two tests, and dead against the real network.
+ * Run over the real SDK object first, because that is the fix. `TransactionMeta` is declared
+ * `switch (int v)`. Under SDK 16 `switch()` returned the number 4 and `.name` on it was
+ * undefined, so the old `meta.switch().name !== 'transactionMetaV4'` guard was always true,
+ * this fallback always returned null in production, and the only reason the suite was green
+ * is that this very test mocked a shape the SDK cannot produce. A defence documented in the
+ * file, asserted by two tests, and dead against the real network. SDK 17 then replaced
+ * `switch()` with `.type === 'v4'` and the `.v4()` call with a `.v4` property, which would
+ * have blinded the fallback a second time had these mocks stayed in SDK 16's shape. So the
+ * first shape is built by the SDK, and the second is the same shape as a plain object.
  */
 const META_SHAPES: [string, (events: xdr.ContractEvent[]) => unknown][] = [
-  ['the SDK number 4, which is what the real network returns', (events) => ({ switch: () => 4, v4: () => ({ operations: () => [{ events: () => events }] }) })],
-  [
-    'an enum-like { name }, accepted defensively in case a future SDK names the discriminant',
-    (events) => ({ switch: () => ({ name: 'transactionMetaV4' }), v4: () => ({ operations: () => [{ events: () => events }] }) }),
-  ],
+  ['the SDK 17 TransactionMeta v4 object, which is what the RPC parser produces', (events) => metaV4(events)],
+  ['the same shape as a plain object, which is all the reader relies on', (events) => ({ type: 'v4', v4: { operations: [{ events }] } })],
 ]
 
 for (const [label, meta] of META_SHAPES) {
@@ -435,23 +446,17 @@ for (const [label, meta] of META_SHAPES) {
 /**
  * The real SDK object, not a mock of it, because the bug was that our mock was wrong.
  *
- * Builds an actual xdr.TransactionMeta v4 and asserts what `switch()` really returns. If a
- * future SDK changes that, this fails first and points at the place to widen isMetaV4,
+ * Builds an actual xdr.TransactionMeta v4 and asserts the shape isMetaV4 and eventsFromMeta
+ * read. Under SDK 16 this asserted that `switch()` returned the number 4; SDK 17 has no
+ * `switch()` at all, and this is where that change surfaced, as intended: if a future SDK
+ * changes the shape again, this fails first and points at the place to widen isMetaV4,
  * rather than the rail silently going blind again.
  */
-test('the SDK really returns a number for a v4 meta discriminant', () => {
-  const meta = new xdr.TransactionMeta(4, new xdr.TransactionMetaV4({
-    ext: new xdr.ExtensionPoint(0),
-    txChangesBefore: [],
-    operations: [],
-    txChangesAfter: [],
-    sorobanMeta: null,
-    events: [],
-    diagnosticEvents: [],
-  }))
-  assert.equal(typeof meta.switch(), 'number', 'TransactionMeta is `switch (int v)` in the XDR')
-  assert.equal(meta.switch(), 4)
-  assert.equal((meta.switch() as unknown as { name?: string }).name, undefined, 'a number has no .name, which is the whole bug')
+test('the SDK names a v4 meta in .type and carries its body as a property', () => {
+  const meta = metaV4([])
+  assert.equal(meta.type, 'v4', 'TransactionMeta is `switch (int v)` in the XDR, and SDK 17 names the arm after it')
+  assert.ok(Array.isArray(meta.v4.operations), 'the v4 body is a property, not a call')
+  assert.equal((meta as unknown as { switch?: unknown }).switch, undefined, 'the SDK 16 switch() is gone, so nothing may read it')
 })
 
 /**
@@ -462,12 +467,13 @@ test('the SDK really returns a number for a v4 meta discriminant', () => {
 test('a meta version we do not handle is blindness, not an empty transaction', async () => {
   const events = xdr.ContractEvent.fromXDR(GASLESS_TRANSFER, 'base64')
   const unreadable: unknown[] = [
-    // The older meta versions, each of which really does return its own number.
-    { switch: () => 3, v4: () => ({ operations: () => [{ events: () => [events] }] }) },
-    { switch: () => 0, v4: () => ({ operations: () => [{ events: () => [events] }] }) },
-    // A name that is not ours, and a { name: undefined } object, which is what reading
-    // `.name` off the real number used to produce.
-    { switch: () => ({ name: 'transactionMetaV3' }), v4: () => ({ operations: () => [{ events: () => [events] }] }) },
+    // The older meta versions as SDK 17 names them, each with a v4 body that must not be read.
+    { type: 'v3', v4: { operations: [{ events: [events] }] } },
+    { type: 'operations', v4: { operations: [{ events: [events] }] } },
+    // SDK 16's shapes, which no longer come out of the SDK: the number from switch(), and the
+    // { name } objects that reading `.name` off that number used to be compared against.
+    { switch: () => 4, v4: () => ({ operations: () => [{ events: () => [events] }] }) },
+    { switch: () => ({ name: 'transactionMetaV4' }), v4: () => ({ operations: () => [{ events: () => [events] }] }) },
     { switch: () => ({ name: undefined }), v4: () => ({ operations: () => [{ events: () => [events] }] }) },
   ]
   for (const resultMetaXdr of unreadable) {
@@ -497,7 +503,7 @@ const resultWithFee = (stroops: number) =>
   new xdr.TransactionResult({
     feeCharged: xdr.Int64.fromString(String(stroops)),
     result: xdr.TransactionResultResult.txSuccess([]),
-    ext: new xdr.TransactionResultExt(0),
+    ext: xdr.TransactionResultExt.v0(),
   })
 
 test('a confirmed settlement reports what the ledger charged, not what we bid', async () => {
@@ -525,7 +531,7 @@ test('an unreadable fee is absent, never zero: zero is a claim about the ledger'
       [HASH]: {
         ...success([GASLESS_TRANSFER]),
         resultXdr: {
-          feeCharged: () => {
+          get feeCharged(): bigint {
             throw new Error('unreadable')
           },
         },
@@ -584,8 +590,8 @@ const feeBumped = () => {
 }
 
 test('the envelope this test builds really is a fee bump, or it proves nothing', () => {
-  assert.equal(xdr.TransactionEnvelope.fromXDR(feeBumped(), 'base64').switch().name, 'envelopeTypeTxFeeBump')
-  assert.equal(xdr.TransactionEnvelope.fromXDR(GASLESS_ENVELOPE, 'base64').switch().name, 'envelopeTypeTx')
+  assert.equal(xdr.TransactionEnvelope.fromXDR(feeBumped(), 'base64').type, 'envelopeTypeTxFeeBump')
+  assert.equal(xdr.TransactionEnvelope.fromXDR(GASLESS_ENVELOPE, 'base64').type, 'envelopeTypeTx')
 })
 
 test('a fee-bumped settlement still binds to its authorization nonce', async () => {

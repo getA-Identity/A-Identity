@@ -170,36 +170,32 @@ type SeenTransfer = {
 }
 
 /**
- * The discriminant TransactionMeta really returns for v4.
+ * The arm name SDK 17 gives a v4 TransactionMeta.
  *
- * `TransactionMeta` is declared in the XDR as `switch (int v)`, so `switch()` returns a
- * NUMBER. The named form exists in the generated types for unions whose discriminant is an
- * enum; this union's is not one.
+ * `TransactionMeta` is declared in the XDR as `switch (int v)`. Under SDK 16 that made
+ * `switch()` return the NUMBER 4. SDK 17 rebuilt every union as a discriminated class, and
+ * the arm is now the string in `.type`, named after the XDR arm: 'v4' here, with the body in
+ * the `.v4` property rather than behind a `.v4()` call.
  */
-const META_V4 = 4
+const META_V4 = 'v4'
 
 /**
- * Is this meta a v4 meta, in either shape a caller can hand us?
+ * Is this meta a v4 meta?
  *
  * The first version asked `meta.switch().name !== 'transactionMetaV4'`, and `.name` on a
  * number is `undefined`, so against the real SDK that comparison was ALWAYS true and this
  * fallback always returned null. The docstring below claimed the meta was "the source that
  * cannot be omitted" and the two tests that covered it mocked `switch: () => ({ name: ... })`,
  * a shape the SDK never produces, so the defence read as present in both the prose and the
- * suite while doing nothing in production. Verified live on 2026-09-15: `switch()` returns
- * the number 4 on pubnet (protocol 27) and on testnet (protocol 28), and `.v4()` exists on
- * both.
+ * suite while doing nothing in production. The same blindness would have come back with
+ * SDK 17, whose meta has no `switch()` at all, which is why the test beside this one builds
+ * the real SDK object and asserts the shape read here: a shape change fails there first.
  *
- * The enum-like shape is still accepted, deliberately. It costs one comparison, it is what
- * a future SDK would produce if this union ever gained a named discriminant, and accepting
- * it cannot make us read a meta we should not: anything that is neither still returns null.
+ * Only the real shape is read. Anything else, an SDK 16 shaped object included, returns
+ * false and reads as "we cannot see".
  */
-function isMetaV4(sw: unknown): boolean {
-  if (typeof sw === 'number') return sw === META_V4
-  if (sw && typeof sw === 'object' && 'name' in sw) {
-    return (sw as { name?: unknown }).name === 'transactionMetaV4'
-  }
-  return false
+function isMetaV4(meta: unknown): boolean {
+  return Boolean(meta && typeof meta === 'object' && (meta as { type?: unknown }).type === META_V4)
 }
 
 /**
@@ -216,13 +212,12 @@ function isMetaV4(sw: unknown): boolean {
  * cannot see" rather than "there is nothing".
  */
 function eventsFromMeta(tx: rpc.Api.GetSuccessfulTransactionResponse): unknown[] | null {
-  const meta = tx.resultMetaXdr as unknown as { switch?: () => unknown; v4?: () => unknown }
+  const meta = tx.resultMetaXdr as unknown as { type?: unknown; v4?: { operations?: { events?: unknown[] }[] } } | undefined
   try {
-    if (!isMetaV4(meta?.switch?.())) return null
-    const v4 = meta.v4?.() as { operations?: () => { events?: () => unknown[] }[] } | undefined
-    const ops = v4?.operations?.()
+    if (!isMetaV4(meta)) return null
+    const ops = meta?.v4?.operations
     if (!ops) return null
-    return ops.map((op) => op.events?.() ?? [])
+    return ops.map((op) => op.events ?? [])
   } catch {
     return null
   }
@@ -232,7 +227,8 @@ function eventsFromMeta(tx: rpc.Api.GetSuccessfulTransactionResponse): unknown[]
  * What the ledger actually charged, in stroops, or undefined when we cannot read it.
  *
  * `resultXdr` is a required field on both the SUCCESS and the FAILED response, and
- * `feeCharged()` on it is an xdr.Int64. This is the number that says what the rail spent:
+ * `feeCharged` on it is the int64 as a bigint (SDK 16 had a `feeCharged()` call returning an
+ * xdr.Int64; SDK 17 made it a plain field). This is the number that says what the rail spent:
  * the envelope's own fee is a BID, the maximum we offered, and Stellar charges the clearing
  * fee instead. On our first pubnet sale the bid was 34035 and the charge was 23479, so
  * reporting the bid as "what we paid" overstated the cost by 45 percent.
@@ -240,9 +236,9 @@ function eventsFromMeta(tx: rpc.Api.GetSuccessfulTransactionResponse): unknown[]
  * Guarded rather than trusted, because an unreadable fee must not turn a real settlement
  * into an exception. Absent means absent, never zero: zero is a claim about the ledger.
  */
-function feeChargedOf(tx: { resultXdr?: { feeCharged?: () => unknown } }): string | undefined {
+function feeChargedOf(tx: { resultXdr?: { feeCharged?: unknown } }): string | undefined {
   try {
-    const charged = tx.resultXdr?.feeCharged?.()
+    const charged = tx.resultXdr?.feeCharged
     if (charged === undefined || charged === null) return undefined
     const s = String(charged)
     return /^-?\d+$/.test(s) ? s : undefined
@@ -288,9 +284,10 @@ function amountOf(data: xdr.ScVal): { amount: bigint; muxedId?: string } | null 
  *
  * The real second source is `resultMetaXdr`, which is a required field the SDK always parses.
  * Under Protocol 23's meta v4 the contract events live at
- * `resultMetaXdr.v4().operations()[i].events()`, verified against our own settlement
- * e1b0097a on stellar:testnet. So an RPC that drops the convenience field still cannot hide
- * the events from us, and `no_event_data` now means what it says: neither source had any.
+ * `resultMetaXdr.v4.operations[i].events` (SDK 16 spelled it `.v4().operations()[i].events()`),
+ * verified against our own settlement e1b0097a on stellar:testnet. So an RPC that drops the
+ * convenience field still cannot hide the events from us, and `no_event_data` now means what
+ * it says: neither source had any.
  */
 function transfersIn(tx: rpc.Api.GetSuccessfulTransactionResponse): SeenTransfer[] | null {
   const primary = (tx.events?.contractEventsXdr ?? []) as unknown[]
@@ -302,10 +299,10 @@ function transfersIn(tx: rpc.Api.GetSuccessfulTransactionResponse): SeenTransfer
       try {
         const event =
           typeof raw === 'string' ? xdr.ContractEvent.fromXDR(raw, 'base64') : (raw as xdr.ContractEvent)
-        const contractId = event.contractId()
+        const contractId = event.contractId
         if (!contractId) continue
-        const body = event.body().v0()
-        const topics = body.topics().map((t) => {
+        const body = xdr.expectUnionVariant(event.body, 'v0').v0
+        const topics = body.topics.map((t) => {
           try {
             return scValToNative(t)
           } catch {
@@ -313,11 +310,11 @@ function transfersIn(tx: rpc.Api.GetSuccessfulTransactionResponse): SeenTransfer
           }
         })
         if (topics[0] !== 'transfer' || topics.length < 3) continue
-        const value = amountOf(body.data())
+        const value = amountOf(body.data)
         if (!value) continue
         out.push({
-          // contractId() is an xdr.Hash, a Buffer at runtime but not in the type.
-          sac: StrKey.encodeContract(Buffer.from(contractId as unknown as Uint8Array)),
+          // contractId is an xdr.ContractId, a wrapper around the 32 bytes rather than the bytes.
+          sac: StrKey.encodeContract(contractId.toBytes()),
           from: String(topics[1]),
           to: String(topics[2]),
           amountRaw: value.amount.toString(),
@@ -336,7 +333,7 @@ function transfersIn(tx: rpc.Api.GetSuccessfulTransactionResponse): SeenTransfer
  * The transaction inside an envelope, whatever kind of envelope it is.
  *
  * There are three, and this used to handle two. A FEE-BUMP envelope wraps another envelope
- * rather than carrying operations itself, so `env.v1()` throws on one and the caller's
+ * rather than carrying operations itself, so reading its `v1` arm fails on one and the caller's
  * catch turned that into "no nonces", which fails closed: the money moved, we could not
  * bind it to this authorization, and the buyer was not served.
  *
@@ -346,15 +343,15 @@ function transfersIn(tx: rpc.Api.GetSuccessfulTransactionResponse): SeenTransfer
  * never confirm.
  */
 function innerTx(env: xdr.TransactionEnvelope): xdr.Transaction | xdr.TransactionV0 {
-  switch (env.switch().name) {
+  switch (env.type) {
     case 'envelopeTypeTxV0':
-      return env.v0().tx()
+      return env.v0.tx
     case 'envelopeTypeTxFeeBump':
       // The fee-bump's own "operations" are the wrapped transaction. Only v1 can be
       // fee-bumped, so there is no second level of unwrapping to do here.
-      return env.feeBump().tx().innerTx().v1().tx()
+      return env.feeBump.tx.innerTx.v1.tx
     default:
-      return env.v1().tx()
+      return env.v1.tx
   }
 }
 
@@ -363,15 +360,15 @@ function noncesIn(tx: rpc.Api.GetSuccessfulTransactionResponse): { address: stri
   const out: { address: string; nonce: string }[] = []
   try {
     const inner = innerTx(tx.envelopeXdr)
-    for (const op of inner.operations()) {
-      if (op.body().switch().name !== 'invokeHostFunction') continue
-      for (const entry of op.body().invokeHostFunctionOp().auth()) {
-        const creds = entry.credentials()
-        if (creds.switch().name !== 'sorobanCredentialsAddress') continue
-        const ca = creds.address()
+    for (const op of inner.operations) {
+      if (op.body.type !== 'invokeHostFunction') continue
+      for (const entry of op.body.invokeHostFunctionOp.auth) {
+        const creds = entry.credentials
+        if (creds.type !== 'sorobanCredentialsAddress') continue
+        const ca = creds.address
         out.push({
-          address: Address.fromScAddress(ca.address()).toString(),
-          nonce: ca.nonce().toString(),
+          address: Address.fromScAddress(ca.address).toString(),
+          nonce: ca.nonce.toString(),
         })
       }
     }

@@ -137,14 +137,16 @@ const draft = new TransactionBuilder(new Account(payTo, '0'), { fee: BASE_FEE, n
   .setTimeout(300)
   .build()
 
-const probe = await server.simulateTransaction(draft)
+// useUpgradedAuth false: the legacy ADDRESS credential the seller's rail verifies. SDK 17 asks
+// for the CAP-71 v2 form by default, which SDK 16 never did, and the rail refuses that form.
+const probe = await server.simulateTransaction(draft, undefined, undefined, false)
 if (rpc.Api.isSimulationError(probe)) {
   console.error(`error: simulation refused the transfer: ${probe.error}`)
   console.error('       the usual cause is no USDC trustline on the buyer, or too little balance.')
   process.exit(1)
 }
 const required = probe.result?.auth ?? []
-const mine = required.filter((e) => e.credentials().switch().name === 'sorobanCredentialsAddress')
+const mine = required.filter((e) => e.credentials.type === 'sorobanCredentialsAddress')
 if (mine.length !== 1) {
   console.error(`error: expected exactly one address-credential entry to sign, simulation returned ${mine.length}`)
   process.exit(1)

@@ -29,7 +29,7 @@ function stub(answers: Record<string, unknown>): SoroswapDeps {
     server: () => ({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       simulateTransaction: async (tx: any) => {
-        const fn: string = tx.operations[0].func.invokeContract().functionName().toString()
+        const fn: string = tx.operations[0].func.invokeContract.functionName.toString()
         const a = answers[fn]
         if (a === undefined) return { error: `no stub for ${fn}` } as unknown as rpc.Api.SimulateTransactionResponse
         if (a instanceof Error) return { error: a.message } as unknown as rpc.Api.SimulateTransactionResponse

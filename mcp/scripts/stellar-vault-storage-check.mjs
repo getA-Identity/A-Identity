@@ -71,9 +71,9 @@ if (reads.some((r) => r.day !== day)) console.warn('note: the reads straddle a U
 if (day !== clockDay) console.warn(`note: the contract's day ${day} is not the clock's ${clockDay}; a read at midnight UTC can do that`)
 
 const keys = vaults.flatMap((v) => [
-  contractData(v, xdr.ScVal.scvLedgerKeyContractInstance(), xdr.ContractDataDurability.persistent()),
-  contractData(v, xdr.ScVal.scvVec([sym('SpentOnDay'), nativeToScVal(BigInt(day), { type: 'u64' })]), xdr.ContractDataDurability.temporary()),
-  contractData(token.address, xdr.ScVal.scvVec([sym('Balance'), new Address(v).toScVal()]), xdr.ContractDataDurability.persistent()),
+  contractData(v, xdr.ScVal.scvLedgerKeyContractInstance(), xdr.ContractDataDurability.persistent),
+  contractData(v, xdr.ScVal.scvVec([sym('SpentOnDay'), nativeToScVal(BigInt(day), { type: 'u64' })]), xdr.ContractDataDurability.temporary),
+  contractData(token.address, xdr.ScVal.scvVec([sym('Balance'), new Address(v).toScVal()]), xdr.ContractDataDurability.persistent),
 ])
 const got = await server.getLedgerEntries(...keys)
 const byKey = new Map(got.entries.map((e) => [e.key.toXDR('base64'), e]))
@@ -89,7 +89,7 @@ for (const [i, v] of vaults.entries()) {
     process.exit(1)
   }
   const storage = new Map(
-    (inst.val.contractData().val().instance().storage() ?? []).map((m) => [String(scValToNative(m.key())), scValToNative(m.val())]),
+    (inst.val.contractData.val.instance.storage ?? []).map((m) => [String(scValToNative(m.key)), scValToNative(m.val)]),
   )
   const spent = entry(kSpent)
   const bal = entry(kBalance)
@@ -99,8 +99,8 @@ for (const [i, v] of vaults.entries()) {
     Frozen: String(storage.get('Frozen')),
     AllowlistEnabled: String(storage.get('AllowlistEnabled')),
     SessionKeyExpiry: String(storage.get('SessionKeyExpiry')),
-    [`SpentOnDay(${day})`]: spent ? String(scValToNative(spent.val.contractData().val())) : 'absent (reads as 0)',
-    [`${token.symbol} balance`]: bal ? String(scValToNative(bal.val.contractData().val()).amount) : 'absent (reads as 0)',
+    [`SpentOnDay(${day})`]: spent ? String(scValToNative(spent.val.contractData.val)) : 'absent (reads as 0)',
+    [`${token.symbol} balance`]: bal ? String(scValToNative(bal.val.contractData.val).amount) : 'absent (reads as 0)',
     Owner: String(storage.get('Owner')),
     Operator: String(storage.get('Operator')),
   }

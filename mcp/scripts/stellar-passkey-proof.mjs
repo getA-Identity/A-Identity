@@ -75,6 +75,11 @@ import { existsSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { Keypair } from '@stellar/stellar-sdk'
+// The kit runs on its own @stellar/stellar-sdk 16.3.0 while mcp is on 17 (the overrides in
+// mcp/package.json): smart-account-kit 0.8.0 needs 16.3, and its bindings declare a loose
+// ">=16" peer that would otherwise resolve to 17 and split the xdr classes the kit hands them.
+// So every xdr value the kit takes is built by the kit (scvals below), and only strings and
+// numbers cross into the mcp modules this script imports.
 import * as sak from 'smart-account-kit'
 
 const arg = (name, def) => {

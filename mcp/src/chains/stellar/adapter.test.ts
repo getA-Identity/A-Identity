@@ -558,14 +558,14 @@ test('a source that cannot be reached at all stays an RPC error, never an XLM ve
 function archivedData(indexes: number[]): SorobanDataBuilder {
   return new SorobanDataBuilder(
     new xdr.SorobanTransactionData({
-      ext: new xdr.SorobanTransactionDataExt(1, new xdr.SorobanResourcesExtV0({ archivedSorobanEntries: indexes })),
+      ext: xdr.SorobanTransactionDataExt.resourceExt(new xdr.SorobanResourcesExtV0({ archivedSorobanEntries: indexes })),
       resources: new xdr.SorobanResources({
         footprint: new xdr.LedgerFootprint({ readOnly: [], readWrite: [] }),
         instructions: 0,
         diskReadBytes: 0,
         writeBytes: 0,
       }),
-      resourceFee: new xdr.Int64(0),
+      resourceFee: 0n,
     }).toXDR('base64'),
   )
 }
@@ -700,9 +700,9 @@ function signedOwnerCall(): { xdr: string; source: string } {
 /** A TransactionResult carrying one of the core's rejection codes. */
 function rejected(code: 'txInsufficientBalance' | 'txInsufficientFee' | 'txBadSeq' | 'txBadAuth'): xdr.TransactionResult {
   return new xdr.TransactionResult({
-    feeCharged: new xdr.Int64(0),
+    feeCharged: 0n,
     result: (xdr.TransactionResultResult as unknown as Record<string, () => xdr.TransactionResultResult>)[code](),
-    ext: new xdr.TransactionResultExt(0),
+    ext: xdr.TransactionResultExt.v0(),
   })
 }
 
@@ -711,11 +711,10 @@ function errorEvent(contract: string, code: number): xdr.DiagnosticEvent {
   return new xdr.DiagnosticEvent({
     inSuccessfulContractCall: false,
     event: new xdr.ContractEvent({
-      ext: new xdr.ExtensionPoint(0),
-      contractId: StrKey.decodeContract(contract) as never,
-      type: xdr.ContractEventType.diagnostic(),
-      body: new xdr.ContractEventBody(
-        0,
+      ext: xdr.ExtensionPoint.v0(),
+      contractId: new xdr.ContractId(StrKey.decodeContract(contract)),
+      type: xdr.ContractEventType.diagnostic,
+      body: xdr.ContractEventBody.v0(
         new xdr.ContractEventV0({
           topics: [xdr.ScVal.scvSymbol('error'), xdr.ScVal.scvError(xdr.ScError.sceContract(code))],
           data: xdr.ScVal.scvString('escalating Ok(ScErrorType::Contract) frame-exit to Err'),
@@ -801,9 +800,9 @@ test('land: DUPLICATE is polled like PENDING, and ends pending when it is not in
 
 test('land: PENDING that lands successfully is settled, with the fee the source was charged', async () => {
   const result = new xdr.TransactionResult({
-    feeCharged: new xdr.Int64(51234),
+    feeCharged: 51234n,
     result: xdr.TransactionResultResult.txSuccess([]),
-    ext: new xdr.TransactionResultExt(0),
+    ext: xdr.TransactionResultExt.v0(),
   })
   const { server } = landingServer({ status: 'PENDING' }, [{ status: 'NOT_FOUND' }, { status: 'SUCCESS', ledger: 777, resultXdr: result }])
   const a = createStellarAdapter(testnet(), { server: () => server as never, pollMs: 0 })
@@ -849,13 +848,13 @@ test('land: a landed-and-FAILED call carries the typed contract error decoded fr
   // with DailyCapExceeded. The old JSON regex never matched an XDR object, so this code was
   // always absent.
   const failed = new xdr.TransactionResult({
-    feeCharged: new xdr.Int64(60000),
+    feeCharged: 60000n,
     result: xdr.TransactionResultResult.txFailed([
       xdr.OperationResult.opInner(
         xdr.OperationResultTr.invokeHostFunction(xdr.InvokeHostFunctionResult.invokeHostFunctionTrapped()),
       ),
     ]),
-    ext: new xdr.TransactionResultExt(0),
+    ext: xdr.TransactionResultExt.v0(),
   })
   const { server } = landingServer({ status: 'PENDING' }, [
     { status: 'FAILED', ledger: 4147972, resultXdr: failed, diagnosticEventsXdr: [errorEvent(VAULT, 5), errorEvent(VAULT, 5)] },
@@ -1029,43 +1028,54 @@ test('a Horizon that does not answer leaves the preflights unchecked, and says s
 
 test('X.4: an owner call this server would sign is never submitted when the vault needs someone else to authorize it', async () => {
   // A vault owned by a person's wallet: recording-mode simulation succeeds and records an
-  // ADDRESS credential for that owner. Our key cannot satisfy it, so nothing is signed or sent.
-  const realOwner = Keypair.random().publicKey()
-  const entry = new xdr.SorobanAuthorizationEntry({
-    credentials: xdr.SorobanCredentials.sorobanCredentialsAddress(
-      new xdr.SorobanAddressCredentials({
-        address: new Address(realOwner).toScAddress(),
-        nonce: new xdr.Int64(1),
-        signatureExpirationLedger: 0,
-        signature: xdr.ScVal.scvVoid(),
-      }),
-    ),
-    rootInvocation: new xdr.SorobanAuthorizedInvocation({
-      function: xdr.SorobanAuthorizedFunction.sorobanAuthorizedFunctionTypeContractFn(
-        new xdr.InvokeContractArgs({ contractAddress: new Address(VAULT).toScAddress(), functionName: 'set_frozen', args: [] }),
-      ),
-      subInvocations: [],
-    }),
-  })
-  let sent = false
-  const a = createStellarAdapter(testnet(), {
-    server: () =>
-      ({
-        getAccount: async (id: string) => new Account(id, '7'),
-        simulateTransaction: async () => ({ ...(fakeSim() as object), result: { auth: [entry], retval: xdr.ScVal.scvVoid() } }) as never,
-        sendTransaction: async () => {
-          sent = true
-          throw new Error('must not be submitted')
-        },
-      }) as never,
-  })
-  const r = await a.policySetFrozen(VAULT, true, { STELLAR_TESTNET_SIGNER_SECRET: Keypair.random().secret() })
-  assert.equal(r.outcome, 'prepared')
-  if (r.outcome === 'prepared') {
-    assert.match(r.reason, new RegExp(realOwner))
-    assert.match(r.reason, /\/api\/stellar\/vault\/prepare/)
+  // address credential for that owner. Our key cannot satisfy it, so nothing is signed or sent.
+  // SDK 17 asks the RPC to record CAP-71 v2 credentials by default, so the same requirement
+  // arrives on the ADDRESS_V2 arm (or, built by hand, ADDRESS_WITH_DELEGATES) as well as on
+  // the legacy ADDRESS arm, and every one of them has to stop the call.
+  const arms = {
+    address: (c: xdr.SorobanAddressCredentials) => xdr.SorobanCredentials.sorobanCredentialsAddress(c),
+    addressV2: (c: xdr.SorobanAddressCredentials) => xdr.SorobanCredentials.sorobanCredentialsAddressV2(c),
+    addressWithDelegates: (c: xdr.SorobanAddressCredentials) =>
+      xdr.SorobanCredentials.sorobanCredentialsAddressWithDelegates(new xdr.SorobanAddressCredentialsWithDelegates({ addressCredentials: c, delegates: [] })),
   }
-  assert.equal(sent, false, 'the server key must never broadcast an owner call it cannot authorize')
+  for (const [arm, credentialsOn] of Object.entries(arms)) {
+    const realOwner = Keypair.random().publicKey()
+    const entry = new xdr.SorobanAuthorizationEntry({
+      credentials: credentialsOn(
+        new xdr.SorobanAddressCredentials({
+          address: new Address(realOwner).toScAddress(),
+          nonce: 1n,
+          signatureExpirationLedger: 0,
+          signature: xdr.ScVal.scvVoid(),
+        }),
+      ),
+      rootInvocation: new xdr.SorobanAuthorizedInvocation({
+        function: xdr.SorobanAuthorizedFunction.sorobanAuthorizedFunctionTypeContractFn(
+          new xdr.InvokeContractArgs({ contractAddress: new Address(VAULT).toScAddress(), functionName: 'set_frozen', args: [] }),
+        ),
+        subInvocations: [],
+      }),
+    })
+    let sent = false
+    const a = createStellarAdapter(testnet(), {
+      server: () =>
+        ({
+          getAccount: async (id: string) => new Account(id, '7'),
+          simulateTransaction: async () => ({ ...(fakeSim() as object), result: { auth: [entry], retval: xdr.ScVal.scvVoid() } }) as never,
+          sendTransaction: async () => {
+            sent = true
+            throw new Error('must not be submitted')
+          },
+        }) as never,
+    })
+    const r = await a.policySetFrozen(VAULT, true, { STELLAR_TESTNET_SIGNER_SECRET: Keypair.random().secret() })
+    assert.equal(r.outcome, 'prepared', `${arm} credentials must stop the call`)
+    if (r.outcome === 'prepared') {
+      assert.match(r.reason, new RegExp(realOwner))
+      assert.match(r.reason, /\/api\/stellar\/vault\/prepare/)
+    }
+    assert.equal(sent, false, `the server key must never broadcast an owner call it cannot authorize (${arm})`)
+  }
 })
 
 /** A getLedgerEntries answer for a contract instance running `wasmHex`, or a SAC. */
@@ -1076,10 +1086,10 @@ function instanceEntry(contract: string, exe: 'wasm' | 'sac', wasmHex = '00'.rep
       : xdr.ContractExecutable.contractExecutableStellarAsset()
   const val = xdr.LedgerEntryData.contractData(
     new xdr.ContractDataEntry({
-      ext: new xdr.ExtensionPoint(0),
+      ext: xdr.ExtensionPoint.v0(),
       contract: new Address(contract).toScAddress(),
       key: xdr.ScVal.scvLedgerKeyContractInstance(),
-      durability: xdr.ContractDataDurability.persistent(),
+      durability: xdr.ContractDataDurability.persistent,
       val: xdr.ScVal.scvContractInstance(new xdr.ScContractInstance({ executable, storage: null })),
     }),
   )
@@ -1119,7 +1129,7 @@ test('readExecutableWasmHash reads the wasm hash, a SAC, and a missing instance 
 function viewServer(answers: Record<string, unknown>, ledgerOf: (method: string) => number = () => 1_000) {
   return {
     simulateTransaction: async (tx: { operations: { func: xdr.HostFunction }[] }) => {
-      const method = tx.operations[0].func.invokeContract().functionName().toString()
+      const method = xdr.expectUnionVariant(tx.operations[0].func, 'hostFunctionTypeInvokeContract').invokeContract.functionName.toString()
       if (!(method in answers)) return { _parsed: true, error: `HostError: Error(WasmVm, MissingValue) ${method}`, events: [], latestLedger: 1 }
       return { ...(fakeSim() as object), latestLedger: ledgerOf(method), result: { auth: [], retval: nativeToScVal(answers[method] as never) } }
     },
@@ -1144,7 +1154,7 @@ test('readVault stamps the newest ledger its twelve simulations were answered at
   }
   const server = {
     simulateTransaction: async (tx: { operations: { func: xdr.HostFunction }[] }) => {
-      const method = tx.operations[0].func.invokeContract().functionName().toString()
+      const method = xdr.expectUnionVariant(tx.operations[0].func, 'hostFunctionTypeInvokeContract').invokeContract.functionName.toString()
       return {
         ...(fakeSim() as object),
         latestLedger: method === 'balance' ? 4_972_480 : 4_972_479,

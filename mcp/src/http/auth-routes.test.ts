@@ -17,7 +17,7 @@ import { mcpCallerFor, type RouteCtx } from './shared.js'
  * store that accepts anything, which is not the store being tested.
  */
 
-const sign = (kp: Keypair, message: string) => kp.sign(Buffer.from(message, 'utf8')).toString('base64')
+const sign = (kp: Keypair, message: string) => Buffer.from(kp.sign(Buffer.from(message, 'utf8'))).toString('base64')
 
 test('a nonce a stranger requests for your address does not cancel the one you are signing', async () => {
   const me = Keypair.random()

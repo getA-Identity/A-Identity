@@ -52,12 +52,13 @@ function fakeRpc(opts: {
   const sims: string[] = []
   const rpc = {
     async simulateTransaction(tx: { operations: { func: xdr.HostFunction }[] }) {
-      const inv = tx.operations[0].func.invokeContract()
-      const method = inv.functionName().toString()
-      const arg = inv.args()[0]
-      sims.push(arg ? `${method}(${arg.u32()})` : method)
+      const inv = xdr.expectUnionVariant(tx.operations[0].func, 'hostFunctionTypeInvokeContract').invokeContract
+      const method = inv.functionName.toString()
+      const arg = inv.args[0]
+      const u32 = (v: xdr.ScVal) => xdr.expectUnionVariant(v, 'scvU32').u32
+      sims.push(arg ? `${method}(${u32(arg)})` : method)
       if (method === 'get_context_rules_count') return { result: { retval: xdr.ScVal.scvU32(opts.count ?? 1) } }
-      const r = opts.rules?.[arg.u32()]
+      const r = opts.rules?.[u32(arg)]
       if (!r || r === 'missing') return { error: 'HostError: Error(Contract, #3000)' }
       return { result: { retval: r } }
     },
@@ -65,10 +66,10 @@ function fakeRpc(opts: {
       if (!opts.instance) return { latestLedger: 100, entries: [] }
       const val = xdr.LedgerEntryData.contractData(
         new xdr.ContractDataEntry({
-          ext: new xdr.ExtensionPoint(0),
+          ext: xdr.ExtensionPoint.v0(),
           contract: new Address(contractId()).toScAddress(),
           key: xdr.ScVal.scvLedgerKeyContractInstance(),
-          durability: xdr.ContractDataDurability.persistent(),
+          durability: xdr.ContractDataDurability.persistent,
           val: xdr.ScVal.scvContractInstance(new xdr.ScContractInstance({ executable: opts.instance, storage: null })),
         }),
       )
@@ -156,7 +157,7 @@ test('the fee payer of a fee-bump is its outer source, and the inner source is n
       status: 'SUCCESS',
       ledger: 4242,
       envelopeXdr: bump.toEnvelope(),
-      resultXdr: { feeCharged: () => ({ toString: () => '345' }) },
+      resultXdr: new xdr.TransactionResult({ feeCharged: 345n, result: xdr.TransactionResultResult.txSuccess([]), ext: xdr.TransactionResultExt.v0() }),
     } as never,
   })
   const r = await readerOver(rpc).readFeePayer('ab'.repeat(32), {})

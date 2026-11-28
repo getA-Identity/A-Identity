@@ -129,7 +129,7 @@ test('a payload without authEntryXdr is refused rather than half-read', () => {
 test('source-account credentials are refused with their own reason', () => {
   const entry = new xdr.SorobanAuthorizationEntry({
     credentials: xdr.SorobanCredentials.sorobanCredentialsSourceAccount(),
-    rootInvocation: xdr.SorobanAuthorizationEntry.fromXDR(ENTRY, 'base64').rootInvocation(),
+    rootInvocation: xdr.SorobanAuthorizationEntry.fromXDR(ENTRY, 'base64').rootInvocation,
   })
   const d = decodeAuthEntry(entry)
   assert.equal(d.ok, false)
@@ -138,6 +138,25 @@ test('source-account credentials are refused with their own reason', () => {
     assert.match(d.reason, /we submit, so that would make us the payer/)
   }
 })
+
+/** The address credentials of an entry this file knows to carry them. */
+function addressCredentials(entry: xdr.SorobanAuthorizationEntry): xdr.SorobanAddressCredentials {
+  return xdr.expectUnionVariant(entry.credentials, 'sorobanCredentialsAddress').address
+}
+
+/**
+ * The same entry with another signature in its address credentials. XDR values are immutable
+ * since SDK 17, so a tampered entry is rebuilt rather than edited in place.
+ */
+function withSignature(entry: xdr.SorobanAuthorizationEntry, signature: xdr.ScVal): xdr.SorobanAuthorizationEntry {
+  const ca = addressCredentials(entry)
+  return new xdr.SorobanAuthorizationEntry({
+    credentials: xdr.SorobanCredentials.sorobanCredentialsAddress(
+      new xdr.SorobanAddressCredentials({ address: ca.address, nonce: ca.nonce, signatureExpirationLedger: ca.signatureExpirationLedger, signature }),
+    ),
+    rootInvocation: entry.rootInvocation,
+  })
+}
 
 // ── the signature, checked against the real one ──────────────────────────────────────
 
@@ -165,16 +184,16 @@ test('a testnet signature does not verify against pubnet', () => {
 })
 
 test('one flipped byte in the signature is caught', () => {
-  const entry = xdr.SorobanAuthorizationEntry.fromXDR(ENTRY, 'base64')
+  const real = xdr.SorobanAuthorizationEntry.fromXDR(ENTRY, 'base64')
   // A real entry wraps the {public_key, signature} map in a VEC, because Soroban allows an
   // account to satisfy one authorization with several signatures. Reading it as a bare map
   // throws, which is how this test found out rather than assuming.
-  const sigVec = entry.credentials().address().signature().vec()!
-  const sigMap = sigVec[0].map()!
-  const sigBytes = Buffer.from(sigMap[1].val().bytes())
+  const sigVec = xdr.expectUnionVariant(addressCredentials(real).signature, 'scvVec').vec!
+  const sigMap = [...xdr.expectUnionVariant(sigVec[0], 'scvMap').map!]
+  const sigBytes = Buffer.from(xdr.expectUnionVariant(sigMap[1].val, 'scvBytes').bytes.toBytes())
   sigBytes[0] ^= 0x01
-  sigMap[1] = new xdr.ScMapEntry({ key: sigMap[1].key(), val: xdr.ScVal.scvBytes(sigBytes) })
-  entry.credentials().address().signature(xdr.ScVal.scvVec([xdr.ScVal.scvMap(sigMap)]))
+  sigMap[1] = new xdr.ScMapEntry({ key: sigMap[1].key, val: xdr.ScVal.scvBytes(sigBytes) })
+  const entry = withSignature(real, xdr.ScVal.scvVec([xdr.ScVal.scvMap(sigMap)]))
 
   const d = decodeAuthEntry(entry)
   assert.equal(d.ok, true)
@@ -190,20 +209,21 @@ test('one flipped byte in the signature is caught', () => {
  * comparing the embedded public key to the credentialed address catches it.
  */
 test('a real signature from a different key does not pass as the payer', () => {
-  const entry = xdr.SorobanAuthorizationEntry.fromXDR(ENTRY, 'base64')
+  const real = xdr.SorobanAuthorizationEntry.fromXDR(ENTRY, 'base64')
   const attacker = Keypair.fromRawEd25519Seed(Buffer.alloc(32, 7))
-  const ca = entry.credentials().address()
+  const ca = addressCredentials(real)
   const digest = hash(
     xdr.HashIdPreimage.envelopeTypeSorobanAuthorization(
       new xdr.HashIdPreimageSorobanAuthorization({
         networkId: hash(Buffer.from(Networks.TESTNET)),
-        nonce: ca.nonce(),
-        signatureExpirationLedger: ca.signatureExpirationLedger(),
-        invocation: entry.rootInvocation(),
+        nonce: ca.nonce,
+        signatureExpirationLedger: ca.signatureExpirationLedger,
+        invocation: real.rootInvocation,
       }),
     ).toXDR(),
   )
-  ca.signature(
+  const entry = withSignature(
+    real,
     xdr.ScVal.scvVec([
       xdr.ScVal.scvMap([
         new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol('public_key'), val: xdr.ScVal.scvBytes(attacker.rawPublicKey()) }),
@@ -639,9 +659,9 @@ test('the scheme is decided by what the payload carries, not by what it claims',
 /** Wrap entries in a v1 envelope the way a stock client would. */
 function envelopeAround(entries: xdr.SorobanAuthorizationEntry[], opts: { extraOp?: boolean; wrongOp?: boolean } = {}): string {
   const source = new Account(Keypair.random().publicKey(), '1')
-  const fn = xdr.SorobanAuthorizationEntry.fromXDR(ENTRY, 'base64').rootInvocation().function().contractFn()
+  const fn = xdr.expectUnionVariant(xdr.SorobanAuthorizationEntry.fromXDR(ENTRY, 'base64').rootInvocation.function, 'sorobanAuthorizedFunctionTypeContractFn').contractFn
   const host = xdr.HostFunction.hostFunctionTypeInvokeContract(
-    new xdr.InvokeContractArgs({ contractAddress: fn.contractAddress(), functionName: fn.functionName(), args: fn.args() }),
+    new xdr.InvokeContractArgs({ contractAddress: fn.contractAddress, functionName: fn.functionName, args: fn.args }),
   )
   const b = new TransactionBuilder(source, { fee: BASE_FEE, networkPassphrase: Networks.TESTNET })
   if (opts.wrongOp) b.addOperation(Operation.bumpSequence({ bumpTo: '2' }))

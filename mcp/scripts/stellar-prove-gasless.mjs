@@ -89,12 +89,14 @@ const draft = new TransactionBuilder(new Account(relayer.publicKey(), '0'), {
   .setTimeout(300)
   .build()
 
-const probe = await server.simulateTransaction(draft)
+// useUpgradedAuth false: the legacy ADDRESS credential this rail verifies. SDK 17 asks for the
+// CAP-71 v2 form by default, which SDK 16 never did, and confirmStellarTransfer binds the v1 nonce.
+const probe = await server.simulateTransaction(draft, undefined, undefined, false)
 if (rpc.Api.isSimulationError(probe)) throw new Error(`simulation refused it: ${probe.error}`)
 const required = probe.result?.auth ?? []
 console.log(`\n1. simulation says ${required.length} authorization entry needs signing`)
 for (const e of required) {
-  console.log(`   credentials: ${e.credentials().switch().name}`)
+  console.log(`   credentials: ${e.credentials.type}`)
 }
 
 // ── 2. The buyer signs the ENTRY. It never sees a transaction. ──────────────────────
