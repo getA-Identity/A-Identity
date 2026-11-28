@@ -137,7 +137,7 @@ const TOOLS: WebMcpTool[] = [
           'Should this payment happen? A single ALLOW, WARN or DENY verdict with reasons, sized to the amount.',
         ],
         status: {
-          arc: 'Arc Mainnet is live for us since it opened on 2026-09-16: agent #0, a spend vault that held real USDC until it was emptied by the founder and retired on 2026-11-11 (its owner is the former operating wallet, an address A-Identity retired that day because someone else holds its key), and paid checks settled in real USDC (live split at https://a-identity.xyz/proof/arc). Escrow and KYA anchoring still run on Arc testnet, in test money.',
+          arc: 'Arc Mainnet is live for us since it opened on 2026-09-16: agent #0, a spend vault that held real USDC until it was emptied by the founder and retired on 2026-11-11 (its owner is the former operating wallet, an address A-Identity retired that day), and paid checks settled in real USDC (live split at https://a-identity.xyz/proof/arc). Escrow and KYA anchoring still run on Arc testnet, in test money.',
           settlement: 'Listed on OKX.AI as agent #6271 until OKX.AI delisted it on 2026-09-26, with real x402 settlements on X Layer mainnet, published as proof the rail works rather than as revenue.',
         },
         documents: {

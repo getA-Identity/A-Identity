@@ -89,12 +89,12 @@ A payment is checked in depth - a limit you set is enforced in **three** ways:
    withdraw) and the **server signer as the delegated `operator`** that calls `pay()` on the
    agent's behalf, so the *limit* holds whoever signs, while *initiating* the payment is a
    delegated action. Until 2026-11-11 that server signer was the former operating wallet, which
-   A-Identity retired that day because someone else holds its key, so a testnet vault deployed
+   A-Identity retired that day, so a testnet vault deployed
    before then names a retired address as its `operator`: its owner should replace that key
    (`setOperator`), freeze the vault or withdraw, and `/app/vault/arc` says so on the vault itself.
    The launch-day Arc Mainnet vault we deployed is different: its owner is
    `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, the former operating wallet, which A-Identity
-   retired on 2026-11-11 because someone else holds its key (since at least 2026-11-01). The contract has no owner transfer, so the founder emptied the vault that day and it
+   retired on 2026-11-11. The contract has no owner transfer, so the founder emptied the vault that day and it
    is retired and not ours; since 2026-09-25 its `operator` has been a separate agent key that we
    hold. An owner-held Arc Mainnet vault is
    different again: the owner's own wallet deploys it from `/app/vault/arc` and is its `owner`, the
@@ -238,7 +238,7 @@ per settlement" model.
 - **Agent #849980 (Meridian), registered by us, ours again since 2026-11-17** - an ERC-8004
   agent, KYA attested on-chain on 2026-07-10, policy vault, reputation from **3 real settlements**.
   On 2026-11-17 it moved from the former operating wallet, an address A-Identity retired on
-  2026-11-11 because someone else holds its key, to the founder's wallet (tx `0x477d96e3...`). The
+  2026-11-11, to the founder's wallet (tx `0x477d96e3...`). The
   move cleared its agent wallet, so that KYA attestation is about a wallet it no longer declares,
   and the same day our oracle validator revoked the feedback it had written for it on chain (tx
   `0x258a4521...`), so no reputation anchor of ours stands for it now. The score is recency-weighted, so it decays as those
@@ -253,8 +253,7 @@ per settlement" model.
   complete [`0x245f0ee7…`](https://explorer.testnet.arc.io/tx/0x245f0ee76a6d8dd21e8a14cbd1f489a3d80a1824113316f3b39c58c0e50f25e3)
 - **Circle Gateway** - USDC deposited on Arc, then moved to **Base Sepolia gaslessly** via the
   Forwarding Service and minted there in ~6s (verified live on prod), to the server signer of the
-  time (`0xd305...ed36`, which A-Identity retired on 2026-11-11 because someone else holds its key;
-  not A-Identity's).
+  time (`0xd305...ed36`, which A-Identity retired on 2026-11-11; not A-Identity's).
 
 ### Robinhood Chain (mainnet + testnet)
 
@@ -266,7 +265,7 @@ put them at their canonical cross-chain addresses. What is ours is the identity 
   in block 34617892, tokenURI
   [`agent-card.json`](https://a-identity.xyz/.well-known/agent-card.json) - so the card and the
   token point at each other. Its owner was `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, then the
-  operating wallet (retired on 2026-11-11 because someone else holds its key, and not
+  operating wallet (retired on 2026-11-11, and not
   A-Identity's), until 22:10 UTC on 2026-11-10, when it moved to the founder's wallet `0xCB8824ffAF30687E36374C08eC52298b62871bdf`, which a person holds (tx
   [`0x228e69a4...`](https://robinhoodchain.blockscout.com/tx/0x228e69a4b5e047413f36a6c4f9473123e028ce3ee0dda3c82333b0580cda08c2)).
   Identity registry
@@ -393,10 +392,10 @@ more (see below); what is ours is the rail.
   first-party EIP-3009 facilitator, buyer signs and pays no gas.
 - **Since 2026-11-11 the EIP-3009 rail has been paused on both**, until its new gas-only broadcaster
   has gas there. Both agents are still held by `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, the
-  former operating wallet, which A-Identity retired that day because someone else holds its key.
+  former operating wallet, which A-Identity retired that day.
   They are not ours any more, and we do not vouch for them: on 2026-11-17 our oracle validator
   revoked the feedback it had written for each on chain (Base tx `0x8f75a063...`, Arbitrum One tx
-  `0xa20cbe45...`), and A-Identity decided that day not to try to move them.
+  `0xa20cbe45...`), and A-Identity decided that day to leave them where they are.
 - Both chains carry the family's ValidationRegistry proxy (read live 2026-10-11), but we do not
   wire it, so KYA is verified off-chain here and recorded rather than anchored.
 
@@ -477,12 +476,12 @@ day it lands rather than the day someone remembers to add it.
 - **Operator custody**: on the vaults the console deploys on Arc testnet the **server signer** is the
   vault `operator` that submits `pay()` on the agent's behalf (a delegated action), and on the
   three launch-day mainnet vaults we deployed the operator is `0x8C8D...3349`, an agent key of ours that was also our
-  buyer wallet until 2026-11-17, when a new key took over the buyer role as a precaution; it is not known to be
-  compromised and stays ours. The human `owner` is the user's own
+  buyer wallet until 2026-11-17, when a new key took over the buyer role; it stays ours. The human
+  `owner` is the user's own
   wallet on vaults a user deploys (Stellar, and Arc Mainnet from `/app/vault/arc`, where the operator
   is the owner's own agent key and we hold neither), while the three launch-day mainnet vaults we
   deployed are owned by `0xd305607510E0Db2c95807173c7A05BEA53c1ed36`, the former operating wallet,
-  which A-Identity retired on 2026-11-11 because someone else holds its key. The contract has no
+  which A-Identity retired on 2026-11-11. The contract has no
   owner transfer, so those three are retired and not ours to operate: the founder emptied the
   Robinhood Chain vault on 2026-11-10 and the Arc Mainnet vault on 2026-11-11. The Arbitrum One vault
   still held 0.01 USDC when read on 2026-11-14, and its owner, that retired address, can withdraw it

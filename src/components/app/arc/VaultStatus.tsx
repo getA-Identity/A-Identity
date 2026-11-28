@@ -248,7 +248,7 @@ export default function VaultStatus({
               <Mono>{v.owner}</Mono>
               <CopyButton text={v.owner} label="Copy" />
               {ownerIsOurKey && <Chip tone="warn">One of our keys</Chip>}
-              {ownerRetired && <Chip tone="danger">Retired: someone else holds this key</Chip>}
+              {ownerRetired && <Chip tone="danger">Retired: not A-Identity's</Chip>}
               <Explorer href={addressUrl(chain, v.owner)} />
             </span>
           </Field>
@@ -257,7 +257,7 @@ export default function VaultStatus({
               <Mono>{v.operator}</Mono>
               {sameAddress(v.operator, v.owner) && <Chip tone="danger">Same key as the owner</Chip>}
               {operatorIsOurKey && <Chip tone="warn">One of our keys</Chip>}
-              {operatorRetired && <Chip tone="danger">Retired: someone else holds this key</Chip>}
+              {operatorRetired && <Chip tone="danger">Retired: not A-Identity's</Chip>}
               <Explorer href={addressUrl(chain, v.operator)} />
             </span>
           </Field>

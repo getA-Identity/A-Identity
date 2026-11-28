@@ -646,7 +646,7 @@ test('vault and refusal items derive their explorer links from the registry and 
   assert.doesNotMatch(vaults.note, /No owner-held vault yet/)
   assert.equal(vaults.items[0].ownerKind, 'external')
   // Past 0 the note still says the launch-day vault is not counted, and the page keeps showing it.
-  assert.match(vaults.note, /launch-day vault 0x[0-9a-fA-F]{40} is owned by the former operating wallet, which A-Identity retired on 2026-11-11 because someone else holds its key, and is not among them/)
+  assert.match(vaults.note, /launch-day vault 0x[0-9a-fA-F]{40} is owned by the former operating wallet, which A-Identity retired on 2026-11-11, and is not among them/)
   const page = readFileSync(new URL('../../src/components/proof/ArcSeasonProgress.tsx', import.meta.url), 'utf8')
   assert.match(page, /metric=\{m1\.vaults\} keepNote/)
   assert.match(page, /ownerKind\?: 'team' \| 'external'/, 'a backend from before the label must still render')
@@ -792,7 +792,7 @@ test('with no vault, no chain is read for owner actions', async () => {
 test('with the curated lists empty, the notes say why the launch-day vault and refusal do not count', async () => {
   const r = await arcSeasonReport(deps({ vaults: [], refusals: [], partners: [] }))
   // The address comes from the provenance ledger, not from a second copy in the report.
-  assert.match(r.milestone1.vaults.note, /launch-day vault 0x[0-9a-fA-F]{40} was deployed by A-Identity from its server key, with the former operating wallet as its owner, which A-Identity retired on 2026-11-11 because someone else holds its key/)
+  assert.match(r.milestone1.vaults.note, /launch-day vault 0x[0-9a-fA-F]{40} was deployed by A-Identity from its server key, with the former operating wallet as its owner, which A-Identity retired on 2026-11-11; so it is not owner-held/)
   assert.match(r.milestone1.vaults.note, /not owner-held, it is not ours any more, and it is not counted/)
   assert.match(r.milestone1.refusals.note, /simulation/)
   assert.match(r.milestone1.refusals.note, /no hash and is not counted/)
@@ -950,10 +950,10 @@ test("what the repo calls ours is ours here too: its own agents, the committed l
     const r = await arcSeasonReport(deps({ gateway: [early], flows: [earlyFlow] }))
     assert.deepEqual([r.milestone1.checks.count, r.milestone2.externalChecks.count], [1, 0])
   }
-  assert.match(own.milestone1.checks.note, /A check paid by 0xd305\.\.\.ed36 or 0xF43F\.\.\.742D, the two addresses A-Identity retired on 2026-11-11 because someone else holds their keys, never counts as external, and opens no counted flow if it was paid after 13:01 UTC on 2026-11-01\./)
+  assert.match(own.milestone1.checks.note, /A check paid by 0xd305\.\.\.ed36 or 0xF43F\.\.\.742D, the two addresses A-Identity retired on 2026-11-11, never counts as external, and opens no counted flow if it was paid after 13:01 UTC on 2026-11-01\./)
   assert.doesNotMatch(own.milestone1.checks.note, /also holds/)
 
-  assert.match(after.usage.basis, /is an address this repo commits as ours \(admission refuses a vault owner from the same addresses, and our own agents are among them\), is an address A-Identity retired because someone else holds its key \(not ours, and never external demand\), owns a vault labeled team/)
+  assert.match(after.usage.basis, /is an address this repo commits as ours \(admission refuses a vault owner from the same addresses, and our own agents are among them\), is an address A-Identity retired \(not ours, and never external demand\), owns a vault labeled team/)
   assert.match(after.usage.basis, /through such a vault or through the launch-day vault/)
   assert.match(after.usage.basis, /Everything after the rails' lists and the retired addresses counts as internal in this report only: the rails' own proof reads the lists and the retired addresses alone/)
   assert.doesNotMatch(after.usage.basis, /X402_3009_INTERNAL_PAYERS\) owns/, 'the comma that was missing')
@@ -2571,7 +2571,7 @@ test('the vault note says what the key comparison covers, when a vault counts, a
   assert.doesNotMatch(note, /A-Identity's servers never held/, 'not a claim the comparison cannot carry')
   assert.match(note, /A vault counts once its agent key has an end date, the second confirmation on \/app\/vault\/arc: a deploy that stopped before that, or a deploy on Arc Testnet, is not counted\./)
   assert.equal(ARC_GAS_SUPPORT.owners, 0)
-  assert.match(note, /Gas support for owners without USDC on Arc \(up to 0\.08 USDC for the network fees, sent from the former operating wallet\) ended on 2026-11-10, when we found that someone else holds that wallet's key; A-Identity retired the wallet on 2026-11-11/)
+  assert.match(note, /Gas support for owners without USDC on Arc \(up to 0\.08 USDC for the network fees, sent from the former operating wallet\) ended on 2026-11-10; A-Identity retired the wallet on 2026-11-11 and sends no more of it\./)
   assert.doesNotMatch(note, /can receive up to 0\.08 USDC/, 'no promise of a payout from an exposed wallet')
   assert.match(note, new RegExp(`No owner received any, as read from that wallet's sends on ${ARC_GAS_SUPPORT.readOn}, and any such transfer is public on chain`))
   assert.doesNotMatch(note, /nothing will be sent from it|None has so far|still signed by the owner/, 'no promise about a wallet someone else holds the key of')
@@ -2735,14 +2735,14 @@ test('a flow that pays or names a retired address is said as retired, never as o
     const paidRow = v6Flow(V6_OPERATOR, retired.checksum, 'paid')
     paidRow.flow.vaultKeys = undefined
     const ef = await externalFlowsOf([paidRow])
-    assert.equal(ef.items[0].payeeInternal, "the payee is a retired, compromised address, not A-Identity's")
-    assert.match(ef.note, /Of the flows that paid: 1 paid an address A-Identity retired because someone else holds its key, not A-Identity's\.$/)
+    assert.equal(ef.items[0].payeeInternal, "the payee is a retired address, not A-Identity's")
+    assert.match(ef.note, /Of the flows that paid: 1 paid an address A-Identity retired, not A-Identity's\.$/)
     assert.doesNotMatch(ef.note, /our own wallets or agents/)
     // A vault whose recorded owner is retired, paying or naming that owner: the retired label comes first.
     const ownerRow = v6Flow(V6_OPERATOR, retired.address, 'refused')
     ownerRow.flow.vaultKeys = { owner: retired.checksum, operator: V6_OPERATOR }
     const named = await externalFlowsOf([ownerRow])
-    assert.equal(named.items[0].payeeInternal, "the payee is a retired, compromised address, not A-Identity's")
+    assert.equal(named.items[0].payeeInternal, "the payee is a retired address, not A-Identity's")
     assert.equal([named.count, named.linked.paid, named.linked.refused].join(), '1,0,1')
   }
 })

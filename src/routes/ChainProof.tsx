@@ -314,6 +314,26 @@ function ExplorerLink({ href, children }: { href: string | null | undefined; chi
   )
 }
 
+/**
+ * Whether an agent still matches the ledger, decided on the page from the values the backend read: the same holder,
+ * in any case, and the same tokenURI. A backend older than 2026-11-25 set matchesLedger from ownerOf alone, and the
+ * site and the backend deploy apart, so the page checks both values itself before it shows a green chip.
+ */
+function agentMatch(agent: { owner: string; tokenUri: string }, live: Extract<LiveCheck, { reachable: true }>): boolean | undefined {
+  if (live.matchesLedger === undefined) return undefined
+  return live.matchesLedger && live.owner?.toLowerCase() === agent.owner.toLowerCase() && live.tokenUri === agent.tokenUri
+}
+
+function AgentMatchChip({ agent, live }: { agent: { owner: string; tokenUri: string }; live: Extract<LiveCheck, { reachable: true }> }) {
+  const match = agentMatch(agent, live)
+  if (match === undefined) return null
+  return match ? (
+    <Chip tone="ok">re-read live: ownerOf and tokenURI match</Chip>
+  ) : (
+    <Chip tone="danger">re-read live: ownerOf or tokenURI no longer matches</Chip>
+  )
+}
+
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-border/60 py-2.5 last:border-0">
@@ -730,11 +750,7 @@ export default function ChainProof() {
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <h3 className="text-sm font-semibold text-foreground">Agent #{net.agent.tokenId}</h3>
                           {net.live.reachable ? (
-                            net.live.matchesLedger === undefined ? null : net.live.matchesLedger ? (
-                              <Chip tone="ok">re-read live: ownerOf matches</Chip>
-                            ) : (
-                              <Chip tone="danger">re-read live: ownerOf no longer matches</Chip>
-                            )
+                            <AgentMatchChip agent={net.agent} live={net.live} />
                           ) : (
                             <Chip tone="warn">chain unreachable right now</Chip>
                           )}
@@ -747,6 +763,9 @@ export default function ChainProof() {
                             </ExplorerLink>
                           </Row>
                           <Row label="Token URI">{net.agent.tokenUri}</Row>
+                          {net.live.reachable && net.live.tokenUri !== undefined && net.live.tokenUri !== net.agent.tokenUri && (
+                            <Row label="Token URI, re-read live">{net.live.tokenUri}</Row>
+                          )}
                           {net.live.reachable && (
                             <Row label="Checked">
                               block {net.live.blockNumber}, {ago(net.live.checkedAt)}
@@ -862,8 +881,8 @@ export default function ChainProof() {
                     <>
                       <p className="mt-2 text-sm leading-relaxed text-foreground/55">
                         Read from {sales.source}. {sales.basis} Payments from our own wallets are labeled where the
-                        log records them, and so are payments from an address A-Identity retired because someone
-                        else holds its key: not ours, and never counted as external.
+                        log records them, and so are payments from an address A-Identity retired: not ours, and
+                        never counted as external.
                       </p>
                       {sales.counters.length > 0 && (
                         <div className="mt-4">

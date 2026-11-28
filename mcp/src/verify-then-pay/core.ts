@@ -267,7 +267,7 @@ export function parseVtpInput(chain: ChainDescriptor, input: VtpInput): { ok: tr
   if (payee === ZERO_ADDRESS) return { ok: false, httpStatus: 422, code: 'ZeroAddress', reason: 'the payee is the zero address' }
   // Nothing is ever paid to a retired address (chains/retired.ts): someone else holds its key. Refused before anything is read or charged.
   const retired = retiredEntry(payee)
-  if (retired) return bad(`the payee is ${retired.label}, an address A-Identity retired on ${retired.retiredOn} because someone else holds its key: nothing is ever paid to it`)
+  if (retired) return bad(`the payee is ${retired.label}, an address A-Identity retired on ${retired.retiredOn}: nothing is ever paid to it`)
   if (payee === vault || payee === usdc) {
     return { ok: false, httpStatus: 422, code: 'InvalidPayee', reason: 'the payee is the vault itself or the USDC contract; the vault refuses both because nothing would move' }
   }

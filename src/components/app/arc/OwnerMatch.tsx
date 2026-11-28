@@ -27,7 +27,7 @@ export default function OwnerMatch({
     return (
       <p className="text-sm text-foreground/70">
         {ownerIsRetired
-          ? "The owner this contract names is a retired address: someone else holds that key, and it is not A-Identity's, so no visitor can act on this vault here. Reading it needs no wallet."
+          ? "The owner this contract names is a retired address: it is not A-Identity's, and A-Identity does not vouch for it, so no visitor can act on this vault here. Reading it needs no wallet."
           : ownerIsOurKey
             ? 'The owner this contract names is one of our own keys, so no visitor can act on this vault here. Reading it needs no wallet.'
             : 'Connect an EVM wallet above to see whether you own this vault. Reading it needs no wallet.'}
@@ -49,7 +49,7 @@ export default function OwnerMatch({
       <ShieldAlert size={16} className="mt-0.5 shrink-0 text-danger" aria-hidden="true" />
       <p>
         Connected account <Mono>{account}</Mono> is NOT the owner (owner is <Mono>{vault.owner}</Mono>
-        {ownerIsRetired ? ', a retired address whose key someone else holds' : ownerIsOurKey ? ', one of our own keys' : ''}). Owner controls are hidden.
+        {ownerIsRetired ? ", a retired address that is not A-Identity's" : ownerIsOurKey ? ', one of our own keys' : ''}). Owner controls are hidden.
         {ownerIsOurKey || ownerIsRetired ? '' : ' To act on this vault, pick the owner account in your wallet.'}
       </p>
     </div>

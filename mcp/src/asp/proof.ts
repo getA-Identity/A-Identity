@@ -91,7 +91,7 @@ export const PROOF = {
     // The figure anchored on 2026-07-22, not today's: the live score is recency-weighted and recomputed on every call.
     reputation: '542 / 1000 on 2026-07-22 (settlement 296 + validation 240 + tenure 6 + behavior 0; no marketplace jobs yet), the score anchored that day; the live score is recomputed on every call',
     kya: 'attested on-chain on 2026-07-10 for the agent wallet 0x4e26Ae66...3431, which the agent no longer declares: the 2026-11-17 move cleared it, so that attestation is history, not current KYA',
-    note: "reputation_score and agent_passport read this agent live on chain. It is A-Identity's own example agent again since 2026-11-17, when it moved from an address A-Identity retired on 2026-11-11 (someone else holds its key) to the founder's wallet. The move cleared its agent wallet, and the same day our oracle validator revoked the feedback it had written for it, so the 2026-07-22 anchor is history, not a live anchor.",
+    note: "reputation_score and agent_passport read this agent live on chain. It is A-Identity's own example agent again since 2026-11-17, when it moved from an address A-Identity retired on 2026-11-11 to the founder's wallet. The move cleared its agent wallet, and the same day our oracle validator revoked the feedback it had written for it, so the 2026-07-22 anchor is history, not a live anchor.",
     // A1: the score was anchored on-chain as an ERC-8004 feedback attestation, written by the
     // A-Identity oracle validator (distinct from the agent owner, as ERC-8004 requires), and the
     // same validator revoked it on 2026-11-17 (asp/attestations.ts, chains/provenance.ts).

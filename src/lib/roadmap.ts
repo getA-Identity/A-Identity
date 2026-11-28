@@ -415,7 +415,7 @@ export const ROADMAP_ITEMS: readonly RoadmapItem[] = [
     id: 'arc-mainnet-live',
     title: 'Arc Mainnet live on the day it opened',
     summary:
-      'Agent #0 on the canonical ERC-8004 registry, the registry\'s first mint, is ours. An AgentSpendPolicy vault held real USDC under dust caps (emptied by the founder and retired on 2026-11-11: its owner is the former operating wallet, an address A-Identity retired that day because someone else holds its key), and paid trust calls settled on both rails that day: our own EIP-3009 facilitator and Circle Gateway nanopayments.',
+      'Agent #0 on the canonical ERC-8004 registry, the registry\'s first mint, is ours. An AgentSpendPolicy vault held real USDC under dust caps (emptied by the founder and retired on 2026-11-11: its owner is the former operating wallet, an address A-Identity retired that day), and paid trust calls settled on both rails that day: our own EIP-3009 facilitator and Circle Gateway nanopayments.',
     status: 'shipped',
     track: 'chains',
     date: '2026-09-16',
@@ -513,7 +513,7 @@ export const ROADMAP_ITEMS: readonly RoadmapItem[] = [
     chains: ['base'],
     evidence: [{ label: 'Base proof', href: '/proof/base' }],
     details:
-      'The operating wallets were funded from Stellar pubnet USDC through a NEAR Intents swap, and that funding trail is published rather than left as a gap. The canonical registry pair was verified by matching each proxy\'s implementation code against Arbitrum One, because Arc\'s three registry addresses also have code on Base and delegate to a non-canonical implementation. Agent #73232 is still held by the former operating wallet, an address A-Identity retired on 2026-11-11 because someone else holds its key, so it is not ours any more.',
+      'The operating wallets were funded from Stellar pubnet USDC through a NEAR Intents swap, and that funding trail is published rather than left as a gap. The canonical registry pair was verified by matching each proxy\'s implementation code against Arbitrum One, because Arc\'s three registry addresses also have code on Base and delegate to a non-canonical implementation. Agent #73232 is still held by the former operating wallet, an address A-Identity retired on 2026-11-11, so it is not ours any more.',
   },
   {
     id: 'stellar-x402-pubnet',
@@ -580,7 +580,7 @@ export const ROADMAP_ITEMS: readonly RoadmapItem[] = [
     chains: ['arbitrum'],
     evidence: [{ label: 'Arbitrum One proof', href: '/proof/arbitrum' }],
     details:
-      'Agent #1259 is still held by the former operating wallet, an address A-Identity retired on 2026-11-11 because someone else holds its key, so it is not ours any more. The EIP-3009 rail here has been paused since that day.',
+      'Agent #1259 is still held by the former operating wallet, an address A-Identity retired on 2026-11-11, so it is not ours any more. The EIP-3009 rail here has been paused since that day.',
   },
   {
     id: 'robinhood-live',
@@ -738,7 +738,7 @@ export const ROADMAP_ITEMS: readonly RoadmapItem[] = [
       { label: 'Partner guide', href: 'https://a-identity.mintlify.site/chains/arc-integration' },
     ],
     details:
-      'A vault counts only when its owner key is none of the keys of ours it was compared with and no address A-Identity retired, so the launch-day vault does not: its owner is the former operating wallet, which A-Identity retired on 2026-11-11 because someone else holds its key. The browser deployer is live at /app/vault/arc. The 100 flows and the two refusals are done, on our own wallets and labeled so; the vaults count as their owners deploy them, and /proof/arc has the live count and who stands behind it. Targets are the Deliverable 1 commitments as Circle revised them on 2026-10-19; the counts are read from the settlement logs on every request, and the curated lists fill only when the evidence exists.',
+      'A vault counts only when its owner key is none of the keys of ours it was compared with and no address A-Identity retired, so the launch-day vault does not: its owner is the former operating wallet, which A-Identity retired on 2026-11-11. The browser deployer is live at /app/vault/arc. The 100 flows and the two refusals are done, on our own wallets and labeled so; the vaults count as their owners deploy them, and /proof/arc has the live count and who stands behind it. Targets are the Deliverable 1 commitments as Circle revised them on 2026-10-19; the counts are read from the settlement logs on every request, and the curated lists fill only when the evidence exists.',
   },
   {
     id: 'arc-season-m2',

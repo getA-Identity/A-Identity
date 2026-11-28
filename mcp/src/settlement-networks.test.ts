@@ -282,7 +282,7 @@ test('a retired payer is not ours and is never external: the split is the same w
   assert.deepEqual(after.networks, before.networks, 'no published number moves')
   assert.deepEqual(after.totals, before.totals)
   assert.deepEqual(after.totals, { gateway: split([2, 0.01], [1, 0.005]), facilitator: split([1, 0.0015], [1, 0.0015]) })
-  assert.match(after.basis, /or is an address A-Identity retired because someone else holds its key \(not ours, and never external demand\)/)
+  assert.match(after.basis, /or is an address A-Identity retired \(not ours, and never external demand\)/)
 })
 
 test('Arc Mainnet leads, then the other mainnets, then the testnets, in registry order', async () => {

@@ -1457,7 +1457,7 @@ export const CELO_PREVIOUS_PAYTO: readonly { address: string; until: string; not
   {
     address: FORMER_CELO_PAYTO.address,
     until: '2026-11-11T01:04:32Z',
-    note: "The Celo pay-to until 2026-11-11 01:04 UTC, retired that day: someone else holds its key and it is not A-Identity's. Do not pay it.",
+    note: "The Celo pay-to until 2026-11-11 01:04 UTC, retired that day. It is not A-Identity's, and A-Identity does not vouch for it. Do not pay it.",
   },
 ]
 
@@ -1512,6 +1512,6 @@ export async function celoProof(
     recentExternal: all.filter((r) => !isInternal(r)).slice(-50).reverse().map((r) => ({ ...r, internal: false })),
     note: `Real settlements only, recorded at settle time and durable across restarts; totals cover the retained window (last ${CELO_SETTLEMENTS_CAP}). Zeros mean nothing has settled yet, not a mock.`,
     internalNote:
-      'Settlements from wallets of ours are marked internal (our buyer wallets, the co-founder\'s wallet and the founder\'s wallet that holds our facilitator account; internalPayers lists every one): they are real on-chain payments used to exercise and demonstrate the rail, not third-party demand. They are labeled rather than hidden. A settlement from an address under retiredPayers is marked internal too: A-Identity retired those addresses because someone else holds their keys, so they are not ours, and what they paid is never counted as external demand.',
+      'Settlements from wallets of ours are marked internal (our buyer wallets, the co-founder\'s wallet and the founder\'s wallet that holds our facilitator account; internalPayers lists every one): they are real on-chain payments used to exercise and demonstrate the rail, not third-party demand. They are labeled rather than hidden. A settlement from an address under retiredPayers is marked internal too: A-Identity retired those addresses, they are not ours, and what they paid is never counted as external demand.',
   }
 }

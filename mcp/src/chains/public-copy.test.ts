@@ -161,8 +161,9 @@ test('the agent card registers exactly our agents whose tokenURI is the card, an
     if (ours) assert.equal(String(r.agentId), ours.tokenId, `agent-card.json registers ${r.chain} #${String(r.agentId)}, but our agent there is #${ours.tokenId}`)
   }
 
-  // The card is also the ERC-8004 registration file (EIP-8004 registration-v1) that Arc Mainnet #0, Robinhood Chain #0,
-  // Celo #9759 and Robinhood Chain testnet #0 resolve to, and indexers read it as one. Until 2026-11-18 it had no type and
+  // The card is also the ERC-8004 registration file (EIP-8004 registration-v1) that Arc Mainnet #0, Robinhood Chain #0
+  // and Robinhood Chain testnet #0 resolve to, and indexers read it as one (Celo #9759 resolved here too, until its owner
+  // pointed it at our Celo registration file on 2026-11-19, so the loop above holds it out). Until 2026-11-18 it had no type and
   // no agentRegistry in any registration, which 8004scan flagged (WA001, WA012), and no services, so the QuickNode
   // explorer listed it unconfigured.
   assert.equal(card.type, 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1')
@@ -205,12 +206,17 @@ test('the agent card registers exactly our agents whose tokenURI is the card, an
   assert.equal(service('web')?.endpoint, site)
   const serverCard = JSON.parse(repo('public/.well-known/mcp/server-card.json')) as { endpoint: string; protocolVersion: string }
   assert.deepEqual([service('MCP')?.endpoint, service('MCP')?.version], [serverCard.endpoint, serverCard.protocolVersion], 'the MCP service is the server card endpoint at its protocol version')
-  // A2A points at this very file, the one Celo #9759 resolves to, with its skills. Its version is 0.3.0, the A2A AgentCard
+  // A2A points at this very file, with its skills. Celo #9759 resolves to our Celo registration file, celo-8004.json
+  // (on chain since 2026-11-19), and that file's A2A service points here, so an agent that starts from the Celo token
+  // still reaches this card. Its version is 0.3.0, the A2A AgentCard
   // schema the file validates against (and 8004scan's standard value), not the "1.0" of the card's own protocolVersion: an
   // A2A 1.0 interface needs protocolBinding and protocolVersion, and the card's supportedInterfaces are its MCP and x402
   // endpoints, not A2A bindings. There is no A2A message endpoint, and the service says so.
   assert.equal(service('A2A')?.endpoint, self)
-  assert.equal(PROVENANCE.find((p) => p.chain === 'celo')?.agent?.tokenUri, self, 'Celo #9759 resolves to this file')
+  const celoFile = `${site}/.well-known/celo-8004.json`
+  assert.equal(PROVENANCE.find((p) => p.chain === 'celo')?.agent?.tokenUri, celoFile, 'Celo #9759 resolves to its own registration file')
+  const celoDoc = JSON.parse(repo('public/.well-known/celo-8004.json')) as { services?: Service[] }
+  assert.equal(celoDoc.services?.find((s) => s.name === 'A2A')?.endpoint, self, 'the file Celo #9759 resolves to points its A2A service at this card')
   assert.equal(service('A2A')?.version, '0.3.0')
   assert.match(String(service('A2A')?.description), /for discovery only: A-Identity serves no A2A message endpoint/)
   assert.deepEqual(service('A2A')?.skills, (card.skills ?? []).map((s) => s.id))

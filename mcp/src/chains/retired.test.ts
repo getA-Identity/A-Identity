@@ -50,7 +50,9 @@ test('the retired list holds exactly the two compromised addresses, each well fo
     assert.equal(r.retiredOn, '2026-11-11')
     assert.equal(r.metricCutoff, '2026-11-01T13:01:41Z', 'the cutoff the season report used before the list existed')
     assert.ok(Number.isFinite(Date.parse(r.metricCutoff)))
-    assert.ok((r.evidence.match(TX_HASH) ?? []).length >= 2, `${r.label}: the evidence names its transactions in full`)
+    // What a check answers of it: the day it was retired, that it is not ours, and no reason (none is published).
+    assert.equal(r.evidence, `A-Identity retired this address on ${r.retiredOn}. It is not A-Identity's, and A-Identity does not vouch for it.`, `${r.label}: what is said of it`)
+    assert.equal(r.evidence.match(TX_HASH), null, `${r.label}: no transaction is named as a reason`)
     assert.doesNotMatch(r.label, /\bours?\b/i, 'a retired address is never called ours')
     assert.ok(Object.isFrozen(r))
   }
@@ -79,7 +81,9 @@ test('the sweep recipients are known with their evidence, and are not retired ad
   for (const s of SWEEP_RECIPIENTS) {
     assert.match(s.address, /^0x[0-9a-f]{40}$/)
     assert.equal(isRetired(s.address), false, 'a sweep recipient was never ours, so it is not retired')
-    assert.ok((s.evidence.match(TX_HASH) ?? []).length >= 1)
+    assert.equal(s.evidence, "It has never been A-Identity's, and A-Identity does not vouch for it.")
+    assert.doesNotMatch(`${s.label} ${s.evidence}`, /\bours?\b/i, 'never called ours')
+    assert.equal(`${s.label} ${s.evidence}`.match(TX_HASH), null, 'no transaction is named as a reason')
     assert.deepEqual(knownCompromised(s.address.toUpperCase().replace('0X', '0x')), { kind: 'sweep-recipient', label: s.label, evidence: s.evidence })
   }
   for (const r of RETIRED_COMPROMISED) assert.equal(knownCompromised(r.checksum)?.kind, 'retired')
@@ -114,7 +118,7 @@ test('a key whose address is retired is refused where signers are built: a label
   const lookup = (a: string): RetiredAddress | null => (a.toLowerCase() === standIn.toLowerCase() ? FORMER_OPERATING_WALLET : null)
   const said = retiredSignerRefusal(key, 'ARC_MAINNET_SIGNER_KEY', lookup)
   assert.ok(said)
-  assert.match(said, /^ARC_MAINNET_SIGNER_KEY holds the key of the former operating wallet, which A-Identity retired on 2026-11-11 because someone else holds that key, so this server never signs with it\.$/)
+  assert.match(said, /^ARC_MAINNET_SIGNER_KEY holds the key of the former operating wallet, which A-Identity retired on 2026-11-11, so this server never signs with it\.$/)
   assert.ok(!said.includes(key.slice(2)) && !said.includes(standIn), 'neither the key nor its address is in the refusal')
   assert.equal(retiredSignerRefusal(key.slice(2), 'X', lookup)?.startsWith('X holds the key'), true, 'a bare key is the same key')
   // The real list refuses nothing a fresh key derives, and a value that is not a key is not judged here.
@@ -182,13 +186,13 @@ test('the two agents the former operating wallet still holds are former agents, 
     const chain = getChainById(p.chain)!
     assert.equal(p.formerAgent.caip, `${chain.caip2}:8004/${p.formerAgent.tokenId}`)
     assert.equal(p.formerAgent.heldBy, FORMER_OPERATING_WALLET.checksum)
-    assert.match(p.formerAgent.note, /does not control this agent alone, because someone else holds the same key, so it is not ours and we do not vouch for it/)
+    assert.match(p.formerAgent.note, /which A-Identity retired on 2026-11-11\. It is not ours and we do not vouch for it/)
     // Our validator rated both on chain and revoked that feedback on 2026-11-17: the note names the
     // revokeFeedback the entry records, and says A-Identity will not try to move the agent.
     const revocation = p.artifacts.find((a) => a.kind === 'attestation' && a.date === '2026-11-17' && a.note?.startsWith(`revokeFeedback(${p.formerAgent!.tokenId}, 1)`))
     assert.ok(revocation, `${p.chain}: the ledger records no revokeFeedback for #${p.formerAgent.tokenId}`)
     assert.ok(
-      p.formerAgent.note.includes(`the feedback our oracle validator wrote for it on chain was revoked on 2026-11-17 (revokeFeedback, tx ${revocation.txHash.slice(0, 10)}), and A-Identity decided that day not to try to move it`),
+      p.formerAgent.note.includes(`the feedback our oracle validator wrote for it on chain was revoked on 2026-11-17 (revokeFeedback, tx ${revocation.txHash.slice(0, 10)}), and A-Identity decided that day to leave it where it is`),
       `${p.chain}: the feedback clause`,
     )
     assert.ok(p.summary.includes(`revoked the feedback it had written for it on 2026-11-17 (tx ${revocation.txHash.slice(0, 10)})`), `${p.chain}: the summary names the revocation`)
@@ -333,7 +337,7 @@ test('the homepage ring and the agent card advertise only agents A-Identity hold
   // quietly turn the owner check off.
   assert.equal(ownersCompared, regs.filter((r) => r.owner).length, 'a registration in the agent card names an owner but matches no agent in the ledger')
   for (const r of regs) assert.equal(isRetired(r.owner), false, `the agent card registers ${r.chain} #${r.agentId} under a retired owner`)
-  assert.match(card.note ?? '', /so A-Identity does not control them alone\. They are not ours and this card does not vouch for them/)
+  assert.match(card.note ?? '', /which A-Identity retired on 2026-11-11\. They are not ours and this card does not vouch for them/)
   assert.doesNotMatch(card.note ?? '', /no longer controls/)
   assert.doesNotMatch(card.note ?? '', /0x[0-9a-fA-F]{40}/, 'the note names no address')
 })
@@ -345,7 +349,7 @@ test('the proof page shows a former agent apart from our agent, never green, and
   const block = page.slice(start, page.indexOf('{/* Contracts, each with whether code is actually there right now. */}', start))
   assert.match(block, /Former agent #\{net\.formerAgent\.tokenId\}/)
   assert.match(block, /not ours: held by a retired address/)
-  assert.doesNotMatch(block, /tone="ok"|ownerOf matches|\/address\//, 'no green chip and no owner link for a former agent')
+  assert.doesNotMatch(block, /tone="ok"|ownerOf matches|ownerOf and tokenURI match|\/address\//, 'no green chip and no owner link for a former agent')
   // What a retired address paid is internal, never external, and the build knows the list as well as the backend does.
   assert.match(page, /import \{ ARC_LEDGER_RETIRED \} from '\.\.\/lib\/arc-ledger'/)
   assert.equal(page.split('|| retired.has(s.payer.toLowerCase())').length - 1, 2, 'both EVM logs count a retired payer as internal')

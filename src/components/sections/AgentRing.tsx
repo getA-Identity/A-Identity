@@ -41,8 +41,9 @@ export type OnchainAgent = {
    * Which of OUR agents this registration belongs to, taken from what the registration
    * itself carries rather than from how we would like to group them.
    *
-   * Arc Mainnet, Robinhood Chain, Celo and the Robinhood Chain rehearsal all point their
-   * tokenURI at https://a-identity.xyz/.well-known/agent-card.json, so they are one identity
+   * Arc Mainnet, Robinhood Chain and the Robinhood Chain rehearsal point their tokenURI at
+   * https://a-identity.xyz/.well-known/agent-card.json, and Celo (since 2026-11-19) at the same
+   * oracle's Celo registration file on our site, celo-8004.json, so they are one identity
    * registered in several places, and the two X Layer entries are that same oracle's
    * OKX.AI listings. Arc testnet #849980 points at its own inline Meridian metadata, so it
    * is a different agent, and the agent card does not list it among the oracle's
@@ -135,7 +136,7 @@ export const OUR_AGENTS: OnchainAgent[] = [
     tx: '0x0a821026621e5b35ff5602f81348b276b0d0f1b61a3892365658295fc5bcb22e',
     note: 'The identity behind the Celo x402 rail.',
     mission:
-      'The identity behind the Celo x402 rail, where payments settle in USDC through the first-party facilitator Celo runs. Owned by the wallet that receives those payments. It moved on 2026-11-11 from 0xF43F...742D, an address A-Identity retired that day because someone else holds its key: do not pay it.',
+      'The identity behind the Celo x402 rail, where payments settle in USDC through the first-party facilitator Celo runs. Owned by the wallet that receives those payments. It moved on 2026-11-11 from 0xF43F...742D, an address A-Identity retired that day. That address is not A-Identity\'s, and A-Identity does not vouch for it: never pay or fund it.',
   },
   {
     chain: 'rhchain-testnet',

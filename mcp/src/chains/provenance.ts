@@ -159,7 +159,7 @@ const FORMER_OPERATING_SHORT = shortAddress(FORMER_OPERATING_WALLET.checksum)
  * the entry), the day A-Identity decided not to try to move them.
  */
 const formerAgentNote = (revokedIn: string): string =>
-  `Registered by A-Identity, and still held by ${FORMER_OPERATING_SHORT}, ${FORMER_OPERATING_WALLET.label}, which A-Identity retired on ${FORMER_OPERATING_WALLET.retiredOn} because someone else holds its key. A-Identity does not control this agent alone, because someone else holds the same key, so it is not ours and we do not vouch for it: the feedback our oracle validator wrote for it on chain was revoked on 2026-11-17 (revokeFeedback, tx ${revokedIn}), and A-Identity decided that day not to try to move it. Never pay or fund its owner or its agent wallet.`
+  `Registered by A-Identity, and still held by ${FORMER_OPERATING_SHORT}, ${FORMER_OPERATING_WALLET.label}, which A-Identity retired on ${FORMER_OPERATING_WALLET.retiredOn}. It is not ours and we do not vouch for it: the feedback our oracle validator wrote for it on chain was revoked on 2026-11-17 (revokeFeedback, tx ${revokedIn}), and A-Identity decided that day to leave it where it is. Never pay or fund its owner or its agent wallet.`
 // The founder's own wallet. A person holds its key and it is never on a server. Agent #0 on Arc
 // Mainnet and on Robinhood Chain and agent #9759 on Celo moved to it on 2026-11-10 and 2026-11-11,
 // because someone else holds the keys of the former operating wallet 0xd305...ed36 (since at least
@@ -169,6 +169,9 @@ const formerAgentNote = (revokedIn: string): string =>
 // operating wallet's key, of which A-Identity still had a copy), so they are ours again.
 const FOUNDER = '0xCB8824ffAF30687E36374C08eC52298b62871bdf'
 const AGENT_CARD = 'https://a-identity.xyz/.well-known/agent-card.json'
+// Our Celo ERC-8004 registration file (chains/celo-8004.ts): the tokenURI of Celo #9759 since its owner
+// repointed it on 2026-11-19 (setAgentURI, tx 0x887e2d6f). celo-8004.test.ts holds the two spellings together.
+const CELO_REGISTRATION = 'https://a-identity.xyz/.well-known/celo-8004.json'
 
 export const PROVENANCE: ChainProvenance[] = [
   {
@@ -191,7 +194,7 @@ export const PROVENANCE: ChainProvenance[] = [
       {
         name: 'AgentSpendPolicy vault',
         address: '0xe07819e6d28a5dfd5a9f4cd94dc6dc9aeeda4146',
-        note: 'Deployed by A-Identity, retired 2026-11-11: the same Solidity contract that runs on Arc testnet, Robinhood Chain and Arbitrum One, and its source is verified on Sourcify as an exact match of both the creation and the runtime bytecode (mcp/scripts/sourcify-verify.mjs recompiles and compares before it uploads). dailyCap 1 USDC, autoApproveMax 0.25 USDC. The owner is 0xd305...ed36, the former operating wallet, which A-Identity retired on 2026-11-11 because someone else holds its key (since at least 2026-11-01), so the vault is retired and not ours: the founder emptied it at about 00:38 UTC on 2026-11-11; the operator, the agent\'s session key, is the buyer agent 0x8C8D...3349 since 2026-09-25, and its key, renewed on 2026-11-01, expires 2027-01-15. Dust on purpose; the caps are the product. Built from the contract source at commit c05b1710, before the Arc Studio review made owner immutable, so verify it against that commit (scripts/sourcify-verify.mjs --source-ref c05b1710); vaults deployed after that review use the reviewed source.',
+        note: 'Deployed by A-Identity, retired 2026-11-11: the same Solidity contract that runs on Arc testnet, Robinhood Chain and Arbitrum One, and its source is verified on Sourcify as an exact match of both the creation and the runtime bytecode (mcp/scripts/sourcify-verify.mjs recompiles and compares before it uploads). dailyCap 1 USDC, autoApproveMax 0.25 USDC. The owner is 0xd305...ed36, the former operating wallet, which A-Identity retired on 2026-11-11, so the vault is retired and not ours: the founder emptied it at about 00:38 UTC on 2026-11-11; the operator, the agent\'s session key, is the buyer agent 0x8C8D...3349 since 2026-09-25, and its key, renewed on 2026-11-01, expires 2027-01-15. Dust on purpose; the caps are the product. Built from the contract source at commit c05b1710, before the Arc Studio review made owner immutable, so verify it against that commit (scripts/sourcify-verify.mjs --source-ref c05b1710); vaults deployed after that review use the reviewed source.',
       },
       {
         name: 'Circle GatewayWallet',
@@ -440,7 +443,7 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: '0x0723c5e83130dfe3a16cae0de01e7dbfe514b76b2192fb161c8508f61a888652',
         onChain: 'arc-mainnet',
         blockNumber: 29173360,
-        note: 'transferFrom(operating wallet, 0x03f1fb189E461B88f3e8bA7100B29B594E5f98A9, 104498), 68304 gas, 0.001708 USDC; ownerOf(104498) read back as the agent wallet on 2026-11-04. That wallet is ours as well, as the operating wallet of the time then was (A-Identity retired it on 2026-11-11 because someone else holds its key, so it is not ours any more), so this moved the token between addresses we held at the time and changes nothing about who stands behind it.',
+        note: 'transferFrom(operating wallet, 0x03f1fb189E461B88f3e8bA7100B29B594E5f98A9, 104498), 68304 gas, 0.001708 USDC; ownerOf(104498) read back as the agent wallet on 2026-11-04. That wallet is ours as well, as the operating wallet of the time then was (A-Identity retired it on 2026-11-11, so it is not ours any more), so this moved the token between addresses we held at the time and changes nothing about who stands behind it.',
       },
       {
         kind: 'settlement',
@@ -453,10 +456,10 @@ export const PROVENANCE: ChainProvenance[] = [
     ],
     caveats: [
       'Not audited. AgentSpendPolicy has had internal reviews, the latest an Arc Studio AI review on 2026-10-30 with 33 findings and none Critical or High (OLYMPIX_SUBMISSION.md in the repo), plus a Foundry unit, fuzz and invariant suite and a negative-control runner that deletes each guard in turn and requires the suite to go red. The reviewed source then went through an automated Olympix pre-audit scan, whose results came back on 2026-11-02 and are being answered. That is not an audit and we will not call it one.',
-      'Every payment listed in this ledger is self-funded: every payer, every receiving address and every account that broadcast was ours when it was sent, except Circle\'s Gateway batches and forwarded mint. Until 2026-11-11 the operating wallet 0xd305...ed36 was among those accounts; A-Identity retired it that day because someone else holds its key, so it is not ours any more. Each one is labeled internal and always will be, and it is evidence the rails work on Arc Mainnet, not evidence of demand. This ledger is not the whole settlement log: wallets we do not control have also paid checks on Arc Mainnet, and GET /api/arc/season counts those as external, apart from ours.',
+      'Every payment listed in this ledger is self-funded: every payer, every receiving address and every account that broadcast was ours when it was sent, except Circle\'s Gateway batches and forwarded mint. Until 2026-11-11 the operating wallet 0xd305...ed36 was among those accounts; A-Identity retired it that day, so it is not ours any more. Each one is labeled internal and always will be, and it is evidence the rails work on Arc Mainnet, not evidence of demand. This ledger is not the whole settlement log: wallets we do not control have also paid checks on Arc Mainnet, and GET /api/arc/season counts those as external, apart from ours.',
       'The Circle Gateway sale is Circle\'s batch transaction, not ours: we broadcast nothing on that rail. Gateway credited the call first (transfer 5958b158-6603-4165-a0a9-cfab2bec2ea7) and applied the net position on-chain later in a batch that may carry other parties\' transfers too, so the batch hash proves settlement of a net position rather than a one-to-one payment.',
       'We deployed nothing here except the vault. The registries, USDC, CCTP, Gateway, Memo and Multicall3From are their authors\' contracts; registration is permissionless.',
-      'The vault\'s owner is 0xd305...ed36, the former operating wallet: A-Identity retired it on 2026-11-11 because someone else holds its key (since at least 2026-11-01), so it is not ours. The contract has no owner transfer, so the vault is retired, not moved, and moving the owner to a wallet a person holds means deploying a new vault. At about 00:38 UTC on 2026-11-11 the founder emptied the vault and moved agent #0 to 0xCB88...1bdf, a wallet a person holds, and this ledger recorded the move the same day, so the agent\'s owner field above names 0xCB88...1bdf. What the 2026-09-25 split fixed is the other half: the agent key can no longer act as the owner.',
+      'The vault\'s owner is 0xd305...ed36, the former operating wallet: A-Identity retired it on 2026-11-11, so it is not ours. The contract has no owner transfer, so the vault is retired, not moved, and moving the owner to a wallet a person holds means deploying a new vault. At about 00:38 UTC on 2026-11-11 the founder emptied the vault and moved agent #0 to 0xCB88...1bdf, a wallet a person holds, and this ledger recorded the move the same day, so the agent\'s owner field above names 0xCB88...1bdf. What the 2026-09-25 split fixed is the other half: the agent key can no longer act as the owner.',
       'The Memo and Multicall3From receipts are test settlements to the operating wallet of the time, which A-Identity retired on 2026-11-11, so it is not ours any more. The product\'s payment path on this chain does not route through either contract yet, and the /api/arc/memos read still points at Arc testnet.',
       'The block explorer, explorer.arc.io, opens in a browser without signing in, but its JSON API still answered non-browser clients with a bot challenge on 2026-10-11. Every transaction here is also readable over RPC, though not from every host: on 2026-10-11 Circle\'s primary endpoint, dRPC and QuickNode returned all 19 Arc Mainnet receipts in this list, while the Blockdaemon host returned none of them and served old blocks without their transactions.',
       'KYA is not anchored on Arc Mainnet. This caveat used to say the family has no ValidationRegistry, and that was wrong: docs.arc.io lists one at 0x8004Cc8439f36fd5F9F049D9fF86523Df6dAAB58, and read live on 2026-10-11 it is a 130-byte EIP-1967 proxy that already had code here on 2026-09-15, whose implementation (0xdb31f5d9..., getVersion 2.0.0) is the one the same proxy on Base points to, and whose getIdentityRegistry() returns the IdentityRegistry above. It is not in the registry descriptor yet and nothing of ours has been written to it. Arc\'s reference ERC-8183 escrow is documented for testnet only and has no code here, so escrow stays on testnet.',
@@ -488,7 +491,7 @@ export const PROVENANCE: ChainProvenance[] = [
       {
         name: 'AgentSpendPolicy vault',
         address: '0x05a6aad7124c2f1c7b82b03e0bbe3867bc500073',
-        note: 'Deployed by A-Identity, retired 2026-11-11: the same Solidity contract that runs on Arc and Arbitrum One. Read live on 2026-10-11: owner 0xd305...ed36 (then the operating wallet; retired 2026-11-11 as compromised and not A-Identity\'s), operator the agent key 0x8C8D...3349, dailyCap 1 USDG, autoApproveMax 0.25 USDG, not frozen, allowlist off, session key valid to 2026-11-15 (renewed on 2026-11-08 to 2027-01-07, below), balance 0.02 USDG (funded 0.03, one 0.01 payment since). Dust on purpose; the caps are the product. Built from the contract source at commit c05b1710, before the Arc Studio review made owner immutable, so verify it against that commit (scripts/sourcify-verify.mjs --source-ref c05b1710); vaults deployed after that review use the reviewed source.',
+        note: 'Deployed by A-Identity, retired 2026-11-11: the same Solidity contract that runs on Arc and Arbitrum One. Read live on 2026-10-11: owner 0xd305...ed36 (then the operating wallet; retired 2026-11-11 and not A-Identity\'s), operator the agent key 0x8C8D...3349, dailyCap 1 USDG, autoApproveMax 0.25 USDG, not frozen, allowlist off, session key valid to 2026-11-15 (renewed on 2026-11-08 to 2027-01-07, below), balance 0.02 USDG (funded 0.03, one 0.01 payment since). Dust on purpose; the caps are the product. Built from the contract source at commit c05b1710, before the Arc Studio review made owner immutable, so verify it against that commit (scripts/sourcify-verify.mjs --source-ref c05b1710); vaults deployed after that review use the reviewed source.',
       },
     ],
     artifacts: [
@@ -498,7 +501,7 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: '0x602ce85ad044836b39918311a3031dcd689e4be0d23aed9ed0ac9227d46ec79e',
         onChain: 'rhchain',
         blockNumber: 34617892,
-        note: 'ownerOf(0) read back to 0xd305...ed36, then the operating wallet (retired 2026-11-11 as compromised), until the founder moved the agent to 0xCB88...1bdf at 22:10 UTC on 2026-11-10, the owner recorded here since 2026-11-11; tokenURI(0) still reads back to the agent card, and the page re-reads both live.',
+        note: 'ownerOf(0) read back to 0xd305...ed36, then the operating wallet (retired 2026-11-11), until the founder moved the agent to 0xCB88...1bdf at 22:10 UTC on 2026-11-10, the owner recorded here since 2026-11-11; tokenURI(0) still reads back to the agent card, and the page re-reads both live.',
       },
       {
         kind: 'settlement',
@@ -594,15 +597,15 @@ export const PROVENANCE: ChainProvenance[] = [
       'No canonical Circle USDC is documented for this chain, so the registry asserts none. USDG is named as what it is, in its own field.',
       'We run our own x402 facilitator here so one code path and one receipt standard cover every EVM chain it sells on (since 2026-11-11, here and Arc Mainnet), not because nobody else serves this chain: as of 2026-09-30 other facilitators do (at least one hosted service lists USDG on this chain, and open-source ones predate our launch), and gasless EIP-3009 relaying on USDG predates us by weeks. On-chain an x402 settlement is indistinguishable from any other relayed authorization.',
       'This is an Arbitrum L2: we wait the descriptor\'s confirmations and record the block, but soft finality is not L1 finality, and the proof page does not claim otherwise.',
-      'The vault\'s owner is 0xd305...ed36, the former operating wallet, which A-Identity retired on 2026-11-11 because someone else holds its key (since at least 2026-11-01), so it is not ours. Until that day it was a server-held key that broadcast the x402 settlements here and received them; that day a new gas-only key took over the broadcasting and the pay-to moved to 0xCB88...1bdf, a wallet a person holds. This contract has no owner transfer, so moving the owner to a wallet a person holds means deploying a new vault. What the 2026-10-01 split fixed is the other half: the agent key 0x8C8D...3349 can no longer act as the owner.',
+      'The vault\'s owner is 0xd305...ed36, the former operating wallet, which A-Identity retired on 2026-11-11, so it is not ours. Until that day it was a server-held key that broadcast the x402 settlements here and received them; that day a new gas-only key took over the broadcasting and the pay-to moved to 0xCB88...1bdf, a wallet a person holds. This contract has no owner transfer, so moving the owner to a wallet a person holds means deploying a new vault. What the 2026-10-01 split fixed is the other half: the agent key 0x8C8D...3349 can no longer act as the owner.',
       'At 22:10 UTC on 2026-11-10 the founder moved agent #0 from the former operating wallet to 0xCB88...1bdf, a wallet a person holds, and emptied the vault into it. This ledger recorded the move on 2026-11-11, so the agent\'s owner field above names 0xCB88...1bdf.',
-      'The settlements recorded here are self-funded tests: the buyer wallet was ours, and the receiving address was the account that broadcast them, the operating wallet of the time (0xd305...ed36), which A-Identity retired on 2026-11-11 because someone else holds its key, so it is not ours any more. They are labeled internal and always will be: evidence the rail works, not evidence of demand.',
+      'The settlements recorded here are self-funded tests: the buyer wallet was ours, and the receiving address was the account that broadcast them, the operating wallet of the time (0xd305...ed36), which A-Identity retired on 2026-11-11, so it is not ours any more. They are labeled internal and always will be: evidence the rail works, not evidence of demand.',
     ],
   },
   {
     chain: 'rhchain-testnet',
     summary:
-      'The rehearsal network, and the only chain in the registry outside Arc that carries the full canonical ERC-8004 trio. Agent #0 here is ours again: A-Identity registered it, and on 2026-11-17 moved it from 0xd305...ed36, the former operating wallet that A-Identity retired on 2026-11-11 because someone else holds its key, to the founder\'s wallet 0xCB88...1bdf (tx 0x1d7a948c). A-Identity also deployed a real AgentSpendPolicy vault here with a time-bounded session key; the vault is still owned by the former operating wallet, so it is not ours any more.',
+      'The rehearsal network, and the only chain in the registry outside Arc that carries the full canonical ERC-8004 trio. Agent #0 here is ours again: A-Identity registered it, and on 2026-11-17 moved it from 0xd305...ed36, the former operating wallet that A-Identity retired on 2026-11-11, to the founder\'s wallet 0xCB88...1bdf (tx 0x1d7a948c). A-Identity also deployed a real AgentSpendPolicy vault here with a time-bounded session key; the vault is still owned by the former operating wallet, so it is not ours any more.',
     agent: {
       tokenId: '0',
       caip: 'eip155:46630:8004/0',
@@ -621,7 +624,7 @@ export const PROVENANCE: ChainProvenance[] = [
       {
         name: 'AgentSpendPolicy vault',
         address: '0xd369d63868c13ff32928451a4f881621ff2dbc01',
-        note: 'Deployed by A-Identity, retired 2026-11-11: one vault deployed for verification, not a factory, still owned by the former operating wallet, which A-Identity retired on 2026-11-11 because someone else holds its key, so it is not ours any more. Daily cap 25, auto-approve 5. Its seven-day session key lapsed on 2026-08-18 and was not renewed: this testnet vault rehearsed the deploy path, and the mainnet vaults this ledger records were kept current until all three were retired on 2026-11-11.',
+        note: 'Deployed by A-Identity, retired 2026-11-11: one vault deployed for verification, not a factory, still owned by the former operating wallet, which A-Identity retired on 2026-11-11, so it is not ours any more. Daily cap 25, auto-approve 5. Its seven-day session key lapsed on 2026-08-18 and was not renewed: this testnet vault rehearsed the deploy path, and the mainnet vaults this ledger records were kept current until all three were retired on 2026-11-11.',
       },
     ],
     artifacts: [
@@ -663,20 +666,20 @@ export const PROVENANCE: ChainProvenance[] = [
         onChain: 'rhchain-testnet',
         blockNumber: 154527585,
         date: '2026-11-17',
-        note: 'transferFrom(0xd305...ed36, 0xCB88...1bdf, 0) on the IdentityRegistry above, signed with the key of the former operating wallet A-Identity retired on 2026-11-11, of which A-Identity still had a copy; ownerOf(0) read back as the founder\'s wallet. The move cleared the agent wallet. Recorded as a mint-kind artifact, like the #4306 move on Arc Mainnet.',
+        note: 'transferFrom(0xd305...ed36, 0xCB88...1bdf, 0) on the IdentityRegistry above, signed with the key of the former operating wallet A-Identity retired on 2026-11-11; ownerOf(0) read back as the founder\'s wallet. The move cleared the agent wallet. Recorded as a mint-kind artifact, like the #4306 move on Arc Mainnet.',
       },
     ],
     caveats: [
       'The vault here was deployed against the canonical-bridge representation of Sepolia USDC, a labeled test token, not a canonical stablecoin.',
       'The vault owner and operator are the same address, so it demonstrates the deploy path rather than a real separation of duties.',
       'Settlement is proven on mainnet, not here: this network is where the code is rehearsed.',
-      'On 2026-11-17 A-Identity moved agent #0 from the former operating wallet 0xd305...ed36 to 0xCB88...1bdf, the founder\'s wallet, with transferFrom on the IdentityRegistry above (tx 0x1d7a948c, block 154527585), signed with the retired wallet\'s key, of which A-Identity still had a copy. This ledger recorded the move the same day, so the agent\'s owner field above names 0xCB88...1bdf. The move cleared the agent wallet, which now reads the zero address; tokenURI still points at the agent card.',
+      'On 2026-11-17 A-Identity moved agent #0 from the former operating wallet 0xd305...ed36 to 0xCB88...1bdf, the founder\'s wallet, with transferFrom on the IdentityRegistry above (tx 0x1d7a948c, block 154527585), signed with the retired wallet\'s key. This ledger recorded the move the same day, so the agent\'s owner field above names 0xCB88...1bdf. The move cleared the agent wallet, which now reads the zero address; tokenURI still points at the agent card.',
     ],
   },
   {
     chain: 'arbitrum',
     summary:
-      'Agent #1259 on Arbitrum One was registered by A-Identity and is still held by 0xd305...ed36, the former operating wallet that A-Identity retired on 2026-11-11 because someone else holds its key. It is not ours any more and we do not vouch for it: our oracle validator revoked the feedback it had written for it on 2026-11-17 (tx 0xa20cbe45), and A-Identity decided that day not to try to move it. Never pay or fund that address. Until 2026-11-11 paid trust calls settled here in native Circle USDC through the same first-party EIP-3009 facilitator we still run on Robinhood Chain; that day the rail here paused, because the key that paid its gas was retired and the new gas-only key holds no ETH here yet. The canonical ERC-8004 registries were already deployed by their authors, so registering was permissionless and cost about a cent.',
+      'Agent #1259 on Arbitrum One was registered by A-Identity and is still held by 0xd305...ed36, the former operating wallet that A-Identity retired on 2026-11-11. It is not ours any more and we do not vouch for it: our oracle validator revoked the feedback it had written for it on 2026-11-17 (tx 0xa20cbe45), and A-Identity decided that day to leave it where it is. Never pay or fund that address. Until 2026-11-11 paid trust calls settled here in native Circle USDC through the same first-party EIP-3009 facilitator we still run on Robinhood Chain; that day the rail here paused, because the key that paid its gas was retired and the new gas-only key holds no ETH here yet. The canonical ERC-8004 registries were already deployed by their authors, so registering was permissionless and cost about a cent.',
     formerAgent: { tokenId: '1259', caip: 'eip155:42161:8004/1259', heldBy: FORMER_OPERATING, tokenUri: AGENT_CARD, note: formerAgentNote('0xa20cbe45') },
     contracts: [
       {
@@ -693,7 +696,7 @@ export const PROVENANCE: ChainProvenance[] = [
       {
         name: 'AgentSpendPolicy vault',
         address: '0xac6c5c9af62bc482ffeef882a6ac4678513be6db',
-        note: 'Deployed by A-Identity, retired 2026-11-11: the same Solidity contract that runs on Arc and Robinhood Chain. Read live on 2026-10-11: owner 0xd305...ed36 (then the operating wallet; retired 2026-11-11 as compromised and not A-Identity\'s), operator the agent key 0x8C8D...3349, dailyCap 1 USDC, autoApproveMax 0.25 USDC, not frozen, allowlist off, session key valid to 2026-11-15, balance 0.01 USDC (funded 0.02, one 0.01 payment since). Read again on 2026-11-14 it still held 0.01 USDC, and that is not only the agent key\'s to move: the owner, a retired address someone else holds, can withdraw it or pay it out with ownerPay at any time, with no expiry, and can extend the session or swap the operator, while the agent key could pay from it only until its session key ran out at 12:42:37 UTC on 2026-11-15. Do not fund it. Dust on purpose; the caps are the product. Built from the contract source at commit c05b1710, before the Arc Studio review made owner immutable, so verify it against that commit (scripts/sourcify-verify.mjs --source-ref c05b1710); vaults deployed after that review use the reviewed source.',
+        note: 'Deployed by A-Identity, retired 2026-11-11: the same Solidity contract that runs on Arc and Robinhood Chain. Read live on 2026-10-11: owner 0xd305...ed36 (then the operating wallet; retired 2026-11-11 and not A-Identity\'s), operator the agent key 0x8C8D...3349, dailyCap 1 USDC, autoApproveMax 0.25 USDC, not frozen, allowlist off, session key valid to 2026-11-15, balance 0.01 USDC (funded 0.02, one 0.01 payment since). Read again on 2026-11-14 it still held 0.01 USDC, and that is not only the agent key\'s to move: the owner, a retired address that is not A-Identity\'s, can withdraw it or pay it out with ownerPay at any time, with no expiry, and can extend the session or swap the operator, while the agent key could pay from it only until its session key ran out at 12:42:37 UTC on 2026-11-15. Do not fund it. Dust on purpose; the caps are the product. Built from the contract source at commit c05b1710, before the Arc Studio review made owner immutable, so verify it against that commit (scripts/sourcify-verify.mjs --source-ref c05b1710); vaults deployed after that review use the reviewed source.',
       },
     ],
     artifacts: [
@@ -768,17 +771,17 @@ export const PROVENANCE: ChainProvenance[] = [
         onChain: 'arbitrum',
         blockNumber: 525042197,
         date: '2026-11-17',
-        note: 'revokeFeedback(1259, 1) from our oracle validator (0xee602A16...) on the ReputationRegistry above: it takes back feedback index 1, value 6 under tag a-identity:reputation:v1:onchain-identity-basis, the 2026-08-28 anchor in the previous entry. The agent is still held by the former operating wallet, so it is a former agent, and A-Identity decided the same day not to try to move it.',
+        note: 'revokeFeedback(1259, 1) from our oracle validator (0xee602A16...) on the ReputationRegistry above: it takes back feedback index 1, value 6 under tag a-identity:reputation:v1:onchain-identity-basis, the 2026-08-28 anchor in the previous entry. The agent is still held by the former operating wallet, so it is a former agent, and A-Identity decided the same day to leave it where it is.',
       },
     ],
     caveats: [
       'Not audited. AgentSpendPolicy has had internal reviews, the latest an Arc Studio AI review on 2026-10-30 with 33 findings and none Critical or High (OLYMPIX_SUBMISSION.md in the repo), plus a Foundry unit, fuzz and invariant suite and a negative-control runner that deletes each guard in turn and requires the suite to go red. The reviewed source then went through an automated Olympix pre-audit scan, whose results came back on 2026-11-02 and are being answered. That is not an audit and we will not call it one.',
-      'We deployed nothing here except the vault. The registries were already live, and registering on them is permissionless. A-Identity registered agent #1259 here, deployed the vault and ran the rail; the agent is still held by, and the vault still owned by, 0xd305...ed36, which A-Identity retired on 2026-11-11 because someone else holds its key, so neither is ours any more, and the rail is paused.',
+      'We deployed nothing here except the vault. The registries were already live, and registering on them is permissionless. A-Identity registered agent #1259 here, deployed the vault and ran the rail; the agent is still held by, and the vault still owned by, 0xd305...ed36, which A-Identity retired on 2026-11-11, so neither is ours any more, and the rail is paused.',
       'This chain is ALREADY served by other x402 facilitators, Coinbase\'s among them. We ran ours here anyway, so that one code path and one receipt standard covered every EVM chain our EIP-3009 rail sold on, until it paused here on 2026-11-11, and no rail of ours sells here now. Its receipts here can still be checked against a well-served baseline, which is more useful to you than being first would have been.',
       'Gasless EIP-3009 relaying on this USDC contract predates us by years and runs constantly. We did not bring gasless USDC to Arbitrum and do not claim to; on-chain an x402 settlement is indistinguishable from any other relayed authorization.',
-      'The settlements recorded here are self-funded tests: the buyer wallet was ours, and the receiving address was the account that broadcast them, the operating wallet of the time (0xd305...ed36), which A-Identity retired on 2026-11-11 because someone else holds its key, so it is not ours any more. They are labeled internal and always will be: evidence the rail works, not evidence of demand.',
+      'The settlements recorded here are self-funded tests: the buyer wallet was ours, and the receiving address was the account that broadcast them, the operating wallet of the time (0xd305...ed36), which A-Identity retired on 2026-11-11, so it is not ours any more. They are labeled internal and always will be: evidence the rail works, not evidence of demand.',
       'KYA is not anchored on Arbitrum One. This caveat used to say the family has no ValidationRegistry, and that was wrong: read live 2026-10-11, the family\'s ValidationRegistry proxy has code here and returns this chain\'s identity registry. It is not wired, so a KYA result is still verified off-chain and recorded, not anchored.',
-      'The vault\'s owner is 0xd305...ed36, the former operating wallet, which A-Identity retired on 2026-11-11 because someone else holds its key (since at least 2026-11-01), so it is not ours. Until that day it was a server-held key that broadcast the x402 settlements here and received them; that day the rail here paused and the pay-to moved to 0xCB88...1bdf, a wallet a person holds. This contract has no owner transfer, so moving the owner to a wallet a person holds means deploying a new vault. What the 2026-10-01 split fixed is the other half: the agent key 0x8C8D...3349 can no longer act as the owner.',
+      'The vault\'s owner is 0xd305...ed36, the former operating wallet, which A-Identity retired on 2026-11-11, so it is not ours. Until that day it was a server-held key that broadcast the x402 settlements here and received them; that day the rail here paused and the pay-to moved to 0xCB88...1bdf, a wallet a person holds. This contract has no owner transfer, so moving the owner to a wallet a person holds means deploying a new vault. What the 2026-10-01 split fixed is the other half: the agent key 0x8C8D...3349 can no longer act as the owner.',
       'Robinhood Chain is an Arbitrum L2, and being live there is a different statement from being live on Arbitrum One. Both are true today; neither substitutes for the other.',
       'This is an L2 that settles to Ethereum, so "settled" has layers and we name them: we wait the descriptor\'s confirmations, which is the sequencer\'s ordering commitment, and we record the block. That is not Ethereum finality, and these USDC cannot leave for Ethereum until the fraud-proof window passes.',
     ],
@@ -786,7 +789,7 @@ export const PROVENANCE: ChainProvenance[] = [
   {
     chain: 'base',
     summary:
-      'Agent #73232 on Base was registered by A-Identity and is still held by 0xd305...ed36, the former operating wallet that A-Identity retired on 2026-11-11 because someone else holds its key. It is not ours any more and we do not vouch for it: our oracle validator revoked the feedback it had written for it on 2026-11-17 (tx 0x8f75a063), and A-Identity decided that day not to try to move it. Never pay or fund that address. Until 2026-11-11 paid trust calls settled here in native Circle USDC through the same first-party EIP-3009 facilitator that still serves Robinhood Chain; that day it paused here, because the key that paid its gas was retired and the new gas-only key holds no ETH here yet. Circle Gateway nanopayments still sell here. The canonical ERC-8004 registries were already deployed by their authors; registering was permissionless and cost well under a cent. The operating wallets were funded from Stellar pubnet USDC through a NEAR Intents market-maker swap, recorded below, because a chain claim without its funding trail is a claim with a hole in it.',
+      'Agent #73232 on Base was registered by A-Identity and is still held by 0xd305...ed36, the former operating wallet that A-Identity retired on 2026-11-11. It is not ours any more and we do not vouch for it: our oracle validator revoked the feedback it had written for it on 2026-11-17 (tx 0x8f75a063), and A-Identity decided that day to leave it where it is. Never pay or fund that address. Until 2026-11-11 paid trust calls settled here in native Circle USDC through the same first-party EIP-3009 facilitator that still serves Robinhood Chain; that day it paused here, because the key that paid its gas was retired and the new gas-only key holds no ETH here yet. Circle Gateway nanopayments still sell here. The canonical ERC-8004 registries were already deployed by their authors; registering was permissionless and cost well under a cent. The operating wallets were funded from Stellar pubnet USDC through a NEAR Intents market-maker swap, recorded below, because a chain claim without its funding trail is a claim with a hole in it.',
     formerAgent: { tokenId: '73232', caip: 'eip155:8453:8004/73232', heldBy: FORMER_OPERATING, tokenUri: AGENT_CARD, note: formerAgentNote('0x8f75a063') },
     contracts: [
       {
@@ -847,12 +850,12 @@ export const PROVENANCE: ChainProvenance[] = [
         onChain: 'base',
         blockNumber: 58653618,
         date: '2026-11-17',
-        note: 'revokeFeedback(73232, 1) from our oracle validator (0xee602A16...) on the canonical ReputationRegistry above: it takes back feedback index 1, value 6 under tag a-identity:reputation:v1:onchain-identity-basis, the 2026-08-28 anchor in the previous entry. The agent is still held by the former operating wallet, so it is a former agent, and A-Identity decided the same day not to try to move it.',
+        note: 'revokeFeedback(73232, 1) from our oracle validator (0xee602A16...) on the canonical ReputationRegistry above: it takes back feedback index 1, value 6 under tag a-identity:reputation:v1:onchain-identity-basis, the 2026-08-28 anchor in the previous entry. The agent is still held by the former operating wallet, so it is a former agent, and A-Identity decided the same day to leave it where it is.',
       },
     ],
     caveats: [
-      'We deployed nothing here. The registries were already live and registering on them is permissionless. A-Identity registered agent #73232 here, and the rails here are its own; the agent is still held by 0xd305...ed36, which A-Identity retired on 2026-11-11 because someone else holds its key, so it is not ours any more.',
-      'The settlement recorded here is a self-funded test: the buyer wallet was ours, and the receiving address was the account that broadcast it, the operating wallet of the time (0xd305...ed36), which A-Identity retired on 2026-11-11 because someone else holds its key, so it is not ours any more. It is labeled internal and always will be: evidence the rail works, not evidence of demand.',
+      'We deployed nothing here. The registries were already live and registering on them is permissionless. A-Identity registered agent #73232 here, and the rails here are its own; the agent is still held by 0xd305...ed36, which A-Identity retired on 2026-11-11, so it is not ours any more.',
+      'The settlement recorded here is a self-funded test: the buyer wallet was ours, and the receiving address was the account that broadcast it, the operating wallet of the time (0xd305...ed36), which A-Identity retired on 2026-11-11, so it is not ours any more. It is labeled internal and always will be: evidence the rail works, not evidence of demand.',
       'This chain is ALREADY served by other x402 facilitators, Coinbase\'s among them. We ran ours here anyway, so that one code path and one receipt standard covered every EVM chain our EIP-3009 rail sold on, until it paused here on 2026-11-11; since then Circle Gateway nanopayments are the only rail of ours that sells here.',
       'The operating wallets were funded through a NEAR Intents market-maker swap from Stellar pubnet USDC: a custodial hop that took under a minute. The Stellar-side transactions are recorded above; the market maker\'s Base-side delivery transactions are not ours to claim. On 2026-09-16 the operating wallet\'s whole Base USDC balance, 0.012 from sales here plus 1 swept from the buyer, was burned through CCTP to fund Arc Mainnet; both transactions are on the Arc proof page, and as of 2026-10-11 the wallet holds no Base USDC and has received none since.',
       'KYA is not anchored on Base. This caveat used to say the family has no ValidationRegistry, and that was wrong: read live 2026-10-11, the family\'s ValidationRegistry proxy has code here and returns this chain\'s identity registry. It is not wired, so a KYA result is still verified off-chain and recorded, not anchored.',
@@ -1676,7 +1679,7 @@ export const PROVENANCE: ChainProvenance[] = [
   {
     chain: 'arc',
     summary:
-      'The phase-1 chain and the only one where all three registries of the ERC-8004 testnet family run together. Agent #849980 (Meridian) is ours again: A-Identity registered it on 2026-07-10 and KYA-attested it through the ValidationRegistry, and on 2026-11-17 moved it from 0xd305...ed36, the former operating wallet that A-Identity retired on 2026-11-11 because someone else holds its key, to the founder\'s wallet 0xCB88...1bdf (tx 0x477d96e3). The move cleared its agent wallet, so the 2026-07-10 KYA proof is about a wallet the agent no longer declares, and the same day our oracle validator revoked the feedback it had written for it (tx 0x258a4521), the first reputation anchor it ever wrote, so no anchor of ours stands for it now. This entry was added 2026-08-30, when an inventory found the flagship agent absent from the ledger that exists to record such things.',
+      'The phase-1 chain and the only one where all three registries of the ERC-8004 testnet family run together. Agent #849980 (Meridian) is ours again: A-Identity registered it on 2026-07-10 and KYA-attested it through the ValidationRegistry, and on 2026-11-17 moved it from 0xd305...ed36, the former operating wallet that A-Identity retired on 2026-11-11, to the founder\'s wallet 0xCB88...1bdf (tx 0x477d96e3). The move cleared its agent wallet, so the 2026-07-10 KYA proof is about a wallet the agent no longer declares, and the same day our oracle validator revoked the feedback it had written for it (tx 0x258a4521), the first reputation anchor it ever wrote, so no anchor of ours stands for it now. This entry was added 2026-08-30, when an inventory found the flagship agent absent from the ledger that exists to record such things.',
     agent: {
       tokenId: '849980',
       caip: 'eip155:5042002:8004/849980',
@@ -1721,7 +1724,7 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: '0x506b125f3a0481667e3a00dcb86f48cbcaa35c643af963365e9389b06a8f8e54',
         onChain: 'arc',
         blockNumber: 51174931,
-        note: 'register(uri) on 2026-07-10, minting straight to the owner wallet of the time, 0xd305...ed36, then the operating wallet (retired 2026-11-11 as compromised). Re-verified 2026-10-11: ownerOf(849980) read back that wallet and tokenURI carried the inline Meridian metadata. On 2026-11-17 A-Identity moved the agent to 0xCB88...1bdf, the owner recorded here since that day (see the caveats); tokenURI is unchanged, and the page re-reads both live.',
+        note: 'register(uri) on 2026-07-10, minting straight to the owner wallet of the time, 0xd305...ed36, then the operating wallet (retired 2026-11-11). Re-verified 2026-10-11: ownerOf(849980) read back that wallet and tokenURI carried the inline Meridian metadata. On 2026-11-17 A-Identity moved the agent to 0xCB88...1bdf, the owner recorded here since that day (see the caveats); tokenURI is unchanged, and the page re-reads both live.',
       },
       {
         kind: 'mint',
@@ -1730,7 +1733,7 @@ export const PROVENANCE: ChainProvenance[] = [
         onChain: 'arc',
         blockNumber: 72685096,
         date: '2026-11-17',
-        note: 'transferFrom(0xd305...ed36, 0xCB88...1bdf, 849980) on the IdentityRegistry above, signed with the key of the former operating wallet A-Identity retired on 2026-11-11, of which A-Identity still had a copy; ownerOf(849980) read back as the founder\'s wallet. The move cleared the agent wallet (getAgentWallet reads the zero address). Recorded as a mint-kind artifact, like the #4306 move on Arc Mainnet.',
+        note: 'transferFrom(0xd305...ed36, 0xCB88...1bdf, 849980) on the IdentityRegistry above, signed with the key of the former operating wallet A-Identity retired on 2026-11-11; ownerOf(849980) read back as the founder\'s wallet. The move cleared the agent wallet (getAgentWallet reads the zero address). Recorded as a mint-kind artifact, like the #4306 move on Arc Mainnet.',
       },
       {
         kind: 'attestation',
@@ -1762,19 +1765,19 @@ export const PROVENANCE: ChainProvenance[] = [
       'Testnet. Nothing on Arc moves real money, and the settlement history behind the 542 score is testnet activity on our own platform.',
       'The KYA attestation proves wallet control at attestation time, not code quality, custody practice, or anything else the word verified might be hoped to stretch to.',
       'The mint transaction was cited in public copy as an anchor tx for weeks. Same hash, wrong noun: it is the registration itself, and the copy now says so.',
-      'On 2026-11-17 A-Identity moved agent #849980 from the former operating wallet 0xd305...ed36 to 0xCB88...1bdf, the founder\'s wallet, with transferFrom on the IdentityRegistry above (tx 0x477d96e3, block 72685096), signed with the retired wallet\'s key, of which A-Identity still had a copy. This ledger recorded the move the same day, so the agent\'s owner field above names 0xCB88...1bdf. The move cleared the agent wallet: getAgentWallet(849980) reads the zero address, so the 2026-07-10 KYA wallet-control proof is about 0x4e26Ae66...3431, a wallet the agent no longer declares, and it does not make the agent KYA-verified today. tokenURI is unchanged.',
+      'On 2026-11-17 A-Identity moved agent #849980 from the former operating wallet 0xd305...ed36 to 0xCB88...1bdf, the founder\'s wallet, with transferFrom on the IdentityRegistry above (tx 0x477d96e3, block 72685096), signed with the retired wallet\'s key. This ledger recorded the move the same day, so the agent\'s owner field above names 0xCB88...1bdf. The move cleared the agent wallet: getAgentWallet(849980) reads the zero address, so the 2026-07-10 KYA wallet-control proof is about 0x4e26Ae66...3431, a wallet the agent no longer declares, and it does not make the agent KYA-verified today. tokenURI is unchanged.',
       'Old receipts here are not served by every host. On 2026-10-11 the primary testnet RPC, Blockdaemon and QuickNode all returned null from eth_getTransactionReceipt for every hash in this list (the primary answered by hash only for recent transactions); dRPC and the explorer returned all of them, and the primary still serves each one by block through eth_getBlockReceipts, which is why every artifact here carries its block.',
     ],
   },
   {
     chain: 'celo',
     summary:
-      'Agent #9759 on the canonical ERC-8004 IdentityRegistry, registered 2026-08-09 by 0xF43F...742D, the wallet that received Celo x402 payments until 2026-11-11, when the founder moved both the agent and the pay-to to 0xCB88...1bdf, a wallet a person holds, because 0xF43F comes from the same seed as 0xd305...ed36, whose key someone else holds; A-Identity retired both that day and neither is ours. One block after the agent moved, someone else used 0xF43F\'s key to take its CELO. Payments here settle through the first-party facilitator Celo runs rather than a rail of ours, and this entry was added 2026-08-30, when an inventory found the registration recorded nowhere in the repo. The two settlement rows were added 2026-10-11, each from a receipt read that day.',
+      'Agent #9759 on the canonical ERC-8004 IdentityRegistry, registered 2026-08-09 by 0xF43F...742D, the wallet that received Celo x402 payments until 2026-11-11, when the founder moved both the agent and the pay-to to 0xCB88...1bdf, a wallet a person holds; A-Identity retired 0xF43F...742D that day, and it is not ours. Since 2026-11-19 its tokenURI is our Celo ERC-8004 registration file, celo-8004.json, rather than the agent card (setAgentURI from 0xCB88...1bdf, tx 0x887e2d6f). Payments here settle through the first-party facilitator Celo runs rather than a rail of ours, and this entry was added 2026-08-30, when an inventory found the registration recorded nowhere in the repo. The two settlement rows were added 2026-10-11, each from a receipt read that day.',
     agent: {
       tokenId: '9759',
       caip: 'eip155:42220:8004/9759',
       owner: FOUNDER,
-      tokenUri: AGENT_CARD,
+      tokenUri: CELO_REGISTRATION,
     },
     contracts: [
       {
@@ -1791,7 +1794,7 @@ export const PROVENANCE: ChainProvenance[] = [
         txHash: '0x0a821026621e5b35ff5602f81348b276b0d0f1b61a3892365658295fc5bcb22e',
         onChain: 'celo',
         blockNumber: 74379462,
-        note: 'register on 2026-08-09 from 0xF43F...742D, the Celo payTo wallet of the time (retired 2026-11-11 as compromised). The hash was recovered from the explorer on 2026-08-30, because nothing in the repo had recorded it; ownerOf(9759) and tokenURI(9759) were re-read live the same day and match this entry, and again on 2026-10-11.',
+        note: 'register on 2026-08-09 from 0xF43F...742D, the Celo payTo wallet of the time (retired 2026-11-11). The hash was recovered from the explorer on 2026-08-30, because nothing in the repo had recorded it; ownerOf(9759) and tokenURI(9759) were re-read live the same day and matched this entry as it then stood, and again on 2026-10-11. The tokenURI was then the agent card, until the owner repointed it on 2026-11-19 (the last entry below, and the caveats).',
       },
       {
         kind: 'settlement',
@@ -1811,12 +1814,22 @@ export const PROVENANCE: ChainProvenance[] = [
         date: '2026-08-09',
         note: 'The block closed at 14:41:51Z and the backend logged the row at 14:41:56Z. Same relayer, same buyer, one USDC Transfer of 0.001 to the payTo. Four more payments from that buyer landed in the next ten seconds without a log row; see the caveats. Receipt and log read 2026-10-11.',
       },
+      {
+        kind: 'mint',
+        label: 'Agent #9759 pointed at our Celo registration file',
+        txHash: '0x887e2d6f388ef27abd7b0db16e16e3ee9d9733c7ff759a6081d55150f976d6b6',
+        onChain: 'celo',
+        blockNumber: 83210072,
+        date: '2026-11-19',
+        note: 'setAgentURI(9759, the celo-8004.json registration file on our site) on the IdentityRegistry above, sent at 17:53:50 UTC by the owner, 0xCB88...1bdf. The receipt carries the registry\'s MetadataUpdate and URIUpdated events for #9759, the latter naming that wallet as the updater. Read live on 2026-11-24 and again on 2026-11-25 (block 83730654): tokenURI(9759) is that file and ownerOf(9759) is still 0xCB88...1bdf. A metadata change, not a transfer; recorded as a mint-kind artifact, like the #4306 move on Arc Mainnet.',
+      },
     ],
     caveats: [
-      'Until 2026-11-11 the owner was the Celo payTo wallet 0xF43F...742D, not the wallet that owned every other EVM agent of ours: deliberate at registration time, but it made this identity and the payment recipient the same key. That key is held by someone else, and A-Identity retired the address on 2026-11-11; that day the agent moved to 0xCB88...1bdf, the wallet a person holds that also holds Arc Mainnet and Robinhood Chain agent #0, and this ledger recorded the move the same day, so the owner field above names 0xCB88...1bdf. Since the move the identity and the payment recipient are again one key, now one a person holds.',
+      'Until 2026-11-11 the owner was the Celo payTo wallet 0xF43F...742D, not the wallet that owned every other EVM agent of ours: deliberate at registration time, but it made this identity and the payment recipient the same key. A-Identity retired the address on 2026-11-11; that day the agent moved to 0xCB88...1bdf, the wallet a person holds that also holds Arc Mainnet and Robinhood Chain agent #0, and this ledger recorded the move the same day, so the owner field above names 0xCB88...1bdf. Since the move the identity and the payment recipient are again one key, now one a person holds.',
+      'On 2026-11-19 the owner repointed #9759 from the agent card to celo-8004.json, our Celo ERC-8004 registration file and the document Aigora lists it from (tx 0x887e2d6f, block 83210072). This ledger kept the agent card as the tokenURI until 2026-11-25, after a review on 2026-11-24 found the proof page still calling the entry a match: its live check compared ownerOf only. The ledger now records the file the token resolves to, and the live check compares ownerOf and tokenURI both.',
       'No reputation anchor exists for #9759 yet; the oracle validator has never written on this chain. getClients(9759) on the ReputationRegistry still returned an empty list on 2026-10-11.',
       'The x402 rail here is Celo\'s own first-party facilitator, not our EIP-3009 rail, so settlement receipts follow their format rather than ours.',
-      'Every payment this rail took into the former payTo 0xF43F...742D (retired 2026-11-11 as compromised) through 2026-10-11 was internal. Read from the explorer on 2026-10-11: it had received 501 USDC transferWithAuthorization payments, 0.975 USDC in all, every one from our buyer wallet 0x8c8d9cd1... and every one on 2026-08-09 between 13:16 and 14:42 UTC. Its only other USDC inflow was 1.806565 from a CELO swap it made itself, 1.2 of which it then sent to that same buyer wallet to fund the run. No outside wallet had sent it USDC by that read.',
+      'Every payment this rail took into the former payTo 0xF43F...742D (retired 2026-11-11) through 2026-10-11 was internal. Read from the explorer on 2026-10-11: it had received 501 USDC transferWithAuthorization payments, 0.975 USDC in all, every one from our buyer wallet 0x8c8d9cd1... and every one on 2026-08-09 between 13:16 and 14:42 UTC. Its only other USDC inflow was 1.806565 from a CELO swap it made itself, 1.2 of which it then sent to that same buyer wallet to fund the run. No outside wallet had sent it USDC by that read.',
       'The production log at /api/celo/proof holds 426 of those 501. The missing 75 (0.138 USDC) are interleaved with logged rows in the same burst, so they are payments that reached the chain without the backend writing them down, not an older window the log dropped. The log under-counts the chain; it does not add to it.',
     ],
   },
