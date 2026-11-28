@@ -35,6 +35,17 @@ type Agent = {
 }
 
 /**
+ * Which chains get a row on this console's Network list: live and beta only, the same
+ * status rule the wallet lists use (chainsFor in lib/wallet/types.ts). A planned entry is
+ * descriptor only, so a row for it would describe nothing of ours. On 2026-11-28 that is
+ * Avalanche: the canonical ERC-8004 registries are live there, but we hold no agent on
+ * them and no rail of ours is wired. The filter reads the registry status, never a list
+ * of ids, so promoting a chain in mcp/src/chains/registry.ts brings its row back with no
+ * edit here.
+ */
+const onNetworkList = (c: Chain): boolean => c.status === 'live' || c.status === 'beta'
+
+/**
  * What one network row can honestly say under its status badge.
  *
  * Every non-Arc row used to read "no live agents yet", which was false for the three
@@ -409,12 +420,12 @@ export default function Dashboard() {
           )}
 
           <h3 className={`mb-3 text-sm font-bold text-foreground/80 ${showChecklist ? '' : 'mt-6'}`}>Network</h3>
-          {/* One row per network: the official mark on a token disc, the name, and a
-              quiet status. Arc leads with its real agent count; every other row says
-              which registries that chain carries, so none of them can claim more than
-              the chain registry knows. */}
+          {/* One row per live or beta network (onNetworkList above): the official mark
+              on a token disc, the name, and a quiet status. Arc leads with its real agent
+              count; every other row says which registries that chain carries, so none of
+              them can claim more than the chain registry knows. */}
           <ul data-tour="network" className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-background/40">
-            {CHAINS.map((c) => (
+            {CHAINS.filter(onNetworkList).map((c) => (
               <li key={c.id} className="flex items-center gap-3 px-3.5 py-2.5 transition-colors duration-[120ms] hover:bg-foreground/[0.02]">
                 <ChainLogo id={c.id} size={26} />
                 <div className="min-w-0 flex-1">

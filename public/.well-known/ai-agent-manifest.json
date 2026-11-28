@@ -142,7 +142,7 @@
           "caip2": "eip155:43114",
           "identity": "ERC-8004",
           "erc8004Native": true,
-          "note": "ERC-8004 registry to be deployed.",
+          "note": "Canonical ERC-8004 identity + reputation registries are live here; we hold no agent on them yet and no rail of ours is wired.",
           "status": "planned"
         }
       ],
