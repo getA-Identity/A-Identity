@@ -36,7 +36,7 @@ export const TOURS: Record<string, PageTour> = {
       {
         target: 'network',
         title: 'Where your agent can operate',
-        body: 'Circle Arc and X Layer are live, Base is on testnet, and the rest of the rails are planned. Every chain links to its explorer.',
+        body: 'Every live and beta network in the chain registry, with the ERC-8004 registries it carries and, where we run a rail, the stablecoin it settles in. Planned chains join once they go live or beta. Each one links to its explorer.',
       },
       {
         target: 'last7',
