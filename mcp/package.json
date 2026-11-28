@@ -38,7 +38,7 @@
     "@near-js/signers": "2.5.1",
     "@near-js/transactions": "2.5.1",
     "@near-js/utils": "2.5.1",
-    "@stellar/stellar-sdk": "^17.1.0",
+    "@stellar/stellar-sdk": "^17.4.0",
     "@x402/core": "^2.31.0",
     "@x402/evm": "^2.31.0",
     "@x402/near": "2.18.0",
@@ -67,7 +67,7 @@
     "axios": "^1.20.0",
     "bn.js": "^4.12.5",
     "smart-account-kit": {
-      "@stellar/stellar-sdk": "16.3.0"
+      "@stellar/stellar-sdk": "16.4.1"
     },
     "tmp": "^0.2.6",
     "toml": "^5.0.1"

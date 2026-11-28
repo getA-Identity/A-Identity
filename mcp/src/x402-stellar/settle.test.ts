@@ -16,7 +16,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { Account, BASE_FEE, Keypair, Networks, Operation, SorobanDataBuilder, TransactionBuilder, hash, xdr } from '@stellar/stellar-sdk'
+import { Account, BASE_FEE, Keypair, Networks, Operation, SorobanDataBuilder, TransactionBuilder, hash, rpc, xdr } from '@stellar/stellar-sdk'
 
 import { getChainById } from '../chains/registry.js'
 import { loadStellarSettlementsResult } from '../storage.js'
@@ -84,6 +84,43 @@ const ledgerServer = (sequence: number) => ({
   simulateTransaction: async () => ({}) as never,
   sendTransaction: async () => ({}) as never,
 })
+
+/**
+ * What testnet's RPC answered to getLatestLedger on 2026-11-28: ledger 5970631, protocol 30.
+ * headerXdr is byte for byte as served. metadataXdr is that ledger's LedgerCloseMeta with its
+ * transaction phases, transaction results, upgrades, SCP messages and evicted keys emptied, so
+ * it is 728 characters instead of the 791,824 served; the ledger header inside it is the served
+ * one.
+ *
+ * Protocol 30 added a fourth StellarValueType. SDK 17.1.0 and 16.3.0 cannot decode it, so on
+ * them getLatestLedger threw on both networks, and every Stellar x402 verify that reached the
+ * ledger read answered rpc_error. ledgerServer above hands back a plain object, which is why no
+ * other test here could see that.
+ */
+const PROTOCOL_30_LATEST_LEDGER = {
+  id: '7e4d354da8331a9262e728bae54d5a8ad3a35fe3e843a4c50003b18ec45a80b5',
+  sequence: 5_970_631,
+  protocolVersion: 30,
+  closeTime: '1795876799',
+  headerXdr:
+    'AAAAHnJw5OyWrbmskpRAJkRZPNT3b7gCzLm5OJDn01Y/f+Sk5zv68RwBo4eShzZf+L8ryK6sXIdJabfwvN1zqkocGaIAAAAAawrnvwAAAAAAAAADAAABoiKZRZEAAAAAqCTNGLyddQZNKZpbW6ykO8OqLzJpOBU9jC+btctt8DMAAABAFt93qS5vEtpy/mYGHDVSIdoTHId/3sz1PEbEyGy6QlvcK5MBYP+15N0tN+wrhROWjiCAGCqo1mLp2CyOKb6RCbK9QczkYhKdvibvFEM/5VzSIBDUXv8V2ObnOzlNptvQcPrHXRkEVxxNRlYKzDxl+IWT05wCIZQuBvLYuzx1ez8AWxrHDeC2s6dkAAAAAC23+Z40IwAAAAAAAAAAAA/KtQAAAGQATEtAAAAAyJx65aPOtrte4400sxG6Htl+e3c+NNiBrU4Ts9GX0Y0voN8fMy1G49/yvFBj491mLX2oDNc5OmCcdV/vtRln1sgP3solEqk2we3DqEOmD9jMrAY6/AMpi8kT8MIhhuyKhUTAaAz0AcKXg+0YuEt37ZCofX9OhI4/zMdPViWaDD1oAAAAAA==',
+  metadataXdr:
+    'AAAAAgAAAAB+TTVNqDMakmLnKLrlTVqK06Nf4+hDpMUAA7GOxFqAtQAAAB5ycOTslq25rJKUQCZEWTzU92+4Asy5uTiQ59NWP3/kpOc7+vEcAaOHkoc2X/i/K8iurFyHSWm38Lzdc6pKHBmiAAAAAGsK578AAAAAAAAAAwAAAaIimUWRAAAAAKgkzRi8nXUGTSmaW1uspDvDqi8yaTgVPYwvm7XLbfAzAAAAQBbfd6kubxLacv5mBhw1UiHaExyHf97M9TxGxMhsukJb3CuTAWD/teTdLTfsK4UTlo4ggBgqqNZi6dgsjim+kQmyvUHM5GISnb4m7xRDP+Vc0iAQ1F7/Fdjm5zs5Tabb0HD6x10ZBFccTUZWCsw8ZfiFk9OcAiGULgby2Ls8dXs/AFsaxw3gtrOnZAAAAAAtt/meNCMAAAAAAAAAAAAPyrUAAABkAExLQAAAAMiceuWjzra7XuONNLMRuh7Zfnt3PjTYga1OE7PRl9GNL6DfHzMtRuPf8rxQY+PdZi19qAzXOTpgnHVf77UZZ9bID97KJRKpNsHtw6hDpg/YzKwGOvwDKYvJE/DCIYbsioVEwGgM9AHCl4PtGLhLd+2QqH1/ToSOP8zHT1Ylmgw9aAAAAAAAAAAAAAAAAXJw5OyWrbmskpRAJkRZPNT3b7gCzLm5OJDn01Y/f+SkAAAAAAAAAAAAAAAAAAAAAAAAAAElePiuAAAAAA==',
+}
+
+/** The real SDK client answering from that recording. Only the socket is replaced, so the SDK's
+ *  own request path and its own XDR parser run exactly as they do against a live host. */
+function recordedLedgerServer(): rpc.Server {
+  const server = new rpc.Server('https://recorded.invalid/rpc')
+  server.httpClient.post = (async () => ({
+    data: { jsonrpc: '2.0', id: 1, result: PROTOCOL_30_LATEST_LEDGER },
+    headers: {},
+    config: {},
+    status: 200,
+    statusText: 'OK',
+  })) as typeof server.httpClient.post
+  return server
+}
 
 const baseDeps = (over: Partial<StellarSettleDeps> = {}): StellarSettleDeps => ({
   env: {},
@@ -296,6 +333,21 @@ test('a signature whose expiry the ledger has passed is expired, not merely tigh
   if (!r.isValid) {
     assert.equal(r.code, 'expired')
     assert.match(r.invalidReason, /the network is at/)
+  }
+
+  // The same decision when the ledger comes from the SDK's own parse of what testnet serves
+  // today. On an SDK that cannot decode a protocol 30 header this answers rpc_error instead.
+  const live = await verifyStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, payload: payload(), limits: LIMITS,
+    deps: baseDeps({ server: recordedLedgerServer() }),
+  })
+  assert.equal(live.isValid, false)
+  if (!live.isValid) {
+    assert.equal(live.code, 'expired', live.invalidReason)
+    assert.equal(
+      live.invalidReason,
+      `the signature expired at ledger ${EXPIRES_AT}; the network is at ${PROTOCOL_30_LATEST_LEDGER.sequence}`,
+    )
   }
 })
 
