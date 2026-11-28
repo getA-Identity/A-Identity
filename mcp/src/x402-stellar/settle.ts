@@ -452,11 +452,10 @@ export function authEntriesFromEnvelope(
   }
   let ops: xdr.Operation[]
   try {
-    const kind = env.switch().name
-    if (kind === 'envelopeTypeTx') ops = env.v1().tx().operations()
-    else if (kind === 'envelopeTypeTxV0') ops = env.v0().tx().operations()
-    else if (kind === 'envelopeTypeTxFeeBump') ops = env.feeBump().tx().innerTx().v1().tx().operations()
-    else return { ok: false, reason: `payload.transaction is a ${kind} envelope, which carries no operations` }
+    if (env.type === 'envelopeTypeTx') ops = env.v1.tx.operations
+    else if (env.type === 'envelopeTypeTxV0') ops = env.v0.tx.operations
+    else if (env.type === 'envelopeTypeTxFeeBump') ops = env.feeBump.tx.innerTx.v1.tx.operations
+    else return { ok: false, reason: `payload.transaction is a ${String((env as xdr.TransactionEnvelope).type)} envelope, which carries no operations` }
   } catch (e) {
     return { ok: false, reason: `could not read the operations out of payload.transaction: ${msg(e)}` }
   }
@@ -466,11 +465,11 @@ export function authEntriesFromEnvelope(
       reason: `payload.transaction carries ${ops.length} operations and a purchase is one invokeHostFunction; send a transaction with exactly one`,
     }
   }
-  const body = ops[0].body()
-  if (body.switch().name !== 'invokeHostFunction') {
-    return { ok: false, reason: `payload.transaction's only operation is a ${body.switch().name}, not an invokeHostFunction` }
+  const body = ops[0].body
+  if (body.type !== 'invokeHostFunction') {
+    return { ok: false, reason: `payload.transaction's only operation is a ${body.type}, not an invokeHostFunction` }
   }
-  return { ok: true, entries: body.invokeHostFunctionOp().auth() }
+  return { ok: true, entries: body.invokeHostFunctionOp.auth }
 }
 
 /**
@@ -521,8 +520,8 @@ export function parseStellarPayload(
 export function decodeAuthEntry(
   entry: xdr.SorobanAuthorizationEntry,
 ): { ok: true; auth: DecodedAuth } | { ok: false; code: StellarVerifyCode; reason: string } {
-  const creds = entry.credentials()
-  if (creds.switch().name !== 'sorobanCredentialsAddress') {
+  const creds = entry.credentials
+  if (creds.type !== 'sorobanCredentialsAddress') {
     return {
       ok: false,
       code: 'source_account_credentials',
@@ -532,31 +531,31 @@ export function decodeAuthEntry(
         'address credential for your own account instead.',
     }
   }
-  const ca = creds.address()
+  const ca = creds.address
   let payer: string
   try {
-    payer = Address.fromScAddress(ca.address()).toString()
+    payer = Address.fromScAddress(ca.address).toString()
   } catch (e) {
     return { ok: false, code: 'malformed_payload', reason: `could not read the payer address: ${msg(e)}` }
   }
 
-  const fnBody = entry.rootInvocation().function()
-  if (fnBody.switch().name !== 'sorobanAuthorizedFunctionTypeContractFn') {
+  const fnBody = entry.rootInvocation.function
+  if (fnBody.type !== 'sorobanAuthorizedFunctionTypeContractFn') {
     return {
       ok: false,
       code: 'wrong_invocation',
       reason: 'the entry authorizes a contract creation rather than a contract call',
     }
   }
-  const call = fnBody.contractFn()
+  const call = fnBody.contractFn
   let contract: string
   try {
-    contract = Address.fromScAddress(call.contractAddress()).toString()
+    contract = Address.fromScAddress(call.contractAddress).toString()
   } catch (e) {
     return { ok: false, code: 'malformed_payload', reason: `could not read the contract address: ${msg(e)}` }
   }
-  const fn = call.functionName().toString()
-  const args = call.args()
+  const fn = call.functionName.toString()
+  const args = call.args
   if (fn !== 'transfer' || args.length !== 3) {
     return {
       ok: false,
@@ -594,8 +593,8 @@ export function decodeAuthEntry(
     ok: true,
     auth: {
       payer,
-      nonce: ca.nonce().toString(),
-      expirationLedger: ca.signatureExpirationLedger(),
+      nonce: ca.nonce.toString(),
+      expirationLedger: ca.signatureExpirationLedger,
       contract,
       fn,
       from,
@@ -617,15 +616,15 @@ export function verifyAuthSignature(
   chain: ChainDescriptor,
   auth: DecodedAuth,
 ): { ok: true } | { ok: false; reason: string } {
-  const ca = auth.entry.credentials().address()
-  let digest: Buffer
+  const ca = xdr.expectUnionVariant(auth.entry.credentials, 'sorobanCredentialsAddress').address
+  let digest: Uint8Array
   try {
     const preimage = xdr.HashIdPreimage.envelopeTypeSorobanAuthorization(
       new xdr.HashIdPreimageSorobanAuthorization({
         networkId: hash(Buffer.from(networkPassphrase(chain))),
-        nonce: ca.nonce(),
-        signatureExpirationLedger: ca.signatureExpirationLedger(),
-        invocation: auth.entry.rootInvocation(),
+        nonce: ca.nonce,
+        signatureExpirationLedger: ca.signatureExpirationLedger,
+        invocation: auth.entry.rootInvocation,
       }),
     )
     digest = hash(preimage.toXDR())
@@ -635,7 +634,7 @@ export function verifyAuthSignature(
 
   let sigs: unknown[]
   try {
-    const native = scValToNative(ca.signature())
+    const native = scValToNative(ca.signature)
     sigs = Array.isArray(native) ? native : [native]
   } catch (e) {
     return { ok: false, reason: `could not read the signature: ${msg(e)}` }
@@ -1091,12 +1090,12 @@ async function buildSignAndSend(
   server: Pick<rpc.Server, 'getLatestLedger' | 'getAccount' | 'simulateTransaction' | 'sendTransaction'> & Partial<Pick<rpc.Server, 'getFeeStats'>>,
   kp: Keypair,
 ): Promise<BroadcastResult> {
-  const call = auth.entry.rootInvocation().function().contractFn()
+  const call = xdr.expectUnionVariant(auth.entry.rootInvocation.function, 'sorobanAuthorizedFunctionTypeContractFn').contractFn
   const func = xdr.HostFunction.hostFunctionTypeInvokeContract(
     new xdr.InvokeContractArgs({
-      contractAddress: call.contractAddress(),
-      functionName: call.functionName(),
-      args: call.args(),
+      contractAddress: call.contractAddress,
+      functionName: call.functionName,
+      args: call.args,
     }),
   )
 
@@ -1192,7 +1191,7 @@ async function buildSignAndSend(
     // so hand it back and let confirmStellarTransfer decide by reading.
     let txHash = ''
     try {
-      txHash = prepared.hash().toString('hex')
+      txHash = Buffer.from(prepared.hash()).toString('hex')
     } catch {
       /* if even the local hash fails there is nothing to follow up, and the message says so */
     }

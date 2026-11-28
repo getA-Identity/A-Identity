@@ -113,13 +113,13 @@ function deployFunc(deployer: string, wasmHex: string, constructorArgs: xdr.ScVa
     salt: randomBytes(32),
     constructorArgs,
   })
-  return op.body().invokeHostFunctionOp().hostFunction()
+  return xdr.expectUnionVariant(op.body, 'invokeHostFunction').invokeHostFunctionOp.hostFunction
 }
 
 function authorizedFn(func: xdr.HostFunction): xdr.SorobanAuthorizedFunction {
-  return func.switch().name === 'hostFunctionTypeInvokeContract'
-    ? xdr.SorobanAuthorizedFunction.sorobanAuthorizedFunctionTypeContractFn(func.invokeContract())
-    : xdr.SorobanAuthorizedFunction.sorobanAuthorizedFunctionTypeCreateContractV2HostFn(func.createContractV2())
+  return func.type === 'hostFunctionTypeInvokeContract'
+    ? xdr.SorobanAuthorizedFunction.sorobanAuthorizedFunctionTypeContractFn(func.invokeContract)
+    : xdr.SorobanAuthorizedFunction.sorobanAuthorizedFunctionTypeCreateContractV2HostFn(xdr.expectUnionVariant(func, 'hostFunctionTypeCreateContractV2').createContractV2)
 }
 
 /** An entry authorizing exactly `func`. `who` null means source-account credentials. */
@@ -129,7 +129,7 @@ function authEntry(func: xdr.HostFunction, who: string | null, subs: xdr.Soroban
       ? xdr.SorobanCredentials.sorobanCredentialsAddress(
           new xdr.SorobanAddressCredentials({
             address: new Address(who).toScAddress(),
-            nonce: new xdr.Int64(7),
+            nonce: 7n,
             signatureExpirationLedger: 99,
             // A real entry carries the passkey's assertion here. Nothing in this repo ever
             // needs one, so it is void: the relay checks WHAT is authorized, and the host

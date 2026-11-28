@@ -95,15 +95,15 @@ function primaryAnswers(server: rpc.Server, body: unknown): void {
   })) as typeof server.httpClient.post
 }
 
-/** The SDK reads `toXDR()` off a transaction and posts the result, so this is every part
- *  of a transaction the paths under test can observe. */
+/** The SDK reads `toXdr()` off a transaction and posts the result (`toXDR()` before SDK 17,
+ *  which renamed it), so this is every part of a transaction the paths under test can observe. */
 /** getAccount checks the address is a real StrKey before it reaches the transport, so the
  *  test needs a real one. Generated rather than pasted: no key-shaped literal belongs in
  *  this repo, not even a public one. */
 const ACCOUNT = Keypair.random().publicKey()
 
-const TX = { toXDR: () => 'AAAAAgAAAAA=' } as unknown as Parameters<rpc.Server['sendTransaction']>[0]
-const LEDGER_KEY = { toXDR: () => 'AAAAAA==' } as unknown as Parameters<rpc.Server['getLedgerEntries']>[0]
+const TX = { toXdr: () => 'AAAAAgAAAAA=' } as unknown as Parameters<rpc.Server['sendTransaction']>[0]
+const LEDGER_KEY = { toXdr: () => 'AAAAAA==' } as unknown as Parameters<rpc.Server['getLedgerEntries']>[0]
 
 function failover(
   fallbacks: { server: SorobanReads }[],
@@ -402,14 +402,14 @@ test('a fallback that cannot be built is dropped rather than taking the primary 
 function archivedData(indexes: number[]): SorobanDataBuilder {
   return new SorobanDataBuilder(
     new xdr.SorobanTransactionData({
-      ext: new xdr.SorobanTransactionDataExt(1, new xdr.SorobanResourcesExtV0({ archivedSorobanEntries: indexes })),
+      ext: xdr.SorobanTransactionDataExt.resourceExt(new xdr.SorobanResourcesExtV0({ archivedSorobanEntries: indexes })),
       resources: new xdr.SorobanResources({
         footprint: new xdr.LedgerFootprint({ readOnly: [], readWrite: [] }),
         instructions: 0,
         diskReadBytes: 0,
         writeBytes: 0,
       }),
-      resourceFee: new xdr.Int64(0),
+      resourceFee: 0n,
     }).toXDR('base64'),
   )
 }

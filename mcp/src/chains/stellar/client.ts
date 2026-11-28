@@ -418,9 +418,9 @@ export function simulationArchivedEntries(sim: rpc.Api.SimulateTransactionRespon
         : typeof raw === 'string'
           ? xdr.SorobanTransactionData.fromXDR(raw, 'base64')
           : (raw as xdr.SorobanTransactionData | undefined)
-    const ext = data?.ext()
-    if (!ext || Number(ext.switch()) !== 1) return []
-    return [...ext.resourceExt().archivedSorobanEntries()]
+    const ext = data?.ext
+    if (!ext || ext.type !== 'resourceExt') return []
+    return [...ext.resourceExt.archivedSorobanEntries]
   } catch {
     return []
   }

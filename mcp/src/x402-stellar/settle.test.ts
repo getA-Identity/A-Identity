@@ -16,7 +16,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { Account, BASE_FEE, Keypair, Networks, Operation, SorobanDataBuilder, TransactionBuilder, hash, xdr } from '@stellar/stellar-sdk'
+import { Account, BASE_FEE, Keypair, Networks, Operation, SorobanDataBuilder, TransactionBuilder, hash, rpc, xdr } from '@stellar/stellar-sdk'
 
 import { getChainById } from '../chains/registry.js'
 import { loadStellarSettlementsResult } from '../storage.js'
@@ -85,6 +85,43 @@ const ledgerServer = (sequence: number) => ({
   sendTransaction: async () => ({}) as never,
 })
 
+/**
+ * What testnet's RPC answered to getLatestLedger on 2026-11-28: ledger 5970631, protocol 30.
+ * headerXdr is byte for byte as served. metadataXdr is that ledger's LedgerCloseMeta with its
+ * transaction phases, transaction results, upgrades, SCP messages and evicted keys emptied, so
+ * it is 728 characters instead of the 791,824 served; the ledger header inside it is the served
+ * one.
+ *
+ * Protocol 30 added a fourth StellarValueType. SDK 17.1.0 and 16.3.0 cannot decode it, so on
+ * them getLatestLedger threw on both networks, and every Stellar x402 verify that reached the
+ * ledger read answered rpc_error. ledgerServer above hands back a plain object, which is why no
+ * other test here could see that.
+ */
+const PROTOCOL_30_LATEST_LEDGER = {
+  id: '7e4d354da8331a9262e728bae54d5a8ad3a35fe3e843a4c50003b18ec45a80b5',
+  sequence: 5_970_631,
+  protocolVersion: 30,
+  closeTime: '1795876799',
+  headerXdr:
+    'AAAAHnJw5OyWrbmskpRAJkRZPNT3b7gCzLm5OJDn01Y/f+Sk5zv68RwBo4eShzZf+L8ryK6sXIdJabfwvN1zqkocGaIAAAAAawrnvwAAAAAAAAADAAABoiKZRZEAAAAAqCTNGLyddQZNKZpbW6ykO8OqLzJpOBU9jC+btctt8DMAAABAFt93qS5vEtpy/mYGHDVSIdoTHId/3sz1PEbEyGy6QlvcK5MBYP+15N0tN+wrhROWjiCAGCqo1mLp2CyOKb6RCbK9QczkYhKdvibvFEM/5VzSIBDUXv8V2ObnOzlNptvQcPrHXRkEVxxNRlYKzDxl+IWT05wCIZQuBvLYuzx1ez8AWxrHDeC2s6dkAAAAAC23+Z40IwAAAAAAAAAAAA/KtQAAAGQATEtAAAAAyJx65aPOtrte4400sxG6Htl+e3c+NNiBrU4Ts9GX0Y0voN8fMy1G49/yvFBj491mLX2oDNc5OmCcdV/vtRln1sgP3solEqk2we3DqEOmD9jMrAY6/AMpi8kT8MIhhuyKhUTAaAz0AcKXg+0YuEt37ZCofX9OhI4/zMdPViWaDD1oAAAAAA==',
+  metadataXdr:
+    'AAAAAgAAAAB+TTVNqDMakmLnKLrlTVqK06Nf4+hDpMUAA7GOxFqAtQAAAB5ycOTslq25rJKUQCZEWTzU92+4Asy5uTiQ59NWP3/kpOc7+vEcAaOHkoc2X/i/K8iurFyHSWm38Lzdc6pKHBmiAAAAAGsK578AAAAAAAAAAwAAAaIimUWRAAAAAKgkzRi8nXUGTSmaW1uspDvDqi8yaTgVPYwvm7XLbfAzAAAAQBbfd6kubxLacv5mBhw1UiHaExyHf97M9TxGxMhsukJb3CuTAWD/teTdLTfsK4UTlo4ggBgqqNZi6dgsjim+kQmyvUHM5GISnb4m7xRDP+Vc0iAQ1F7/Fdjm5zs5Tabb0HD6x10ZBFccTUZWCsw8ZfiFk9OcAiGULgby2Ls8dXs/AFsaxw3gtrOnZAAAAAAtt/meNCMAAAAAAAAAAAAPyrUAAABkAExLQAAAAMiceuWjzra7XuONNLMRuh7Zfnt3PjTYga1OE7PRl9GNL6DfHzMtRuPf8rxQY+PdZi19qAzXOTpgnHVf77UZZ9bID97KJRKpNsHtw6hDpg/YzKwGOvwDKYvJE/DCIYbsioVEwGgM9AHCl4PtGLhLd+2QqH1/ToSOP8zHT1Ylmgw9aAAAAAAAAAAAAAAAAXJw5OyWrbmskpRAJkRZPNT3b7gCzLm5OJDn01Y/f+SkAAAAAAAAAAAAAAAAAAAAAAAAAAElePiuAAAAAA==',
+}
+
+/** The real SDK client answering from that recording. Only the socket is replaced, so the SDK's
+ *  own request path and its own XDR parser run exactly as they do against a live host. */
+function recordedLedgerServer(): rpc.Server {
+  const server = new rpc.Server('https://recorded.invalid/rpc')
+  server.httpClient.post = (async () => ({
+    data: { jsonrpc: '2.0', id: 1, result: PROTOCOL_30_LATEST_LEDGER },
+    headers: {},
+    config: {},
+    status: 200,
+    statusText: 'OK',
+  })) as typeof server.httpClient.post
+  return server
+}
+
 const baseDeps = (over: Partial<StellarSettleDeps> = {}): StellarSettleDeps => ({
   env: {},
   server: ledgerServer(EXPIRES_AT - 100),
@@ -129,7 +166,7 @@ test('a payload without authEntryXdr is refused rather than half-read', () => {
 test('source-account credentials are refused with their own reason', () => {
   const entry = new xdr.SorobanAuthorizationEntry({
     credentials: xdr.SorobanCredentials.sorobanCredentialsSourceAccount(),
-    rootInvocation: xdr.SorobanAuthorizationEntry.fromXDR(ENTRY, 'base64').rootInvocation(),
+    rootInvocation: xdr.SorobanAuthorizationEntry.fromXDR(ENTRY, 'base64').rootInvocation,
   })
   const d = decodeAuthEntry(entry)
   assert.equal(d.ok, false)
@@ -138,6 +175,25 @@ test('source-account credentials are refused with their own reason', () => {
     assert.match(d.reason, /we submit, so that would make us the payer/)
   }
 })
+
+/** The address credentials of an entry this file knows to carry them. */
+function addressCredentials(entry: xdr.SorobanAuthorizationEntry): xdr.SorobanAddressCredentials {
+  return xdr.expectUnionVariant(entry.credentials, 'sorobanCredentialsAddress').address
+}
+
+/**
+ * The same entry with another signature in its address credentials. XDR values are immutable
+ * since SDK 17, so a tampered entry is rebuilt rather than edited in place.
+ */
+function withSignature(entry: xdr.SorobanAuthorizationEntry, signature: xdr.ScVal): xdr.SorobanAuthorizationEntry {
+  const ca = addressCredentials(entry)
+  return new xdr.SorobanAuthorizationEntry({
+    credentials: xdr.SorobanCredentials.sorobanCredentialsAddress(
+      new xdr.SorobanAddressCredentials({ address: ca.address, nonce: ca.nonce, signatureExpirationLedger: ca.signatureExpirationLedger, signature }),
+    ),
+    rootInvocation: entry.rootInvocation,
+  })
+}
 
 // ── the signature, checked against the real one ──────────────────────────────────────
 
@@ -165,16 +221,16 @@ test('a testnet signature does not verify against pubnet', () => {
 })
 
 test('one flipped byte in the signature is caught', () => {
-  const entry = xdr.SorobanAuthorizationEntry.fromXDR(ENTRY, 'base64')
+  const real = xdr.SorobanAuthorizationEntry.fromXDR(ENTRY, 'base64')
   // A real entry wraps the {public_key, signature} map in a VEC, because Soroban allows an
   // account to satisfy one authorization with several signatures. Reading it as a bare map
   // throws, which is how this test found out rather than assuming.
-  const sigVec = entry.credentials().address().signature().vec()!
-  const sigMap = sigVec[0].map()!
-  const sigBytes = Buffer.from(sigMap[1].val().bytes())
+  const sigVec = xdr.expectUnionVariant(addressCredentials(real).signature, 'scvVec').vec!
+  const sigMap = [...xdr.expectUnionVariant(sigVec[0], 'scvMap').map!]
+  const sigBytes = Buffer.from(xdr.expectUnionVariant(sigMap[1].val, 'scvBytes').bytes.toBytes())
   sigBytes[0] ^= 0x01
-  sigMap[1] = new xdr.ScMapEntry({ key: sigMap[1].key(), val: xdr.ScVal.scvBytes(sigBytes) })
-  entry.credentials().address().signature(xdr.ScVal.scvVec([xdr.ScVal.scvMap(sigMap)]))
+  sigMap[1] = new xdr.ScMapEntry({ key: sigMap[1].key, val: xdr.ScVal.scvBytes(sigBytes) })
+  const entry = withSignature(real, xdr.ScVal.scvVec([xdr.ScVal.scvMap(sigMap)]))
 
   const d = decodeAuthEntry(entry)
   assert.equal(d.ok, true)
@@ -190,20 +246,21 @@ test('one flipped byte in the signature is caught', () => {
  * comparing the embedded public key to the credentialed address catches it.
  */
 test('a real signature from a different key does not pass as the payer', () => {
-  const entry = xdr.SorobanAuthorizationEntry.fromXDR(ENTRY, 'base64')
+  const real = xdr.SorobanAuthorizationEntry.fromXDR(ENTRY, 'base64')
   const attacker = Keypair.fromRawEd25519Seed(Buffer.alloc(32, 7))
-  const ca = entry.credentials().address()
+  const ca = addressCredentials(real)
   const digest = hash(
     xdr.HashIdPreimage.envelopeTypeSorobanAuthorization(
       new xdr.HashIdPreimageSorobanAuthorization({
         networkId: hash(Buffer.from(Networks.TESTNET)),
-        nonce: ca.nonce(),
-        signatureExpirationLedger: ca.signatureExpirationLedger(),
-        invocation: entry.rootInvocation(),
+        nonce: ca.nonce,
+        signatureExpirationLedger: ca.signatureExpirationLedger,
+        invocation: real.rootInvocation,
       }),
     ).toXDR(),
   )
-  ca.signature(
+  const entry = withSignature(
+    real,
     xdr.ScVal.scvVec([
       xdr.ScVal.scvMap([
         new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol('public_key'), val: xdr.ScVal.scvBytes(attacker.rawPublicKey()) }),
@@ -276,6 +333,21 @@ test('a signature whose expiry the ledger has passed is expired, not merely tigh
   if (!r.isValid) {
     assert.equal(r.code, 'expired')
     assert.match(r.invalidReason, /the network is at/)
+  }
+
+  // The same decision when the ledger comes from the SDK's own parse of what testnet serves
+  // today. On an SDK that cannot decode a protocol 30 header this answers rpc_error instead.
+  const live = await verifyStellarPayment({
+    chain: CHAIN, token: TOKEN, requirements: REQ, payload: payload(), limits: LIMITS,
+    deps: baseDeps({ server: recordedLedgerServer() }),
+  })
+  assert.equal(live.isValid, false)
+  if (!live.isValid) {
+    assert.equal(live.code, 'expired', live.invalidReason)
+    assert.equal(
+      live.invalidReason,
+      `the signature expired at ledger ${EXPIRES_AT}; the network is at ${PROTOCOL_30_LATEST_LEDGER.sequence}`,
+    )
   }
 })
 
@@ -639,9 +711,9 @@ test('the scheme is decided by what the payload carries, not by what it claims',
 /** Wrap entries in a v1 envelope the way a stock client would. */
 function envelopeAround(entries: xdr.SorobanAuthorizationEntry[], opts: { extraOp?: boolean; wrongOp?: boolean } = {}): string {
   const source = new Account(Keypair.random().publicKey(), '1')
-  const fn = xdr.SorobanAuthorizationEntry.fromXDR(ENTRY, 'base64').rootInvocation().function().contractFn()
+  const fn = xdr.expectUnionVariant(xdr.SorobanAuthorizationEntry.fromXDR(ENTRY, 'base64').rootInvocation.function, 'sorobanAuthorizedFunctionTypeContractFn').contractFn
   const host = xdr.HostFunction.hostFunctionTypeInvokeContract(
-    new xdr.InvokeContractArgs({ contractAddress: fn.contractAddress(), functionName: fn.functionName(), args: fn.args() }),
+    new xdr.InvokeContractArgs({ contractAddress: fn.contractAddress, functionName: fn.functionName, args: fn.args }),
   )
   const b = new TransactionBuilder(source, { fee: BASE_FEE, networkPassphrase: Networks.TESTNET })
   if (opts.wrongOp) b.addOperation(Operation.bumpSequence({ bumpTo: '2' }))

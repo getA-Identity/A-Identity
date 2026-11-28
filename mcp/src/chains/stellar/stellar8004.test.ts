@@ -286,14 +286,14 @@ test('an archived registry reads as archived even when the RPC sends no restore 
   // Checking the preamble alone read that registry as live.
   const transactionData = new SorobanDataBuilder(
     new xdr.SorobanTransactionData({
-      ext: new xdr.SorobanTransactionDataExt(1, new xdr.SorobanResourcesExtV0({ archivedSorobanEntries: [0, 1] })),
+      ext: xdr.SorobanTransactionDataExt.resourceExt(new xdr.SorobanResourcesExtV0({ archivedSorobanEntries: [0, 1] })),
       resources: new xdr.SorobanResources({
         footprint: new xdr.LedgerFootprint({ readOnly: [], readWrite: [] }),
         instructions: 0,
         diskReadBytes: 0,
         writeBytes: 0,
       }),
-      resourceFee: new xdr.Int64(0),
+      resourceFee: 0n,
     }).toXDR('base64'),
   )
   const server = {

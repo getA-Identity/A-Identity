@@ -77,7 +77,7 @@ for (const { chain, vault, rpcUrl } of targets) {
     new xdr.LedgerKeyContractData({
       contract: new Address(vault).toScAddress(),
       key: xdr.ScVal.scvLedgerKeyContractInstance(),
-      durability: xdr.ContractDataDurability.persistent(),
+      durability: xdr.ContractDataDurability.persistent,
     }),
   )
 

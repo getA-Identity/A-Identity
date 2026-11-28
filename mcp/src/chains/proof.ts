@@ -399,7 +399,7 @@ async function stellarLiveCheck(
         new xdr.LedgerKeyContractData({
           contract: new Address(c.address).toScAddress(),
           key: xdr.ScVal.scvLedgerKeyContractInstance(),
-          durability: xdr.ContractDataDurability.persistent(),
+          durability: xdr.ContractDataDurability.persistent,
         }),
       ),
     )
@@ -411,7 +411,7 @@ async function stellarLiveCheck(
     const byAddress = new Map<string, { liveUntilLedgerSeq?: number }>()
     for (const e of found.entries) {
       try {
-        byAddress.set(Address.fromScAddress(e.key.contractData().contract()).toString(), e)
+        byAddress.set(Address.fromScAddress(xdr.expectUnionVariant(e.key, 'contractData').contractData.contract).toString(), e)
       } catch {
         /* an entry whose key will not decode names no contract */
       }

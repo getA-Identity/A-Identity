@@ -88,7 +88,7 @@ async function submit(tx, label) {
   const sent = await server.sendTransaction(tx)
   const hash = sent.hash
   if (sent.status === 'ERROR') {
-    console.log(`  ${label}: REJECTED before the ledger (${sent.errorResult?.result()?.switch()?.name})`)
+    console.log(`  ${label}: REJECTED before the ledger (${sent.errorResult?.result?.type})`)
     return { hash, landed: false }
   }
   let got = await server.getTransaction(hash)

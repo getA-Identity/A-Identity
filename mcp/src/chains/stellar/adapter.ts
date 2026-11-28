@@ -476,6 +476,28 @@ export type VaultDeployOutcome =
   | (Extract<CallOutcome, { outcome: 'prepared' }> & { vault?: string })
   | (Extract<CallOutcome, { outcome: 'settled' }> & { vault: string; salt?: string; wasmHash?: string })
 
+/**
+ * The address credentials an authorization entry carries, on whichever arm they were recorded,
+ * or null for source-account credentials.
+ *
+ * SDK 17 asks the RPC to record CAP-71 v2 credentials by default (`useUpgradedAuth`), so a
+ * requirement that came back on the legacy `address` arm under SDK 16 comes back on
+ * `addressV2` now, and protocol 28 makes v2 the only form. Every address arm names someone
+ * whose own signature the call needs, so the readers below treat them alike.
+ */
+function addressCredentialsOf(creds: xdr.SorobanCredentials): xdr.SorobanAddressCredentials | null {
+  switch (creds.type) {
+    case 'sorobanCredentialsAddress':
+      return creds.address
+    case 'sorobanCredentialsAddressV2':
+      return creds.addressV2
+    case 'sorobanCredentialsAddressWithDelegates':
+      return creds.addressWithDelegates.addressCredentials
+    default:
+      return null
+  }
+}
+
 /** Every diagnostic event a getTransaction answer carries, wherever this protocol put them. */
 function diagnosticEventsOf(tx: rpc.Api.GetTransactionResponse): xdr.DiagnosticEvent[] {
   const out: xdr.DiagnosticEvent[] = []
@@ -489,9 +511,8 @@ function diagnosticEventsOf(tx: rpc.Api.GetTransactionResponse): xdr.DiagnosticE
   // sorobanMeta in a v3 meta, and at the top of a v4 one (protocol 23 on).
   const meta = (tx as { resultMetaXdr?: xdr.TransactionMeta }).resultMetaXdr
   if (!meta) return out
-  const arm = meta.switch() as unknown as number
-  if (arm === 3) return [...(meta.v3().sorobanMeta()?.diagnosticEvents() ?? [])]
-  if (arm === 4) return [...meta.v4().diagnosticEvents()]
+  if (meta.type === 'v3') return [...(meta.v3.sorobanMeta?.diagnosticEvents ?? [])]
+  if (meta.type === 'v4') return [...meta.v4.diagnosticEvents]
   return out
 }
 
@@ -515,15 +536,15 @@ export function failureErrorIn(
 ): { code: number; from?: string; ours: boolean } | undefined {
   try {
     for (const ev of diagnosticEventsOf(tx)) {
-      const body = ev.event().body()
-      if ((body.switch() as unknown as number) !== 0) continue
-      const topics = body.v0().topics()
-      if (topics.length < 2 || topics[0].switch().name !== 'scvSymbol' || topics[0].sym().toString() !== 'error') continue
-      const err = topics.find((t) => t.switch().name === 'scvError')
-      if (!err || err.error().switch().name !== 'sceContract') continue
-      const code = err.error().contractCode()
-      const raw = ev.event().contractId()
-      const from = raw ? StrKey.encodeContract(Buffer.from(raw as unknown as Uint8Array)) : undefined
+      const body = ev.event.body
+      if (body.type !== 'v0') continue
+      const topics = body.v0.topics
+      if (topics.length < 2 || topics[0].type !== 'scvSymbol' || topics[0].sym.toString() !== 'error') continue
+      const err = topics.find((t): t is xdr.ScValError => t.type === 'scvError')
+      if (!err || err.error.type !== 'sceContract') continue
+      const code = err.error.contractCode
+      const raw = ev.event.contractId
+      const from = raw ? StrKey.encodeContract(raw.toBytes()) : undefined
       return { code, from, ours: from === undefined ? true : from === calledContract }
     }
   } catch {
@@ -542,14 +563,14 @@ function resultCodesOf(result: xdr.TransactionResult | undefined): { resultCode?
   if (!result) return {}
   const out: { resultCode?: string; opResultCode?: string; feeChargedStroops?: string } = {}
   try {
-    out.feeChargedStroops = result.feeCharged().toString()
-    const r = result.result()
-    out.resultCode = r.switch().name
-    if (out.resultCode === 'txFailed' || out.resultCode === 'txSuccess') {
-      const op = r.results()[0]
-      if (op && op.switch().name === 'opInner') {
-        const tr = op.tr()
-        if (tr.switch().name === 'invokeHostFunction') out.opResultCode = tr.invokeHostFunctionResult().switch().name
+    out.feeChargedStroops = result.feeCharged.toString()
+    const r = result.result
+    out.resultCode = r.type
+    if (r.type === 'txFailed' || r.type === 'txSuccess') {
+      const op = r.results[0]
+      if (op && op.type === 'opInner') {
+        const tr = op.tr
+        if (tr.type === 'invokeHostFunction') out.opResultCode = tr.invokeHostFunctionResult.type
       }
     }
   } catch {
@@ -718,7 +739,7 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
 
     const assembled = rpc.assembleTransaction(tx, sim).build()
     assembled.sign(kp)
-    const hash = assembled.hash().toString('hex')
+    const hash = Buffer.from(assembled.hash()).toString('hex')
     try {
       await hooks.onBroadcast?.(hash)
     } catch (e) {
@@ -764,8 +785,9 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
     const auth = (sim as { result?: { auth?: xdr.SorobanAuthorizationEntry[] } }).result?.auth ?? []
     for (const entry of auth) {
       try {
-        if (entry.credentials().switch().name !== 'sorobanCredentialsAddress') continue
-        out.push(Address.fromScAddress(entry.credentials().address().address()).toString())
+        const credentials = addressCredentialsOf(entry.credentials)
+        if (!credentials) continue
+        out.push(Address.fromScAddress(credentials.address).toString())
       } catch {
         // An entry we cannot read is treated as someone else's: refusing to submit costs a
         // retry, submitting it costs a fee and a failed transaction in the ledger.
@@ -1109,7 +1131,7 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
     opts: { dryRun?: boolean; deployer?: string } = {},
     env: NodeJS.ProcessEnv = process.env,
   ): Promise<CallOutcome & { wasmHash: string }> {
-    const wasmHash = hash(wasm).toString('hex')
+    const wasmHash = Buffer.from(hash(wasm)).toString('hex')
     const shape = { contract: '<upload>', method: 'uploadContractWasm', args: [wasmHash, String(wasm.length)], network: chain.caip2 }
     const kp = stellarKeypair(chain, env)
     const dryDeployer = opts.dryRun && !kp && opts.deployer && isAccountId(opts.deployer) ? opts.deployer : null
@@ -1356,8 +1378,9 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
     // that case rather than invented, with the time bound stated beside it.
     let expiresAtLedger: number | null = null
     for (const entry of (sim as { result?: { auth?: xdr.SorobanAuthorizationEntry[] } }).result?.auth ?? []) {
-      if (entry.credentials().switch().name === 'sorobanCredentialsAddress') {
-        const at = entry.credentials().address().signatureExpirationLedger()
+      const credentials = addressCredentialsOf(entry.credentials)
+      if (credentials) {
+        const at = credentials.signatureExpirationLedger
         expiresAtLedger = expiresAtLedger === null ? at : Math.max(expiresAtLedger, at)
       }
     }
@@ -1424,16 +1447,16 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
       return { ok: false, code: 'bad_request', reason: `operation type ${op.type} is not accepted here; only a contract invocation is.` }
     }
     const func = op.func
-    if (func.switch().name !== 'hostFunctionTypeInvokeContract') {
+    if (func.type !== 'hostFunctionTypeInvokeContract') {
       return {
         ok: false,
         code: 'bad_request',
         reason: 'this envelope uploads or creates a contract rather than invoking one, which this endpoint does not relay.',
       }
     }
-    const invocation = func.invokeContract()
-    const contract = Address.fromScAddress(invocation.contractAddress()).toString()
-    const method = invocation.functionName().toString()
+    const invocation = func.invokeContract
+    const contract = Address.fromScAddress(invocation.contractAddress).toString()
+    const method = invocation.functionName.toString()
     if (!isOwnerMethod(method)) {
       return {
         ok: false,
@@ -1463,7 +1486,7 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
         if (!isAccountId(source)) return false
         const key = Keypair.fromPublicKey(source)
         const digest = rebuilt.hash()
-        return rebuilt.signatures.some((s) => key.verify(digest, s.signature()))
+        return rebuilt.signatures.some((s) => key.verify(digest, s.signature.toBytes()))
       } catch {
         return false
       }
@@ -1479,7 +1502,7 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
       }
     }
 
-    return { ok: true, source, contract, method, args: invocation.args().map((a) => scValToNative(a)), signatures, sourceSigned }
+    return { ok: true, source, contract, method, args: invocation.args.map((a) => scValToNative(a)), signatures, sourceSigned }
   }
 
   /**
@@ -1525,8 +1548,8 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
         inspection,
         outcome: {
           outcome: 'pending',
-          txHash: tx.hash().toString('hex'),
-          explorerUrl: `${chain.explorer}/tx/${tx.hash().toString('hex')}`,
+          txHash: Buffer.from(tx.hash()).toString('hex'),
+          explorerUrl: `${chain.explorer}/tx/${Buffer.from(tx.hash()).toString('hex')}`,
           reason:
             `the RPC did not answer the submission (${e instanceof Error ? e.message : String(e)}), so whether ` +
             'it was accepted is unknown. It stays valid until its time bound: look the hash up before signing again.',
@@ -1698,7 +1721,7 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
         new xdr.LedgerKeyContractData({
           contract: new Address(contract).toScAddress(),
           key: xdr.ScVal.scvLedgerKeyContractInstance(),
-          durability: xdr.ContractDataDurability.persistent(),
+          durability: xdr.ContractDataDurability.persistent,
         }),
       )
       const res = await server.getLedgerEntries(key)
@@ -1710,12 +1733,12 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
       let executable: 'wasm' | 'stellar-asset' | 'other' | null = null
       let wasmHash: string | null = null
       try {
-        const exe = (entry.val as xdr.LedgerEntryData).contractData().val().instance().executable()
-        const arm = exe.switch().name
-        if (arm === 'contractExecutableWasm') {
+        const stored = xdr.expectUnionVariant(entry.val as xdr.LedgerEntryData, 'contractData').contractData.val
+        const exe = xdr.expectUnionVariant(stored, 'scvContractInstance').instance.executable
+        if (exe.type === 'contractExecutableWasm') {
           executable = 'wasm'
-          wasmHash = Buffer.from(exe.wasmHash() as unknown as Uint8Array).toString('hex')
-        } else if (arm === 'contractExecutableStellarAsset') {
+          wasmHash = Buffer.from(exe.wasmHash.toBytes()).toString('hex')
+        } else if (exe.type === 'contractExecutableStellarAsset') {
           executable = 'stellar-asset'
         } else {
           executable = 'other'
@@ -1757,7 +1780,7 @@ export function createStellarAdapter(chain: ChainDescriptor, deps: StellarAdapte
         new xdr.LedgerKeyContractData({
           contract: new Address(contract).toScAddress(),
           key: xdr.ScVal.scvLedgerKeyContractInstance(),
-          durability: xdr.ContractDataDurability.persistent(),
+          durability: xdr.ContractDataDurability.persistent,
         }),
       )
       const res = await server.getLedgerEntries(key)

@@ -161,7 +161,7 @@ function nativeArg(v: xdr.ScVal): unknown {
   try {
     return jsonSafe(scValToNative(v))
   } catch {
-    return { scv: v.switch().name }
+    return { scv: v.type }
   }
 }
 
@@ -169,8 +169,13 @@ function scAddressString(a: xdr.ScAddress): string {
   return Address.fromScAddress(a).toString()
 }
 
-function contractIdString(hash: Buffer | null | undefined): string | null {
-  return hash ? StrKey.encodeContract(Buffer.from(hash)) : null
+function contractIdString(id: xdr.ContractId | null | undefined): string | null {
+  return id ? StrKey.encodeContract(id.toBytes()) : null
+}
+
+/** The bytes of an scvBytes value. Throws on any other arm, as the SDK 16 accessor did. */
+function bytesOf(v: xdr.ScVal): Buffer {
+  return Buffer.from(xdr.expectUnionVariant(v, 'scvBytes').bytes.toBytes())
 }
 
 /** The head and tail of an address, so a sentence can end on one without a run of dots. */
@@ -239,10 +244,10 @@ function ed25519Key(raw: Buffer) {
 }
 
 function mapField(m: xdr.ScVal, name: string): xdr.ScVal | undefined {
-  if (m.switch().name !== 'scvMap') return undefined
-  for (const e of m.map() ?? []) {
-    const k = e.key()
-    if (k.switch().name === 'scvSymbol' && k.sym().toString() === name) return e.val()
+  if (m.type !== 'scvMap') return undefined
+  for (const e of m.map ?? []) {
+    const k = e.key
+    if (k.type === 'scvSymbol' && k.sym.toString() === name) return e.val
   }
   return undefined
 }
@@ -258,9 +263,9 @@ function decodeWebAuthn(sigBytes: Buffer, pubPoint: Buffer, digests: { authDiges
   const clientData = mapField(inner, 'client_data')
   const signature = mapField(inner, 'signature')
   if (!authData || !clientData || !signature) return null
-  const ad = Buffer.from(authData.bytes())
-  const cdRaw = Buffer.from(clientData.bytes())
-  const sig = Buffer.from(signature.bytes())
+  const ad = bytesOf(authData)
+  const cdRaw = bytesOf(clientData)
+  const sig = bytesOf(signature)
   const cdText = cdRaw.toString('utf8')
   let cd: Record<string, unknown> = {}
   try {
@@ -317,32 +322,32 @@ function decodeOzSigners(
   digests: { authDigest: Buffer | null; payload: Buffer | null },
 ): SignerEvidence[] {
   const signers = mapField(sig, 'signers')
-  if (!signers || signers.switch().name !== 'scvMap') return []
+  if (!signers || signers.type !== 'scvMap') return []
   const sa = chain?.contracts.smartAccount
   const out: SignerEvidence[] = []
-  for (const e of signers.map() ?? []) {
-    const key = e.key()
-    const val = e.val()
-    const vec = key.switch().name === 'scvVec' ? (key.vec() ?? []) : []
-    const tag = vec[0] && vec[0].switch().name === 'scvSymbol' ? vec[0].sym().toString() : null
-    const valBytes = val.switch().name === 'scvBytes' ? Buffer.from(val.bytes()) : null
+  for (const e of signers.map ?? []) {
+    const key = e.key
+    const val = e.val
+    const vec = key.type === 'scvVec' ? (key.vec ?? []) : []
+    const tag = vec[0] && vec[0].type === 'scvSymbol' ? vec[0].sym.toString() : null
+    const valBytes = val.type === 'scvBytes' ? Buffer.from(val.bytes.toBytes()) : null
 
-    if (tag === 'Delegated' && vec[1] && vec[1].switch().name === 'scvAddress') {
+    if (tag === 'Delegated' && vec[1] && vec[1].type === 'scvAddress') {
       out.push({
         kind: 'delegated',
         verifier: null,
         publicKeyHex: null,
         credentialIdHex: null,
-        address: scAddressString(vec[1].address()),
+        address: scAddressString(vec[1].address),
         signatureLength: valBytes ? valBytes.length : null,
         webauthn: null,
         note: 'A Delegated signer contributes no bytes here; its authorization is a nested require_auth on the delegated address.',
       })
       continue
     }
-    if (tag === 'External' && vec[1] && vec[1].switch().name === 'scvAddress' && vec[2] && vec[2].switch().name === 'scvBytes') {
-      const verifier = scAddressString(vec[1].address())
-      const keyData = Buffer.from(vec[2].bytes())
+    if (tag === 'External' && vec[1] && vec[1].type === 'scvAddress' && vec[2] && vec[2].type === 'scvBytes') {
+      const verifier = scAddressString(vec[1].address)
+      const keyData = Buffer.from(vec[2].bytes.toBytes())
       if (sa && (verifier === sa.webauthnVerifier || (sa.formerWebauthnVerifiers ?? []).includes(verifier))) {
         const point = keyData.subarray(0, 65)
         out.push({
@@ -400,7 +405,7 @@ function decodeOzSigners(
       address: null,
       signatureLength: valBytes ? valBytes.length : null,
       webauthn: null,
-      note: `Signer key of shape ${key.switch().name}${tag ? ` (${tag})` : ''} is not one this decoder knows.`,
+      note: `Signer key of shape ${key.type}${tag ? ` (${tag})` : ''} is not one this decoder knows.`,
     })
   }
   return out
@@ -408,20 +413,20 @@ function decodeOzSigners(
 
 /** A classic account's address credential: a vec of { public_key, signature } maps. */
 function decodeAccountSigners(sig: xdr.ScVal): SignerEvidence[] {
-  if (sig.switch().name !== 'scvVec') return []
+  if (sig.type !== 'scvVec') return []
   const out: SignerEvidence[] = []
-  for (const m of sig.vec() ?? []) {
+  for (const m of sig.vec ?? []) {
     const pk = mapField(m, 'public_key')
     const s = mapField(m, 'signature')
-    if (!pk || pk.switch().name !== 'scvBytes') continue
-    const raw = Buffer.from(pk.bytes())
+    if (!pk || pk.type !== 'scvBytes') continue
+    const raw = Buffer.from(pk.bytes.toBytes())
     out.push({
       kind: 'account-ed25519',
       verifier: null,
       publicKeyHex: raw.toString('hex'),
       credentialIdHex: null,
       address: raw.length === 32 ? StrKey.encodeEd25519PublicKey(raw) : null,
-      signatureLength: s && s.switch().name === 'scvBytes' ? s.bytes().length : null,
+      signatureLength: s && s.type === 'scvBytes' ? s.bytes.toBytes().length : null,
       webauthn: null,
     })
   }
@@ -429,11 +434,11 @@ function decodeAccountSigners(sig: xdr.ScVal): SignerEvidence[] {
 }
 
 function invocationLabel(inv: xdr.SorobanAuthorizedInvocation): { contract: string | null; function: string } {
-  const f = inv.function()
-  const kind = f.switch().name
-  if (kind === 'sorobanAuthorizedFunctionTypeContractFn') {
-    const c = f.contractFn()
-    return { contract: scAddressString(c.contractAddress()), function: c.functionName().toString() }
+  const f = inv.function
+  const kind = f.type
+  if (f.type === 'sorobanAuthorizedFunctionTypeContractFn') {
+    const c = f.contractFn
+    return { contract: scAddressString(c.contractAddress), function: c.functionName.toString() }
   }
   return { contract: null, function: kind.includes('CreateContract') ? '(create contract)' : kind }
 }
@@ -444,10 +449,10 @@ function decodeAuthEntry(
   passphrase: string,
   chain: ChainDescriptor | undefined,
 ): AuthEvidence {
-  const root = entry.rootInvocation()
-  const rootInvocation = { ...invocationLabel(root), subInvocations: root.subInvocations().length }
-  const creds = entry.credentials()
-  if (creds.switch().name !== 'sorobanCredentialsAddress') {
+  const root = entry.rootInvocation
+  const rootInvocation = { ...invocationLabel(root), subInvocations: root.subInvocations.length }
+  const creds = entry.credentials
+  if (creds.type !== 'sorobanCredentialsAddress') {
     return {
       credential: 'source_account',
       address: txSource,
@@ -459,9 +464,9 @@ function decodeAuthEntry(
       authDigestHex: null,
     }
   }
-  const a = creds.address()
-  const address = scAddressString(a.address())
-  const sig = a.signature()
+  const a = creds.address
+  const address = scAddressString(a.address)
+  const sig = a.signature
 
   // The Soroban signature payload, recomputed from the entry itself, and OpenZeppelin's auth
   // digest over it. Recomputing rather than trusting is the point: a challenge that matches
@@ -471,8 +476,8 @@ function decodeAuthEntry(
     const pre = xdr.HashIdPreimage.envelopeTypeSorobanAuthorization(
       new xdr.HashIdPreimageSorobanAuthorization({
         networkId: sha256(passphrase),
-        nonce: a.nonce(),
-        signatureExpirationLedger: a.signatureExpirationLedger(),
+        nonce: a.nonce,
+        signatureExpirationLedger: a.signatureExpirationLedger,
         invocation: root,
       }),
     )
@@ -482,15 +487,15 @@ function decodeAuthEntry(
   }
   const ruleIds = mapField(sig, 'context_rule_ids')
   const contextRuleIds =
-    ruleIds && ruleIds.switch().name === 'scvVec' ? (ruleIds.vec() ?? []).map((v) => Number(nativeArg(v))) : null
+    ruleIds && ruleIds.type === 'scvVec' ? (ruleIds.vec ?? []).map((v) => Number(nativeArg(v))) : null
   const authDigest = payload && ruleIds ? sha256(Buffer.concat([payload, ruleIds.toXDR()])) : null
 
   const signers = mapField(sig, 'signers') ? decodeOzSigners(sig, chain, { authDigest, payload }) : decodeAccountSigners(sig)
   return {
     credential: 'address',
     address,
-    nonce: a.nonce().toString(),
-    signatureExpirationLedger: a.signatureExpirationLedger(),
+    nonce: a.nonce.toString(),
+    signatureExpirationLedger: a.signatureExpirationLedger,
     rootInvocation,
     contextRuleIds,
     signers,
@@ -502,12 +507,12 @@ function decodeAuthEntry(
 
 function opResultCodes(results: xdr.OperationResult[] | undefined): string[] {
   return (results ?? []).map((r) => {
-    if (r.switch().name !== 'opInner') return r.switch().name
-    try {
-      return (r.tr().value() as { switch(): { name: string } }).switch().name
-    } catch {
-      return r.tr().switch().name
-    }
+    if (r.type !== 'opInner') return r.type
+    // The operation's own result union names the code (invokeHostFunctionTrapped and the
+    // like); an operation type whose result carries no code falls back to its own name.
+    const inner: unknown = r.tr.value
+    const code = inner && typeof inner === 'object' ? (inner as { type?: unknown }).type : undefined
+    return typeof code === 'string' ? code : r.tr.type
   })
 }
 
@@ -517,9 +522,8 @@ function diagnosticEvents(metaXdr: string | null | undefined, extra: string[] = 
   if (metaXdr) {
     try {
       const meta = xdr.TransactionMeta.fromXDR(metaXdr, 'base64')
-      const v = meta.switch() as unknown as number
-      if (v === 4) out.push(...(meta.v4().diagnosticEvents() ?? []))
-      else if (v === 3) out.push(...(meta.v3().sorobanMeta()?.diagnosticEvents() ?? []))
+      if (meta.type === 'v4') out.push(...(meta.v4.diagnosticEvents ?? []))
+      else if (meta.type === 'v3') out.push(...(meta.v3.sorobanMeta?.diagnosticEvents ?? []))
     } catch {
       // A meta this SDK cannot parse leaves the error unnamed rather than guessed.
     }
@@ -548,23 +552,23 @@ function diagnosticEvents(metaXdr: string | null | undefined, extra: string[] = 
 function contractErrorFrom(events: xdr.DiagnosticEvent[]): { code: number; contract: string | null } | null {
   let found: { code: number; contract: string | null } | null = null
   for (const d of events) {
-    const ev = d.event()
+    const ev = d.event
     let topics: xdr.ScVal[] = []
     try {
-      topics = ev.body().v0().topics()
+      topics = xdr.expectUnionVariant(ev.body, 'v0').v0.topics
     } catch {
       continue
     }
     const first = topics[0]
-    if (!first || first.switch().name !== 'scvSymbol') continue
-    const label = first.sym().toString()
+    if (!first || first.type !== 'scvSymbol') continue
+    const label = first.sym.toString()
     if (label !== 'error' && label !== 'host_fn_failed') continue
     const t = topics[1]
-    if (!t || t.switch().name !== 'scvError') continue
-    const err = t.error()
-    if (err.switch().name !== 'sceContract') continue
-    const code = Number(err.contractCode())
-    const contract = contractIdString(ev.contractId() as Buffer | null)
+    if (!t || t.type !== 'scvError') continue
+    const err = t.error
+    if (err.type !== 'sceContract') continue
+    const code = Number(err.contractCode)
+    const contract = contractIdString(ev.contractId)
     if (label === 'error' && contract) return { code, contract }
     if (!found) found = { code, contract }
   }
@@ -590,31 +594,24 @@ export function decodeTxEvidence(
   const parsed = TransactionBuilder.fromXDR(envelopeXdr, passphrase)
   const feeBump = parsed instanceof FeeBumpTransaction
   const inner: Transaction = feeBump ? (parsed as FeeBumpTransaction).innerTransaction : (parsed as Transaction)
-  const hash = parsed.hash().toString('hex')
-  const innerHash = feeBump ? inner.hash().toString('hex') : null
+  const hash = Buffer.from(parsed.hash()).toString('hex')
+  const innerHash = feeBump ? Buffer.from(inner.hash()).toString('hex') : null
   const sourceAccount = inner.source
   const feeAccount = feeBump ? (parsed as FeeBumpTransaction).feeSource : inner.source
 
   const result = xdr.TransactionResult.fromXDR(resultXdr, 'base64')
-  const feeChargedStroops = result.feeCharged().toString()
-  const r = result.result()
-  const txCode = r.switch().name
+  const feeChargedStroops = result.feeCharged.toString()
+  const r = result.result
+  const txCode = r.type
   let innerCode: string | null = null
   let opResults: xdr.OperationResult[] | undefined
-  if (txCode === 'txFeeBumpInnerSuccess' || txCode === 'txFeeBumpInnerFailed') {
-    const ir = r.innerResultPair().result().result()
-    innerCode = ir.switch().name
-    try {
-      opResults = ir.results()
-    } catch {
-      opResults = undefined
-    }
+  // Only txSuccess and txFailed carry operation results; every other code leaves them absent.
+  if (r.type === 'txFeeBumpInnerSuccess' || r.type === 'txFeeBumpInnerFailed') {
+    const ir = r.innerResultPair.result.result
+    innerCode = ir.type
+    opResults = ir.type === 'txSuccess' || ir.type === 'txFailed' ? ir.results : undefined
   } else {
-    try {
-      opResults = r.results()
-    } catch {
-      opResults = undefined
-    }
+    opResults = r.type === 'txSuccess' || r.type === 'txFailed' ? r.results : undefined
   }
   const success = txCode === 'txSuccess' || txCode === 'txFeeBumpInnerSuccess'
 
@@ -622,16 +619,16 @@ export function decodeTxEvidence(
     const base = { type: op.type as string, source: op.source && op.source !== sourceAccount ? op.source : null }
     if (op.type === 'invokeHostFunction') {
       const func = (op as unknown as { func: xdr.HostFunction }).func
-      if (func.switch().name === 'hostFunctionTypeInvokeContract') {
-        const ic = func.invokeContract()
+      if (func.type === 'hostFunctionTypeInvokeContract') {
+        const ic = func.invokeContract
         return {
           ...base,
-          contract: scAddressString(ic.contractAddress()),
-          function: ic.functionName().toString(),
-          args: ic.args().map(nativeArg),
+          contract: scAddressString(ic.contractAddress),
+          function: ic.functionName.toString(),
+          args: ic.args.map((a) => nativeArg(a)),
         }
       }
-      return { ...base, contract: null, function: func.switch().name, args: null }
+      return { ...base, contract: null, function: func.type, args: null }
     }
     return { ...base, contract: null, function: null, args: null }
   })
@@ -892,8 +889,8 @@ export async function fetchTxEvidence(chain: ChainDescriptor, hashIn: string, de
   const envelopeIs = (env: string): boolean => {
     try {
       const p = TransactionBuilder.fromXDR(env, passphrase)
-      if (p.hash().toString('hex') === hash) return true
-      return p instanceof FeeBumpTransaction && p.innerTransaction.hash().toString('hex') === hash
+      if (Buffer.from(p.hash()).toString('hex') === hash) return true
+      return p instanceof FeeBumpTransaction && Buffer.from(p.innerTransaction.hash()).toString('hex') === hash
     } catch {
       return false
     }

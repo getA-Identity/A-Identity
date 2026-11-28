@@ -130,11 +130,10 @@ function errorEventXdr(contract: string, code: number): string {
   return new xdr.DiagnosticEvent({
     inSuccessfulContractCall: false,
     event: new xdr.ContractEvent({
-      ext: new xdr.ExtensionPoint(0),
-      contractId: StrKey.decodeContract(contract) as never,
-      type: xdr.ContractEventType.diagnostic(),
-      body: new xdr.ContractEventBody(
-        0,
+      ext: xdr.ExtensionPoint.v0(),
+      contractId: new xdr.ContractId(StrKey.decodeContract(contract)),
+      type: xdr.ContractEventType.diagnostic,
+      body: xdr.ContractEventBody.v0(
         new xdr.ContractEventV0({
           topics: [xdr.ScVal.scvSymbol('error'), xdr.ScVal.scvError(xdr.ScError.sceContract(code))],
           data: xdr.ScVal.scvString('escalating Ok(ScErrorType::Contract) frame-exit to Err'),
@@ -211,13 +210,13 @@ test('a fee bump names its outer source as the fee payer and keeps the inner sou
       new xdr.InnerTransactionResultPair({
         transactionHash: inner.hash(),
         result: new xdr.InnerTransactionResult({
-          feeCharged: original.feeCharged(),
-          result: xdr.InnerTransactionResultResult.txSuccess(original.result().results()),
-          ext: new xdr.InnerTransactionResultExt(0),
+          feeCharged: original.feeCharged,
+          result: xdr.InnerTransactionResultResult.txSuccess(xdr.expectUnionVariant(original.result, 'txSuccess').results),
+          ext: xdr.InnerTransactionResultExt.v0(),
         }),
       }),
     ),
-    ext: new xdr.TransactionResultExt(0),
+    ext: xdr.TransactionResultExt.v0(),
   })
   const ev = decodeTxEvidence(bump.toEnvelope().toXDR('base64'), result.toXDR('base64'), null, TESTNET_PASS, { chain: testnet })
   assert.equal(ev.feeBump, true)

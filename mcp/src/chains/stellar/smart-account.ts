@@ -81,7 +81,7 @@ export type SmartAccountReader = {
   readFeePayer(hash: string, env?: NodeJS.ProcessEnv): Promise<FeePayerRead>
 }
 
-/** `Signer` as scValToNative renders it: `['External', 'C...', Buffer]` or `['Delegated', 'G...']`. */
+/** `Signer` as scValToNative renders it: `['External', 'C...', bytes]` or `['Delegated', 'G...']`. The bytes are a Uint8Array since SDK 17, a Buffer before it. */
 function signerOf(v: unknown): RelaySigner {
   if (!Array.isArray(v) || typeof v[0] !== 'string') return { kind: 'unknown' }
   if (v[0] === 'External' && v.length === 3 && typeof v[1] === 'string' && (Buffer.isBuffer(v[2]) || v[2] instanceof Uint8Array)) {
@@ -148,7 +148,7 @@ export function createSmartAccountReader(
         new xdr.LedgerKeyContractData({
           contract: new Address(contract).toScAddress(),
           key: xdr.ScVal.scvLedgerKeyContractInstance(),
-          durability: xdr.ContractDataDurability.persistent(),
+          durability: xdr.ContractDataDurability.persistent,
         }),
       )
       const res = await rpcFor(env).getLedgerEntries(key)
@@ -157,12 +157,12 @@ export function createSmartAccountReader(
       let executable: ContractCode['executable'] = null
       let wasmHash: string | null = null
       try {
-        const exe = (entry.val as xdr.LedgerEntryData).contractData().val().instance().executable()
-        const kind = exe.switch().name
-        if (kind === 'contractExecutableWasm') {
+        const stored = xdr.expectUnionVariant(entry.val as xdr.LedgerEntryData, 'contractData').contractData.val
+        const exe = xdr.expectUnionVariant(stored, 'scvContractInstance').instance.executable
+        if (exe.type === 'contractExecutableWasm') {
           executable = 'wasm'
-          wasmHash = Buffer.from(exe.wasmHash()).toString('hex')
-        } else if (kind === 'contractExecutableStellarAsset') {
+          wasmHash = Buffer.from(exe.wasmHash.toBytes()).toString('hex')
+        } else if (exe.type === 'contractExecutableStellarAsset') {
           executable = 'stellar-asset'
         } else {
           executable = 'other'
@@ -211,7 +211,7 @@ export function createSmartAccountReader(
       const feeBump = tx instanceof FeeBumpTransaction
       let fee: string | null = null
       try {
-        fee = done.resultXdr.feeCharged().toString()
+        fee = done.resultXdr.feeCharged.toString()
       } catch {
         fee = null
       }
